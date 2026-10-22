@@ -70,7 +70,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **Output over an op's cap is refused (`OUTPUT_TOO_LARGE`), never clipped.**
 - **The graph refreshes on its own only after code-git's own writes and when the window regains focus** (no polling): a commit made elsewhere shows on focus or Refresh.
 - **Search pages forward** to reach a match that is not loaded yet, a bounded number of pages at a time.
-- **Worktree labels need git ≥ 2.36 and commit details git ≥ 2.24** on the project's System ([docs/graph.md → Git versions](docs/graph.md#git-versions)).
+- **Worktree labels need git ≥ 2.36 and commit co-authors git ≥ 2.22** on the project's System ([docs/graph.md → Git versions](docs/graph.md#git-versions)).
 - **Below the `lg` breakpoint the side panels are dialogs**: refs, Compare and commit details open from the graph's toolbar or a commit click instead of beside the graph.
 - **Untracked files are not in a work-in-progress patch** (`git diff` leaves them out).
 - **No image or binary preview** in the diff, and **File view has no blame**.

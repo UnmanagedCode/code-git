@@ -153,13 +153,14 @@ export const ops = [
       return { oid: assertOid(p.oid) };
     },
     async run(git, { oid }) {
-      const meta = parseCommitMeta(text(await git(['log', '-1', '--no-walk', ...LOG_SAFE, META_FORMAT, '--end-of-options', oid])));
+      // `oid` is full hex (assertOid), so it cannot be read as an option: no `--end-of-options`, which needs git 2.24.
+      const meta = parseCommitMeta(text(await git(['log', '-1', '--no-walk', ...LOG_SAFE, META_FORMAT, oid])));
       // A separate command, so a file list over the output cap still leaves the metadata.
       let files = null;
       let filesError = null;
       try {
         const r = await git(['diff-tree', '-r', '-z', '--no-commit-id', '--name-status', '-M', '--root', '--no-ext-diff', '--no-textconv',
-          '--end-of-options', ...meta.parents.slice(0, 1), oid]);
+          ...meta.parents.slice(0, 1), oid]);
         files = parseNameStatus(text(r));
       } catch (e) {
         if (!(e instanceof Refusal) || e.code === 'CANCELLED') throw e;

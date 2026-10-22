@@ -425,7 +425,9 @@ test('commit: subject, body with blank lines, co-authors, parents, author vs com
   assert.equal(result.filesError, null);
   assert.equal(entries.length, 2, 'metadata and the file list are separate commands');
   assert.ok(entries[0].argv.some((a) => a.includes('%G?')));
-  assert.deepEqual(op(entries[1]).slice(-3), ['--end-of-options', A, B]);
+  // The oid is checked as full hex, so no --end-of-options (git 2.24) is needed: details work from git 2.22.
+  assert.deepEqual(op(entries[1]).slice(-2), [A, B]);
+  assert.ok(!entries.some((e) => e.argv.includes('--end-of-options')));
 });
 
 test('commit: a merge is diffed against its first parent; a root commit lists its own files', async (t) => {

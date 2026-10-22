@@ -143,8 +143,7 @@ What each graph feature needs, and what happens below it. Every feature also nee
 |---|---|---|
 | Pages, search, stats, refs: `--no-show-signature` on every log-family command | git 2.10 | Below C1's floor |
 | Worktree labels and the Worktrees section: `worktree list --porcelain -z` | git 2.36 | **Degrades**: `graph.refs` answers `worktrees: null` with git's stderr; no "in X" labels; the Worktrees section shows the notice. Everything else works |
-| Commit details: `--end-of-options` before the oid on `log` and `diff-tree` | git 2.24 | **Fails**: `graph.commit` answers `GIT_FAILED` and the details panel shows git's error. The graph, refs, search and stats are unaffected |
-| Co-authors: `%(trailers:key=Co-authored-by,valueonly,separator=%x1e)` | git 2.22 | Would degrade (git prints the placeholder literally, which parses as no co-authors), but the details already need 2.24 |
+| Commit details' co-authors: `%(trailers:key=Co-authored-by,valueonly,separator=%x1e)` | git 2.22 | **Degrades**: git prints the placeholder literally, which parses as no co-authors; the rest of the details shows. (The oid is passed without `--end-of-options` — it is checked as full hex — so nothing else in `graph.commit` needs a newer git) |
 | Annotated tag of a tag: `%(*objectname)` | — | Newer git peels it to the commit; older git peels one level, so the ref has `oid: null` and is not graphed |
 
 ## Signing programs
