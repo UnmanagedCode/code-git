@@ -9,8 +9,11 @@ import type { Edge, Lane, LayoutInput, LayoutRow, LayoutState, Span } from './ty
 
 /** Lane colours: `.lane-0` … in graph.css, one per index below this. */
 export const LANE_COLOURS = 8;
-/** Lanes drawn; every lane from here on is drawn in one overflow gutter, at index LANE_CAP. */
-export const LANE_CAP = 40;
+/**
+ * Lanes drawn; every lane from here on is drawn in one overflow gutter, at index LANE_CAP. The lanes and the gutter
+ * fit the graph column's widest setting (COLUMNS.graph.max; a test pins it).
+ */
+export const LANE_CAP = 35;
 
 /** Where lane `i` is drawn: itself, or the gutter. */
 export const drawnLane = (i: number, cap = LANE_CAP): number => Math.min(i, cap);

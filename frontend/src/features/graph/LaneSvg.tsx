@@ -8,7 +8,8 @@ export const LANE_W = 16;
 const PAD = 6;
 const MID = ROW_H / 2;
 /** A lane's centre; every lane past LANE_CAP is drawn in the gutter at LANE_CAP. */
-const x = (lane: number) => PAD + LANE_W / 2 + drawnLane(lane) * LANE_W;
+export const laneX = (lane: number) => PAD + LANE_W / 2 + drawnLane(lane) * LANE_W;
+const x = laneX;
 /** The width the lanes need, px: at most LANE_CAP lanes plus the gutter. */
 export const lanesWidth = (lanes: number) => PAD * 2 + Math.min(Math.max(1, lanes), LANE_CAP + 1) * LANE_W;
 
