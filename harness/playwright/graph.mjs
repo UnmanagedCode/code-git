@@ -161,6 +161,23 @@ try {
     await details.getByRole('button', { name: 'Tree' }).click();
     check(await details.getByText('docs', { exact: true }).isVisible() && await details.getByText('guide.md', { exact: true }).isVisible(), 'the tree view nests the file under its directory');
     await shot('details-light-desktop');
+    // The left slot: the refs panel first, the diff's Compare panel below it, both reachable.
+    const left = page.locator('[data-slot-name=left]');
+    const refsBox = await left.getByRole('navigation', { name: 'Refs' }).boundingBox();
+    const compareBox = await left.getByRole('region', { name: 'Commit' }).boundingBox();
+    check(refsBox && compareBox && compareBox.y > refsBox.y, 'the left slot stacks the refs panel above the Compare panel');
+    await left.getByRole('textbox', { name: 'Commit (sha or ref)' }).scrollIntoViewIfNeeded();
+    await shot('left-slot-light-desktop');
+    // A file in the details opens that commit's diff at the file; Esc brings the graph back.
+    await details.getByRole('button', { name: /guide\.md/ }).click();
+    const diff = page.getByRole('region', { name: 'Diff' });
+    await diff.getByRole('option', { name: /docs\/guide\.md/ }).waitFor();
+    check(await diff.getByLabel('Diff source').textContent().then((t) => t.includes(o.C.slice(0, 7))), 'a file click opens that commit’s diff');
+    await shot('file-diff-light-desktop');
+    await diff.locator('[data-diff-body]').click();
+    await page.keyboard.press('Escape');
+    await row(o.C).waitFor();
+    check(await diff.count() === 0, 'Esc closes the diff and the graph is back');
     await list.press('j');
     const below = ids[ids.indexOf(o.C) + 1];
     check(await page.locator('[role=option][aria-selected=true]').getAttribute('data-row-id') === below, 'j moves the selection down');
@@ -209,6 +226,10 @@ try {
           await page.getByRole('button', { name: 'Refs', exact: true }).click();
           await page.getByRole('dialog', { name: 'Refs' }).getByRole('navigation', { name: 'Refs' }).waitFor();
           await shot(`refs-dialog-${scheme}-phone`);
+          await page.keyboard.press('Escape');
+          await page.getByRole('button', { name: 'Compare', exact: true }).click();
+          await page.getByRole('dialog', { name: 'Compare' }).getByRole('textbox', { name: 'Commit (sha or ref)' }).waitFor();
+          await shot(`compare-dialog-${scheme}-phone`);
           await page.keyboard.press('Escape');
           await row(o.C).click();
           await page.getByRole('dialog', { name: 'Details' }).getByText('Write the guide').waitFor();
