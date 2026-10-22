@@ -50,7 +50,7 @@ test('solo of a ref, a remote or a section shows only those and overrides hides;
   expect(resolveVisibility(refs, prefs({ soloed: ['refs/heads/gone'] })).soloActive).toBe(false);
 });
 
-test('WIP rows: the own checkout always; another when its branch is visible, or when detached and not soloing', () => {
+test('wipVisible: the own checkout whatever is hidden or soloed; another when its branch is visible, or when detached and not soloing', () => {
   const plain = resolveVisibility(refs, prefs({ hidden: ['refs/heads/feat'] }));
   expect(plain.wipVisible({ isOwn: true, branch: 'refs/heads/feat' })).toBe(true);
   expect(plain.wipVisible({ isOwn: false, branch: 'refs/heads/feat' })).toBe(false);
