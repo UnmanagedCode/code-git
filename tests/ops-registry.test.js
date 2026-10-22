@@ -64,3 +64,13 @@ test('the commit box reads and patch.check are cancellable reads', () => {
     assert.equal(d.cancellable, true, name);
   }
 });
+
+test('the branch ops: tracking is a cancellable read; the local branch writes are not cancellable', () => {
+  assert.equal(OPS.get('branch.tracking')?.kind, 'read');
+  assert.equal(OPS.get('branch.tracking').cancellable, true);
+  for (const name of ['branch.create', 'branch.checkout', 'branch.rename', 'branch.delete', 'branch.setUpstream', 'branch.fastForward', 'branch.move']) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'write', name);
+    assert.equal(d.cancellable, false, name);
+  }
+});

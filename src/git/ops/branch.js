@@ -1,0 +1,267 @@
+import { Refusal } from '../../refusals.js';
+import { commitOid } from '../diff/source.js';
+import { parseRemotes, splitRemoteRef } from '../parse/graph.js';
+import { parseTracking } from '../parse/refs.js';
+import { fullRef, nameList, optBool, paramsOf, shortBranch } from '../refs/check.js';
+import { assertCcAck, assertCcHeadAck, assertNotCheckedOut, isCcOwned, ownHead, readHeads } from '../refs/heads.js';
+import { refObjects } from '../refs/resolve.js';
+import { undoRecord } from '../refs/undo.js';
+import { casUpdate, guardOverwrite } from '../refs/write.js';
+import { assertOid } from '../validate.js';
+
+// Branch ops (docs/refs.md, docs/protocol.md → Branch, tag and HEAD ops). Every name and oid is checked before any
+// exec; `--end-of-options` precedes every user-named argument. Each write returns `undo` (src/git/refs/undo.js).
+
+const decoder = new TextDecoder('utf-8', { fatal: false });
+const text = (r) => decoder.decode(r.stdout);
+const HEADS = 'refs/heads/';
+const local = (short) => `${HEADS}${short}`;
+const shortOf = (ref) => ref.slice(HEADS.length);
+
+function noParams(raw, op) {
+  if (raw !== undefined && raw !== null && (typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).length)) {
+    throw new Refusal('BAD_PARAMS', `${op} takes no params`);
+  }
+  return {};
+}
+
+/** `name`'s entry in `heads`, or REF_UNKNOWN. */
+function headOf(heads, ref) {
+  const h = heads.get(ref);
+  if (!h) throw new Refusal('REF_UNKNOWN', `no branch ${shortOf(ref)}`);
+  return h;
+}
+
+/** `oid` names a commit, or REV_UNKNOWN. */
+async function assertCommit(git, oid) {
+  if (await commitOid(git, oid) !== oid) throw new Refusal('REV_UNKNOWN', `${oid} is not a commit`);
+}
+
+/** Exit 0 of `merge-base --is-ancestor` → true, 1 → false. */
+async function isAncestor(git, a, b) {
+  return (await git(['merge-base', '--is-ancestor', a, b], { okExit: [0, 1] })).exitCode === 0;
+}
+
+const headMove = (own, branch, oid) => ({ old: { branch: own.branch, oid: own.oid }, new: { branch, oid } });
+
+/** Switches this checkout to local branch `short` (CHECKOUT_CONFLICT when local changes would be overwritten). */
+const switchTo = (git, short) => guardOverwrite(git, ['switch', '--no-guess', '--end-of-options', short], { okExit: [0] });
+
+/** A remote-tracking ref → its local branch: create a tracking one, or switch to the existing one (fast-forwarding it when it tracks `ref`). */
+async function checkoutRemote(git, ref, { heads, own, ccOwned }) {
+  const remotes = parseRemotes(text(await git(['remote'])));
+  const { branch } = splitRemoteRef(ref, remotes);
+  shortBranch(branch);
+  const remoteOid = (await refObjects(git, [ref])).get(ref);
+  if (!remoteOid) throw new Refusal('REF_UNKNOWN', `no remote branch ${ref.slice('refs/remotes/'.length)}`);
+  const localRef = local(branch);
+  const existing = heads.get(localRef);
+  const result = { branch: localRef, created: false, localExisted: Boolean(existing), fastForwarded: false, ffBlocked: null };
+  if (!existing) {
+    assertCcHeadAck(own, ccOwned);
+    await guardOverwrite(git, ['switch', '--no-guess', '--track', '-c', branch, '--end-of-options', ref]);
+    return { ...result, created: true, undo: undoRecord({ refs: [{ ref: localRef, old: null, new: remoteOid }], head: headMove(own, localRef, remoteOid) }) };
+  }
+  // Already on it: nothing switches, so only a fast-forward can move HEAD — additive, no cc acknowledgement.
+  const switching = own.branch !== localRef;
+  if (switching) {
+    assertCcHeadAck(own, ccOwned);
+    assertNotCheckedOut(heads, localRef);
+    await switchTo(git, branch);
+  }
+  const head = switching ? headMove(own, localRef, existing.oid) : null;
+  const ff = existing.upstream === ref && existing.oid !== remoteOid && await isAncestor(git, existing.oid, remoteOid);
+  if (!ff) return { ...result, undo: undoRecord({ head }) };
+  try {
+    await guardOverwrite(git, ['merge', '--ff-only', '--end-of-options', remoteOid]);
+  } catch (e) {
+    // The switch stands; local changes keep the branch where it was.
+    if (e.code !== 'CHECKOUT_CONFLICT') throw e;
+    return { ...result, ffBlocked: e.extra.files, undo: undoRecord({ head }) };
+  }
+  return {
+    ...result, fastForwarded: true,
+    undo: undoRecord({ refs: [{ ref: localRef, old: existing.oid, new: remoteOid }], head: headMove(own, localRef, remoteOid) }),
+  };
+}
+
+export const ops = [
+  {
+    name: 'branch.tracking',
+    kind: 'read',
+    params: (raw) => noParams(raw, 'branch.tracking'),
+    async run(git) {
+      const [refs, remotes] = await Promise.all([
+        git(['for-each-ref', '--format=%(refname)%00%(upstream)%00%(upstream:track,nobracket)', 'refs/heads']),
+        git(['remote']),
+      ]);
+      return { remotes: parseRemotes(text(remotes)), branches: parseTracking(text(refs)) };
+    },
+  },
+  {
+    name: 'branch.create',
+    kind: 'write',
+    params(raw) {
+      const p = paramsOf(raw, ['name', 'from', 'checkout', 'ccOwned'], 'branch.create');
+      return {
+        name: shortBranch(p.name), from: p.from === undefined ? null : assertOid(p.from),
+        checkout: optBool(p.checkout, 'checkout'), ccOwned: optBool(p.ccOwned, 'ccOwned'),
+      };
+    },
+    async run(git, { name, from, checkout, ccOwned }) {
+      const ref = local(name);
+      const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
+      if (heads.has(ref)) throw new Refusal('REF_EXISTS', `branch ${name} already exists`);
+      const oid = from ?? own.oid;
+      if (!oid) throw new Refusal('NO_HEAD', 'HEAD has no commit to branch from');
+      if (checkout) assertCcHeadAck(own, ccOwned);
+      if (from) await assertCommit(git, from);
+      if (checkout) await guardOverwrite(git, ['switch', '--no-guess', '--no-track', '-c', name, '--end-of-options', oid]);
+      else await git(['branch', '--no-track', '--end-of-options', name, oid]);
+      return {
+        ref, oid, checkedOut: checkout,
+        undo: undoRecord({ refs: [{ ref, old: null, new: oid }], head: checkout ? headMove(own, ref, oid) : null }),
+      };
+    },
+  },
+  {
+    name: 'branch.checkout',
+    kind: 'write',
+    params(raw) {
+      const p = paramsOf(raw, ['ref', 'ccOwned'], 'branch.checkout');
+      return { ref: fullRef(p.ref, [HEADS, 'refs/remotes/']), ccOwned: optBool(p.ccOwned, 'ccOwned') };
+    },
+    async run(git, { ref, ccOwned }) {
+      const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
+      if (!ref.startsWith(HEADS)) return checkoutRemote(git, ref, { heads, own, ccOwned });
+      const result = { branch: ref, created: false, localExisted: true, fastForwarded: false, ffBlocked: null };
+      if (own.branch === ref) return { ...result, undo: undoRecord() };
+      const h = headOf(heads, ref);
+      assertCcHeadAck(own, ccOwned);
+      assertNotCheckedOut(heads, ref);
+      await switchTo(git, shortOf(ref));
+      return { ...result, undo: undoRecord({ head: headMove(own, ref, h.oid) }) };
+    },
+  },
+  {
+    name: 'branch.rename',
+    kind: 'write',
+    params(raw) {
+      const p = paramsOf(raw, ['name', 'newName', 'ccOwned'], 'branch.rename');
+      return { name: shortBranch(p.name), newName: shortBranch(p.newName), ccOwned: optBool(p.ccOwned, 'ccOwned') };
+    },
+    async run(git, { name, newName, ccOwned }) {
+      const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
+      const ref = local(name);
+      const to = local(newName);
+      const h = headOf(heads, ref);
+      if (heads.has(to)) throw new Refusal('REF_EXISTS', `branch ${newName} already exists`);
+      // cc's worktree record names a checked-out cc branch: renaming it breaks cc even in its own checkout.
+      assertNotCheckedOut(heads, ref, { allowOwn: !isCcOwned(name), own });
+      assertCcAck([name, newName], ccOwned);
+      await git(['branch', '-m', '--end-of-options', name, newName]);
+      return {
+        ref: to,
+        undo: undoRecord({
+          refs: [{ ref, old: h.oid, new: null }, { ref: to, old: null, new: h.oid }],
+          head: own.branch === ref ? headMove(own, to, h.oid) : null,
+        }),
+      };
+    },
+  },
+  {
+    name: 'branch.delete',
+    kind: 'write',
+    params(raw) {
+      const p = paramsOf(raw, ['names', 'force', 'ccOwned'], 'branch.delete');
+      return { names: nameList(p.names, 'names'), force: optBool(p.force, 'force'), ccOwned: optBool(p.ccOwned, 'ccOwned') };
+    },
+    async run(git, { names, force, ccOwned }) {
+      const heads = await readHeads(git);
+      // Every name is checked first: one bad name refuses the request before anything is deleted.
+      for (const n of names) {
+        headOf(heads, local(n));
+        assertNotCheckedOut(heads, local(n));
+      }
+      assertCcAck(names, ccOwned);
+      const r = await git(['branch', force ? '-D' : '-d', '--end-of-options', ...names], { okExit: [0, 1] });
+      const stderr = decoder.decode(r.stderr);
+      // git deletes what it can and reports the rest: the refs, re-read, are the truth.
+      const after = await readHeads(git);
+      const deleted = [];
+      const notMerged = [];
+      for (const n of names) {
+        if (!after.has(local(n))) deleted.push(n);
+        else if (stderr.includes(`'${n}' is not fully merged`)) notMerged.push(n);
+        else throw new Refusal('GIT_FAILED', `git branch did not delete ${n}`, { exitCode: r.exitCode, stderr });
+      }
+      return {
+        deleted, notMerged,
+        undo: undoRecord({ refs: deleted.map((n) => ({ ref: local(n), old: heads.get(local(n)).oid, new: null, upstream: heads.get(local(n)).upstream })) }),
+      };
+    },
+  },
+  {
+    name: 'branch.setUpstream',
+    kind: 'write',
+    params(raw) {
+      const p = paramsOf(raw, ['name', 'upstream'], 'branch.setUpstream');
+      if (p.upstream === undefined) throw new Refusal('BAD_PARAMS', 'upstream is required (null unsets it)');
+      return { name: shortBranch(p.name), upstream: p.upstream === null ? null : fullRef(p.upstream, ['refs/remotes/']) };
+    },
+    async run(git, { name, upstream }) {
+      const heads = await readHeads(git);
+      const previous = headOf(heads, local(name)).upstream;
+      if (upstream) {
+        if (!(await refObjects(git, [upstream])).has(upstream)) throw new Refusal('REF_UNKNOWN', `no remote branch ${upstream.slice('refs/remotes/'.length)}`);
+        await git(['branch', `--set-upstream-to=${upstream}`, '--end-of-options', name]);
+      } else if (previous) {
+        await git(['branch', '--unset-upstream', '--end-of-options', name]);
+      }
+      return { name, upstream, previous };
+    },
+  },
+  {
+    name: 'branch.fastForward',
+    kind: 'write',
+    params(raw) {
+      const p = paramsOf(raw, ['name', 'to', 'expect'], 'branch.fastForward');
+      return { name: shortBranch(p.name), to: assertOid(p.to), expect: assertOid(p.expect) };
+    },
+    async run(git, { name, to, expect }) {
+      const ref = local(name);
+      const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
+      const h = headOf(heads, ref);
+      if (h.oid !== expect) throw new Refusal('REF_MOVED', `${name} is no longer at ${expect}`);
+      assertNotCheckedOut(heads, ref, { allowOwn: true, own });
+      if (to === expect) return { upToDate: true, undo: undoRecord() };
+      if (!(await isAncestor(git, expect, to))) throw new Refusal('NOT_FAST_FORWARD', `${name} cannot be fast-forwarded to ${to}`);
+      const isOwn = own.branch === ref;
+      if (isOwn) await guardOverwrite(git, ['merge', '--ff-only', '--end-of-options', to]);
+      else await casUpdate(git, ref, to, expect, 'code-git: fast-forward');
+      return {
+        upToDate: false,
+        undo: undoRecord({ refs: [{ ref, old: expect, new: to }], head: isOwn ? headMove(own, ref, to) : null }),
+      };
+    },
+  },
+  {
+    name: 'branch.move',
+    kind: 'write',
+    params(raw) {
+      const p = paramsOf(raw, ['name', 'to', 'expect', 'ccOwned'], 'branch.move');
+      return { name: shortBranch(p.name), to: assertOid(p.to), expect: assertOid(p.expect), ccOwned: optBool(p.ccOwned, 'ccOwned') };
+    },
+    async run(git, { name, to, expect, ccOwned }) {
+      const ref = local(name);
+      const heads = await readHeads(git);
+      headOf(heads, ref);
+      // This checkout's own branch moves with head.reset, which also decides what happens to the index and worktree.
+      assertNotCheckedOut(heads, ref);
+      assertCcAck([name], ccOwned);
+      await assertCommit(git, to);
+      await casUpdate(git, ref, to, expect, 'code-git: reset');
+      return { undo: undoRecord({ refs: [{ ref, old: expect, new: to }] }) };
+    },
+  },
+];

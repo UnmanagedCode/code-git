@@ -359,6 +359,37 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 - Exit 1 (does not apply) or 128 (no valid patch in the input; an `..`, absolute or `.git/` path) → 409 `PATCH_DOES_NOT_APPLY` with `exitCode` and `stderr`. Worktree mode also refuses a path beyond a symlink; index mode never writes to disk.
 - A mailbox (`format-patch`) works: git skips the mail header.
 
+### Branch, tag and HEAD ops (`src/git/ops/branch.js`, `tag.js`, `head.js`)
+
+Behaviour, the checked-out and cc-owned rules and what each op destroys: [refs](refs.md). Common rules:
+
+- Params are a plain object; an unknown key → `BAD_PARAMS`. A branch or tag **name** is short (`feature/a`) and passes `assertRefName`; `HEAD` and a leading `refs/` → `BAD_REF`. A **full ref** must start with the prefix the op names. An **oid** is full hex (`assertOid`). A name list holds 1…`REF_LIMITS.namesMax` (`src/git/refs/limits.js`) names, duplicates dropped.
+- Every check runs before any write. `--end-of-options` precedes every user-named argument.
+- `ccOwned: true` acknowledges a `code-conductor/*` branch (the UI's confirmation). Without it: 409 `CC_OWNED_BRANCH` with `branches` (short names), plus `head: true` when the refusal is about moving this checkout's own cc-owned HEAD.
+- A branch checked out in a checkout the op may not touch: 409 `BRANCH_CHECKED_OUT` with `worktree` (that checkout's path).
+- Local changes git would overwrite: 409 `CHECKOUT_CONFLICT` with `files` and `stderr`.
+- Every ref-changing op returns `undo`: `UndoRecord` below.
+
+```
+UndoRecord      { refs: RefChange[], remoteRefs: RemoteRefChange[],
+                  head: {old: {branch: refname|null, oid: oid|null}, new: {branch, oid}} | null,
+                  worktreeSnapshot: oid | null }
+RefChange       { ref /* refs/heads/… | refs/tags/… */, old: oid|null /* null = created */, new: oid|null /* null = deleted */,
+                  upstream?: refname|null /* a deleted branch's upstream */ }
+RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */, old: oid|null /* best known */, new: oid|null }
+```
+
+| Op | kind | `params` | Runs (after the reads `for-each-ref refs/heads` with `%(worktreepath)`, `symbolic-ref -q HEAD`, `rev-parse --verify -q HEAD`) | `result` | Refusals |
+|---|---|---|---|---|---|
+| `branch.tracking` | read | none | `for-each-ref --format=%(refname)%00%(upstream)%00%(upstream:track,nobracket) refs/heads`; `remote` | `{remotes: string[], branches: {[ref]: {upstream: refname\|null, ahead, behind, gone}}}` | — |
+| `branch.create` | write | `{name, from?: oid, checkout?: bool, ccOwned?}` | `branch --no-track --end-of-options <name> <oid>`; with `checkout`: `switch --no-guess --no-track -c <name> --end-of-options <oid>`. No `from` = HEAD | `{ref, oid, checkedOut, undo}` | `REF_EXISTS`; `NO_HEAD` (no `from`, unborn HEAD); `REV_UNKNOWN` (`from` not a commit); `CC_OWNED_BRANCH` (`checkout` on a cc-owned HEAD); `CHECKOUT_CONFLICT` |
+| `branch.checkout` | write | `{ref: refs/heads/… \| refs/remotes/…, ccOwned?}` | local: `switch --no-guess --end-of-options <name>`. Remote, no local twin: `switch --no-guess --track -c <b> --end-of-options <ref>`; local twin: switch to it, then `merge --ff-only --end-of-options <oid>` when it tracks `ref` and is behind it | `{branch, created, localExisted, fastForwarded, ffBlocked: path[]\|null, undo}` | `REF_UNKNOWN`; `BRANCH_CHECKED_OUT` (elsewhere); `CC_OWNED_BRANCH`; `CHECKOUT_CONFLICT` |
+| `branch.rename` | write | `{name, newName, ccOwned?}` | `branch -m --end-of-options <name> <newName>` | `{ref, undo}` | `REF_UNKNOWN`; `REF_EXISTS`; `BRANCH_CHECKED_OUT` (another checkout, or a checked-out cc branch anywhere); `CC_OWNED_BRANCH` (either name) |
+| `branch.delete` | write | `{names, force?, ccOwned?}` | `branch -d\|-D --end-of-options <names…>` (exit 0 or 1), then the heads again | `{deleted, notMerged, undo}` | `REF_UNKNOWN`, `BRANCH_CHECKED_OUT` (any checkout, this one included), `CC_OWNED_BRANCH` — for any name, before anything is deleted; `GIT_FAILED` for a name git kept for another reason |
+| `branch.setUpstream` | write | `{name, upstream: refs/remotes/… \| null}` | `branch --set-upstream-to=<u> --end-of-options <name>` / `branch --unset-upstream --end-of-options <name>` (skipped when none is set) | `{name, upstream, previous}` | `REF_UNKNOWN` (branch or upstream) |
+| `branch.fastForward` | write | `{name, to: oid, expect: oid}` | `merge-base --is-ancestor <expect> <to>`; this checkout's branch: `merge --ff-only --end-of-options <to>`; else `update-ref -m "code-git: fast-forward" refs/heads/<name> <to> <expect>` | `{upToDate, undo}` | `REF_UNKNOWN`; `REF_MOVED` (not at `expect`); `BRANCH_CHECKED_OUT` (another checkout); `NOT_FAST_FORWARD`; `CHECKOUT_CONFLICT` |
+| `branch.move` | write | `{name, to: oid, expect: oid, ccOwned?}` | `update-ref -m "code-git: reset" refs/heads/<name> <to> <expect>` | `{undo}` | `REF_UNKNOWN`; `BRANCH_CHECKED_OUT` (any checkout: this one's branch moves with `head.reset`); `CC_OWNED_BRANCH`; `REV_UNKNOWN`; `REF_MOVED` |
+
 ### Paging convention (for ops that list)
 
 An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b`, blobs by `cat-file -s` before reading.
@@ -422,6 +453,13 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `PATH_NOT_IN_COMMIT` | 404 | The path is not a file in that commit |
 | `UNTRACKED_UNDER_PATH` | 409 | A tracked path to discard is now a directory holding untracked or ignored files; `paths` |
 | `BARE_REPO` | 409 | A bare repository (its git dir is the working tree, whatever `core.bare` says): `repo.summary` and every write refuse it |
+| `REF_UNKNOWN` | 404 | A branch, tag or remote branch the op names does not exist |
+| `BRANCH_CHECKED_OUT` | 409 | The branch is checked out where the op may not touch it; `worktree` = that checkout's path |
+| `CC_OWNED_BRANCH` | 409 | A `code-conductor/*` branch without `ccOwned: true`; `branches`, and `head: true` for this checkout's own HEAD |
+| `REF_EXISTS` | 409 | A branch or tag of that name exists |
+| `REF_MOVED` | 409 | The ref is no longer at the op's `expect` |
+| `NOT_FAST_FORWARD` | 409 | The target is not a descendant of the branch |
+| `CHECKOUT_CONFLICT` | 409 | Local changes would be overwritten; `files`, `stderr` |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |
