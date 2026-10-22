@@ -57,7 +57,7 @@ try {
       await page.goto(`${world.url}/?project=diffs`);
       await page.evaluate(() => localStorage.clear());
       await page.goto(`${world.url}/?project=diffs`);
-      await page.getByText('The commit graph is coming').waitFor();
+      await page.getByRole('region', { name: 'Commit graph' }).waitFor();
 
       // 12 (part): a bad ref is refused inline, and no diff opens.
       expectedRefusals = 1;
