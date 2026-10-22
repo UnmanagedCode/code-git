@@ -63,3 +63,24 @@ test('a remote-System project shows its System badge; Refresh reloads the summar
   await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
   await waitFor(() => expect(fetch.count('POST api/ops/repo.summary')).toBe(2));
 });
+
+test('a cancelled refresh keeps the previous summary and shows no error', async () => {
+  let n = 0;
+  stubFetch({
+    'POST api/ops/repo.summary': () => (n++ === 0 ? { ok: true, result: summary() }
+      : new Response(JSON.stringify({ error: 'cancelled', code: 'CANCELLED' }), { status: 409 })),
+  });
+  render(<RepoHeader tab={TAB} />);
+  await screen.findByText('main');
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  await waitFor(() => expect((screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false));
+  expect(n).toBe(2);
+  expect(screen.getByText('main')).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('a failed refresh other than a cancel is shown as an error', async () => {
+  stubFetch({ 'POST api/ops/repo.summary': new Response(JSON.stringify({ error: 'the System of app is unreachable', code: 'SYSTEM_UNREACHABLE' }), { status: 502 }) });
+  render(<RepoHeader tab={TAB} />);
+  expect((await screen.findByRole('alert')).textContent).toContain('the System of app is unreachable');
+});

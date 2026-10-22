@@ -25,6 +25,8 @@ export async function loadSummary(tab: Tab): Promise<void> {
     const summary = await runOp<RepoSummary>('repo.summary', tab);
     put(key, () => ({ summary, loading: false, error: null }));
   } catch (e) {
+    // A cancel the user asked for is not an error: the previous summary stays.
+    if (e instanceof ApiError && e.code === 'CANCELLED') return put(key, (s) => ({ ...s, loading: false }));
     const body = e instanceof ApiError ? (e.body as { detail?: unknown } | undefined) : undefined;
     put(key, (s) => ({
       ...s, loading: false,

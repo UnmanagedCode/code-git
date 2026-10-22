@@ -41,7 +41,7 @@ export function ActivityEntry({ entry, onCancel }: { entry: Entry; onCancel: (id
         <span className="text-muted-foreground">{tabLabel(entry.target)}</span>
         <span className="text-muted-foreground tabular-nums">{running ? `${Math.floor(elapsed / 1000)} s…` : entry.durationMs !== null ? fmtMs(entry.durationMs) : ''}</span>
         {entry.exitCode !== null && <span className="text-muted-foreground">exit {entry.exitCode}</span>}
-        {entry.code && <span className="text-destructive">{entry.code}</span>}
+        {entry.code && entry.status !== 'cancelled' && <span className="text-destructive">{entry.code}</span>}
         <span className="ml-auto flex gap-1">
           {entry.stderr && (
             <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" aria-expanded={open} onClick={() => setOpen(!open)}>

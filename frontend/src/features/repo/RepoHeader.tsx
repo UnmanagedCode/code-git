@@ -67,15 +67,15 @@ export function RepoHeader({ tab }: { tab: Tab }) {
         </>
       )}
       {!summary && loading && <span className="text-sm text-muted-foreground">Loading…</span>}
+      <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="Refresh" disabled={loading} onClick={refresh}>
+        <RefreshCwIcon className={loading ? 'animate-spin' : undefined} />
+      </Button>
       {error && (
         <div className="basis-full text-sm" role="alert">
           <p className="text-destructive">{error.code === 'NOT_A_REPO' ? 'Not a git repository' : error.message}</p>
           {error.detail && <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 font-mono text-xs whitespace-pre-wrap">{error.detail}</pre>}
         </div>
       )}
-      <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="Refresh" disabled={loading} onClick={refresh}>
-        <RefreshCwIcon className={loading ? 'animate-spin' : undefined} />
-      </Button>
     </header>
   );
 }
