@@ -4,9 +4,10 @@ import { entry, json, summary } from '@/test/fixtures';
 import { commit, oid, ref } from '@/test/graphData';
 import { linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
 import {
-  getGraph, graphStore, loadNextPage, loadStats, loadUntil, openGraph, PAGE, refreshGraph, STATS_CHUNK, SUMMARY_CONCURRENCY, watchGraph,
+  getGraph, graphStore, loadNextPage, loadStats, loadUntil, openGraph, PAGE, refreshGraph, STATS_CHUNK, SUMMARY_CONCURRENCY, setGraphClock,
 } from './graph';
 import { updatePrefs } from './graphPrefs';
+import { dispatchTabs } from './tabs';
 import { activityStore } from './useActivity';
 import { summaryStore } from './useRepoSummary';
 
@@ -168,7 +169,6 @@ test('triggers: a finished write on the same project refreshes; a read, another 
   const fetch = stubGraph(world);
   activityStore.set({ entries: [entry({ id: 1, kind: 'write' })], error: null });
   await openGraph(TAB);
-  const stop = watchGraph(TAB);
   const refreshes = () => fetch.count('POST api/ops/graph.refs');
   activityStore.set({ entries: [entry({ id: 1, kind: 'write' }), entry({ id: 2, kind: 'read' }), entry({ id: 3, kind: 'write', target: { project: 'other', worktree: null } })], error: null });
   activityStore.set((s) => ({ ...s, entries: [...s.entries, entry({ id: 4, kind: 'write', status: 'running' })] }));
@@ -180,16 +180,16 @@ test('triggers: a finished write on the same project refreshes; a read, another 
   activityStore.set((s) => ({ ...s }));
   await flush();
   expect(refreshes()).toBe(2);
-  stop();
 });
 
-test('triggers: window focus refreshes at most once per throttle window; a visibility pref change reloads pages without re-reading refs', async () => {
+test('triggers: window focus refreshes the active tab at most once per throttle window; a visibility pref change reloads pages without re-reading refs', async () => {
   const world = linearWorld(5);
   world.refs.refs.push(ref('refs/heads/side', oid(2)));
   const fetch = stubGraph(world);
-  await openGraph(TAB);
+  dispatchTabs({ type: 'open', tab: TAB });
   let now = 10_000;
-  const stop = watchGraph(TAB, () => now);
+  setGraphClock(() => now);
+  await openGraph(TAB);
   window.dispatchEvent(new Event('focus'));
   window.dispatchEvent(new Event('focus'));
   await flush();
@@ -205,20 +205,51 @@ test('triggers: window focus refreshes at most once per throttle window; a visib
   updatePrefs('app', (p) => ({ ...p, pinned: ['refs/heads/main'] }));
   await flush();
   expect(fetch.count('POST api/ops/graph.page')).toBe(2);
-  stop();
+  dispatchTabs({ type: 'close', index: 0 });
+  now += 5000;
   window.dispatchEvent(new Event('focus'));
   await flush();
   expect(fetch.count('POST api/ops/graph.refs')).toBe(3);
 });
 
+test('triggers: a background tab misses no focus refresh: it is marked and refreshed when shown again', async () => {
+  const OTHER = { project: 'app', worktree: 'wt' };
+  const world = linearWorld(3);
+  const fetch = stubGraph(world);
+  dispatchTabs({ type: 'open', tab: TAB });
+  dispatchTabs({ type: 'open', tab: OTHER });
+  setGraphClock(() => 1e9);
+  await openGraph(TAB);
+  const before = fetch.count('POST api/ops/graph.refs');
+  window.dispatchEvent(new Event('focus'));
+  await flush();
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(before);
+  await openGraph(TAB);
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(before + 1);
+  await openGraph(TAB);
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(before + 1);
+});
+
+test('triggers keep running while the graph panel is unmounted (a diff replaces it): a hide still reloads the snapshot', async () => {
+  const world = linearWorld(5);
+  world.refs.refs.push(ref('refs/heads/side', oid(2)));
+  const fetch = stubGraph(world);
+  await openGraph(TAB);
+  // No component is mounted here at all: only openGraph's watcher.
+  updatePrefs('app', (p) => ({ ...p, soloed: ['refs/heads/side'] }));
+  await flush();
+  expect(getGraph(TAB).tips).toEqual([oid(2)]);
+  expect(paramsOf(fetch, 'POST api/ops/graph.page').at(-1)).toMatchObject({ tips: [oid(2)] });
+});
+
 test('triggers ignore a graph that was never opened (its checkout is not a repo)', async () => {
   const fetch = stubGraph(linearWorld(3));
-  const stop = watchGraph(TAB, () => 1e9);
+  dispatchTabs({ type: 'open', tab: TAB });
   window.dispatchEvent(new Event('focus'));
   activityStore.set({ entries: [entry({ id: 5, kind: 'write' })], error: null });
+  updatePrefs('app', (p) => ({ ...p, hidden: ['refs/heads/main'] }));
   await flush();
   expect(fetch.count('POST api/ops/graph.refs')).toBe(0);
-  stop();
 });
 
 test('a failed first load shows the error; a cancelled one is not an error', async () => {

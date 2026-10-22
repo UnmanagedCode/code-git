@@ -50,8 +50,19 @@ export function stubGraph(world: GraphWorld) {
     'POST api/ops/graph.page': (_u: URL, init?: RequestInit) => {
       const p = body(init).params as { tips: string[]; skip: number; limit: number };
       if (world.page) return world.page(p);
-      const items = p.tips.length ? world.commits.slice(p.skip, p.skip + p.limit) : [];
-      return { ok: true, result: { items, nextCursor: p.skip + p.limit < world.commits.length && p.tips.length ? p.skip + p.limit : null } };
+      // As git does: only the commits reachable from the tips, in the world's (topo) order.
+      const byOid = new Map(world.commits.map((c) => [c.oid, c]));
+      const reach = new Set<string>();
+      const queue = p.tips.filter((t) => byOid.has(t));
+      while (queue.length) {
+        const o = queue.pop()!;
+        if (reach.has(o)) continue;
+        reach.add(o);
+        queue.push(...(byOid.get(o)?.parents ?? []).filter((x) => byOid.has(x)));
+      }
+      const all = world.commits.filter((c) => reach.has(c.oid));
+      const items = all.slice(p.skip, p.skip + p.limit);
+      return { ok: true, result: { items, nextCursor: p.skip + p.limit < all.length ? p.skip + p.limit : null } };
     },
     'POST api/ops/graph.stats': (_u: URL, init?: RequestInit) => {
       const oids = (body(init).params as { oids: string[] }).oids;

@@ -108,11 +108,13 @@ Below Tailwind's `lg` (`WIDE_GRAPH_QUERY`, 64rem) the side slots are hidden: the
   1. First show of the tab, once the checkout's own `repo.summary` succeeded (a checkout that is not a repo never loads a graph);
   2. the toolbar's refresh button;
   3. an activity entry of `kind: 'write'` for the same project that has finished and is newer than the last one seen (`watchGraph` reads `activityStore`, which the always-mounted activity panel refetches on every SSE event);
-  4. the window regaining focus or becoming visible, at most once per `FOCUS_THROTTLE_MS` — catches agents committing in cc worktrees;
+  4. the window regaining focus or becoming visible, at most once per `FOCUS_THROTTLE_MS`, for the active tab — catches agents committing in cc worktrees; another open tab is marked and refreshed when it is shown again;
   5. a hide/solo change (re-resolves the tips of the refs already read, no refs re-read).
+  Triggers 3–5 run from the first show until the tab closes, whether or not the graph panel is mounted: a diff replaces it in the center slot, and closing the diff shows the snapshot as the triggers left it.
   Concurrent triggers coalesce: one run in flight plus one queued rerun.
 - **A run**: `graph.refs`, cc's worktree list and the `repo.summary` of every checkout of the project (at most `SUMMARY_CONCURRENCY` at once, into the shared summary store) — on the first show without the own checkout's, which the header has just loaded; then the tips. Unchanged tips: only labels, WIP rows and the layout update. Changed tips: pages are read (`RELOAD_CHUNK` at a time) until as many rows as before are loaded (at least `PAGE`), then swapped in with **one** store update — the old rows stay meanwhile.
 - **Kept across a swap**: the first visible row stays at the same offset (else the first surviving selected row is scrolled to); the selection keeps the rows that still exist.
+- **Kept across a remount** (a diff closed, a tab shown again): the same scroll anchor (`viewMemory`), and the focus goes back to the list when the panel that replaced the graph took it away.
 - **Errors**: a failing `graph.page` (e.g. a tip garbage-collected) triggers one refresh; when the tips did not move, the error stays with **Retry**. A failing refs read shows the error with **Retry**, keeping any rows already shown. A cancel (from the activity panel) is not an error.
 
 ## Lane layout

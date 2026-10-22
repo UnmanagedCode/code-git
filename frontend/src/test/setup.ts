@@ -24,8 +24,9 @@ afterEach(() => {
   resetSummaries();
   resetDiff();
   resetShownPanels();
-  resetGraphPrefs();
+  // The graph's triggers first: they read the prefs.
   resetGraph();
+  resetGraphPrefs();
   resetGraphSelection();
   resetDrag();
   resetJump();

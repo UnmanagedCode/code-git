@@ -4,9 +4,9 @@ import { resolveVisibility } from '@/features/graph/visibility';
 import { ApiError } from '@/lib/api';
 import { listWorktrees, runOp, type Target } from '@/lib/endpoints';
 import { mapLimit } from '@/lib/limit';
-import { getPrefs, graphPrefsStore } from './graphPrefs';
+import { getPrefs, graphPrefsStore, loadPrefs } from './graphPrefs';
 import { createStore, useStore } from './store';
-import { tabKey, type Tab } from './tabs';
+import { tabKey, tabsStore, type Tab } from './tabs';
 import { activityStore } from './useActivity';
 import { loadSummary, summaryStore } from './useRepoSummary';
 
@@ -55,8 +55,38 @@ let epoch = 0;
 const runs = new Map<string, { promise: Promise<void>; again: boolean }>();
 const statsInFlight = new Set<string>();
 const pageLoads = new Map<string, Promise<void>>();
+/** Per opened graph, its refresh triggers' unsubscribe (watchGraph): they run whether or not the panel is mounted. */
+const watchers = new Map<string, () => void>();
+/** Tabs whose graph missed a focus refresh while in the background: refreshed when shown again. */
+const stale = new Set<string>();
+let clock: () => number = Date.now;
+/** Test seam: the clock the focus throttle reads. */
+export const setGraphClock = (f: () => number): void => { clock = f; };
+
+/** Where a graph's list was scrolled to (its first visible row and how far into it), kept across a remount. */
+export interface GraphView { anchor: { id: string; offset: number } | null }
+export const viewMemory = new Map<string, GraphView>();
+
+let openTabs = new Set<string>();
+// A tab that closes stops its graph's triggers.
+tabsStore.subscribe(() => {
+  const now = new Set(tabsStore.get().open.map(tabKey));
+  for (const k of openTabs) {
+    if (now.has(k)) continue;
+    watchers.get(k)?.();
+    watchers.delete(k);
+    stale.delete(k);
+    viewMemory.delete(k);
+  }
+  openTabs = now;
+});
 
 export function resetGraph(): void {
+  for (const stop of watchers.values()) stop();
+  watchers.clear();
+  stale.clear();
+  viewMemory.clear();
+  clock = Date.now;
   epoch++;
   runs.clear();
   statsInFlight.clear();
@@ -77,6 +107,9 @@ class ResetError extends Error {}
 
 /** First show of a checkout's graph: loads it unless it already has data. */
 export function openGraph(tab: Tab): Promise<void> {
+  const key = tabKey(tab);
+  if (!watchers.has(key)) watchers.set(key, watchGraph(tab));
+  if (stale.delete(key)) return refreshGraph(tab, 'focus');
   return getGraph(tab).status === 'idle' ? refreshGraph(tab, 'open') : Promise.resolve();
 }
 
@@ -266,13 +299,14 @@ export async function loadStats(tab: Tab, oids: string[]): Promise<void> {
 }
 
 /**
- * Refresh triggers besides the first show and the Refresh button: a finished write on the same project (the activity
- * store, refetched on every SSE event by the always-mounted activity panel) and the window regaining focus or
- * visibility (throttled), which catches agents committing in other checkouts. No timer.
+ * Refresh triggers besides the first show and the Refresh button, started by openGraph for as long as the tab is
+ * open — the panel may be unmounted meanwhile (a diff replaces it): a finished write on the same project (the activity
+ * store, refetched on every SSE event by the always-mounted activity panel), the window regaining focus or visibility
+ * (throttled; a background tab is refreshed when shown again), which catches agents committing in other checkouts,
+ * and a hide/solo change. No timer.
  */
-export function watchGraph(tab: Tab, now: () => number = Date.now): () => void {
-  // Triggers act only on a graph that was opened (its checkout's summary loaded).
-  const opened = () => getGraph(tab).status !== 'idle';
+function watchGraph(tab: Tab): () => void {
+  const key = tabKey(tab);
   const seen = () => Math.max(0, ...activityStore.get().entries.filter((e) => e.target.project === tab.project).map((e) => e.id));
   let lastId = seen();
   const unsubActivity = activityStore.subscribe(() => {
@@ -281,12 +315,14 @@ export function watchGraph(tab: Tab, now: () => number = Date.now): () => void {
     if (!done.length) return;
     // Advance past finished entries only, so a write still running is seen when it ends.
     lastId = Math.max(...done.map((e) => e.id));
-    if (opened()) void refreshGraph(tab, 'write');
+    void refreshGraph(tab, 'write');
   });
   let lastFocus = -Infinity;
   const onFocus = () => {
-    if (document.visibilityState === 'hidden' || !opened()) return;
-    const t = now();
+    if (document.visibilityState === 'hidden') return;
+    const active = tabsStore.get().open[tabsStore.get().active];
+    if (!active || tabKey(active) !== key) { stale.add(key); return; }
+    const t = clock();
     if (t - lastFocus < FOCUS_THROTTLE_MS) return;
     lastFocus = t;
     void refreshGraph(tab, 'focus');
@@ -295,7 +331,8 @@ export function watchGraph(tab: Tab, now: () => number = Date.now): () => void {
   document.addEventListener('visibilitychange', onFocus);
   // A visibility pref change can move the tips: re-resolve them.
   const visKey = () => {
-    const p = getPrefs(tab.project);
+    // Read without storing: this runs inside the prefs store's own notification.
+    const p = graphPrefsStore.get().get(tab.project) ?? loadPrefs(tab.project);
     return JSON.stringify([p.hidden, p.hiddenRemotes, p.hiddenSections, p.soloed, p.soloedRemotes, p.soloedSections]);
   };
   let lastVis = visKey();
@@ -303,7 +340,7 @@ export function watchGraph(tab: Tab, now: () => number = Date.now): () => void {
     const next = visKey();
     if (next === lastVis) return;
     lastVis = next;
-    if (opened()) void refreshGraph(tab, 'prefs');
+    void refreshGraph(tab, 'prefs');
   });
   return () => {
     unsubActivity();
@@ -313,7 +350,7 @@ export function watchGraph(tab: Tab, now: () => number = Date.now): () => void {
   };
 }
 
-/** A checkout's graph data, read only (the graph panel opens and watches it). */
+/** A checkout's graph data, read only (the graph panel opens it). */
 export const useGraphData = (tab: Tab): GraphData => useStore(graphStore).get(tabKey(tab)) ?? EMPTY_GRAPH;
 
 /** A checkout's graph data; opens it once the own summary loaded (a failed summary — not a repo — loads nothing). */
@@ -323,6 +360,5 @@ export function useGraph(tab: Tab): GraphData {
   useEffect(() => {
     if (summaryOk) void openGraph(tab);
   }, [key, summaryOk]); // keyed by tabKey: `tab` is a fresh object on every render
-  useEffect(() => watchGraph(tab), [key]);
   return useStore(graphStore).get(key) ?? EMPTY_GRAPH;
 }

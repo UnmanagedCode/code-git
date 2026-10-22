@@ -9,7 +9,7 @@ import { setCssPx } from '@/lib/cssVars';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
 import { anchorOf, ContextMenuHost, openContextMenu } from '@/shell/ContextMenuHost';
-import { loadNextPage, loadStats, loadUntil, refreshGraph, useGraph, type SeekResult } from '@/state/graph';
+import { loadNextPage, loadStats, loadUntil, refreshGraph, useGraph, viewMemory, type SeekResult } from '@/state/graph';
 import { useGraphPrefs } from '@/state/graphPrefs';
 import { dispatchSelection, getSelection, useGraphSelection } from '@/state/graphSelection';
 import { useStore } from '@/state/store';
@@ -134,13 +134,20 @@ function GraphView({ tab }: { tab: Tab }) {
     if (win.current) setCssPx(win.current, '--graph-offset', start * ROW_H);
   }, [rows.length, start]);
 
-  // Keep the first visible row where it was across a reload of the rows (docs/graph.md → Snapshot and refresh).
+  // Keep the first visible row where it was across a reload of the rows (docs/graph.md → Snapshot and refresh), and
+  // across a remount: a diff replacing the graph, or another tab, unmounts it.
   const anchor = useRef<{ id: string; offset: number } | null>(null);
   const shownGeneration = useRef(data.generation);
+  const mounted = useRef(false);
   useLayoutEffect(() => {
     const el = body.current;
     if (!el) return;
-    if (shownGeneration.current !== data.generation) {
+    const remembered = !mounted.current ? viewMemory.get(key) : undefined;
+    if (!mounted.current) {
+      mounted.current = true;
+      if (remembered) anchor.current = remembered.anchor;
+    }
+    if (remembered || shownGeneration.current !== data.generation) {
       shownGeneration.current = data.generation;
       const a = anchor.current;
       const at = a ? index.get(a.id) : undefined;
@@ -148,9 +155,12 @@ function GraphView({ tab }: { tab: Tab }) {
       if (a && at !== undefined) el.scrollTop = at * ROW_H + a.offset;
       else if (sel1 !== undefined) el.scrollTop = sel1 * ROW_H;
       readView();
+      // The panel that replaced the graph took the focus with it: give it back to the list.
+      if (remembered && (!document.activeElement || document.activeElement === document.body)) el.focus({ preventScroll: true });
     }
     const first = Math.floor(el.scrollTop / ROW_H);
     anchor.current = rows[first] ? { id: rows[first].id, offset: el.scrollTop - first * ROW_H } : null;
+    viewMemory.set(key, { anchor: anchor.current });
   });
 
   // Rows gone after a reload leave the selection.
