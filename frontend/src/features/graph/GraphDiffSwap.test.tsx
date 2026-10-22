@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { closeDiff, openDiff } from '@/features/diff/openDiff';
 import { Shell } from '@/shell/Shell';
 import { updatePrefs } from '@/state/graphPrefs';
@@ -68,4 +68,27 @@ test('a ref clicked while a diff is open closes the diff and the graph jumps to 
   expect(screen.queryByRole('region', { name: 'Diff' })).toBeNull();
   await waitFor(() => expect(getSelection(TAB).ids).toEqual([oid(200)]));
   expect(rowEl(oid(200))).not.toBeNull();
+});
+
+test('closing a diff keeps the search the user was in: its query, its mode and its matches', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const world = linearWorld(20);
+    world.search = ({ mode, query }) => ({ matches: mode === 'path' && query === 'src/a.ts' ? [oid(17)] : [], truncated: false });
+    await shell(world);
+    fireEvent.click(screen.getByRole('button', { name: 'Path' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search commits' }), { target: { value: 'src/a.ts' } });
+    await act(async () => { vi.advanceTimersByTime(300); });
+    await waitFor(() => expect(rowEl(oid(17))!.hasAttribute('data-match')).toBe(true));
+    act(() => openDiff(TAB, { kind: 'commit', rev: oid(17) }));
+    await screen.findByRole('region', { name: 'Diff' });
+    act(() => closeDiff(TAB));
+    const box = await screen.findByRole('textbox', { name: 'Search commits' });
+    expect((box as HTMLInputElement).value).toBe('src/a.ts');
+    expect(screen.getByRole('button', { name: 'Path' }).getAttribute('aria-pressed')).toBe('true');
+    await act(async () => { vi.advanceTimersByTime(300); });
+    await waitFor(() => expect(rowEl(oid(17))!.hasAttribute('data-match')).toBe(true));
+  } finally {
+    vi.useRealTimers();
+  }
 });

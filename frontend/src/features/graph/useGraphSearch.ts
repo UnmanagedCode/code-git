@@ -24,9 +24,9 @@ export interface GraphSearch {
  * The search box's state: git answers (graph.search over the snapshot's tips), debounced; a newer query aborts the
  * request of the previous one, which cancels its read.
  */
-export function useGraphSearch(tab: Tab, tips: string[], tipsKey: string): GraphSearch {
-  const [query, setQuery] = useState('');
-  const [mode, setMode] = useState<SearchMode>('commits');
+export function useGraphSearch(tab: Tab, tips: string[], tipsKey: string, initial?: { query: string; mode: SearchMode }): GraphSearch {
+  const [query, setQuery] = useState(initial?.query ?? '');
+  const [mode, setMode] = useState<SearchMode>(initial?.mode ?? 'commits');
   const [result, setResult] = useState<{ matches: ReadonlySet<string>; truncated: boolean } | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);

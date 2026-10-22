@@ -63,8 +63,11 @@ let clock: () => number = Date.now;
 /** Test seam: the clock the focus throttle reads. */
 export const setGraphClock = (f: () => number): void => { clock = f; };
 
-/** Where a graph's list was scrolled to (its first visible row and how far into it), kept across a remount. */
-export interface GraphView { anchor: { id: string; offset: number } | null }
+/**
+ * What a graph panel restores when it is mounted again (a diff closed, a tab shown again): where its list was scrolled
+ * to (its first visible row and how far into it) and the search the user was in.
+ */
+export interface GraphView { anchor: { id: string; offset: number } | null; search?: { query: string; mode: 'commits' | 'path' } }
 export const viewMemory = new Map<string, GraphView>();
 
 let openTabs = new Set<string>();

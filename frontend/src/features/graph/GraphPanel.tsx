@@ -75,7 +75,10 @@ function GraphView({ tab }: { tab: Tab }) {
   const sel = useGraphSelection(tab);
   const selected = useMemo(() => new Set(sel.ids), [sel.ids]);
   const focusIndex = sel.focus !== null ? index.get(sel.focus) ?? -1 : -1;
-  const search = useGraphSearch(tab, data.tips, data.tipsKey);
+  const search = useGraphSearch(tab, data.tips, data.tipsKey, viewMemory.get(key)?.search);
+  useEffect(() => {
+    viewMemory.set(key, { anchor: viewMemory.get(key)?.anchor ?? null, search: { query: search.query, mode: search.mode } });
+  }, [search.query, search.mode]);
   const [hover, setHover] = useState<string | null>(null);
   const dimSet = hover ? ancestorsWithin(hover, parents) : null;
   const columns = shownColumns(prefs);
@@ -160,7 +163,7 @@ function GraphView({ tab }: { tab: Tab }) {
     }
     const first = Math.floor(el.scrollTop / ROW_H);
     anchor.current = rows[first] ? { id: rows[first].id, offset: el.scrollTop - first * ROW_H } : null;
-    viewMemory.set(key, { anchor: anchor.current });
+    viewMemory.set(key, { ...viewMemory.get(key), anchor: anchor.current });
   });
 
   // Rows gone after a reload leave the selection.
