@@ -34,20 +34,32 @@ export function ownWorktree(head: RefsResult['head'], worktrees: GitWorktree[]):
 
 /** Labels per commit oid for the visible refs, HEAD, stashes and the other checkouts' HEADs. */
 export function labelsByOid(refs: RefsResult, vis: Visibility, checkouts: Checkout[]): Map<string, Label[]> {
+  // Linear in the number of refs: one list per commit, appended to; remote twins found through one index.
   const out = new Map<string, Label[]>();
-  const add = (oid: string | null, l: Label) => { if (oid) out.set(oid, [...(out.get(oid) ?? []), l]); };
+  const add = (oid: string | null, l: Label) => {
+    if (!oid) return;
+    const list = out.get(oid);
+    if (list) list.push(l); else out.set(oid, [l]);
+  };
   const shown = refs.refs.filter((r) => vis.visible.has(r.name) && r.oid);
   const remotes = shown.filter((r) => r.kind === 'remote');
+  const twinsBy = new Map<string, Ref[]>(); // `oid\0branch` → remote refs
+  for (const x of remotes) {
+    const k = `${x.oid}\0${branchOf(x)}`;
+    const list = twinsBy.get(k);
+    if (list) list.push(x); else twinsBy.set(k, [x]);
+  }
   const merged = new Set<string>();
-  for (const r of shown.filter((x) => x.kind === 'local')) {
-    const twins = remotes.filter((x) => x.oid === r.oid && branchOf(x) === r.short);
-    twins.forEach((x) => merged.add(x.name));
+  for (const r of shown) {
+    if (r.kind !== 'local') continue;
+    const twins = twinsBy.get(`${r.oid}\0${r.short}`) ?? [];
+    for (const x of twins) merged.add(x.name);
     const isHead = r.name === refs.head.branch;
     add(r.oid, isHead ? { kind: 'head', text: r.short, ref: r, remotes: twins } : { kind: 'local', text: r.short, ref: r, remotes: twins });
   }
-  if (refs.head.detached && (!vis.soloActive)) add(refs.head.oid, { kind: 'head', text: 'HEAD', ref: null, remotes: [] });
+  if (refs.head.detached && !vis.soloActive) add(refs.head.oid, { kind: 'head', text: 'HEAD', ref: null, remotes: [] });
   for (const r of remotes) if (!merged.has(r.name)) add(r.oid, { kind: 'remote', text: r.short, ref: r });
-  for (const r of shown.filter((x) => x.kind === 'tag')) add(r.oid, { kind: 'tag', text: r.short, ref: r });
+  for (const r of shown) if (r.kind === 'tag') add(r.oid, { kind: 'tag', text: r.short, ref: r });
   if (vis.stashesVisible) for (const s of refs.stashes) add(s.oid, { kind: 'stash', text: s.selector });
   const own = refs.worktrees ? ownWorktree(refs.head, refs.worktrees) : null;
   for (const w of refs.worktrees ?? []) {
@@ -55,8 +67,8 @@ export function labelsByOid(refs: RefsResult, vis: Visibility, checkouts: Checko
     if (w.branch ? !vis.visible.has(w.branch) : vis.soloActive) continue;
     add(w.head, { kind: 'worktree', text: `in ${worktreeName(w, checkouts).name}`, worktree: w });
   }
-  // Within a commit: HEAD first, then branches, remotes, tags, stashes, worktrees.
+  // Within a commit: HEAD first, then branches, remotes, tags, stashes, worktrees (a stable sort keeps ref order).
   const rank = { head: 0, local: 1, remote: 2, tag: 3, stash: 4, worktree: 5 } as const;
-  for (const [k, list] of out) out.set(k, [...list].sort((a, b) => rank[a.kind] - rank[b.kind]));
+  for (const list of out.values()) list.sort((a, b) => rank[a.kind] - rank[b.kind]);
   return out;
 }
