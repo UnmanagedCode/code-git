@@ -42,7 +42,7 @@ export async function discardAll(tab: Tab, unstaged: DiffFile[]): Promise<void> 
   if (!tracked.length && !untracked.length) return;
   const ok = await confirm({
     title: 'Discard all unstaged changes?',
-    body: `${tracked.length} tracked ${tracked.length === 1 ? 'file loses its' : 'files lose their'} unstaged changes${untracked.length ? ', and these untracked files are deleted' : ''}. Staged changes and ignored files stay.`,
+    body: `${tracked.length} tracked ${tracked.length === 1 ? 'file loses its' : 'files lose their'} unstaged changes${untracked.length ? `, and ${untracked.length === 1 ? 'this untracked file is' : 'these untracked files are'} deleted` : ''}. Staged changes and ignored files stay.`,
     ...(untracked.length ? { items: untracked, count: untracked.length } : {}),
     irreversible: true,
     confirmLabel: 'Discard all',

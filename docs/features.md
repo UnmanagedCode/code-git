@@ -68,7 +68,7 @@ Right slot (below `lg`: the **Changes (n)** dialog from the repo header). Stage,
 
 | Part | Behaviour |
 |---|---|
-| Header | **Changes**, **Refresh changes** (↻), ⋮ menu: **Refresh**, **Apply patch…** |
+| Header | **Changes**, **Reload changes** (↻), ⋮ menu: **Refresh**, **Apply patch…** |
 | Detached banner | On a detached HEAD: "Detached HEAD at `<oid10>`. A commit made here is on no branch." |
 | Error | The last failed op's message and git's stderr (hook output) as text; × dismisses it |
 | **Unstaged Files (n)** | Worktree changes and untracked files (`?`). Header: **Discard all…**, **Stage all**. Row hover: discard (↶, not on a conflicted file), stage (+), ⋮ |

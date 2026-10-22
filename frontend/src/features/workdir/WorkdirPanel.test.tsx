@@ -185,7 +185,7 @@ test('a commit template pre-fills the box once; the unedited template cannot be 
   // Cleared by the user: stays cleared (the template is read once per tab).
   await userEvent.clear(summaryBox());
   await userEvent.clear(descBox());
-  await userEvent.click(screen.getByRole('button', { name: 'Refresh changes' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Reload changes' }));
   await waitFor(() => expect(w.fetch.count('POST api/ops/commit.template')).toBe(1));
   expect(summaryBox().value).toBe('');
 });

@@ -39,7 +39,7 @@ function Row({ tab, file, section, busy }: { tab: Tab; file: DiffFile; section: 
         {file.status}
       </span>
       <span className="min-w-0 flex-1 truncate font-mono" title={fileLabel(file)}>{fileLabel(file)}</span>
-      <span className="flex shrink-0 items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+      <span className="flex shrink-0 items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100 pointer-coarse:opacity-100">
         {section === 'unstaged' ? (
           <>
             {canDiscard(file) && (
@@ -101,15 +101,15 @@ export function FileSection({ tab, section, files, busy }: { tab: Tab; section: 
   const label = `${TITLE[section]} (${files.length})`;
   return (
     <section aria-label={TITLE[section]} className="border-b">
-      <div className="flex items-center gap-1 px-2 py-1">
-        <h3 className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground uppercase">{label}</h3>
+      <div className="flex flex-wrap items-center gap-x-1 px-2 py-1">
+        <h3 className="flex-1 text-xs font-semibold whitespace-nowrap text-muted-foreground uppercase">{label}</h3>
         {section === 'unstaged' ? (
           <>
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" disabled={busy || !files.some(canDiscard)} onClick={() => void discardAll(tab, files)}>Discard all…</Button>
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" disabled={busy || !files.length} onClick={() => void stageAll(tab)}>Stage all</Button>
+            <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" disabled={busy || !files.some(canDiscard)} onClick={() => void discardAll(tab, files)}>Discard all…</Button>
+            <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" disabled={busy || !files.length} onClick={() => void stageAll(tab)}>Stage all</Button>
           </>
         ) : (
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" disabled={busy || !files.length} onClick={() => void unstageAll(tab)}>Unstage all</Button>
+          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" disabled={busy || !files.length} onClick={() => void unstageAll(tab)}>Unstage all</Button>
         )}
       </div>
       {files.length ? (

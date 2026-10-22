@@ -59,7 +59,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 | `npm test` | typecheck, then backend, then UI tests |
 | `npm run test:server` | `node --test "tests/*.test.js"` |
 | `npm run test:ui` | `vitest run --config frontend/vitest.config.ts` |
-| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` | screenshots / golden path / the diff path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
+| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` | screenshots / golden path / the diff path / the staging path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
 | `node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" baseline` | mutation trust gates ([harness/mutation/README.md](harness/mutation/README.md)) |
 
 ## Known limitations
@@ -72,8 +72,12 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **The graph refreshes on its own only after code-git's own writes and when the window regains focus** (no polling): a commit made elsewhere shows on focus or Refresh.
 - **Search pages forward** to reach a match that is not loaded yet, a bounded number of pages at a time.
 - **Worktree labels need git ≥ 2.36 and commit co-authors git ≥ 2.22** on the project's System ([docs/graph.md → Git versions](docs/graph.md#git-versions)).
-- **Below the `lg` breakpoint the side panels are dialogs**: refs, Compare and commit details open from the graph's toolbar or a commit click instead of beside the graph.
+- **Below the `lg` breakpoint the side panels are dialogs**: refs, Compare and commit details open from the graph's toolbar or a commit click instead of beside the graph, and the Changes panel from the header's **Changes (n)**.
 - **Untracked files are not in a work-in-progress patch** (`git diff` leaves them out).
 - **No image or binary preview** in the diff, and **File view has no blame**.
-- **Non-UTF-8 text shows replacement characters** in the diff.
+- **Non-UTF-8 text shows replacement characters** in the diff (hunk and line staging still writes the exact bytes).
+- **The Changes lists do not watch the disk**: they reload on first show, on Reload / Refresh and after every op.
+- **Hunk and line staging is for modified (`M`) text files only**, with whitespace shown; other files are staged whole.
+- **A patch applies to the working tree or the index, never both at once** (`git apply --index` writes through untracked symlinks); apply, then stage.
+- **Ignore writes the root `.gitignore`** only, never `.git/info/exclude`.
 - **Writes are not cancellable by default**: an op opts in only where aborting mid-command is safe; a closed browser tab does not abort a write.

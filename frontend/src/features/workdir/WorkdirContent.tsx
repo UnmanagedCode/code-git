@@ -17,12 +17,15 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
   const state = workdirOf(tab);
   const { summary } = useRepoSummary(tab);
   const [applyOpen, setApplyOpen] = useState(false);
-  useEffect(() => { void ensureWorkdir(tab); }, [tabKey(tab)]);
+  // Only a checkout whose summary loaded is a repository worth listing (a failed summary already says why).
+  const ready = !!summary;
+  useEffect(() => { if (ready) void ensureWorkdir(tab); }, [tabKey(tab), ready]);
+  if (!ready) return null;
   return (
     <div className="flex flex-col text-sm" aria-busy={state.busy || state.loading}>
       <div className="flex items-center gap-1 border-b px-3 py-1.5">
         <h2 className="flex-1 text-sm font-semibold">Changes</h2>
-        <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Refresh changes" disabled={state.loading} onClick={() => void refreshWorkdir(tab)}>
+        <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Reload changes" disabled={state.loading} onClick={() => void refreshWorkdir(tab)}>
           <RefreshCwIcon className={state.loading ? 'animate-spin' : undefined} />
         </Button>
         <DropdownMenu>

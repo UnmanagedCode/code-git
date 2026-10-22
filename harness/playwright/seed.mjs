@@ -11,6 +11,10 @@ import { bareRemote, makeRepo } from '../../tests/_git.js';
 const { bootServer } = await import(BROWSER);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+/** The `stage` project's src/app.js: committed, and as edited in the worktree (line 3 changed; line 25 changed + a line added). */
+export const STAGE_BASE = Array.from({ length: 30 }, (_, i) => `const l${i + 1} = ${i + 1};`);
+export const STAGE_EDITED = STAGE_BASE.flatMap((l, i) => (i === 2 ? ['const l3 = 300;'] : i === 24 ? ['const l25 = 2500;', 'const extra = true;'] : [l]));
+
 export async function seed() {
   const cleanups = [];
   const t = { after: (fn) => cleanups.push(fn) };
@@ -39,6 +43,24 @@ export async function seed() {
     // diffs: every diff source and file state, under a hostile .git/config (tests/_diffRepo.js).
     const diffs = diffRepo(t);
 
+    // stage: the staging path (staging.mjs). src/app.js has two separate changes (hunks), plus an untracked file, a
+    // deleted file, and a commit template.
+    const stage = makeRepo(t, { name: 'stage' });
+    stage.commit({ 'src/app.js': STAGE_BASE.join('\n') + '\n', 'old.txt': 'old\n' }, 'initial');
+    stage.write('src/app.js', STAGE_EDITED.join('\n') + '\n');
+    stage.write('notes.md', '# notes\n');
+    fs.rmSync(path.join(stage.dir, 'old.txt'));
+    const template = path.join(stage.root, 'gitmessage');
+    fs.writeFileSync(template, '# Summary in the imperative\nfeat:\n\n# Why?\n');
+    stage.git('config', 'commit.template', template);
+
+    // detached: HEAD detached at the second commit.
+    const detached = makeRepo(t, { name: 'detached' });
+    detached.commit({ 'a.txt': 'a\n' }, 'one');
+    detached.commit({ 'a.txt': 'b\n' }, 'two');
+    detached.git('checkout', '-q', '--detach');
+    detached.write('a.txt', 'c\n');
+
     const plain = path.join(app.root, 'plain');
     fs.mkdirSync(plain);
     const cc = await fakeCc({
@@ -50,6 +72,8 @@ export async function seed() {
         gone: { dir: '/nowhere', workspace: 'Ops', systemUnreachable: "system 'ssh' (build-01) could not be reached: connection refused" },
         notes: { dir: plain, workspace: null, isGitRepo: true },
         diffs: { dir: diffs.repo.dir, workspace: 'Web', isGitRepo: true },
+        stage: { dir: stage.dir, workspace: 'Web', isGitRepo: true },
+        detached: { dir: detached.dir, workspace: 'Web', isGitRepo: true },
       },
     });
     cleanups.push(() => cc.close());
@@ -58,6 +82,7 @@ export async function seed() {
     return {
       url: srv.url,
       diffs,
+      stage,
       /** While on, every exec is held by the fake cc (until cancelled or released). */
       hold(on) { cc.state.execHook = on ? () => 'hold' : null; },
       nextHeld: () => cc.nextHeld(),
