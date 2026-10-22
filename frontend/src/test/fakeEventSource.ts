@@ -1,6 +1,6 @@
 import { setEventSourceFactory } from '@/lib/sse';
 
-/** A controllable EventSource: tests call `emit`. */
+/** A controllable EventSource: tests call `emit` and `reopen`. */
 export class FakeEventSource {
   static last: FakeEventSource | null = null;
   closed = false;
@@ -11,6 +11,8 @@ export class FakeEventSource {
   }
   close() { this.closed = true; }
   emit(data: unknown) { this.listeners.get('activity')?.forEach((f) => f(new MessageEvent('activity', { data: JSON.stringify(data) }))); }
+  /** The connection (re)opened. */
+  reopen() { this.listeners.get('open')?.forEach((f) => f(new Event('open'))); }
 }
 
 export function installFakeEventSource(): void {

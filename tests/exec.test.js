@@ -4,6 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { CC_EXEC_CAPS, exec } from '../src/conductor/exec.js';
+import { RETRY_DELAYS_MS } from '../src/conductor/fetch.js';
 import { LIMITS } from '../src/git/limits.js';
 import { fakeCc } from './_fakeCc.js';
 import { makeRepo } from './_git.js';
@@ -106,6 +107,25 @@ test('a connection failure is retried only when retry is on', async (t) => {
   resets = 1;
   await rejectsWith(exec({ project: 'app', worktree: null }, ['git', 'status'], OPTS), 'CONDUCTOR_UNAVAILABLE');
   assert.equal(cc.state.execCalls.length, 3);
+});
+
+test('retries stop after the last delay: a persistent connection failure is CONDUCTOR_UNAVAILABLE after 1 + RETRY_DELAYS_MS.length attempts', async (t) => {
+  const { cc } = await world(t);
+  cc.state.execHook = () => 'reset';
+  await rejectsWith(exec({ project: 'app', worktree: null }, ['git', 'status'], { ...OPTS, retry: true }), 'CONDUCTOR_UNAVAILABLE');
+  assert.equal(cc.state.execCalls.length, 1 + RETRY_DELAYS_MS.length);
+});
+
+test('cc never answering → CONDUCTOR_UNAVAILABLE once the deadline (past cc\'s own) passes, and the request is dropped', async (t) => {
+  const { cc } = await world(t);
+  cc.state.execHook = () => 'hold';
+  const started = Date.now();
+  const p = exec({ project: 'app', worktree: null }, ['git', 'status'], { timeoutMs: 100, maxOutputBytes: 1000 });
+  const held = await cc.nextHeld();
+  await rejectsWith(p, 'CONDUCTOR_UNAVAILABLE');
+  assert.ok(Date.now() - started >= 190, 'the deadline is timeoutMs plus slack, not timeoutMs');
+  await held.closed;
+  assert.equal(held.disconnected, true);
 });
 
 test('a failure answer from cc is never retried', async (t) => {

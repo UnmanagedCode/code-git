@@ -106,3 +106,28 @@ test('a request the HTTP parser rejects is answered 400 with the CSP', async (t)
   assert.ok(raw.includes(`Content-Security-Policy: ${CSP}\r\n`));
   assert.ok(raw.includes('X-Content-Type-Options: nosniff\r\n'));
 });
+
+test('the JSON check accepts application/json with parameters, any case, and refuses look-alikes', async (t) => {
+  const { call } = await startApp(t);
+  const post = (type) => call('POST', '/api/activity/1/cancel', '{}', { headers: { 'content-type': type } });
+  for (const type of ['application/json', 'application/json; charset=utf-8', 'APPLICATION/JSON', 'application/json ;charset=utf-8']) {
+    assert.equal((await post(type)).body.code, 'ACTIVITY_UNKNOWN', type);
+  }
+  for (const type of ['application/jsonp', 'application/json-patch+json', 'text/json', 'text/plain; application/json', 'multipart/form-data']) {
+    const r = await post(type);
+    assert.deepEqual([r.status, r.body.code], [415, 'UNSUPPORTED_MEDIA_TYPE'], type);
+  }
+});
+
+test('an oversized request header is answered 431 with the CSP', async (t) => {
+  const { server } = await startApp(t);
+  const raw = await new Promise((resolve, reject) => {
+    const s = net.connect(server.address().port, '127.0.0.1', () => s.write(`GET / HTTP/1.1\r\nHost: x\r\nX-Big: ${'a'.repeat(70_000)}\r\n\r\n`));
+    let buf = '';
+    s.on('data', (d) => { buf += d; });
+    s.on('end', () => resolve(buf));
+    s.on('error', (e) => (buf ? resolve(buf) : reject(e)));
+  });
+  assert.match(raw, /^HTTP\/1\.1 431 /);
+  assert.ok(raw.includes(`Content-Security-Policy: ${CSP}\r\n`));
+});

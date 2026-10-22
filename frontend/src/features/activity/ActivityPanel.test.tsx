@@ -105,3 +105,30 @@ test('the panel collapses', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Activity' }));
   expect(screen.queryByText('visible.op')).toBeNull();
 });
+
+test('a reconnect refetches (events may have been missed); unmounting closes the stream', async () => {
+  const fetch = stubFetch({ 'GET api/activity': { entries: [entry({ id: 1 })] } });
+  const { unmount } = render(<ActivityPanel tab={null} />);
+  await screen.findByText('exit 0');
+  const before = fetch.count('GET api/activity');
+  const source = FakeEventSource.last!;
+  act(() => source.reopen());
+  await waitFor(() => expect(fetch.count('GET api/activity')).toBe(before + 1));
+  unmount();
+  expect(source.closed).toBe(true);
+});
+
+test('losing the cancel race (NOT_RUNNING) is silent; any other cancel failure is shown', async () => {
+  let answer = { status: 409, code: 'NOT_RUNNING' };
+  stubFetch({
+    'GET api/activity': { entries: [entry({ id: 7, status: 'running', exitCode: null, durationMs: null })] },
+    'POST api/activity/7/cancel': () => new Response(JSON.stringify({ error: `refused ${answer.code}`, code: answer.code }), { status: answer.status }),
+  });
+  render(<ActivityPanel tab={null} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy());
+  expect(screen.queryByText(/Cancel failed/)).toBeNull();
+  answer = { status: 503, code: 'CONDUCTOR_UNAVAILABLE' };
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(await screen.findByText(/Cancel failed: refused CONDUCTOR_UNAVAILABLE/)).toBeTruthy();
+});

@@ -230,3 +230,16 @@ test('an unknown API path is a JSON 404, never the UI', async (t) => {
   const r = await call('GET', '/api/nope');
   assert.deepEqual([r.status, r.body.code], [404, 'NOT_FOUND']);
 });
+
+test('cc answering without a usable body is 503 CONDUCTOR_UNAVAILABLE, never a crash', async (t) => {
+  const w = await world(t);
+  const prev = process.env.CONDUCTOR_URL;
+  process.env.CONDUCTOR_URL = `${w.cc.url}/not-cc`; // the fake answers 404 '{}' there
+  t.after(() => { process.env.CONDUCTOR_URL = prev; });
+  for (const p of ['/api/repos', '/api/repos/app/worktrees']) {
+    const r = await w.call('GET', p);
+    assert.deepEqual([r.status, r.body.code], [503, 'CONDUCTOR_UNAVAILABLE'], p);
+  }
+  const op = await w.call('POST', '/api/ops/repo.summary', { target: APP });
+  assert.deepEqual([op.status, op.body.code], [503, 'CONDUCTOR_UNAVAILABLE']);
+});

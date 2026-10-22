@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createActivityLog } from '../src/activity/log.js';
+import { LIMITS } from '../src/git/limits.js';
 import { createLocks } from '../src/git/locks.js';
 import { BASE_ARGS, runGit } from '../src/git/runner.js';
 import { ctxFor } from './_ctx.js';
@@ -103,4 +104,33 @@ test('writes on one project are serialized; reads and other projects are not hel
   heldA.release();
   await Promise.all([a, b, c, d]);
   assert.deepEqual(cc.state.execCalls.map((x) => x.env.CG_TAG), ['A', 'C', 'D', 'B']);
+});
+
+test('a read is retried after a dropped connection; a write never is', async (t) => {
+  const { cc } = await world(t);
+  let resets = 1;
+  cc.state.execHook = () => (resets-- > 0 ? 'reset' : undefined);
+  const r = await runGit(ctxFor(APP, 'read'), ['status']);
+  assert.equal(r.exitCode, 0);
+  assert.equal(cc.state.execCalls.length, 2);
+  resets = 1;
+  await assert.rejects(runGit(ctxFor(APP, 'write'), ['status']), (e) => e.code === 'CONDUCTOR_UNAVAILABLE');
+  assert.equal(cc.state.execCalls.length, 3);
+});
+
+test('per-kind limits are sent unless the op overrides them', async (t) => {
+  const { cc } = await world(t);
+  await runGit(ctxFor(APP, 'read'), ['status']);
+  await runGit(ctxFor(APP, 'write'), ['status']);
+  await runGit(ctxFor(APP, 'read'), ['status'], { timeoutMs: 1234, maxOutputBytes: 5678 });
+  const [read, write, custom] = cc.state.execCalls;
+  assert.deepEqual([read.timeoutMs, read.maxOutputBytes], [LIMITS.read.timeoutMs, LIMITS.read.maxOutputBytes]);
+  assert.deepEqual([write.timeoutMs, write.maxOutputBytes], [LIMITS.write.timeoutMs, LIMITS.write.maxOutputBytes]);
+  assert.deepEqual([custom.timeoutMs, custom.maxOutputBytes], [1234, 5678]);
+});
+
+test('stdin reaches git as bytes', async (t) => {
+  await world(t);
+  const r = await runGit(ctxFor(APP, 'write'), ['hash-object', '--stdin'], { stdin: 'hello\n' });
+  assert.equal(r.stdout.toString().trim(), 'ce013625030ba8dba906f756967f9e9ca394464a');
 });
