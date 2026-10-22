@@ -68,6 +68,21 @@ test('a revision that names no commit → REV_UNKNOWN (404), for every user-type
   await assert.rejects(files({ kind: 'commits', oids: ['f'.repeat(40)] }), refused('REV_UNKNOWN'));
 });
 
+test('a revision rev-parse --verify fails on with exit 128 (HEAD@{999}) is REV_UNKNOWN, not GIT_FAILED; not-a-repo stays GIT_FAILED', async (t) => {
+  const { cc, repo } = await world(t);
+  for (const source of [commit('HEAD@{999}'), { kind: 'worktree', rev: 'HEAD@{999}' }, { kind: 'compare', from: 'HEAD@{999}', to: 'main', mode: '...' }]) {
+    await assert.rejects(files(source), (e) => {
+      assert.equal(e.code, 'REV_UNKNOWN');
+      assert.equal(typeof e.extra.detail, 'string');
+      return true;
+    });
+  }
+  const plain = path.join(repo.root, 'plain');
+  fs.mkdirSync(plain);
+  cc.state.projects.plain = { dir: plain };
+  await assert.rejects(op('diff.files', { source: commit('HEAD') }, { project: 'plain' }), refused('GIT_FAILED'));
+});
+
 test('unstaged: index → worktree plus untracked files as ?, whose diff is all added lines', async (t) => {
   const { cc } = await world(t);
   const r = await files({ kind: 'unstaged' });

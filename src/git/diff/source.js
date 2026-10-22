@@ -122,8 +122,19 @@ async function commitOid(git, rev) {
   return m ? m[1] : null;
 }
 
+/** A user-typed revision's commit oid, or REV_UNKNOWN. */
 async function mustCommit(git, rev) {
-  const oid = await commitOid(git, rev);
+  let oid;
+  try {
+    oid = await commitOid(git, rev);
+  } catch (e) {
+    // rev-parse --verify exits 128 for some revisions it cannot resolve (`HEAD@{999}` past the reflog): still the
+    // user's revision, not a git failure. "not a git repository" stays a failure.
+    if (e.code === 'GIT_FAILED' && e.extra.exitCode === 128 && !e.extra.stderr.includes('not a git repository')) {
+      throw new Refusal('REV_UNKNOWN', `${rev} does not name a commit`, { detail: e.extra.stderr });
+    }
+    throw e;
+  }
   if (!oid) throw new Refusal('REV_UNKNOWN', `${rev} does not name a commit`);
   return oid;
 }
