@@ -21,7 +21,8 @@ test('the guards see the sources they cover', () => {
   const seen = all.map((f) => path.relative(frontend, f));
   expect(seen.length).toBeGreaterThan(25);
   for (const must of ['index.html', 'public/theme-init.js', 'src/App.tsx', 'src/shell/Shell.tsx', 'src/features/activity/ActivityEntry.tsx',
-    'src/features/repos/RepoPicker.tsx', 'src/features/repo/RepoHeader.tsx', 'src/lib/api.ts', 'src/components/ui/button.tsx']) expect(seen).toContain(must);
+    'src/features/repos/RepoPicker.tsx', 'src/features/repo/RepoHeader.tsx', 'src/lib/api.ts', 'src/components/ui/button.tsx',
+    'src/features/diff/DiffPanel.tsx', 'src/features/diff/highlight/prism.ts', 'src/lib/download.ts']) expect(seen).toContain(must);
   expect(seen.some((f) => f.startsWith('dist') || f.includes('node_modules'))).toBe(false);
 });
 
@@ -37,6 +38,15 @@ test('no href, src or style built from data', () => {
 test('no root-relative fetch or EventSource URL (it would reach cc, not this plugin)', () => {
   expect(offenders(/(?:fetch|EventSource)\(\s*['"`]\//)).toEqual([]);
   expect(offenders(/\bapi(?:<[^>]*>)?\(\s*['"`]\//)).toEqual([]);
+});
+
+test('object URLs and download links are built only in lib/download.ts', () => {
+  expect(offenders(/URL\.createObjectURL|\.download\s*=[^=]|\.href\s*=[^=]/)).toEqual([path.join('src', 'lib', 'download.ts')]);
+});
+
+// Prism's own highlight functions build markup from the text; only its data tokenizer may be used.
+test("Prism's markup-building highlight functions are never called", () => {
+  expect(offenders(/Prism\.highlight\b|highlightElement|highlightAll/)).toEqual([]);
 });
 
 test('never navigates by location.hash', () => {

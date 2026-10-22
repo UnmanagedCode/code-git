@@ -5,11 +5,15 @@ import { RepoPicker } from '@/features/repos/RepoPicker';
 import { RepoHeader } from '@/features/repo/RepoHeader';
 import { TabBar } from '@/features/tabs/TabBar';
 import { useTabShortcuts } from '@/features/tabs/useTabShortcuts';
+import { useShownPanel } from '@/state/shownPanel';
 import { activeTab, dispatchTabs, tabKey, useTabs, type Tab } from '@/state/tabs';
 import { panelsFor, type PanelSlot } from './panels';
 
 function Slot({ slot, tab, className }: { slot: PanelSlot; tab: Tab | null; className?: string }) {
-  const panels = panelsFor(slot);
+  const shown = useShownPanel(tab);
+  const all = panelsFor(slot);
+  const od = all.find((p) => p.onDemand && p.id === shown);
+  const panels = od ? [od] : all.filter((p) => !p.onDemand);
   if (!panels.length) return null;
   return (
     <div className={className} data-slot-name={slot}>

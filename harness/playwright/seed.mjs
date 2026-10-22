@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
 import { fakeCc } from '../../tests/_fakeCc.js';
+import { diffRepo } from '../../tests/_diffRepo.js';
 import { bareRemote, makeRepo } from '../../tests/_git.js';
 
 const { bootServer } = await import(BROWSER);
@@ -35,6 +36,9 @@ export async function seed() {
     const feat = app.worktreeAdd(path.join(app.root, 'feat'), 'feature/login');
     feat.commit({ 'login.js': 'login\n' }, 'login');
 
+    // diffs: every diff source and file state, under a hostile .git/config (tests/_diffRepo.js).
+    const diffs = diffRepo(t);
+
     const plain = path.join(app.root, 'plain');
     fs.mkdirSync(plain);
     const cc = await fakeCc({
@@ -45,6 +49,7 @@ export async function seed() {
         plain: { dir: plain, workspace: 'Web', isGitRepo: false },
         gone: { dir: '/nowhere', workspace: 'Ops', systemUnreachable: "system 'ssh' (build-01) could not be reached: connection refused" },
         notes: { dir: plain, workspace: null, isGitRepo: true },
+        diffs: { dir: diffs.repo.dir, workspace: 'Web', isGitRepo: true },
       },
     });
     cleanups.push(() => cc.close());
@@ -52,6 +57,7 @@ export async function seed() {
     cleanups.push(() => srv.close());
     return {
       url: srv.url,
+      diffs,
       /** While on, every exec is held by the fake cc (until cancelled or released). */
       hold(on) { cc.state.execHook = on ? () => 'hold' : null; },
       nextHeld: () => cc.nextHeld(),

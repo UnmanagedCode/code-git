@@ -1,5 +1,7 @@
 import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
+import { resetDiff } from '@/state/diff';
+import { resetShownPanels } from '@/state/shownPanel';
 import { EMPTY, tabsStore } from '@/state/tabs';
 import { resetActivity } from '@/state/useActivity';
 import { resetSummaries } from '@/state/useRepoSummary';
@@ -14,6 +16,8 @@ afterEach(() => {
   resetRepos();
   resetActivity();
   resetSummaries();
+  resetDiff();
+  resetShownPanels();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();
