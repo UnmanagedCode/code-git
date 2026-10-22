@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
 import { closeDiff, openDiff } from '@/features/diff/openDiff';
 import { Shell } from '@/shell/Shell';
 import { updatePrefs } from '@/state/graphPrefs';
+import { getSelection } from '@/state/graphSelection';
 import { dispatchTabs } from '@/state/tabs';
 import { commit, oid, ref } from '@/test/graphData';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
@@ -53,4 +54,18 @@ test('closing a diff brings the graph back scrolled where it was, with the focus
   expect(back).not.toBe(el);
   expect(back.scrollTop).toBe(200 * ROW_H + 9);
   expect(document.activeElement).toBe(back);
+});
+
+test('a ref clicked while a diff is open closes the diff and the graph jumps to that commit', async () => {
+  const world = linearWorld(900);
+  world.refs.refs.push(ref('refs/heads/old', oid(200)));
+  await shell(world);
+  act(() => openDiff(TAB, { kind: 'commit', rev: oid(900) }));
+  await screen.findByRole('region', { name: 'Diff' });
+  const refs = screen.getByRole('navigation', { name: 'Refs' });
+  fireEvent.click(within(within(refs).getByRole('list', { name: 'Local branches' })).getByRole('button', { name: 'old' }));
+  await screen.findByRole('region', { name: 'Commit graph' });
+  expect(screen.queryByRole('region', { name: 'Diff' })).toBeNull();
+  await waitFor(() => expect(getSelection(TAB).ids).toEqual([oid(200)]));
+  expect(rowEl(oid(200))).not.toBeNull();
 });

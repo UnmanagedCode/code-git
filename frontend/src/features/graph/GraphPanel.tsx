@@ -22,7 +22,7 @@ import { DragGhost, startBranchDrag, toDragRef } from './drag';
 import { ColumnToggles, GraphHeader, shownColumns } from './GraphHeader';
 import { GraphRowView } from './GraphRowView';
 import { openSelectionDiff } from './diffWiring';
-import { detailsRequestStore, jumpStore, requestDetails } from './jump';
+import { detailsRequestStore, jumpStore, requestDetails, takeJump } from './jump';
 import { labelsByOid, worktreeName, type Label } from './labels';
 import { passThroughs, type Through } from './layout';
 import { lanesWidth } from './LaneSvg';
@@ -229,14 +229,14 @@ function GraphView({ tab }: { tab: Tab }) {
     const el = body.current;
     if (el) { el.scrollTop = Math.max(0, i * ROW_H - el.clientHeight / 2); readView(); }
   }, [pending, index]);
+  // A jump requested while the graph was not mounted (a diff in its place) is served on mount.
   useEffect(() => {
-    let last = jumpStore.get()?.seq ?? 0;
-    return jumpStore.subscribe(() => {
-      const j = jumpStore.get();
-      if (!j || j.key !== key || j.seq <= last) return;
-      last = j.seq;
-      void jump(j.oid, j.rowId);
-    });
+    const serve = () => {
+      const j = takeJump(key);
+      if (j) void jump(j.oid, j.rowId);
+    };
+    serve();
+    return jumpStore.subscribe(serve);
   }, [key, jump]);
   useEffect(() => () => seekRef.current?.ac.abort(), []);
   const cancelSeek = () => {
