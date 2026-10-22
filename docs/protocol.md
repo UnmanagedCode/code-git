@@ -236,6 +236,47 @@ The ops below change the index or the worktree (`kind: 'write'`, not cancellable
 - "Discard all" in the UI is this op called with the unstaged and untracked lists the panel showed: a file created after that is never touched.
 - `result`: `{tracked, untracked}` — what was discarded. Neither is recoverable from git (see architecture → What each destructive op destroys).
 
+### Stage selection: `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` (write)
+
+Stage, unstage or discard a selection of one file's hunks and lines. One implementation (`applySelection` in `src/git/ops/stage.js`; the pure builder is `buildSelectionPatch` in `src/git/stage/selection.js`).
+
+- `params`: `{path, context?, hunks: [{header, lines: [{index, text}]}]}`.
+  - `context`: 0…1000 or `'full'` (default 3) — the context the diff was shown with.
+  - At least one hunk; each hunk at least one line; headers unique, line indices unique integers ≥ 0 within a hunk.
+  - `header` (≤ 4096 characters, starts `@@ `) is `Hunk.header` as `diff.file` returned it; `index` is the line's index in `Hunk.lines`; `text` is that line's `DiffLine.text`.
+  - Whole hunk = every add/del line of that hunk (the UI fills them in).
+
+| Op | Re-reads (whitespace never ignored; `DIFF_CONFIG`, `DIFF_FLAGS`, `-U<context>`) | Builds | Applies |
+|---|---|---|---|
+| `stage.stageLines` | index → worktree: `git diff … -- path` | forward | `git apply --cached` |
+| `stage.unstageLines` | HEAD → index: `git diff … --cached --end-of-options <HEAD oid> -- path` | reverse | `git apply --cached -R` |
+| `stage.discardLines` | index → worktree | reverse | `git apply -R` (worktree only) |
+
+Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply.whitespace` and `apply.ignoreWhitespace`), `--unidiff-zero` when `context` is 0, and reads the patch from stdin.
+
+**Steps:**
+
+1. Re-run the diff and decode it as **latin1** (one character per byte), then parse it with `parseFilePatch`. A request's `header` and `text` are compared with the fresh diff's bytes decoded as UTF-8 (invalid bytes replaced) — what the UI was shown.
+2. **409 `PARTIAL_UNSUPPORTED`** when the file header has `new file mode`, `deleted file mode`, `rename from`, `copy from`, `diff --cc` / `diff --combined`, `Binary files` / `GIT binary patch`, or a `160000` mode; when there are no hunks (an empty diff, a mode-only change); and for `unstageLines` on an unborn HEAD. A single path never pairs as a rename, so a staged rename reads as a new file. The UI offers hunk/line actions only for `M` files.
+3. **409 `STALE_DIFF`** when a requested header is not in the fresh diff, an index is out of range or names a context line, or a line's text differs.
+4. **Build** (only requested hunks are emitted):
+
+| Line | forward (stage) | reverse (unstage, discard) |
+|---|---|---|
+| context | context | context |
+| selected `-` / `+` | kept | kept |
+| unselected `-` | context | dropped |
+| unselected `+` | dropped | context |
+
+   - **Within a change block** (a run of `-`/`+` lines) the i-th removed line pairs with the i-th added line, as the split view shows them, and each pair is emitted removed-then-added. Staging `c → C` out of `-c -d +C +D` gives `C d`.
+   - **Header:** git's own `diff --git`, `---` and `+++` lines, verbatim (git's path quoting); the `index` and `old mode`/`new mode` lines are dropped, so a mode change is never applied as a side effect.
+   - **Counts:** the side the patch applies to (old for forward, new for reverse) keeps git's start and count. The other side's count is recomputed; its start = `before + 1`, or `before` when its count is 0, where `before` = the fixed side's lines before the hunk (`start − 1`, or `start` for an empty side) plus the growth of the hunks already emitted.
+   - Emitted as `@@ -a,b +c,d @@`, without git's section text.
+5. **No newline at end of file:** a line keeps its `\ No newline at end of file` marker on every side it is on (context = both). It must still be the last line of each of those sides in the hunk, else **409 `SELECTION_UNSUPPORTED`** ("include the end-of-file newline change"): e.g. staging `+c` without `-b` when both lack a final newline.
+6. `git apply` checks the context. A change between the re-read and the apply fails the apply: 422 `GIT_FAILED` with git's stderr ("patch does not apply"), nothing written. Each command takes the project lock; the op as a whole is not atomic.
+
+- `result`: `{path}`; `discardLines` also returns `{patchB64}`, the exact patch applied with `-R`. Applying it forward (`git apply`) restores the discarded lines.
+
 ### Paging convention (for ops that list)
 
 An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b`, blobs by `cat-file -s` before reading.

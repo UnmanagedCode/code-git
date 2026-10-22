@@ -1,7 +1,10 @@
 import { Refusal } from '../../refusals.js';
-import { commitOid } from '../diff/source.js';
+import { DIFF_LIMITS } from '../diff/limits.js';
+import { commitOid, contextArg, DIFF_CONFIG, DIFF_FLAGS, parseContext } from '../diff/source.js';
 import { bad, chunkPaths, nulPaths, paramsObject, pathList } from '../params.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
+import { buildSelectionPatch } from '../stage/selection.js';
+import { assertPath } from '../validate.js';
 
 // Stage, unstage and discard whole files. Multi-path commands read their paths from stdin
 // (`--pathspec-from-file=- --pathspec-file-nul`); `ls-files` and `clean` have no such option, so their paths go after
@@ -49,6 +52,63 @@ async function assertUntracked(git, paths) {
   const wanted = new Set(paths);
   const stray = paths.find((p) => !listed.has(p)) ?? [...listed].find((p) => !wanted.has(p));
   if (stray !== undefined) throw new Refusal('BAD_PATH', `${stray} is not an untracked file`);
+}
+
+const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const HEADER_MAX = 4096;
+
+/** `{path, context, hunks: [{header, lines: [{index, text}]}]}`: ≥ 1 hunk, ≥ 1 line each, unique headers and indices. */
+function selectionParams(raw, op) {
+  const p = paramsObject(raw, ['path', 'context', 'hunks'], op);
+  if (!Array.isArray(p.hunks) || !p.hunks.length) throw bad('hunks must list at least one hunk');
+  const headers = new Set();
+  const hunks = p.hunks.map((h) => {
+    if (!isObj(h)) throw bad('each hunk must be {header, lines}');
+    paramsObject(h, ['header', 'lines'], 'hunk');
+    if (typeof h.header !== 'string' || !h.header.startsWith('@@ ') || h.header.length > HEADER_MAX) throw bad(`a hunk header must be an @@ line of at most ${HEADER_MAX} characters`);
+    if (headers.has(h.header)) throw bad('a hunk is listed twice');
+    headers.add(h.header);
+    if (!Array.isArray(h.lines) || !h.lines.length) throw bad('each hunk must list at least one line');
+    const seen = new Set();
+    const lines = h.lines.map((l) => {
+      if (!isObj(l)) throw bad('each line must be {index, text}');
+      paramsObject(l, ['index', 'text'], 'line');
+      if (!Number.isInteger(l.index) || l.index < 0) throw bad('a line index must be an integer ≥ 0');
+      if (typeof l.text !== 'string') throw bad('a line text must be a string');
+      if (seen.has(l.index)) throw bad('a line is listed twice');
+      seen.add(l.index);
+      return { index: l.index, text: l.text };
+    });
+    return { header: h.header, lines };
+  });
+  return { path: assertPath(p.path), context: parseContext(p.context), hunks };
+}
+
+/**
+ * How each line action reads the file's diff and applies the rebuilt patch. stage: index → worktree, forward, onto the
+ * index; unstage: HEAD → index, reverse, onto the index; discard: index → worktree, reverse, onto the worktree.
+ */
+const LINE_ACTIONS = {
+  stage: { cached: false, direction: 'forward', apply: ['--cached'] },
+  unstage: { cached: true, direction: 'reverse', apply: ['--cached', '-R'] },
+  discard: { cached: false, direction: 'reverse', apply: ['-R'] },
+};
+
+async function applySelection(git, p, action) {
+  const a = LINE_ACTIONS[action];
+  let revs = [];
+  if (a.cached) {
+    const head = await commitOid(git, 'HEAD');
+    if (!head) throw new Refusal('PARTIAL_UNSUPPORTED', 'a file with no commit yet can only be unstaged whole');
+    revs = ['--cached', '--end-of-options', head];
+  }
+  // Whitespace is never ignored here: the hunks must be the file's real changes.
+  const d = await git([...DIFF_CONFIG, 'diff', ...DIFF_FLAGS, contextArg(p.context), ...revs, '--', p.path], { maxOutputBytes: DIFF_LIMITS.fileMaxOutputBytes });
+  const patch = buildSelectionPatch(d.stdout.toString('latin1'), p.hunks, a.direction);
+  const bytes = Buffer.from(patch, 'latin1');
+  // The flags override apply.whitespace / apply.ignoreWhitespace; git checks the context, so a race fails instead of fuzzing.
+  await git(['apply', ...a.apply, '--whitespace=nowarn', '--no-ignore-whitespace', ...(p.context === 0 ? ['--unidiff-zero'] : []), '-'], { stdin: bytes });
+  return { path: p.path, ...(action === 'discard' ? { patchB64: bytes.toString('base64') } : {}) };
 }
 
 export const ops = [
@@ -100,5 +160,23 @@ export const ops = [
       for (const chunk of chunkPaths(p.untracked, STAGE_LIMITS.argvChunkBytes)) await git(['clean', '-f', '-q', '--', ...chunk]);
       return { tracked: p.tracked, untracked: p.untracked };
     },
+  },
+  {
+    name: 'stage.stageLines',
+    kind: 'write',
+    params: (raw) => selectionParams(raw, 'stage.stageLines'),
+    run: (git, p) => applySelection(git, p, 'stage'),
+  },
+  {
+    name: 'stage.unstageLines',
+    kind: 'write',
+    params: (raw) => selectionParams(raw, 'stage.unstageLines'),
+    run: (git, p) => applySelection(git, p, 'unstage'),
+  },
+  {
+    name: 'stage.discardLines',
+    kind: 'write',
+    params: (raw) => selectionParams(raw, 'stage.discardLines'),
+    run: (git, p) => applySelection(git, p, 'discard'),
   },
 ];

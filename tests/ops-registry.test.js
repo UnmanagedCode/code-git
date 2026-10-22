@@ -49,8 +49,8 @@ test('the diff ops are registered as cancellable reads', () => {
   }
 });
 
-test('the file staging ops are registered as non-cancellable writes', () => {
-  for (const name of ['stage.files', 'stage.unstageFiles', 'stage.discardFiles']) {
+test('the file and line staging ops are registered as non-cancellable writes', () => {
+  for (const name of ['stage.files', 'stage.unstageFiles', 'stage.discardFiles', 'stage.stageLines', 'stage.unstageLines', 'stage.discardLines']) {
     const d = OPS.get(name);
     assert.equal(d?.kind, 'write', name);
     assert.equal(d.cancellable, false, name);

@@ -28,7 +28,8 @@
 | `src/git/diff/noIndex.js` | `assertNoIndexReadsItself`, `readNoIndex`: reading one file's bytes through `diff --no-index /dev/null <path>` |
 | `src/git/params.js` | Shared op-param checks: `paramsObject`, `optBool`, `pathList`; `nulPaths` (stdin for `--pathspec-from-file`), `chunkPaths` (argv chunks) |
 | `src/git/stage/limits.js` | `STAGE_LIMITS`: staging, commit-template, `.gitignore` and patch caps |
-| `src/git/ops/stage.js` | `stage.files`, `stage.unstageFiles`, `stage.discardFiles` |
+| `src/git/ops/stage.js` | `stage.files`, `stage.unstageFiles`, `stage.discardFiles`; `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` |
+| `src/git/stage/selection.js` | `buildSelectionPatch` (pure): a hunk/line selection + the file's latin1 diff → the patch to apply; `asShown` |
 | `src/git/diff/limits.js` | `DIFF_LIMITS`: the diff caps (list / file / patch bytes, oversize lines, max commits and paths) |
 | `src/git/parse/diff.js` | `parseRawNumstat`, `parseFilePatch`, `detectLfs`, `sideLines` — pure |
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |
@@ -153,6 +154,8 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 ## Staging and committing
 
+- **Byte-exact selection patches.** The line ops read the file's diff as latin1 (one character per byte), so CR, non-UTF-8 bytes and git's path quoting pass through unchanged; only the comparison with the request decodes UTF-8, the way `diff.file` decoded what the UI showed. Rules: [protocol → Stage selection](protocol.md#stage-selection-stagestagelines-stageunstagelines-stagediscardlines-write).
+
 ### What each destructive op destroys
 
 For the undo card: what an op overwrites or deletes, and whether git can give it back.
@@ -162,6 +165,8 @@ For the undo card: what an op overwrites or deletes, and whether git can give it
 | `stage.files`, `stage.unstageFiles` | The previous index entries of those paths | Yes: HEAD and the worktree still hold both sides |
 | `stage.discardFiles` — tracked | The worktree content of those paths (returned in `result.tracked`) | No: it is in no object. An undo needs a `hash-object -w` snapshot taken before the discard |
 | `stage.discardFiles` — untracked | The files (returned in `result.untracked`) | No; the same snapshot would be needed |
+| `stage.stageLines`, `stage.unstageLines` | Nothing outside the index | Yes |
+| `stage.discardLines` | Exactly the lines of the applied patch, from the worktree | Yes, by the op itself: `result.patchB64` applied forward (`git apply`) restores them |
 
 ## Long ops, cancel and paging
 
