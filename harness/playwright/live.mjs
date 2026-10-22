@@ -60,13 +60,15 @@ try {
       await header.getByText(/\d+ conflicted/).or(header.getByRole('alert')).first().waitFor({ timeout: 60_000 });
       check(await header.getByRole('alert').count() === 0, `${label(c)}: the summary loaded without an error`);
       check(await header.getByText(/\d+ conflicted/).isVisible(), `${label(c)}: the header shows the change counts`);
-      // HEAD: a worktree's branch must be the one cc records; a main checkout shows a branch, or the detached / unborn badge.
+      // HEAD shows a branch, or the detached / unborn badge. cc's recorded branch for a worktree is only where it started:
+      // HEAD may since be detached or on another branch, so a match is reported, not required.
       const head = (await header.getByRole('group', { name: 'HEAD' }).innerText()).replace(/\s+/g, ' ').trim();
-      const expected = c.worktree
-        ? (await (await fetch(`${cc}/api/projects/${encodeURIComponent(c.project)}/worktrees`)).json()).find((w) => w.worktreeName === c.worktree)?.branch
-        : null;
-      if (expected) check(head === expected, `${label(c)}: HEAD shows cc's branch ${expected} (got "${head}")`);
-      else check(/^detached ?[0-9a-f]{7,}$/.test(head) || /^\S+ ?no commits yet$/.test(head) || /^\S+$/.test(head), `${label(c)}: HEAD shows a branch, detached or unborn (got "${head}")`);
+      const kind = /^detached ?[0-9a-f]{7,}$/.test(head) ? 'detached' : /^\S+ ?no commits yet$/.test(head) ? 'unborn' : /^\S+$/.test(head) ? 'branch' : null;
+      check(kind !== null, `${label(c)}: HEAD shows a branch, or the detached or unborn badge (got "${head}")`);
+      if (c.worktree && kind === 'branch') {
+        const recorded = (await (await fetch(`${cc}/api/projects/${encodeURIComponent(c.project)}/worktrees`)).json()).find((w) => w.worktreeName === c.worktree)?.branch;
+        console.log(`note: ${label(c)}: HEAD ${head} ${head === recorded ? 'is' : 'is not'} the branch cc recorded (${recorded ?? 'none'})`);
+      }
       await shot(label(c).replace('/', '_'));
     }
 

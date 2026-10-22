@@ -54,17 +54,20 @@ test("an op's env is merged in; GIT_EDITOR and GIT_SEQUENCE_EDITOR stay overrida
   assert.equal(env.GIT_TERMINAL_PROMPT, '0');
 });
 
-test("an op's env cannot set a protected name: prompts, pathspecs, repo/binary/ssh selection, any GIT_CONFIG*; nothing reaches exec", async (t) => {
+test("an op's env cannot set a protected name: prompts, askpass programs, pathspecs, repo/binary selection, any GIT_SSH* or GIT_CONFIG*; nothing reaches exec", async (t) => {
   const { cc } = await world(t);
   const ctx = ctxFor(APP, 'write');
   const names = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH',
-    'GIT_SSH_COMMAND', 'GIT_SSH', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+    'GIT_SSH_COMMAND', 'GIT_SSH', 'GIT_SSH_VARIANT', 'GIT_SSH_ANYTHING_NEW', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
     'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG'];
   for (const name of names) {
     await assert.rejects(runGit(ctx, ['status'], { env: { OK: '1', [name]: 'x' } }), new RegExp(`may not set ${name}`), name);
   }
   assert.equal(cc.state.execCalls.length, 0);
   assert.equal(ctx.activity.list().length, 0, 'no activity entry is opened for a refused env');
+  // Look-alikes outside the protected names and prefixes stay settable.
+  await runGit(ctx, ['status'], { env: { MY_GIT_SSH: '1', SSH_AUTH_SOCK_X: '1', GIT_ASKPASS_HINT: '1', XGIT_CONFIG: '1' } });
+  assert.equal(cc.state.execCalls.length, 1);
 });
 
 test('paths after -- are literal: a dash-led name and pathspec magic match only themselves', async (t) => {

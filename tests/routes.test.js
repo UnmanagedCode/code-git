@@ -55,6 +55,13 @@ async function world(t) {
 
 const APP = { project: 'app' };
 
+/** `p`, or a failed assertion naming `what` once `ms` pass: a regression fails fast instead of hanging the test. */
+function within(p, what, ms = 2000) {
+  let timer;
+  const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new assert.AssertionError({ message: `${what} did not happen within ${ms} ms` })), ms); });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
 test('GET api/repos lists every cc project, unopenable ones included, with their reason fields', async (t) => {
   const { call } = await world(t);
   const { status, body } = await call('GET', '/api/repos');
@@ -184,9 +191,9 @@ test('cancel a running read: the op answers CANCELLED, cc sees the disconnect, t
   assert.equal(entry.cancellable, true);
   const c = await w.call('POST', `/api/activity/${entry.id}/cancel`, {});
   assert.deepEqual([c.status, c.body], [200, { ok: true }]);
-  const r = await response;
+  const r = await within(response, 'the op answering after cancel');
   assert.deepEqual([r.status, r.body.code], [409, 'CANCELLED']);
-  await held.closed;
+  await within(held.closed, 'cc seeing the disconnect');
   assert.equal(held.disconnected, true);
   const after = (await w.call('GET', '/api/activity')).body.entries.at(-1);
   assert.equal(after.status, 'cancelled');
@@ -210,7 +217,7 @@ test('a write is not cancellable: cancel is 409 NOT_CANCELLABLE, cc sees no disc
   const c = await w.call('POST', `/api/activity/${entry.id}/cancel`, {});
   assert.deepEqual([c.status, c.body.code], [409, 'NOT_CANCELLABLE']);
   held.release();
-  const r = await response;
+  const r = await within(response, 'the write answering after release');
   assert.deepEqual([r.status, r.body], [200, { ok: true, result: { done: true } }]);
   assert.equal(held.disconnected, false);
   assert.notEqual(w.repo.git('rev-parse', 'HEAD'), before);
@@ -238,10 +245,11 @@ test('a browser that goes away aborts a cancellable op; its entry ends cancelled
   const { held, controller, entry } = await startHeld(t, w, 'repo.summary');
   const stream = await sse(`${w.url}/api/activity/events`, t);
   controller.abort();
-  await held.closed;
+  await within(held.closed, 'cc seeing the disconnect');
   assert.equal(held.disconnected, true);
   const live = (await w.call('GET', '/api/activity')).body.entries.find((e) => e.id === entry.id);
-  const closed = live.status === 'running' ? (await stream.next((e) => e.data.id === entry.id && e.data.status !== 'running')).data : live;
+  const closed = live.status === 'running'
+    ? (await within(stream.next((e) => e.data.id === entry.id && e.data.status !== 'running'), 'the entry closing')).data : live;
   assert.equal(closed.status, 'cancelled');
 });
 
@@ -258,9 +266,9 @@ test('a multi-command op is cancelled only through its running entry; a finished
   assert.deepEqual([stale.status, stale.body.code], [409, 'NOT_RUNNING']);
   assert.equal(held.disconnected, false);
   assert.equal((await w.call('POST', `/api/activity/${second.id}/cancel`, {})).status, 200);
-  const r = await response;
+  const r = await within(response, 'the op answering after cancel');
   assert.deepEqual([r.status, r.body.code], [409, 'CANCELLED']);
-  await held.closed;
+  await within(held.closed, 'cc seeing the disconnect');
   assert.equal(held.disconnected, true);
 });
 
@@ -269,8 +277,8 @@ test('a write that opts into cancel is cancelled', async (t) => {
   const { held, response, entry } = await startHeld(t, w, 'test.cancellableWrite');
   assert.equal(entry.cancellable, true);
   assert.equal((await w.call('POST', `/api/activity/${entry.id}/cancel`, {})).status, 200);
-  assert.equal((await response).body.code, 'CANCELLED');
-  await held.closed;
+  assert.equal((await within(response, 'the op answering after cancel')).body.code, 'CANCELLED');
+  await within(held.closed, 'cc seeing the disconnect');
   assert.equal(held.disconnected, true);
 });
 

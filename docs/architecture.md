@@ -67,7 +67,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 ## Runner pipeline (`runGit`)
 
 1. argv = `['git', ...BASE_ARGS, ...args]`. `BASE_ARGS` disables the pager, colour, path quoting and fsmonitor.
-2. env = `BASE_ENV` + (`READ_ENV` for reads) + the op's env. An op's env naming a protected variable (`isProtectedEnv`: the names in `PROTECTED_ENV` — prompts, `GIT_LITERAL_PATHSPECS`, `GIT_DIR`/`GIT_WORK_TREE`, `GIT_EXEC_PATH`, `GIT_SSH_COMMAND`/`GIT_SSH` — and every `GIT_CONFIG*` name) throws before anything runs or is logged: a code-git bug, answered 500 `INTERNAL`. `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` stay overridable (an interactive-rebase todo editor, say).
+2. env = `BASE_ENV` + (`READ_ENV` for reads) + the op's env. An op's env naming a protected variable (`isProtectedEnv`: the names in `PROTECTED_ENV` — `GIT_TERMINAL_PROMPT`, `GCM_INTERACTIVE`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_LITERAL_PATHSPECS`, `GIT_DIR`, `GIT_WORK_TREE`, `GIT_EXEC_PATH` — and every name starting with a `PROTECTED_ENV_PREFIXES` entry: `GIT_SSH` (`GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT`, …) or `GIT_CONFIG`) throws before anything runs or is logged: a code-git bug, answered 500 `INTERNAL`. `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` stay overridable (an interactive-rebase todo editor, say).
 3. A write takes its **project's** lock (worktrees share refs and objects); reads and other projects never wait.
 4. The activity entry opens (`running`) with its own `AbortController`, combined with the op's signal.
 5. `exec` → cc. The deadline and output cap default from `LIMITS[kind]`.

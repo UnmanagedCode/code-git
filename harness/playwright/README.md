@@ -19,7 +19,7 @@ Build the UI first: `npm install` (or `npm run prepare`) so `frontend/dist` exis
 - Never calls a write route, never registers, rescans or enables the plugin in cc.
 - Refuses to run without `CONDUCTOR_URL`, and checks that `$CONDUCTOR_URL/api/health` answers `"app":"code-conductor"`.
 - Default checkouts: `code-git`, `code-git/c1-foundation`, `test`, `test/review-demo`; name others as arguments.
-- Asserts: the picker lists exactly the names of `GET $CONDUCTOR_URL/api/projects`; every `isGitRepo === false` row is disabled; each checkout's header loads without an error and shows HEAD (a worktree's branch must equal cc's `branch` for it; a main checkout shows a branch, or the detached / unborn badge); the activity panel has a `status --porcelain=v2` entry with exit 0 per checkout; Ctrl+1 / Ctrl+2 switch tabs. Screenshots: `out/live/`.
+- Asserts: the picker lists exactly the names of `GET $CONDUCTOR_URL/api/projects`; every `isGitRepo === false` row is disabled; each checkout's header loads without an error and shows HEAD as a branch, or the detached or unborn badge (for a worktree on a branch, whether it is the branch cc recorded is printed as a note, not required: HEAD may have moved since); the activity panel has a `status --porcelain=v2` entry with exit 0 per checkout; Ctrl+1 / Ctrl+2 switch tabs. Screenshots: `out/live/`.
 
 **Finding `CONDUCTOR_URL` from a cc worker session.** The session's environment has no `CONDUCTOR_URL`, but its Claude process was started with an `--mcp-config` naming cc's MCP URL. Walk up from the shell's own process and take the origin, then confirm it:
 

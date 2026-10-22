@@ -19,12 +19,15 @@ export const BASE_ENV = {
 /** Read ops only: no opportunistic index refresh. */
 export const READ_ENV = { GIT_OPTIONAL_LOCKS: '0' };
 /**
- * Names an op's env may not set: prompts, literal pathspecs, which repo and which git binary run, the SSH transport,
- * and every config injection (`GIT_CONFIG*`, which covers COUNT/KEY_n/VALUE_n, GLOBAL, SYSTEM, NOSYSTEM, PARAMETERS).
+ * Names an op's env may not set: prompts and the programs git runs to ask for credentials (GIT_ASKPASS, SSH_ASKPASS —
+ * git runs them even with GIT_TERMINAL_PROMPT=0), literal pathspecs, which repo and which git binary run, and the
+ * prefixes PROTECTED_ENV_PREFIXES: every GIT_SSH* (GIT_SSH, GIT_SSH_COMMAND, GIT_SSH_VARIANT, …) and every config
+ * injection GIT_CONFIG* (COUNT/KEY_n/VALUE_n, GLOBAL, SYSTEM, NOSYSTEM, PARAMETERS).
  * The editors stay settable: interactive rebase supplies its todo through GIT_SEQUENCE_EDITOR.
  */
-export const PROTECTED_ENV = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH', 'GIT_SSH_COMMAND', 'GIT_SSH'];
-export const isProtectedEnv = (name) => PROTECTED_ENV.includes(name) || name.startsWith('GIT_CONFIG');
+export const PROTECTED_ENV = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH'];
+export const PROTECTED_ENV_PREFIXES = ['GIT_SSH', 'GIT_CONFIG'];
+export const isProtectedEnv = (name) => PROTECTED_ENV.includes(name) || PROTECTED_ENV_PREFIXES.some((p) => name.startsWith(p));
 
 const STATUS_OF = { CANCELLED: 'cancelled', GIT_TIMEOUT: 'timeout' };
 
