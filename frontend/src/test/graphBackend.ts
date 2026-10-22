@@ -38,7 +38,8 @@ export const detailOf = (c: CommitItem, over: Partial<CommitDetail> = {}): Commi
   coAuthors: [], signature: { status: 'N', signer: null, key: null }, files: [], filesError: null, ...over,
 });
 
-export function stubGraph(world: GraphWorld) {
+/** `extra`: more routes (a later card's ops), same form as stubFetch's. */
+export function stubGraph(world: GraphWorld, extra: Parameters<typeof stubFetch>[0] = {}) {
   const body = (init?: RequestInit) => JSON.parse(String(init?.body ?? '{}')) as { target: { project: string; worktree?: string }; params?: Record<string, unknown> };
   return stubFetch({
     'POST api/ops/graph.refs': () => ({ ok: true, result: world.refs }),
@@ -77,6 +78,7 @@ export function stubGraph(world: GraphWorld) {
     'GET api/activity': { entries: [] },
     // The diff the graph opens: its file list only.
     'POST api/ops/diff.files': { ok: true, result: filesResult([]) },
+    ...extra,
   });
 }
 

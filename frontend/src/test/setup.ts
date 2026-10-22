@@ -15,6 +15,9 @@ import { resetRepos } from '@/state/useRepos';
 import { resetWorkdir } from '@/state/workdir';
 import { resetConfirm } from '@/lib/confirm';
 import { resetLineSelection } from '@/state/lineSelection';
+import { resetRefDialog } from '@/state/refDialog';
+import { resetRefSelection } from '@/state/refSelection';
+import { resetTracking } from '@/state/branchTracking';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
@@ -37,6 +40,9 @@ afterEach(() => {
   resetWorkdir();
   resetConfirm();
   resetLineSelection();
+  resetRefDialog();
+  resetRefSelection();
+  resetTracking();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();

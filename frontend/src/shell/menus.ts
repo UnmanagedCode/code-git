@@ -22,6 +22,8 @@ export interface MenuAction<C = unknown> {
   /** Sort key, default 500; ties keep registration order. Convention in docs/architecture.md. */
   order?: number;
   destructive?: boolean;
+  /** The action a double-click on the context's item runs (runPrimary): Checkout for a branch, Jump for a tag. */
+  primary?: boolean;
 }
 
 const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS, ...GRAPH_ACTIONS, ...WORKDIR_FILE_ACTIONS, RESTORE_ACTION, ...WORKDIR_GRAPH_ACTIONS];
@@ -40,3 +42,11 @@ export function actionsFor<C>(context: string, ctx: C): MenuAction<C>[] {
 }
 
 export const labelOf = <C>(a: MenuAction<C>, ctx: C): string => (typeof a.label === 'function' ? a.label(ctx) : a.label);
+
+/** Runs the first primary action offered for `context` (after `when`); false when there is none. */
+export function runPrimary<C>(context: string, ctx: C): boolean {
+  const a = actionsFor(context, ctx).find((x) => x.primary && x.run);
+  if (!a) return false;
+  void a.run!(ctx);
+  return true;
+}
