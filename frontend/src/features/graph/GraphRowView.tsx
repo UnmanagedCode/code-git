@@ -111,13 +111,13 @@ export const GraphRowView = memo(function GraphRowView(p: RowViewProps) {
   const cell = (id: ColumnId) => {
     switch (id) {
       case 'refs': return <Chips labels={p.labels} color={layout.color} chips={p.chips} />;
-      case 'graph': return <LaneSvg row={row} layout={layout} through={p.through} width={p.graphWidth} initials={item ? initials(item.author.name, item.author.email) : ''} />;
+      case 'graph': return <LaneSvg row={row} layout={layout} through={p.through} width={p.graphWidth} initials={item ? initials(clip(item.author.name), clip(item.author.email)) : ''} />;
       case 'message': return <Message row={row} />;
       case 'author':
         return item && (
           <span className="flex min-w-0 items-center gap-1.5">
             <span className={`lane-${layout.color} flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-(--lane) text-xs font-semibold`}>
-              {initials(item.author.name, item.author.email)}
+              {initials(clip(item.author.name), clip(item.author.email))}
             </span>
             <span className="truncate" title={clip(item.author.email)}>{clip(item.author.name)}</span>
           </span>
