@@ -5,6 +5,7 @@ import { toDragRef } from '@/features/graph/drag';
 import type { Ref, RefsResult } from '@/features/graph/types';
 import { actionsFor, labelOf, runPrimary, type ResolvedAction } from '@/shell/menus';
 import { trackingStore } from '@/state/branchTracking';
+import { NAMES_MAX } from './api';
 import { EMPTY_GRAPH, graphStore } from '@/state/graph';
 import { refDialogStore, type RefDialog } from '@/state/refDialog';
 import { tabKey } from '@/state/tabs';
@@ -194,4 +195,15 @@ test('a hard reset always opens the reset dialog with HEAD as expect', () => {
   setRefs(refsOn());
   find('commit', commitCtx(oid(3)), 'Reset main to this commit › Hard (discard changes)').run!(commitCtx(oid(3)));
   expect(refDialogStore.get()).toMatchObject({ kind: 'reset', mode: 'hard', branch: 'main', expect: HEAD, to: { oid: oid(3) } });
+});
+
+test('a selection over NAMES_MAX deletes the first NAMES_MAX and tells the dialog how many were left out', () => {
+  setRefs(refsOn());
+  const many = Array.from({ length: NAMES_MAX + 5 }, (_, i) => ref(`refs/heads/b${i}`, oid(1)));
+  const ctx = { tab: T, refs: many };
+  expect(menu('branches', ctx)).toEqual([`Delete ${NAMES_MAX} branches…`]);
+  find('branches', ctx, `Delete ${NAMES_MAX} branches…`).run!(ctx);
+  const d = refDialogStore.get() as Extract<RefDialog, { kind: 'deleteBranches' }>;
+  expect(d.refs.map((r) => r.name)).toEqual(many.slice(0, NAMES_MAX).map((r) => r.name));
+  expect(d.omitted).toBe(5);
 });

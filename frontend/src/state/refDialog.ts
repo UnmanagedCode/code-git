@@ -11,7 +11,8 @@ export interface Point { oid: string; label: string }
 export type RefDialog =
   | { kind: 'createBranch'; tab: Tab; from: Point | null }
   | { kind: 'renameBranch'; tab: Tab; name: string }
-  | { kind: 'deleteBranches'; tab: Tab; refs: Ref[] }
+  /** `omitted`: selected branches left out because one request takes at most NAMES_MAX (features/branches/api.ts). */
+  | { kind: 'deleteBranches'; tab: Tab; refs: Ref[]; omitted?: number }
   | { kind: 'createTag'; tab: Tab; at: Point }
   | { kind: 'deleteTags'; tab: Tab; names: string[]; remote: string | null }
   | { kind: 'setUpstream'; tab: Tab; branch: string }

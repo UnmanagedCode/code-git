@@ -12,7 +12,7 @@ Writing refs from the graph: branches (create, checkout, rename, delete, upstrea
 |---|---|
 | Local branch (chip or refs row) | **Checkout** (not the checked-out branch, not one checked out in another checkout) · Create branch here… · Create tag here… · Rename… (not checked out in another checkout; never a checked-out `code-conductor/*` branch) · Set upstream… · **Fast-forward to `<upstream>`** (only when strictly behind a present upstream) · Reset `<HEAD's branch>` to here › Soft / Mixed / Hard (not the HEAD branch; HEAD born) · Delete `<name>`… (not checked out anywhere) |
 | Remote branch | **Checkout** · Create branch here… · Create tag here… · Reset `<HEAD>` to here › … · Delete `<branch>` from `<remote>`… |
-| Several selected branches (refs panel) | Delete N branches… — checked-out branches are left out of the selection and the count; hidden when none remain |
+| Several selected branches (refs panel) | Delete N branches… — checked-out branches are left out of the selection and the count, and N is at most `NAMES_MAX` (`features/branches/api.ts`, equal to `REF_LIMITS.namesMax`); hidden when none remain |
 | Tag | Create branch here… · Push to `<remote>` (a **Push to** submenu with more than one remote) · Reset `<HEAD>` to here › … · Delete locally… · Delete from `<remote>`… (submenu likewise) · Jump to commit |
 | Commit | Create branch here… · Create tag here… · Reset `<HEAD>` to this commit › Soft / Mixed / Hard (not HEAD's commit) · **Revert commit** (a merge: **Revert merge (keep first parent)**, `mainline: 1`) · **Cherry-pick commit** (not HEAD's commit; a merge against its first parent) |
 | A branch dropped on another | **Fast-forward `<target>` to `<source>`** (target local, not checked out in another checkout) · **Reset `<target>` to `<source>`**: a Soft / Mixed / Hard submenu when the target is HEAD's branch, a force-move confirmation when the target is a local branch checked out nowhere, absent otherwise (a remote target) |
@@ -32,7 +32,7 @@ One dialog at a time (`state/refDialog.ts`, rendered by `features/branches/RefDi
 |---|---|---|
 | Create branch | Create branch here…, Branch, Ctrl/⌘+B | Name; **Check out after creating** (on by default) |
 | Rename | Rename… | New name |
-| Delete branches | Delete…, Delete N branches…, Delete … from `<remote>`… | Local names, then remote names grouped "On `<remote>`"; **Delete branch** / **Delete N branches** (destructive). Runs `branch.delete` for the locals, then `branch.deleteRemote` per remote, each a step. Each step shows its outcome: what it deleted, and what it did not with why (a remote's rejected refs with their reasons, or the refusal). While anything is left the dialog stays open and the button reads **Retry**, which re-runs only what is left. Locals git refused as not fully merged then turn the dialog into "Delete unmerged branches?" → **Delete anyway** (`force: true` for those only) |
+| Delete branches | Delete…, Delete N branches…, Delete … from `<remote>`… | Local names, then remote names grouped "On `<remote>`" (each list cut at `NAMES_SHOWN` with "…and N more"); a selection over `NAMES_MAX` deletes the first `NAMES_MAX` and says how many stay selected; **Delete branch** / **Delete N branches** (destructive). Runs `branch.delete` for the locals, then `branch.deleteRemote` per remote, each a step. Each step shows its outcome: what it deleted, and what it did not with why (a remote's rejected refs with their reasons, or the refusal). While anything is left the dialog stays open and the button reads **Retry**, which re-runs only what is left. Locals git refused as not fully merged then turn the dialog into "Delete unmerged branches?" → **Delete anyway** (`force: true` for those only) |
 | Create tag | Create tag here… | Name; optional message — non-blank makes it annotated (**Create annotated tag**) |
 | Delete tags | Delete locally…, Delete from `<remote>`… | Destructive **Delete**. Refs the remote rejected are listed with their reasons, and the dialog stays open |
 | Set upstream | Set upstream… | A select of the remote branches (preselected: the current upstream, else the remote branch of the same name); **Unset** when one is set |
@@ -100,7 +100,7 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 | `branch.deleteRemote` | the branch on the remote | push `undo.remoteRefs[].old` (the tracking ref's last value: best known) |
 | `branch.rename` | the old name | rename back |
 | `branch.move` | the branch's position (commits only on it become unreachable from it) | `update-ref` back to `old`; the reflog |
-| `branch.fastForward`, `branch.checkout` (fast-forward) | nothing (additive) | `update-ref` back to `old` |
+| `branch.fastForward`, `branch.checkout` (fast-forward) | nothing (additive) | a branch checked out nowhere: `update-ref` back to `undo.refs[].old`; this checkout's own branch (`undo.head` set): `reset --hard <undo.head.old.oid>`, which also puts the files back |
 | `branch.create`, `tag.create`, `tag.push` | nothing | delete what was created |
 | `tag.delete` | the tag ref | `update-ref` with the tag object |
 | `tag.deleteRemote` | the tag on the remote | push the local tag (`old` = the local tag object, else null) |

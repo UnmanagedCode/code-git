@@ -7,7 +7,7 @@ import { trackingOf } from '@/state/branchTracking';
 import { openRefDialog, type Point } from '@/state/refDialog';
 import type { Tab } from '@/state/tabs';
 import {
-  checkoutBranch, cherryPick, fastForward, pushTags, resetHead, revertCommit, type CheckoutResult, type ResetMode,
+  checkoutBranch, cherryPick, fastForward, NAMES_MAX, pushTags, resetHead, revertCommit, type CheckoutResult, type ResetMode,
 } from './api';
 import { abbrev, ccHead, checkedOutAnywhere, checkedOutElsewhere, headLabel, headOf, isCcOwned, refNamed, remoteBranch, remotesOf, shortBranch } from './refInfo';
 import { applyToast, fileList, rejectedLines, runRefOp } from './run';
@@ -148,6 +148,8 @@ function apply(tab: Tab, which: 'revert' | 'cherry-pick', c: CommitCtx) {
 
 /** The branches of a multi-selection that may be deleted: checked-out ones never are. */
 const deletable = (c: BranchesCtx) => c.refs.filter((r) => r.kind === 'remote' || (r.kind === 'local' && !checkedOutAnywhere(c.tab, r.name)));
+/** What one delete takes: the first NAMES_MAX deletable branches (the backend refuses more per request). */
+const deleteBatch = (c: BranchesCtx) => deletable(c).slice(0, NAMES_MAX);
 
 const dropTargetLocal = (c: BranchDropCtx) => c.target.kind === 'local' && !!c.target.oid && !!c.source.oid;
 const dropIsHead = (c: BranchDropCtx) => dropTargetLocal(c) && headOf(c.tab).branch === c.target.name;
@@ -197,8 +199,11 @@ export const BRANCH_ACTIONS: MenuAction<never>[] = [
   // ---- a refs-panel multi-selection ----
   {
     id: 'branches.branches.delete', context: 'branches', group: 'delete', order: 340, destructive: true,
-    label: (c: BranchesCtx) => `Delete ${deletable(c).length} branches…`, when: (c: BranchesCtx) => deletable(c).length > 0,
-    run: (c: BranchesCtx) => openRefDialog({ kind: 'deleteBranches', tab: c.tab, refs: deletable(c) }),
+    label: (c: BranchesCtx) => `Delete ${deleteBatch(c).length} branches…`, when: (c: BranchesCtx) => deletable(c).length > 0,
+    run: (c: BranchesCtx) => {
+      const all = deletable(c);
+      openRefDialog({ kind: 'deleteBranches', tab: c.tab, refs: all.slice(0, NAMES_MAX), omitted: Math.max(0, all.length - NAMES_MAX) });
+    },
   },
   // ---- tag ----
   createBranchAt('branches.tag.createBranch', 'tag', refPoint),

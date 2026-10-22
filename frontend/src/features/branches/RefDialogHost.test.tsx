@@ -9,6 +9,7 @@ import { checkout as checkoutFixture, oid, ref, refsResult } from '@/test/graphD
 import { json } from '@/test/fixtures';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
 import { RefDialogHost } from './RefDialogHost';
+import { NAMES_SHOWN } from './dialogs/Frame';
 
 const T = { project: 'app', worktree: null };
 const ccHeadRef = ref('refs/heads/code-conductor/wt', oid(8), { isHead: true });
@@ -246,4 +247,15 @@ test('remote tag delete: a full rejection lists the refused refs inline; a parti
   await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('origin rejected:'));
   expect(screen.getByRole('dialog')).toBeTruthy();
   expect(within(within(dialog).getByRole('alert')).getByRole('list').textContent).toBe('refs/tags/v1: hook declined');
+});
+
+test('a capped delete says how many were left out, and a long name list ends with "…and N more"', () => {
+  setHead(MAIN);
+  backend({});
+  const refs = Array.from({ length: NAMES_SHOWN + 3 }, (_, i) => ref(`refs/heads/b${i}`, oid(1)));
+  const dialog = show({ kind: 'deleteBranches', tab: T, refs, omitted: 7 });
+  expect(dialog.querySelector('[data-omitted]')!.textContent).toContain('7 more stay selected');
+  const items = within(within(dialog).getByRole('list', { name: 'Local branches to delete' })).getAllByRole('listitem');
+  expect(items).toHaveLength(NAMES_SHOWN + 1);
+  expect(items.at(-1)!.textContent).toBe('…and 3 more');
 });

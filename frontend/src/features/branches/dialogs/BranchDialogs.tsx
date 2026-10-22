@@ -9,7 +9,7 @@ import { closeRefDialog, type Point, type RefDialog } from '@/state/refDialog';
 import type { ApiError } from '@/lib/api';
 import type { Tab } from '@/state/tabs';
 import { rejectedLines, rejectedOf } from '../run';
-import { createBranch, deleteBranches, deleteRemoteBranches, moveBranch, renameBranch, setUpstream } from '../api';
+import { createBranch, deleteBranches, NAMES_MAX, deleteRemoteBranches, moveBranch, renameBranch, setUpstream } from '../api';
 import { abbrev, ccHead, headOf, isCcOwned, remoteBranch, shortBranch } from '../refInfo';
 import { CcWarning, fieldClass, NameList, RefDialogFrame, useRefOp } from './Frame';
 
@@ -176,6 +176,11 @@ export function DeleteBranchesDialog({ d }: { d: Of<'deleteBranches'> }) {
           </section>
         );
       })}
+      {(d.omitted ?? 0) > 0 && (
+        <p className="text-sm text-muted-foreground" data-omitted="">
+          Only the first {NAMES_MAX} selected branches are deleted at once; {d.omitted} more stay selected for another delete.
+        </p>
+      )}
       {ccNames.length > 0 && <CcWarning>{ccNames.map((n) => clip(n)).join(', ')} {ccNames.length > 1 ? 'belong' : 'belongs'} to code-conductor: its worktree records name {ccNames.length > 1 ? 'them' : 'it'}.</CcWarning>}
     </RefDialogFrame>
   );
