@@ -280,14 +280,15 @@ test('search: fixed strings, case-insensitive message and author matches', async
 
 test('search: option-shaped queries stay patterns: no file is written and results are correct', async (t) => {
   const { repo } = await world(t);
-  const target = path.join(repo.root, 'pwned');
-  const c = commitsNamed(repo, [[`try --output=${target} here`], ['the -n flag'], ['plain']]);
-  const { result, entries } = await run('graph.search', { mode: 'commits', query: `--output=${target}`, tips: tipsOf(repo, 'main') });
-  assert.deepEqual(result.matches, [c[`try --output=${target} here`]]);
-  assert.ok(entries.some((e) => e.argv.includes(`--grep=--output=${target}`)));
-  assert.ok(entries.some((e) => e.argv.includes(`--author=--output=${target}`)));
-  assert.ok(!entries.some((e) => e.argv.includes(`--output=${target}`)));
-  assert.equal(fs.existsSync(target), false);
+  // Fixed subjects: none may embed the temp path, whose random part could itself contain the other query (-n).
+  const c = commitsNamed(repo, [['try --output=pwned here'], ['the -n flag'], ['plain']]);
+  const { result, entries } = await run('graph.search', { mode: 'commits', query: '--output=pwned', tips: tipsOf(repo, 'main') });
+  assert.deepEqual(result.matches, [c['try --output=pwned here']]);
+  assert.ok(entries.some((e) => e.argv.includes('--grep=--output=pwned')));
+  assert.ok(entries.some((e) => e.argv.includes('--author=--output=pwned')));
+  assert.ok(!entries.some((e) => e.argv.includes('--output=pwned')));
+  // git runs in the checkout: an option would have written the file there.
+  assert.equal(fs.existsSync(path.join(repo.dir, 'pwned')), false);
   assert.deepEqual((await search(repo, 'commits', '-n')).matches, [c['the -n flag']]);
 });
 
