@@ -7,12 +7,11 @@ import type { Label } from './labels';
 import { LaneSvg } from './LaneSvg';
 import { RefChip, type ChipHandlers } from './RefChip';
 import { initials } from './initials';
+import { formatTime } from './time';
 import type { GraphRow, LayoutRow, Stat } from './types';
 
 /** Chips shown before the rest collapse into "+N". */
 export const CHIPS_SHOWN = 2;
-const DATE = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-export const formatTime = (unix: number): string => DATE.format(new Date(unix * 1000));
 
 export interface RowViewProps {
   row: GraphRow;

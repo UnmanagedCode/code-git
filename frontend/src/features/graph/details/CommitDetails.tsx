@@ -9,7 +9,7 @@ import { useGraphData } from '@/state/graph';
 import { useGraphSelection, type SelectedRow } from '@/state/graphSelection';
 import { dispatchTabs, tabKey, type Tab } from '@/state/tabs';
 import { openIn, openSelectionDiff, selectionDiff } from '../diffWiring';
-import { formatTime } from '../GraphRowView';
+import { formatTime } from '../time';
 import { initials } from '../initials';
 import { requestJump } from '../jump';
 import { WIDE_GRAPH_QUERY } from '../media';

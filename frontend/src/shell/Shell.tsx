@@ -7,6 +7,7 @@ import { TabBar } from '@/features/tabs/TabBar';
 import { useTabShortcuts } from '@/features/tabs/useTabShortcuts';
 import { useShownPanel } from '@/state/shownPanel';
 import { activeTab, dispatchTabs, tabKey, useTabs, type Tab } from '@/state/tabs';
+import { PanelBoundary } from './PanelBoundary';
 import { panelsFor, type PanelSlot } from './panels';
 
 function Slot({ slot, tab, className }: { slot: PanelSlot; tab: Tab | null; className?: string }) {
@@ -17,7 +18,9 @@ function Slot({ slot, tab, className }: { slot: PanelSlot; tab: Tab | null; clas
   if (!panels.length) return null;
   return (
     <div className={className} data-slot-name={slot}>
-      {panels.map(({ id, component: C }) => <C key={id} tab={tab} />)}
+      {panels.map(({ id, title, component: C }) => (
+        <PanelBoundary key={id} title={title} resetKey={tab ? tabKey(tab) : ''}><C tab={tab} /></PanelBoundary>
+      ))}
     </div>
   );
 }

@@ -263,3 +263,12 @@ test('below lg the toolbar opens Refs and Compare as dialogs', async () => {
     happy.setViewport({ width: 1024, height: 768 });
   }
 });
+
+test('a commit with an impossible timestamp renders — in the Date column instead of crashing', async () => {
+  const world = linearWorld(3);
+  world.commits[1].time = Number('99999999999999999999');
+  updatePrefs('app', (p) => ({ ...p, columns: { ...p.columns, visible: ['date'] } }));
+  await show(world);
+  expect(within(rowEl(oid(2))!).getByText('—')).toBeTruthy();
+  expect(within(rowEl(oid(3))!).queryByText('—')).toBeNull();
+});

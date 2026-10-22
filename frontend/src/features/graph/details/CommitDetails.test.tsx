@@ -139,3 +139,9 @@ test('a multi-selection lists a stash by its own subject', async () => {
   render(<CommitDetails tab={TAB} />);
   expect(screen.getByText('On main: half-done')).toBeTruthy();
 });
+
+test('impossible author and committer timestamps render — instead of crashing the panel', async () => {
+  await show({ author: { name: 'Ann', email: 'a@x', time: Number('99999999999999999999') }, committer: { name: 'Cee', email: 'c@x', time: -1e20 } });
+  await screen.findByText('Fix <b>it</b>');
+  expect(screen.getAllByText('—')).toHaveLength(2);
+});
