@@ -42,7 +42,7 @@ export function FileList({ tab, commit, parent, files, host }: { tab: Tab; commi
         onContextMenu={(e) => menu(e, f)}
       >
         <span className={cn('w-3 shrink-0 text-center font-mono text-xs font-semibold', statusClass(f.status), depth === 0 ? 'ml-1' : depth === 1 ? 'ml-5' : depth === 2 ? 'ml-9' : 'ml-13')}>{f.status}</span>
-        <span className="truncate">{f.oldPath && view === 'path' ? `${f.oldPath} → ${name}` : name}</span>
+        <span className="truncate">{f.oldPath ? `${f.oldPath} → ${name}` : name}</span>
       </button>
     </li>
   );

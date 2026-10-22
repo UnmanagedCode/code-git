@@ -13,7 +13,7 @@ import { formatTime } from '../GraphRowView';
 import { initials } from '../initials';
 import { requestJump } from '../jump';
 import { WIDE_GRAPH_QUERY } from '../media';
-import type { Checkout, CommitDetail } from '../types';
+import type { Checkout, CommitDetail, Stash } from '../types';
 import { FileList } from './FileList';
 import { SignatureBadge } from './SignatureBadge';
 
@@ -32,7 +32,7 @@ function DetailsView({ tab }: { tab: Tab }) {
   if (data.status === 'idle') return null;
   let body;
   if (!sel.items.length) body = <p className="text-sm text-muted-foreground">Select a commit</p>;
-  else if (sel.items.length > 1) body = <Multi tab={tab} items={sel.items} commits={data.commits} checkouts={data.checkouts} />;
+  else if (sel.items.length > 1) body = <Multi tab={tab} items={sel.items} commits={data.commits} stashes={data.refs?.stashes ?? []} checkouts={data.checkouts} />;
   else {
     const it = sel.items[0];
     if (it.kind === 'wip') {
@@ -50,7 +50,10 @@ function DetailsView({ tab }: { tab: Tab }) {
   );
 }
 
-function Multi({ tab, items, commits, checkouts }: { tab: Tab; items: SelectedRow[]; commits: { oid: string; subject: string }[]; checkouts: Checkout[] }) {
+function Multi({ tab, items, commits, stashes, checkouts }: {
+  tab: Tab; items: SelectedRow[]; commits: { oid: string; subject: string }[]; stashes: Stash[]; checkouts: Checkout[];
+}) {
+  const subject = (it: SelectedRow) => (it.kind === 'stash' ? stashes.find((s) => s.oid === it.oid)?.subject : it.kind === 'commit' ? commits.find((c) => c.oid === it.oid)?.subject : '') ?? '';
   return (
     <>
       <h2 className="text-sm font-semibold">{items.length} selected</h2>
@@ -63,7 +66,7 @@ function Multi({ tab, items, commits, checkouts }: { tab: Tab; items: SelectedRo
             {it.kind === 'wip' ? <span className="text-muted-foreground">// WIP {it.checkout.worktree ?? it.checkout.project}</span> : (
               <>
                 <span className="font-mono text-xs text-muted-foreground">{it.oid.slice(0, 7)}</span>
-                <span className="truncate">{commits.find((c) => c.oid === it.oid)?.subject ?? ''}</span>
+                <span className="truncate">{subject(it)}</span>
               </>
             )}
           </li>

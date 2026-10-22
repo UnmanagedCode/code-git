@@ -31,8 +31,6 @@ export interface GraphData {
   /** The last refresh's failure; rows already shown stay. */
   error: ErrInfo | null;
   refs: RefsResult | null;
-  /** Changes whenever anything a label shows changes. */
-  refsKey: string;
   tips: string[];
   tipsKey: string;
   /** Bumped on every snapshot swap; a page answer for an older generation is dropped. */
@@ -47,7 +45,7 @@ export interface GraphData {
 }
 
 export const EMPTY_GRAPH: GraphData = {
-  status: 'idle', error: null, refs: null, refsKey: '', tips: [], tipsKey: '', generation: 0,
+  status: 'idle', error: null, refs: null, tips: [], tipsKey: '', generation: 0,
   commits: [], nextSkip: null, pageLoading: false, pageError: null, checkouts: [], stats: new Map(),
 };
 
@@ -128,10 +126,9 @@ async function refreshOnce(tab: Tab, reason: RefreshReason, at: number): Promise
   const { refs, checkouts } = read;
   const { tips } = resolveVisibility(refs, getPrefs(tab.project));
   const tipsKey = tips.join(',');
-  const refsKey = JSON.stringify(refs);
   const cur = getGraph(tab);
   if (cur.status === 'ready' && tipsKey === cur.tipsKey) {
-    return put(tab, (g) => ({ ...g, refs, refsKey, checkouts, error: null }), at);
+    return put(tab, (g) => ({ ...g, refs, checkouts, error: null }), at);
   }
   try {
     const target = Math.max(PAGE, cur.commits.length);
@@ -145,7 +142,7 @@ async function refreshOnce(tab: Tab, reason: RefreshReason, at: number): Promise
     }
     if (!tips.length) skip = null;
     put(tab, (g) => ({
-      ...g, status: 'ready', error: null, pageError: null, refs, refsKey, tips, tipsKey, generation: g.generation + 1,
+      ...g, status: 'ready', error: null, pageError: null, refs, tips, tipsKey, generation: g.generation + 1,
       commits, nextSkip: skip, pageLoading: false, checkouts,
     }), at);
   } catch (e) {

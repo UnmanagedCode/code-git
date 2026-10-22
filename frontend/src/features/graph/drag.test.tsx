@@ -109,3 +109,14 @@ test('with a registered branch-drop action the drop opens its menu, and choosing
   await userEvent.click(await screen.findByRole('menuitem', { name: 'Merge feature/a into main' }));
   expect(got).toEqual([{ tab: TAB, source: resolve('refs/heads/feature/a'), target: resolve('refs/heads/main') }]);
 });
+
+test('the threshold is exactly DRAG_THRESHOLD: just under it is a press, at it a drag', async () => {
+  const { DRAG_THRESHOLD } = await import('./drag');
+  const { chip } = world();
+  press(chip('feature/a'), 10, 10);
+  fireEvent.pointerMove(chip('main'), { clientX: 10 + DRAG_THRESHOLD - 0.01, clientY: 10 });
+  expect(dragStore.get()).toBeNull();
+  fireEvent.pointerMove(chip('main'), { clientX: 10, clientY: 10 + DRAG_THRESHOLD });
+  expect(dragStore.get()?.over?.name).toBe('refs/heads/main');
+  fireEvent.keyDown(window, { key: 'Escape' });
+});

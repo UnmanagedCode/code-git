@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
 import { json } from '@/test/fixtures';
-import { commit, oid } from '@/test/graphData';
+import { commit, oid, stash } from '@/test/graphData';
 import { detailOf, linearWorld, stubGraph } from '@/test/graphBackend';
 import { dispatchSelection, fileIntentStore } from '@/state/graphSelection';
 import { openGraph } from '@/state/graph';
@@ -79,6 +79,7 @@ test('the file list: Path and Tree views, the choice persisted; a click publishe
   fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
   expect(localStorage.getItem('code-git:graph:fileView')).toBe('tree');
   expect(screen.getByText('lib')).toBeTruthy();
+  expect(screen.getByText('b.ts → b.ts')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Path' }));
   fireEvent.click(screen.getByRole('button', { name: /src\/lib\/a\.ts/ }));
   expect(fileIntentStore.get()).toMatchObject({ tab: TAB, commit: A, parent: P, path: 'src/lib/a.ts', oldPath: null, selection: [{ kind: 'commit', oid: A }] });
@@ -124,4 +125,17 @@ test('a failed load shows its error; a multi-selection lists the commits', async
   expect((await screen.findByRole('alert')).textContent).toBe('bad object');
   act(() => dispatchSelection(TAB, { type: 'toggle', id: P, rows: rowsOf(A, P) }));
   expect(screen.getByText('2 selected')).toBeTruthy();
+});
+
+test('a multi-selection lists a stash by its own subject', async () => {
+  const world = linearWorld(2);
+  const s = stash('e'.repeat(40), oid(2), 0);
+  world.refs.stashes = [{ ...s, subject: 'On main: half-done' }];
+  stubGraph(world);
+  await openGraph(TAB);
+  const rows: GraphRow[] = [{ kind: 'stash', id: `stash:${s.oid}`, stash: s }, ...rowsOf(A)];
+  dispatchSelection(TAB, { type: 'click', id: `stash:${s.oid}`, rows });
+  dispatchSelection(TAB, { type: 'toggle', id: A, rows });
+  render(<CommitDetails tab={TAB} />);
+  expect(screen.getByText('On main: half-done')).toBeTruthy();
 });
