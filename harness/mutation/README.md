@@ -29,5 +29,5 @@ The typecheck (`npm run typecheck`) is deliberately not in either command: a cou
 | Gate | Result |
 |---|---|
 | clean-tree | PASSED |
-| baseline | PASSED — 140 passed / 0 failed / 0 skipped (server 81/0/0, ui 59/0/0), exit 0 |
+| baseline | PASSED — 148 passed / 0 failed / 0 skipped (server 85/0/0, ui 63/0/0), exit 0 |
 | canary | KILLED in every route (server via `tests/activity.test.js`, ui via `frontend/src/App.test.tsx`) |
