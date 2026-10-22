@@ -46,6 +46,12 @@ export function workdirWorld(w: WorkdirWorld = {}) {
       if (!d) throw new Error(`no diff stubbed for ${String(p.path)}`);
       return d;
     }),
+    // The commit graph beside the panel: an empty history.
+    'POST api/ops/graph.refs': op('graph.refs', () => ({
+      head: { oid: OID('a'), branch: 'refs/heads/main', detached: false, unborn: false }, refs: [], stashes: [], worktrees: [], worktreesError: null,
+    })),
+    'POST api/ops/graph.page': op('graph.page', () => ({ items: [], nextCursor: null })),
+    'GET api/repos/app/worktrees': { worktrees: [] },
     'POST api/ops/commit.state': op('commit.state', () => ({ merging: w.merging ?? false })),
     'POST api/ops/commit.template': op('commit.template', () => ({ path: w.template ? '/t' : null, draft: w.template ?? null, problem: null })),
     'POST api/ops/commit.headMessage': op('commit.headMessage', () => ({ oid: 'a'.repeat(40), ...(w.head ?? { summary: 'HEAD summary', description: 'HEAD body' }) })),
