@@ -47,12 +47,12 @@ for (const scheme of ['light', 'dark']) {
       await page.goto(`${world.url}/?project=stage`);
 
       const panel = page.locator('[data-slot-name=right]');
-      const unstaged = panel.getByRole('region', { name: 'Unstaged Files' });
-      const staged = panel.getByRole('region', { name: 'Staged Files' });
-      const commitBox = panel.getByRole('region', { name: 'Commit message' });
-      const summary = commitBox.getByRole('textbox', { name: 'Summary' });
+      const unstaged = panel.getByRole('region', { name: 'Unstaged Files', exact: true });
+      const staged = panel.getByRole('region', { name: 'Staged Files', exact: true });
+      const commitBox = panel.getByRole('region', { name: 'Commit message', exact: true });
+      const summary = commitBox.getByRole('textbox', { name: 'Summary', exact: true });
       const rowPaths = (region) => region.getByRole('option').evaluateAll((els) => els.map((e) => e.getAttribute('data-path')));
-      const diff = page.getByRole('region', { name: 'Diff' });
+      const diff = page.getByRole('region', { name: 'Diff', exact: true });
       const body = diff.locator('[data-diff-body]');
 
       // 1. The lists, and the template pre-filled.
@@ -66,12 +66,12 @@ for (const scheme of ['light', 'dark']) {
       // 2. Open the unstaged diff of src/app.js: two hunks, each with Stage hunk.
       await unstaged.getByRole('option', { name: /src\/app\.js/ }).click();
       await body.locator('[data-hunk-header]').nth(1).waitFor();
-      check(await diff.getByRole('button', { name: 'Stage hunk' }).count() === 2, `${scheme}: each hunk header offers Stage hunk`);
+      check(await diff.getByRole('button', { name: 'Stage hunk', exact: true }).count() === 2, `${scheme}: each hunk header offers Stage hunk`);
       check(await body.getByRole('button', { name: /^Select (added|removed) line/ }).count() === 5, `${scheme}: a toggle per added/removed line (2 + 3)`);
       await shot('diff');
 
       // 3. Stage the first hunk: the index gets line 3's change only.
-      await diff.getByRole('button', { name: 'Stage hunk' }).first().click();
+      await diff.getByRole('button', { name: 'Stage hunk', exact: true }).first().click();
       await staged.getByRole('option', { name: /src\/app\.js/ }).waitFor();
       const afterHunk = STAGE_BASE.map((l, i) => (i === 2 ? 'const l3 = 300;' : l));
       check(indexOf('src/app.js') === lines(afterHunk), `${scheme}: Stage hunk staged exactly the first hunk`);
@@ -79,43 +79,43 @@ for (const scheme of ['light', 'dark']) {
       // 4. Select two lines of the remaining hunk (l25's pair) and stage them; `extra` stays unstaged.
       await body.locator('[data-hunk-header]').first().waitFor();
       await page.waitForFunction(() => document.querySelectorAll('[data-diff-body] [data-hunk-header]').length === 1);
-      await body.getByRole('button', { name: 'Select removed line 25' }).click();
-      await body.getByRole('button', { name: 'Select added line 25' }).click();
-      const bar = diff.getByRole('toolbar', { name: 'Line selection' });
+      await body.getByRole('button', { name: 'Select removed line 25', exact: true }).click();
+      await body.getByRole('button', { name: 'Select added line 25', exact: true }).click();
+      const bar = diff.getByRole('toolbar', { name: 'Line selection', exact: true });
       check((await bar.textContent()).includes('2 lines selected'), `${scheme}: the selection bar counts 2 lines`);
       await shot('selection');
-      await bar.getByRole('button', { name: 'Stage lines' }).click();
+      await bar.getByRole('button', { name: 'Stage lines', exact: true }).click();
       await bar.waitFor({ state: 'detached' });
       await page.waitForFunction(() => document.querySelectorAll('[data-diff-body] [data-row=add]').length === 1);
       const afterLines = afterHunk.map((l, i) => (i === 24 ? 'const l25 = 2500;' : l));
       check(indexOf('src/app.js') === lines(afterLines), `${scheme}: Stage lines staged exactly the selected pair`);
 
       // 5. Discard the remaining added line, after the confirmation previews it.
-      await body.getByRole('button', { name: 'Select added line 26' }).click();
-      await diff.getByRole('button', { name: 'Discard lines…' }).click();
+      await body.getByRole('button', { name: 'Select added line 26', exact: true }).click();
+      await diff.getByRole('button', { name: 'Discard lines…', exact: true }).click();
       const confirm = page.getByRole('dialog');
       await confirm.waitFor();
       check((await confirm.getByLabel('Lines').textContent()) === '+const extra = true;', `${scheme}: the discard confirmation previews the line`);
       await shot('discard-lines');
-      await confirm.getByRole('button', { name: 'Discard lines' }).click();
+      await confirm.getByRole('button', { name: 'Discard lines', exact: true }).click();
       await confirm.waitFor({ state: 'detached' });
       await page.waitForFunction(() => ![...document.querySelectorAll('[data-slot-name=right] [role=region][aria-label="Unstaged Files"] [role=option]')].some((e) => e.getAttribute('data-path') === 'src/app.js'));
       check(readFileSync(path.join(stage.dir, 'src/app.js'), 'utf8') === lines(afterLines), `${scheme}: the worktree lost exactly the discarded line`);
 
       // 6. Discard all names the untracked file and the count; Cancel leaves everything.
-      await unstaged.getByRole('button', { name: 'Discard all…' }).click();
+      await unstaged.getByRole('button', { name: 'Discard all…', exact: true }).click();
       await confirm.waitFor();
-      check((await confirm.getByRole('list', { name: 'Affected files' }).textContent()) === 'notes.md', `${scheme}: Discard all names the untracked file`);
+      check((await confirm.getByRole('list', { name: 'Affected files', exact: true }).textContent()) === 'notes.md', `${scheme}: Discard all names the untracked file`);
       check(await confirm.getByText('1 file', { exact: true }).isVisible() && await confirm.getByText('This cannot be undone.').isVisible(), `${scheme}: Discard all shows the count and that it cannot be undone`);
       await shot('discard-all');
-      await confirm.getByRole('button', { name: 'Cancel' }).click();
+      await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
       await confirm.waitFor({ state: 'detached' });
       check(git('status', '--porcelain', '--', 'notes.md').startsWith('??'), `${scheme}: Cancel discarded nothing`);
 
       // 7. Commit: the template's summary completed, a description.
       await summary.fill('feat: stage hunks and lines');
-      await commitBox.getByRole('textbox', { name: 'Description' }).fill('From the Changes panel.');
-      await commitBox.getByRole('button', { name: 'Commit changes to 1 file' }).click();
+      await commitBox.getByRole('textbox', { name: 'Description', exact: true }).fill('From the Changes panel.');
+      await commitBox.getByRole('button', { name: 'Commit changes to 1 file', exact: true }).click();
       await staged.getByText('Nothing staged.').waitFor();
       check(git('log', '-1', '--format=%B') === 'feat: stage hunks and lines\n\nFrom the Changes panel.\n\n', `${scheme}: the commit has the joined message`);
       check(git('show', 'HEAD:src/app.js') === lines(afterLines), `${scheme}: the commit holds the staged content`);
@@ -124,11 +124,11 @@ for (const scheme of ['light', 'dark']) {
 
       // 8. Message-only amend: the tree stays, the message changes.
       const tree = git('rev-parse', 'HEAD^{tree}');
-      await panel.getByRole('checkbox', { name: 'Amend previous commit' }).check();
+      await panel.getByRole('checkbox', { name: 'Amend previous commit', exact: true }).check();
       await page.waitForFunction(() => document.querySelector('[data-slot-name=right] input[aria-label=Summary]')?.value === 'feat: stage hunks and lines');
       await summary.fill('feat: stage hunks and lines from the diff');
       await shot('amend');
-      await commitBox.getByRole('button', { name: 'Update message only' }).click();
+      await commitBox.getByRole('button', { name: 'Update message only', exact: true }).click();
       await page.waitForFunction(() => !document.querySelector('[data-slot-name=right] input[type=checkbox]')?.checked);
       check(git('log', '-1', '--format=%s').trim() === 'feat: stage hunks and lines from the diff' && git('rev-parse', 'HEAD^{tree}') === tree, `${scheme}: Update message only rewrote the message and kept the tree`);
       check(git('rev-list', '--count', 'HEAD').trim() === '2', `${scheme}: the amend replaced HEAD (still 2 commits)`);
@@ -145,11 +145,11 @@ for (const scheme of ['light', 'dark']) {
       await page.goto(`${world.url}/?project=stage`);
       check(!(await panel.isVisible()), `${scheme}: the right slot is hidden on a phone`);
       await page.getByRole('button', { name: /^Changes \(\d+\)$/ }).click();
-      const dlg = page.getByRole('dialog', { name: 'Changes' });
-      await dlg.getByRole('region', { name: 'Unstaged Files' }).getByRole('option').first().waitFor();
+      const dlg = page.getByRole('dialog', { name: 'Changes', exact: true });
+      await dlg.getByRole('region', { name: 'Unstaged Files', exact: true }).getByRole('option').first().waitFor();
       await shot('phone-dialog');
-      await dlg.getByRole('button', { name: 'Stage old.txt' }).click();
-      await dlg.getByRole('region', { name: 'Staged Files' }).getByRole('option', { name: /old\.txt/ }).waitFor();
+      await dlg.getByRole('button', { name: 'Stage old.txt', exact: true }).click();
+      await dlg.getByRole('region', { name: 'Staged Files', exact: true }).getByRole('option', { name: /old\.txt/ }).waitFor();
       check(git('status', '--porcelain', '--', 'old.txt').startsWith('D '), `${scheme}: staging from the phone dialog staged the deletion`);
       await shot('phone-staged');
       check(errors.length === 0, `${scheme}: no console errors or ≥400 responses${errors.length ? `:\n${errors.join('\n')}` : ''}`);
