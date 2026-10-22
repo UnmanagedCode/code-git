@@ -31,9 +31,11 @@ async function show(detail: Parameters<typeof detailOf>[1] | Response, select: s
   return fetch;
 }
 
-test('nothing selected asks for a selection', async () => {
+test('nothing selected asks for a selection; a graph that never opened shows nothing', async () => {
   stubGraph(linearWorld(1));
-  render(<CommitDetails tab={TAB} />);
+  const { container } = render(<CommitDetails tab={TAB} />);
+  expect(container.textContent).toBe('');
+  await act(async () => { await openGraph(TAB); });
   expect(screen.getByText('Select a commit')).toBeTruthy();
 });
 

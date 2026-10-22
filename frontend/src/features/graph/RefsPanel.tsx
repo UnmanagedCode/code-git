@@ -33,8 +33,8 @@ function IconToggle({ label, on, disabled, onClick, children }: { label: string;
       aria-pressed={on}
       disabled={disabled}
       className={cn(
-        'flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-30',
-        on ? 'text-warning opacity-100' : 'opacity-0 group-hover:opacity-100',
+        'flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:pointer-events-none',
+        on ? 'text-warning opacity-100' : disabled ? 'opacity-0 group-hover:opacity-30' : 'opacity-0 group-hover:opacity-100',
       )}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
     >
@@ -49,6 +49,8 @@ function RefsView({ tab }: { tab: Tab }) {
   const [filter, setFilter] = useState('');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const vis = useMemo(() => (data.refs ? resolveVisibility(data.refs, prefs) : null), [data.refs, prefs]);
+  // A graph that never opened (the checkout is not a repo) has no refs to wait for.
+  if (data.status === 'idle') return null;
   if (!data.refs || !vis) return <p className="p-3 text-sm text-muted-foreground">{data.status === 'error' ? 'Refs could not be loaded.' : 'Loading refs…'}</p>;
   const refs = data.refs;
   const f = filter.trim().toLowerCase();

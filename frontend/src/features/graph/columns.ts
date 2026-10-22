@@ -10,8 +10,8 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
   graph: { label: 'Graph', optional: false, resizable: true, width: 120, min: 40, max: 600 },
   // Takes the remaining width.
   message: { label: 'Commit message', optional: false, resizable: false, width: 240, min: 120, max: 240 },
-  author: { label: 'Author', optional: true, resizable: true, width: 160, min: 80, max: 400 },
-  date: { label: 'Date', optional: true, resizable: true, width: 170, min: 100, max: 300 },
+  author: { label: 'Author', optional: true, resizable: true, width: 150, min: 80, max: 400 },
+  date: { label: 'Date', optional: true, resizable: true, width: 150, min: 100, max: 300 },
   sha: { label: 'SHA', optional: true, resizable: true, width: 80, min: 60, max: 200 },
   changes: { label: 'Changes', optional: true, resizable: true, width: 120, min: 80, max: 300 },
 };

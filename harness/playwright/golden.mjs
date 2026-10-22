@@ -30,7 +30,9 @@ try {
     await page.getByRole('heading', { name: 'app', exact: true }).waitFor();
     await page.getByLabel('2 ahead').waitFor();
     check(await page.getByLabel('1 behind').isVisible(), 'app header shows ahead 2 / behind 1');
-    for (const t of ['1 staged', '1 unstaged', '1 untracked', '0 conflicted']) check(await page.getByText(t, { exact: true }).isVisible(), `app header shows ${t}`);
+    // Scoped to the header: the graph's WIP row shows the same counts.
+    const changes = page.getByRole('list', { name: 'Changes' });
+    for (const t of ['1 staged', '1 unstaged', '1 untracked', '0 conflicted']) check(await changes.getByText(t, { exact: true }).isVisible(), `app header shows ${t}`);
     check(new URL(page.url()).search === '?project=app', 'the URL names the active tab');
     await shot('app');
 
@@ -38,7 +40,7 @@ try {
     await page.getByRole('button', { name: 'Show worktrees of app' }).click();
     await page.getByRole('button', { name: /^feat/ }).click();
     await page.getByRole('heading', { name: 'app/feat' }).waitFor();
-    check(await page.getByText('feature/login', { exact: true }).isVisible(), 'worktree tab shows its branch');
+    check(await page.getByRole('group', { name: 'HEAD' }).getByText('feature/login', { exact: true }).isVisible(), 'worktree tab shows its branch');
     check(new URL(page.url()).search === '?project=app&worktree=feat', 'the URL follows the worktree tab');
 
     await page.keyboard.press('Control+1');
@@ -54,7 +56,7 @@ try {
     await shot('tabs');
 
     world.hold(true);
-    await page.getByRole('button', { name: 'Refresh' }).click();
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await world.nextHeld();
     const running = activity.getByRole('listitem', { name: 'repo.summary running' });
     await running.getByRole('button', { name: 'Cancel' }).waitFor();

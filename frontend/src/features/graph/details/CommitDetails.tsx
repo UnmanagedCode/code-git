@@ -28,6 +28,7 @@ export function CommitDetails({ tab, inDialog = false }: { tab: Tab | null; inDi
 function DetailsView({ tab }: { tab: Tab }) {
   const sel = useGraphSelection(tab);
   const data = useGraphData(tab);
+  if (data.status === 'idle') return null;
   let body;
   if (!sel.items.length) body = <p className="text-sm text-muted-foreground">Select a commit</p>;
   else if (sel.items.length > 1) body = <Multi items={sel.items} commits={data.commits} />;

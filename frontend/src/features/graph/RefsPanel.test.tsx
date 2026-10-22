@@ -96,3 +96,9 @@ test('a worktrees failure (old git) shows a notice in the Worktrees section', as
   await show(w);
   expect(screen.getByRole('note').textContent).toContain("unknown switch `z'");
 });
+
+test('a graph that never opened (not a repo) leaves the refs panel empty', () => {
+  stubGraph(world());
+  const { container } = render(<RefsPanel tab={TAB} />);
+  expect(container.textContent).toBe('');
+});

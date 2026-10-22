@@ -80,10 +80,10 @@ function Message({ row }: { row: GraphRow }) {
     const n = c.counts;
     return (
       <span className="flex min-w-0 items-center gap-2">
-        <span className="font-mono text-muted-foreground">// WIP</span>
-        <span className="truncate font-medium">{c.name}</span>
+        <span className="shrink-0 font-mono whitespace-nowrap text-muted-foreground">// WIP</span>
+        <span className="max-w-48 shrink-0 truncate font-medium">{c.name}</span>
         {n && (
-          <span className="flex gap-1">
+          <span className="flex min-w-0 gap-1 overflow-hidden">
             {n.staged > 0 && <Badge variant="success">{n.staged} staged</Badge>}
             {n.unstaged > 0 && <Badge variant="info">{n.unstaged} unstaged</Badge>}
             {n.untracked > 0 && <Badge variant="secondary">{n.untracked} untracked</Badge>}

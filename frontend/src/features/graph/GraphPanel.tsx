@@ -90,9 +90,14 @@ function GraphView({ tab }: { tab: Tab }) {
     const el = body.current;
     if (!el) return;
     setView((v) => (v.top === el.scrollTop && v.h === el.clientHeight ? v : { top: el.scrollTop, h: el.clientHeight }));
-    if (root.current) setCssPx(root.current, '--graph-scroll-x', el.scrollLeft);
   }, []);
+  // The header scrolls sideways with the rows, both ways: focusing a header cell scrolls the header itself.
+  const head = useRef<HTMLDivElement>(null);
+  const syncX = (from: HTMLElement | null, to: HTMLElement | null) => {
+    if (from && to && to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft;
+  };
   const onScroll = () => {
+    syncX(body.current, head.current);
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => { frame.current = 0; readView(); });
   };
@@ -308,7 +313,7 @@ function GraphView({ tab }: { tab: Tab }) {
   if (data.status === 'idle') return null;
   const loaded = data.commits.length;
   return (
-    <div ref={root} className="flex h-full min-h-0 flex-col" data-graph-root="">
+    <div ref={root} className="flex h-full min-h-0 flex-col" data-graph-root="" data-loaded={loaded} data-more={data.nextSkip !== null ? '' : undefined}>
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5">
         <div className="relative flex min-w-40 flex-1 items-center sm:max-w-96">
           <SearchIcon className="pointer-events-none absolute left-2 size-4 text-muted-foreground" />
@@ -394,8 +399,8 @@ function GraphView({ tab }: { tab: Tab }) {
       {data.status === 'error' && !data.refs && <p className="p-4 text-sm text-muted-foreground">The graph could not be loaded.</p>}
       {data.refs && (
         <>
-          <div className="shrink-0 overflow-hidden">
-            <div className="min-w-(--graph-min-w) -translate-x-(--graph-scroll-x)">
+          <div ref={head} className="shrink-0 overflow-hidden" onScroll={() => syncX(head.current, body.current)}>
+            <div className="min-w-(--graph-min-w)">
               <GraphHeader project={tab.project} prefs={prefs} root={() => root.current} />
             </div>
           </div>
