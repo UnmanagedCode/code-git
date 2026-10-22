@@ -73,6 +73,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | `counts.conflicted` | Unmerged entries |
 
 - Refusal: 409 `NOT_A_REPO` with `detail` = git's stderr, when git exits 128 saying "not a git repository".
+- First `git rev-parse --git-dir`: exactly `.` (the git dir is the working tree; nothing is parsed, so a path holding a newline cannot fool it) → 409 `BARE_REPO`, before `status` runs. Under `BASE_ARGS`' `--work-tree=.` a bare repository's status would succeed, walking its own files as untracked. The repository's `core.bare` is never consulted: true, false (set directly or through an `[include]`) or unset, a bare repository is refused. A normal repo (`.git`), a linked worktree — of a normal or a bare repo — and a `--separate-git-dir` clone have their git dir elsewhere. Outside a repository this command exits 128 → `NOT_A_REPO` as above.
 
 ### Diff sources
 
@@ -197,6 +198,166 @@ Every log-family command adds `--no-show-signature --no-ext-diff --no-textconv`.
   - `coAuthors` come from `Co-authored-by:` trailers; a value that is not `Name <email>` is dropped.
   - `files`: a merge against its first parent, a root commit against the empty tree; `status` is the first letter of git's (`A`, `M`, `D`, `R`, `C`, `T`, …); a rename/copy carries `oldPath`.
   - The two commands are separate: when the file list fails (e.g. 422 `OUTPUT_TOO_LARGE` on a huge commit), `files` is `null` and `filesError` says why, and the metadata is still returned. A cancel cancels the op; a failing metadata command fails it.
+### Staging ops: shared rules
+
+The ops below change the index or the worktree (`kind: 'write'`, not cancellable). Their caps are `STAGE_LIMITS` (`src/git/stage/limits.js`).
+
+- Every path passes `assertPath`. A list holds 1…`STAGE_LIMITS.maxPaths` paths; duplicates are dropped.
+- **Multi-path commands read their paths from stdin**: `--pathspec-from-file=- --pathspec-file-nul` (`add`, `reset`, `restore`, `rm`), so the argv never grows with the request.
+- **`ls-files` and `clean` have no `--pathspec-from-file`**: their paths go after `--`, in chunks of at most `STAGE_LIMITS.argvChunkBytes` argv bytes, one command per chunk.
+- `GIT_LITERAL_PATHSPECS=1` applies to both forms: a path named `*.txt` matches only itself.
+- A rename or copy is two paths: the UI sends both (`patchPaths`, `features/diff/patch.ts`).
+
+### `stage.files` (write)
+
+- `params`: `{paths}` or `{all: true}`, exactly one (else `BAD_PARAMS`).
+- Runs `git add -A --pathspec-from-file=- --pathspec-file-nul` (paths on stdin), or `git add -A`.
+- Accepts every unstaged status: `M`, `D`, `T`, `?`, `U`. Staging a `U` path marks it resolved.
+- `result`: `{paths}` (`null` for all).
+
+### `stage.unstageFiles` (write)
+
+- `params`: `{paths}` or `{all: true}`.
+- HEAD born (`rev-parse --verify --quiet HEAD^{commit}`): `git reset -q --pathspec-from-file=- --pathspec-file-nul`, or `git reset -q`.
+- HEAD unborn: `git rm --cached -r -q --ignore-unmatch --pathspec-from-file=- --pathspec-file-nul`, or `git rm --cached -r -q --ignore-unmatch -- .`. The files stay on disk, untracked.
+- `result`: `{paths}` (`null` for all).
+
+### `stage.discardFiles` (write)
+
+- `params`: `{tracked?: paths, untracked?: paths}`; at least one path in total, at most `STAGE_LIMITS.maxPaths`.
+- Both gates run before anything changes, so a refused request discards nothing:
+
+| Gate | Command (per chunk) | Refusal |
+|---|---|---|
+| Each tracked path names one file: no trailing `/`, no empty or `.` segment (`filePath`, at params) | — | 400 `BAD_PATH` |
+| Each tracked path is a file in the index (not a directory, not `.`) | `git ls-files -c -z -- <tracked>` lists every one | 400 `BAD_PATH` |
+| No tracked path is unmerged | `git ls-files -u -z -- <tracked>` prints nothing | 409 `CONFLICTED` |
+| Nothing untracked or ignored lies under a tracked path (a tracked file now a directory on disk: restoring it would delete the directory's contents) | `git ls-files --others -z -- <tracked>` prints nothing | 409 `UNTRACKED_UNDER_PATH`, `paths` = the first 100 found |
+| No untracked path ends in `/` (a nested repository) | — | 400 `BAD_PATH` |
+| git lists exactly the requested untracked set | `git ls-files --others --exclude-standard -z -- <untracked>` | 400 `BAD_PATH` (an ignored, tracked, missing path, a directory, a path through a symlinked directory) |
+
+- Then `git restore --worktree --pathspec-from-file=- --pathspec-file-nul` for the tracked paths (from the index: staged changes stay), and `git clean -f -q -- <untracked chunk>` per chunk. Never `-d`, never `-x`.
+- "Discard all" in the UI is this op called with the unstaged and untracked lists the panel showed: a file created after that is never touched.
+- `result`: `{tracked, untracked}` — what was discarded. Neither is recoverable from git (see architecture → What each destructive op destroys).
+
+### Stage selection: `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` (write)
+
+Stage, unstage or discard a selection of one file's hunks and lines. One implementation (`applySelection` in `src/git/ops/stage.js`; the pure builder is `buildSelectionPatch` in `src/git/stage/selection.js`).
+
+- `params`: `{path, context?, hunks: [{header, lines: [{index, text}]}]}`.
+  - `context`: 0…1000 or `'full'` (default 3) — the context the diff was shown with.
+  - At least one hunk; each hunk at least one line; headers unique, line indices unique integers ≥ 0 within a hunk.
+  - `header` (≤ 4096 characters, starts `@@ `) is `Hunk.header` as `diff.file` returned it; `index` is the line's index in `Hunk.lines`; `text` is that line's `DiffLine.text`.
+  - Whole hunk = every add/del line of that hunk (the UI fills them in).
+
+| Op | Re-reads (whitespace never ignored; `DIFF_CONFIG`, `DIFF_FLAGS`, `-U<context>`) | Builds | Applies |
+|---|---|---|---|
+| `stage.stageLines` | index → worktree: `git diff … -- path` | forward | `git apply --cached` |
+| `stage.unstageLines` | HEAD → index: `git diff … --cached --end-of-options <HEAD oid> -- path` | reverse | `git apply --cached -R` |
+| `stage.discardLines` | index → worktree | reverse | `git apply -R` (worktree only) |
+
+Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply.whitespace` and `apply.ignoreWhitespace`) and reads the patch from stdin. **Never `--unidiff-zero`**: the patch is built from a second re-read at `max(context, APPLY_MIN_CONTEXT)` (`src/git/ops/stage.js`; `'full'` stays full), because `git apply --unidiff-zero` matches a context-free hunk at the wrong occurrence — on a file without a final newline it exits 0 having changed other lines, even with git's own `-U0` patch. With context, git checks it, and a hunk without leading or trailing context must sit at the file's start or end.
+
+**Steps:**
+
+1. Re-run the diff at the request's `context` and decode it as **latin1** (one character per byte), then parse it with `parseFilePatch`. A request's `header` and `text` are compared with the fresh diff's bytes decoded as UTF-8 (invalid bytes replaced) — what the UI was shown. When `context` is under `APPLY_MIN_CONTEXT`, re-run it at that context too: each selected line is found there by kind, line number on its side and text (git's edit script is the same at every `-U`; only the hunk grouping changes), and steps 2–5 build from that read. A line not found → `STALE_DIFF`.
+2. **409 `PARTIAL_UNSUPPORTED`** when the file header has `new file mode`, `deleted file mode`, `rename from`, `copy from`, `diff --cc` / `diff --combined`, `Binary files` / `GIT binary patch`, or a `160000` mode; when there are no hunks (an empty diff, a mode-only change); and for `unstageLines` on an unborn HEAD. A single path never pairs as a rename, so a staged rename reads as a new file. The UI offers hunk/line actions only for `M` files.
+3. **409 `STALE_DIFF`** when a requested header is not in the fresh diff, an index is out of range or names a context line, or a line's text differs.
+4. **Build** (only requested hunks are emitted):
+
+| Line | forward (stage) | reverse (unstage, discard) |
+|---|---|---|
+| context | context | context |
+| selected `-` / `+` | kept | kept |
+| unselected `-` | context | dropped |
+| unselected `+` | dropped | context |
+
+   - **Within a change block** (a run of `-`/`+` lines) the i-th removed line pairs with the i-th added line, as the split view shows them, and each pair is emitted removed-then-added. Staging `c → C` out of `-c -d +C +D` gives `C d`.
+   - **Header:** git's own `diff --git`, `---` and `+++` lines, verbatim (git's path quoting); the `index` and `old mode`/`new mode` lines are dropped, so a mode change is never applied as a side effect.
+   - **Counts:** the side the patch applies to (old for forward, new for reverse) keeps git's start and count. The other side's count is recomputed; its start = `before + 1`, or `before` when its count is 0, where `before` = the fixed side's lines before the hunk (`start − 1`, or `start` for an empty side) plus the growth of the hunks already emitted.
+   - Emitted as `@@ -a,b +c,d @@`, without git's section text.
+5. **No newline at end of file:** a line keeps its `\ No newline at end of file` marker on every side it is on (context = both). It must still be the last line of each of those sides in the hunk, else **409 `SELECTION_UNSUPPORTED`** ("include the end-of-file newline change"): e.g. staging `+c` without `-b` when both lack a final newline.
+6. `git apply` checks the context. A change between the re-read and the apply fails the apply: 422 `GIT_FAILED` with git's stderr ("patch does not apply"), nothing written. Each command takes the project lock; the op as a whole is not atomic.
+
+- `result`: `{path}`; `discardLines` also returns `{patchB64}`, the exact patch applied with `-R`. Applying it forward (`git apply`) restores the discarded lines.
+
+### `commit.create` (write)
+
+- `params`: `{summary, description?, amend?, messageOnly?, noVerify?}`.
+  - `summary`: non-empty after trimming, one line (no `\n`/`\r`). Neither field may contain NUL. → `BAD_PARAMS`.
+  - `messageOnly` needs `amend` (`BAD_PARAMS`). Booleans default to `false`.
+- Message: `joinMessage` (`src/git/commit/message.js`) — `summary.trim()`, then a blank line and the description with trailing whitespace trimmed (when non-empty), then `\n`. Sent on stdin.
+- Checks: `amend` with an unborn HEAD → 409 `NO_HEAD`. Without `amend`: `git diff --cached --quiet --no-ext-diff --no-textconv --ignore-submodules=none` exits 0 (nothing staged) **and** `git rev-parse -q --verify MERGE_HEAD` exits 1 (no merge in progress) → 409 `NOTHING_TO_COMMIT`. A merge with nothing staged commits.
+- Runs `git commit [--amend [--only]] [--no-verify] -F -`. No `--cleanup`: the repo's `commit.cleanup` applies; git's default for `-F` is `whitespace`, which keeps `#` lines.
+
+| Mode | Flags | Effect |
+|---|---|---|
+| commit | — | Staged changes; on a detached HEAD, HEAD moves and no branch does |
+| amend | `--amend` | Replaces HEAD with the staged changes + the message; a root commit stays parentless |
+| message-only amend | `--amend --only` (no paths) | Replaces HEAD's message; the tree is HEAD's, staged changes stay staged |
+| skip hooks | `--no-verify` | No `pre-commit` / `commit-msg` hooks |
+
+- A hook or signing failure → 422 `GIT_FAILED` with git's `stderr` (the hook's output).
+- `result`: `{oid}`, HEAD after the commit (`rev-parse --verify --quiet HEAD^{commit}`).
+
+### `commit.state` (read, cancellable)
+
+- `params`: none. Runs `git rev-parse -q --verify MERGE_HEAD`.
+- `result`: `{merging}` — a merge is being concluded, so a commit is valid with nothing staged (the commit box enables its button on it).
+
+### `commit.headMessage` (read, cancellable)
+
+- `params`: none. Unborn HEAD → 409 `NO_HEAD`.
+- Runs `git log -1 --no-show-signature --format=%B --end-of-options <HEAD oid>`.
+- `result`: `{oid, summary, description}` (`splitMessage`: the first non-blank line, then the rest minus one leading blank line, trailing whitespace trimmed).
+
+### `commit.template` (read, cancellable)
+
+- `params`: none.
+- `git config --path --get commit.template` (`~/` expanded). Unset → `{path: null, draft: null, problem: null}`.
+- Reads the file with `readNoIndex` (`git diff --no-index /dev/null <path>`). A relative template path resolves against the repo toplevel (`git rev-parse --show-toplevel`); a symlink is followed by hand, each relative target against its link's directory, for up to `STAGE_LIMITS.templateMaxLinks` hops.
+- Comment prefix: `core.commentString`, else `core.commentChar`; `auto` or unset → `#`. Lines starting with it are dropped, then `splitMessage`.
+- `result`: `{path, draft: {summary, description} | null, problem: string | null}`. A missing, binary, non-file, over-`STAGE_LIMITS.templateMaxBytes` template or a link chain past the hop limit is a `problem`, never a refusal.
+
+### `ignore.add` (write)
+
+- `params`: `{kind: 'path' | 'ext' | 'dir', value, stopTracking?}`.
+- Target: the **root `.gitignore`** (shared with the team). `.git/info/exclude` is not offered: `git apply` refuses `.git/` paths and code-git runs only git.
+- Pattern, built only by `ignorePattern` (`src/git/ignore/pattern.js`):
+
+| `kind` | Pattern | Matches |
+|---|---|---|
+| `path` | `/<path>` | that file |
+| `dir` | `/<dir>/` (a trailing `/` in `value` is dropped first) | that directory |
+| `ext` | `*.<ext>` (non-empty, no `/`, no leading `.`, else `BAD_PARAMS`) | such files at any depth |
+
+  `\`, `*`, `?`, `[` and each trailing space are escaped with `\`; the `/` or `*.` prefix means a pattern never starts with `#` or `!`. A control character → `BAD_PATH`; `path` / `dir` also pass `assertPath` and refuse an empty or `.` segment (`BAD_PATH`): never `.`, the whole repository.
+- Reads `.gitignore` with `readNoIndex`. A symlink, binary, directory, or a file over `STAGE_LIMITS.gitignoreMaxBytes` → 409 `GITIGNORE_UNSUPPORTED`.
+- A line already equal to the pattern (a trailing `\r` ignored) → nothing is written (`added: false`).
+- Else `git apply --whitespace=nowarn --no-ignore-whitespace -` (worktree, unstaged) of one hunk with the **whole file as context**: a concurrent edit makes the apply fail (422 `GIT_FAILED`) instead of being overwritten.
+  - Absent → `new file mode 100644`, `--- /dev/null`.
+  - Empty → `@@ -0,0 +1,1 @@` with `--unidiff-zero`.
+  - No final newline → the last line is re-emitted with one (`-last`, `\ No newline at end of file`, `+last`).
+  - A file whose last terminated line ends in CR gets `\r\n` on the new lines (the last line decides, not the first: `"\na\r\n"` gets CRLF).
+- `stopTracking: true` (the UI confirms it): first `git ls-files -z -c -- <value>` (`path`, `dir`) or `git ls-files -z -c -i --exclude=<pattern>` (`ext`: this pattern only, never `--exclude-standard`) — a `path` that lists anything but itself is a folder → 400 `BAD_PATH` before anything is written — then, after `.gitignore`, `git rm --cached -q --pathspec-from-file=- --pathspec-file-nul` of that list. The files stay on disk. `.gitignore` is written first; a failing `rm` is 422 `GIT_FAILED` with `step: 'stopTracking'` and a message saying `.gitignore` was already changed.
+- `result`: `{pattern, added, untracked: paths removed from the index}`.
+
+### `files.restore` (write)
+
+- `params`: `{oid /* full commit id, OID_RE */, path}`; `path` names one file (`filePath`: no trailing `/`, no empty or `.` segment → `BAD_PATH`).
+- `git cat-file -t <oid>` must print `commit` (else 404 `REV_UNKNOWN`); `git cat-file -t <oid>:<path>` must print `blob` (else 404 `PATH_NOT_IN_COMMIT`: absent, a directory, a gitlink).
+- `git ls-files --others -z -- <path>` must print nothing (a tracked file now a directory holding untracked or ignored files) → 409 `UNTRACKED_UNDER_PATH`, `paths`.
+- Runs `git restore --source=<oid> --staged --worktree -- <path>` (GitKraken's "reset file to this commit"): index and worktree. Through an untracked symlinked directory git replaces the link with a real directory and writes inside the repo.
+- `result`: `{oid, path}`.
+
+### `patch.check` (read, cancellable) and `patch.apply` (write)
+
+- `params`: `{patchB64, apply?: 'worktree' | 'index'}` (default `worktree`). Strict base64, decoded 1…`STAGE_LIMITS.applyPatchMaxBytes` bytes. `apply: 'both'` (`git apply --index`) is refused `BAD_PARAMS`: see the residual risks in architecture.
+- `patch.check`: `git apply --check --numstat -z [--cached] --whitespace=nowarn --no-ignore-whitespace -`. `result`: `{files: [{path, added, deleted}]}` (counts `null` for binary; `--numstat -z` names a rename by its new path only).
+- `patch.apply`: `git apply [--cached] --whitespace=nowarn --no-ignore-whitespace -`. `result`: `{apply, bytes}`.
+- Atomic: no `--reject`, so all of it applies or none. Never `--unsafe-paths`, `--directory`, `-p`, `--include`/`--exclude`, `--3way`, `--index`.
+- Exit 1 (does not apply) or 128 (no valid patch in the input; an `..`, absolute or `.git/` path) → 409 `PATCH_DOES_NOT_APPLY` with `exitCode` and `stderr`. Worktree mode also refuses a path beyond a symlink; index mode never writes to disk.
+- A mailbox (`format-patch`) works: git skips the mail header.
 
 ### Paging convention (for ops that list)
 
@@ -250,6 +411,17 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `CANCELLED` | 409 | The op was cancelled |
 | `NO_MERGE_BASE` | 409 | `A...B` has no common ancestor |
 | `DIFF_NOT_CONTIGUOUS` | 409 | A multi-selection the multi-select rule cannot diff |
+| `CONFLICTED` | 409 | A path to discard has a merge conflict |
+| `PARTIAL_UNSUPPORTED` | 409 | Hunk or line staging asked of a file that is not a plain modification |
+| `SELECTION_UNSUPPORTED` | 409 | A line selection git cannot apply as one patch (an end-of-file newline change left out) |
+| `STALE_DIFF` | 409 | The selected hunk or lines no longer match the file's diff |
+| `NOTHING_TO_COMMIT` | 409 | Nothing staged and no merge in progress |
+| `NO_HEAD` | 409 | The op needs a commit and HEAD is unborn |
+| `PATCH_DOES_NOT_APPLY` | 409 | `git apply` refused the patch; `stderr` |
+| `GITIGNORE_UNSUPPORTED` | 409 | The root `.gitignore` is a symlink, binary or over `STAGE_LIMITS.gitignoreMaxBytes` |
+| `PATH_NOT_IN_COMMIT` | 404 | The path is not a file in that commit |
+| `UNTRACKED_UNDER_PATH` | 409 | A tracked path to discard is now a directory holding untracked or ignored files; `paths` |
+| `BARE_REPO` | 409 | A bare repository (its git dir is the working tree, whatever `core.bare` says): `repo.summary` and every write refuse it |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |

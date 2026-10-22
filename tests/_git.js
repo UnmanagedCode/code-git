@@ -27,7 +27,8 @@ export function tempDir(t, prefix = 'cg-') {
 /** Helpers around an existing checkout directory. */
 export function bindRepo(dir, home) {
   const env = hermeticEnv(home);
-  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', env }).trim();
+  // `repo.pinWorkTree` (set by a hostile core.worktree) pins the helper's own commands to the checkout, as BASE_ARGS does.
+  const git = (...args) => execFileSync('git', ['-C', dir, ...(repo.pinWorkTree ? ['--work-tree=.'] : []), ...args], { encoding: 'utf8', env }).trim();
   const repo = {
     dir,
     git,

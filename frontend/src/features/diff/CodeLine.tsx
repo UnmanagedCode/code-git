@@ -66,6 +66,37 @@ export const LineNo = ({ no }: { no: number | null }) => (
   <span className="w-12 shrink-0 pr-2 text-right text-muted-foreground select-none">{no ?? ''}</span>
 );
 
-export const HunkHeader = ({ header }: { header: string }) => (
-  <div className="bg-info/10 px-2 text-info select-none" data-hunk-header="">{header}</div>
+export const HunkHeader = ({ header, actions }: { header: string; actions?: ReactNode }) => (
+  <div className="flex items-center gap-2 bg-info/10 px-2 text-info select-none" data-hunk-header="">
+    <span className="min-w-0 flex-1 truncate">{header}</span>
+    {actions}
+  </div>
 );
+
+/** Line staging in the views: which lines are selected, how a gutter click toggles one, and a hunk header's buttons. */
+export interface StagingView {
+  selected: ReadonlySet<string>;
+  onToggle: (hunk: number, index: number, shift: boolean) => void;
+  hunkActions?: (hunk: number) => ReactNode;
+}
+
+/** The gutter toggle of an added or removed line. */
+export function LineToggle({ cell, staging }: { cell: Cell; staging: StagingView }) {
+  const key = `${cell.hunk}:${cell.index}`;
+  const on = staging.selected.has(key);
+  return (
+    <button
+      type="button"
+      aria-label={`Select ${cell.kind === 'del' ? 'removed' : 'added'} line ${cell.no ?? ''}`}
+      aria-pressed={on}
+      data-selected={on ? '' : undefined}
+      className={cn('w-4 shrink-0 rounded-sm text-center outline-none focus-visible:ring-1 focus-visible:ring-ring', on ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent')}
+      onClick={(e) => staging.onToggle(cell.hunk, cell.index, e.shiftKey)}
+    >
+      {on ? '✓' : ''}
+    </button>
+  );
+}
+
+/** A gutter cell for a line that cannot be selected (context), so the columns stay aligned. */
+export const NoToggle = () => <span className="w-4 shrink-0" aria-hidden />;

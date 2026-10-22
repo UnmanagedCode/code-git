@@ -48,3 +48,19 @@ test('the diff ops are registered as cancellable reads', () => {
     assert.equal(d.cancellable, true, name);
   }
 });
+
+test('the staging, commit, ignore, restore and patch writes are registered as non-cancellable writes', () => {
+  for (const name of ['stage.files', 'stage.unstageFiles', 'stage.discardFiles', 'stage.stageLines', 'stage.unstageLines', 'stage.discardLines', 'commit.create', 'ignore.add', 'files.restore', 'patch.apply']) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'write', name);
+    assert.equal(d.cancellable, false, name);
+  }
+});
+
+test('the commit box reads and patch.check are cancellable reads', () => {
+  for (const name of ['commit.state', 'commit.headMessage', 'commit.template', 'patch.check']) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'read', name);
+    assert.equal(d.cancellable, true, name);
+  }
+});

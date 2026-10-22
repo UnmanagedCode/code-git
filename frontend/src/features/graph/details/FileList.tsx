@@ -1,5 +1,5 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { clip } from '@/lib/clip';
+import { clip, FILE_RENDER_CAP } from '@/lib/clip';
 import { FolderIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getItem, setItem } from '@/lib/storage';
@@ -12,8 +12,6 @@ import { CONTEXT, type FileCtx } from '../contexts';
 import type { CommitFile } from '../types';
 import { buildFileTree, statusClass, type TreeNode } from './fileTree';
 
-/** Files rendered before "Show all N". */
-export const FILE_RENDER_CAP = 1000;
 const VIEW_KEY = 'graph:fileView';
 type View = 'path' | 'tree';
 const loadView = (): View => (getItem(VIEW_KEY) === 'tree' ? 'tree' : 'path');

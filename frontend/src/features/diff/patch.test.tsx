@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Shell } from '@/shell/Shell';
@@ -29,6 +29,9 @@ beforeEach(() => {
   HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) { clicked.push(this); };
 });
 afterEach(() => { HTMLAnchorElement.prototype.click = origClick; });
+
+/** The diff header's alert (the Changes panel beside it has alerts of its own). */
+const diffAlert = () => within(screen.getByRole('region', { name: 'Diff' })).findByRole('alert');
 
 async function open(patch: Response | object = { ok: true, result: { filename: 'abc1234.patch', base64: B64, bytes: BYTES.length } }) {
   const fetch = stubFetch({
@@ -97,17 +100,17 @@ test('a selection needing more than PATCH_MAX_PATHS paths (renames count twice) 
   expect(patchPaths(renames)).toHaveLength(PATCH_MAX_PATHS + 2);
   await act(() => downloadPatch(APP, { kind: 'commit', rev: OID('c') }, patchPaths(renames)));
   await act(() => copyPatch(APP, { kind: 'commit', rev: OID('c') }, patchPaths(renames)));
-  expect((await screen.findByRole('alert')).textContent).toBe(`Too many files selected for a patch (max ${PATCH_MAX_PATHS} paths); use the whole-diff patch`);
+  expect((await diffAlert()).textContent).toBe(`Too many files selected for a patch (max ${PATCH_MAX_PATHS} paths); use the whole-diff patch`);
   expect(patches()).toHaveLength(0);
   expect(clicked).toHaveLength(0);
   await act(() => downloadPatch(APP, { kind: 'commit', rev: OID('c') }, patchPaths(renames.slice(0, PATCH_MAX_PATHS / 2))));
   await waitFor(() => expect(patches()).toHaveLength(1));
-  expect(screen.queryByRole('alert')).toBeNull();
+  expect(within(screen.getByRole('region', { name: 'Diff' })).queryByRole('alert')).toBeNull();
 });
 
 test('a failed patch request is shown as an alert in the diff header', async () => {
   await open(json({ error: 'git output exceeded', code: 'OUTPUT_TOO_LARGE', limitBytes: 1 }, 422));
   await menu('Download .patch');
-  expect((await screen.findByRole('alert')).textContent).toMatch(/Could not create the patch: git output exceeded/);
+  expect((await diffAlert()).textContent).toMatch(/Could not create the patch: git output exceeded/);
   expect(clicked).toHaveLength(0);
 });

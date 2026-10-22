@@ -1,29 +1,23 @@
 import type { DiffSource } from '@/features/diff/api';
 import { openDiff } from '@/features/diff/openDiff';
+import { openWip } from '@/features/workdir/entry';
 import type { Target } from '@/lib/endpoints';
-import { getGraph } from '@/state/graph';
 import { fileIntentStore, getSelection, type SelectedRow } from '@/state/graphSelection';
 import { dispatchTabs, tabKey, type Tab } from '@/state/tabs';
-import type { Checkout } from './types';
 
-// The graph's hand-off to the diff viewer (features/diff/openDiff.ts; docs/graph.md → Diffs).
-
-/** A checkout's work in progress: unstaged changes, or the staged ones when nothing else is pending. */
-export function wipSource(c: Checkout | undefined): DiffSource {
-  const n = c?.counts;
-  return n && n.unstaged + n.untracked + n.conflicted === 0 && n.staged > 0 ? { kind: 'staged' } : { kind: 'unstaged' };
-}
+// The graph's hand-off to the diff viewer (features/diff/openDiff.ts; docs/graph.md → Diffs) and, for a WIP row, to the
+// Changes panel (features/workdir/entry.ts → openWip).
 
 /**
  * The diff a selection opens, and in which checkout: one commit or stash → that commit against its first parent;
- * one WIP row → its checkout's work in progress; several commits (with, at most, the own checkout's WIP) → the
- * combined `commits` source. Null for anything else (stashes or another checkout's WIP in a multi-selection).
+ * several commits (with, at most, the own checkout's WIP) → the combined `commits` source. Null for anything else: a
+ * single WIP row (it opens the Changes panel instead: openSelectionDiff), stashes or another checkout's WIP in a
+ * multi-selection.
  */
-export function selectionDiff(tab: Tab, items: SelectedRow[], checkouts: Checkout[]): { target: Target; source: DiffSource } | null {
+export function selectionDiff(tab: Tab, items: SelectedRow[]): { target: Target; source: DiffSource } | null {
   if (items.length === 1) {
     const it = items[0];
-    if (it.kind !== 'wip') return { target: tab, source: { kind: 'commit', rev: it.oid } };
-    return { target: it.checkout, source: wipSource(checkouts.find((c) => tabKey(c.target) === tabKey(it.checkout))) };
+    return it.kind === 'wip' ? null : { target: tab, source: { kind: 'commit', rev: it.oid } };
   }
   const oids = items.flatMap((it) => (it.kind === 'commit' ? [it.oid] : []));
   const wips = items.filter((it) => it.kind === 'wip');
@@ -38,9 +32,14 @@ export function openIn(tab: Tab, target: Target, source: DiffSource, opts: { pat
   openDiff(target, source, opts);
 }
 
-/** Opens the diff of the tab's current selection (Enter, the details panel's button); false when it has none. */
+/** Opens the diff of the tab's current selection (Enter, the details panel's button); a single WIP row opens its Changes panel. False when there is nothing to open. */
 export function openSelectionDiff(tab: Tab): boolean {
-  const d = selectionDiff(tab, getSelection(tab).items, getGraph(tab).checkouts);
+  const items = getSelection(tab).items;
+  if (items.length === 1 && items[0].kind === 'wip') {
+    openWip(tab, items[0].checkout);
+    return true;
+  }
+  const d = selectionDiff(tab, items);
   if (!d) return false;
   openIn(tab, d.target, d.source);
   return true;

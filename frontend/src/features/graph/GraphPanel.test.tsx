@@ -10,6 +10,7 @@ import { activityStore } from '@/state/useActivity';
 import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { loadSummary } from '@/state/useRepoSummary';
+import { workdirOf } from '@/state/workdir';
 import { GraphPanel } from './GraphPanel';
 import { requestJump } from './jump';
 import { DISPLAY_MAX } from '@/lib/clip';
@@ -227,14 +228,15 @@ test('Shift+F10 opens the focused row menu; the checked-out branch chip has no H
   fireEvent.keyDown(list(), { key: 'j' });
   fireEvent.keyDown(list(), { key: 'F10', shiftKey: true });
   const menu = await screen.findByRole('menu');
-  expect(within(menu).getAllByRole('menuitem')[0].textContent).toBe('Show details');
+  // The focused row is HEAD: C4's "Edit HEAD message…" (order 300) sorts above the graph's own items.
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(expect.arrayContaining(['Edit HEAD message…', 'Show details']));
   fireEvent.keyDown(menu, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   fireEvent.contextMenu(screen.getByText('main'));
   expect(within(await screen.findByRole('menu')).queryByRole('menuitem', { name: 'Hide' })).toBeNull();
 });
 
-test('Enter opens the selection diff: a commit, a multi-selection as the commits source, a WIP row as unstaged', async () => {
+test('Enter opens the selection diff: a commit, a multi-selection as the commits source; a WIP row opens the Changes panel', async () => {
   const world = linearWorld(5);
   world.summaries[''] = summary({ head: { oid: oid(5), branch: 'main', unborn: false }, counts: { staged: 0, unstaged: 1, untracked: 0, conflicted: 0 } });
   await show(world);
@@ -248,8 +250,11 @@ test('Enter opens the selection diff: a commit, a multi-selection as the commits
   fireEvent.keyDown(list(), { key: 'Enter' });
   expect(source()).toEqual({ kind: 'commits', oids: [oid(4), oid(3), oid(2)], wip: false });
   fireEvent.click(rowEl('wip:')!);
+  // The click shows the Changes panel without taking the focus; Enter asks it to focus its summary. No diff opens.
+  expect(workdirOf(TAB).focus).toBeNull();
   fireEvent.keyDown(list(), { key: 'Enter' });
-  expect(source()).toEqual({ kind: 'unstaged' });
+  expect(source()).toEqual({ kind: 'commits', oids: [oid(4), oid(3), oid(2)], wip: false });
+  expect(workdirOf(TAB).focus).toBe('slot');
 });
 
 test('below lg the toolbar opens Refs and Compare as dialogs', async () => {

@@ -10,9 +10,8 @@ import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
-import { DISPLAY_MAX } from '@/lib/clip';
+import { DISPLAY_MAX, FILE_RENDER_CAP } from '@/lib/clip';
 import { BODY_SHOWN, CO_AUTHORS_SHOWN, CommitDetails } from './CommitDetails';
-import { FILE_RENDER_CAP } from './FileList';
 
 const TAB = { project: 'app', worktree: null };
 const A = oid(2);
@@ -35,9 +34,9 @@ async function show(detail: Parameters<typeof detailOf>[1] | Response, select: s
   return fetch;
 }
 
-test('nothing selected asks for a selection; a graph that never opened shows nothing', async () => {
+test('nothing selected asks for a selection (in the dialog: the slot shows the Changes panel then); a graph that never opened shows nothing', async () => {
   stubGraph(linearWorld(1));
-  const { container } = render(<CommitDetails tab={TAB} />);
+  const { container } = render(<CommitDetails tab={TAB} inDialog />);
   expect(container.textContent).toBe('');
   await act(async () => { await openGraph(TAB); });
   expect(screen.getByText('Select a commit')).toBeTruthy();
@@ -118,8 +117,9 @@ test('too many changes to list: the metadata renders and the file list says so',
 test('a merge says its changes are against the first parent; a failed load shows its error', async () => {
   await show({ parents: [P, oid(9)] });
   expect(await screen.findByText('Changes against the first parent')).toBeTruthy();
+  // Cleared: the slot gives way to the Changes panel.
   act(() => dispatchSelection(TAB, { type: 'clear' }));
-  expect(screen.getByText('Select a commit')).toBeTruthy();
+  expect(screen.queryByRole('complementary', { name: 'Commit details' })).toBeNull();
 });
 
 test('a failed load shows its error; a multi-selection lists the commits', async () => {
@@ -178,18 +178,24 @@ test('a 1 MB subject is cut to DISPLAY_MAX', async () => {
   expect(h.textContent).toBe(`${'z'.repeat(DISPLAY_MAX)}…`);
 });
 
-test('a huge signer and key, and a huge WIP branch name, are cut for display', async () => {
+test('a huge signer and key are cut for display', async () => {
   const huge = 's'.repeat(1_000_000);
   const { SignatureBadge } = await import('./SignatureBadge');
   render(<SignatureBadge status="G" signer={huge} keyId={huge} />);
   expect(screen.getByText('Signed').getAttribute('title')!.length).toBeLessThanOrEqual('Good signature: '.length + DISPLAY_MAX + 1);
+});
+
+test('in the right slot the details give way to the Changes panel for no selection or a single WIP row; in a dialog they do not', async () => {
   const world = linearWorld(2);
-  world.summaries[''] = summary({ head: { oid: oid(2), branch: `b${huge}`, unborn: false }, counts: { staged: 0, unstaged: 1, untracked: 0, conflicted: 0 } });
+  world.summaries[''] = summary({ head: { oid: oid(2), branch: 'main', unborn: false }, counts: { staged: 0, unstaged: 1, untracked: 0, conflicted: 0 } });
   stubGraph(world);
   await loadSummary(TAB);
   await openGraph(TAB);
-  dispatchSelection(TAB, { type: 'click', id: 'wip:', rows: [{ kind: 'wip', id: 'wip:', checkout: checkout(null) }] });
-  render(<CommitDetails tab={TAB} />);
-  const branch = await screen.findByText(/^bs+…$/);
-  expect(branch.textContent!.length).toBe(DISPLAY_MAX + 1);
+  const { unmount } = render(<CommitDetails tab={TAB} />);
+  expect(screen.queryByRole('complementary', { name: 'Commit details' })).toBeNull();
+  act(() => dispatchSelection(TAB, { type: 'click', id: 'wip:', rows: [{ kind: 'wip', id: 'wip:', checkout: checkout(null) }] }));
+  expect(screen.queryByRole('complementary', { name: 'Commit details' })).toBeNull();
+  unmount();
+  render(<CommitDetails tab={TAB} inDialog />);
+  expect(screen.getByRole('complementary', { name: 'Commit details' }).textContent).toContain('Select a commit');
 });

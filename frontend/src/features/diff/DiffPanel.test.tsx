@@ -32,7 +32,8 @@ function world(list: DiffFilesResult | Response | ((body: { target: { project: s
     'GET api/repos/app/worktrees': { worktrees: [] },
     'GET api/repos/other/worktrees': { worktrees: [] },
     'POST api/ops/diff.files': (_u: URL, init?: RequestInit) => {
-      if (list instanceof Response) return list;
+      // A fresh copy per request: the Changes panel lists through diff.files too, and a body is read once.
+      if (list instanceof Response) return list.clone();
       return { ok: true, result: typeof list === 'function' ? list(JSON.parse(String(init?.body))) : list };
     },
     'POST api/ops/diff.file': (_u: URL, init?: RequestInit) => {
@@ -113,7 +114,8 @@ test('a file list over the cap is an alert saying it is too large, with no file 
 test('a file is loaded against the pinned pair diff.files returned, not the original source', async () => {
   const { posts } = await openA();
   await waitFor(() => expect(posts('diff.file')).toHaveLength(1));
-  expect(posts('diff.files')[0].source).toEqual({ kind: 'commit', rev: 'HEAD' });
+  // The Changes panel's own unstaged/staged lists are not the diff's.
+  expect(posts('diff.files').filter((p) => (p.source as { kind: string }).kind === 'commit')[0].source).toEqual({ kind: 'commit', rev: 'HEAD' });
   expect(posts('diff.file')[0]).toEqual({
     source: { kind: 'pair', old: { type: 'tree', oid: OID('a') }, new: { type: 'tree', oid: OID('b') } }, path: 'src/a.ts', context: 3, whitespace: 'none',
   });

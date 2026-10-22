@@ -1,5 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
+import { filesResult } from '@/test/diffFixtures';
 import { summary } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 
@@ -23,6 +24,10 @@ test('a panel that throws while rendering is contained: the header and the other
     'POST api/ops/repo.summary': { ok: true, result: summary() },
     'POST api/ops/graph.refs': { ok: true, result: { head: { oid: null, branch: 'refs/heads/main', detached: false, unborn: true }, refs: [], stashes: [], worktrees: [], worktreesError: null } },
     'GET api/repos/app/worktrees': { worktrees: [] },
+    // The Changes panel beside the graph loads too; it must not add an alert of its own.
+    'POST api/ops/diff.files': { ok: true, result: filesResult([], { commit: null }) },
+    'POST api/ops/commit.state': { ok: true, result: { merging: false } },
+    'POST api/ops/commit.template': { ok: true, result: { path: null, draft: null, problem: null } },
   });
   render(<Shell />);
   act(() => dispatchTabs({ type: 'open', tab: { project: 'app', worktree: null } }));

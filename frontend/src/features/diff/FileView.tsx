@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { setPrefs, type DiffMode, type DiffPrefs, type FileState } from '@/state/diff';
 import type { DiffFile, FileDiff, Whitespace } from './api';
-import type { Marks } from './CodeLine';
+import type { Marks, StagingView } from './CodeLine';
 import { fileLabel, STATUS_LABEL } from './FileList';
 import { FileContentView } from './FileContentView';
 import { SplitView } from './SplitView';
@@ -50,9 +50,13 @@ export interface FileViewProps {
   canNextFile: boolean;
   onForce: () => void;
   search: ReactNode;
+  /** Hunk and line staging (an unstaged or staged diff of a modified file): the views' toggles and hunk buttons. */
+  staging?: StagingView;
+  /** Shown above the body: the line-selection actions. */
+  selectionBar?: ReactNode;
 }
 
-function Body({ file, state, forced, prefs, rows, marks, onForce }: FileViewProps) {
+function Body({ file, state, forced, prefs, rows, marks, onForce, staging }: FileViewProps) {
   const [showPointer, setShowPointer] = useState(false);
   if (file.oversized && !forced) {
     return (
@@ -92,7 +96,7 @@ function Body({ file, state, forced, prefs, rows, marks, onForce }: FileViewProp
   if (d.binary) return <Note><p>Binary file — not shown</p></Note>;
   const view = prefs.view === 'file'
     ? <FileContentView rows={rows} marks={marks} wrap={prefs.wrap} />
-    : prefs.mode === 'split' ? <SplitView rows={rows} marks={marks} wrap={prefs.wrap} /> : <UnifiedView rows={rows} marks={marks} wrap={prefs.wrap} />;
+    : prefs.mode === 'split' ? <SplitView rows={rows} marks={marks} wrap={prefs.wrap} staging={staging} /> : <UnifiedView rows={rows} marks={marks} wrap={prefs.wrap} staging={staging} />;
   if (d.lfs) {
     const side = (label: string, p: { oid: string; size: number } | null) => (
       <div className="flex gap-2"><span className="w-10 text-muted-foreground">{label}</span>{p ? <span className="font-mono text-foreground">{p.oid.slice(0, 12)} · {p.size} bytes</span> : <span>—</span>}</div>
@@ -153,6 +157,7 @@ export function FileView(props: FileViewProps) {
         </div>
       </div>
       {search}
+      {props.selectionBar}
       <div className="min-h-72 flex-1 overflow-auto md:min-h-0" data-diff-body="">
         <Body key={props.file.path} {...props} />
       </div>
