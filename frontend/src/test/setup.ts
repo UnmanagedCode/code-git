@@ -2,7 +2,9 @@ import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { resetDiff } from '@/state/diff';
 import { resetShownPanels } from '@/state/shownPanel';
+import { resetGraph } from '@/state/graph';
 import { resetGraphPrefs } from '@/state/graphPrefs';
+import { resetGraphSelection } from '@/state/graphSelection';
 import { EMPTY, tabsStore } from '@/state/tabs';
 import { resetActivity } from '@/state/useActivity';
 import { resetSummaries } from '@/state/useRepoSummary';
@@ -20,6 +22,8 @@ afterEach(() => {
   resetDiff();
   resetShownPanels();
   resetGraphPrefs();
+  resetGraph();
+  resetGraphSelection();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();

@@ -38,6 +38,7 @@ export interface ActivityEntry {
   argv: string[];
   env: Record<string, string>;
   stdinBytes: number;
+  kind: 'read' | 'write';
   cancellable: boolean;
   startedAt: string;
   durationMs: number | null;
@@ -53,9 +54,10 @@ const targetBody = (t: Target) => (t.worktree ? { project: t.project, worktree: 
 export const listRepos = () => api<{ repos: Repo[] }>('api/repos').then((r) => r.repos);
 export const listWorktrees = (project: string) =>
   api<{ worktrees: Worktree[] }>(`api/repos/${encodeURIComponent(project)}/worktrees`).then((r) => r.worktrees);
-/** Runs a backend op on a checkout. */
-export const runOp = <T>(name: string, target: Target, params?: unknown) =>
-  api<{ ok: true; result: T }>(`api/ops/${encodeURIComponent(name)}`, { method: 'POST', body: { target: targetBody(target), ...(params === undefined ? {} : { params }) } })
-    .then((r) => r.result);
+/** Runs a backend op on a checkout. Aborting `signal` drops the request, which cancels a cancellable op. */
+export const runOp = <T>(name: string, target: Target, params?: unknown, opts?: { signal?: AbortSignal }) =>
+  api<{ ok: true; result: T }>(`api/ops/${encodeURIComponent(name)}`, {
+    method: 'POST', body: { target: targetBody(target), ...(params === undefined ? {} : { params }) }, signal: opts?.signal,
+  }).then((r) => r.result);
 export const listActivity = () => api<{ entries: ActivityEntry[] }>('api/activity').then((r) => r.entries);
 export const cancelActivity = (id: number) => api<{ ok: true }>(`api/activity/${id}/cancel`, { method: 'POST' });

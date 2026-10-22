@@ -15,6 +15,6 @@ export const summary = (over: Partial<RepoSummary> = {}): RepoSummary => ({
 
 export const entry = (over: Partial<ActivityEntry> = {}): ActivityEntry => ({
   id: 1, opRunId: 'run-1', op: 'repo.summary', target: { project: 'app', worktree: null },
-  argv: ['git', '--no-pager', 'status', '--porcelain=v2'], env: {}, stdinBytes: 0, cancellable: true,
+  argv: ['git', '--no-pager', 'status', '--porcelain=v2'], env: {}, stdinBytes: 0, kind: 'read', cancellable: true,
   startedAt: '2026-01-01T00:00:00.000Z', durationMs: 12, exitCode: 0, stderr: '', stderrTruncated: false, status: 'ok', code: null, ...over,
 });
