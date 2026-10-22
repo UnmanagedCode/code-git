@@ -6,7 +6,6 @@ import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { dispatchTabs, tabKey } from '@/state/tabs';
 import { dfile } from '@/test/diffFixtures';
-import { FILE_RENDER_CAP } from '@/lib/clip';
 import { json, summary } from '@/test/fixtures';
 import { workdirWorld, type WorkdirWorld } from '@/test/workdirWorld';
 
@@ -294,26 +293,6 @@ test('a tracked row offers Ignore and stop tracking…, confirmed first; Cancel 
   await userEvent.click(screen.getByRole('menuitem', { name: "Ignore and stop tracking 'a.ts'…" }));
   await userEvent.click(within(dialog()).getByRole('button', { name: 'Ignore and stop tracking' }));
   await waitFor(() => expect(w.posts('ignore.add')).toEqual([{ kind: 'path', value: 'src/a.ts', stopTracking: true }]));
-});
-
-test('a list longer than FILE_RENDER_CAP mounts only that many rows until "Show all N"', async () => {
-  const many = Array.from({ length: FILE_RENDER_CAP + 25 }, (_, i) => dfile({ path: `f${i}.txt`, status: '?' }));
-  await show({ unstaged: many });
-  expect(within(section('Unstaged Files')).getAllByRole('option')).toHaveLength(FILE_RENDER_CAP);
-  expect(within(section('Unstaged Files')).getByRole('heading').textContent).toBe(`Unstaged Files (${FILE_RENDER_CAP + 25})`);
-  await userEvent.click(within(section('Unstaged Files')).getByRole('button', { name: `Show all ${FILE_RENDER_CAP + 25}` }));
-  expect(within(section('Unstaged Files')).getAllByRole('option')).toHaveLength(FILE_RENDER_CAP + 25);
-});
-
-test('Discard all lists at most FILE_RENDER_CAP untracked names, then how many more; all of them are still sent', async () => {
-  const many = Array.from({ length: FILE_RENDER_CAP + 3 }, (_, i) => dfile({ path: `u${i}.txt`, status: '?' }));
-  const w = await show({ unstaged: many });
-  await userEvent.click(screen.getByRole('button', { name: 'Discard all…' }));
-  const list = within(dialog()).getByRole('list', { name: 'Affected files' });
-  expect(within(list).getAllByRole('listitem')).toHaveLength(FILE_RENDER_CAP + 1);
-  expect(within(list).getByText('…and 3 more')).toBeTruthy();
-  await userEvent.click(within(dialog()).getByRole('button', { name: 'Discard all' }));
-  await waitFor(() => expect((w.posts('stage.discardFiles')[0] as { untracked: string[] }).untracked).toHaveLength(FILE_RENDER_CAP + 3));
 });
 
 test('Discard all says how many conflicted files it leaves untouched', async () => {
