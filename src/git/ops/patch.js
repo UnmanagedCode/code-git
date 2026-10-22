@@ -1,6 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { bad, paramsObject } from '../params.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
+import { assertWorktree } from '../worktree.js';
 
 // Check and apply a user's patch (plain diff or mailbox). Atomic: no --reject, so all of it applies or none.
 // Never --unsafe-paths, --directory, -p, --include/--exclude or --3way: git refuses `..`, absolute and `.git/` paths,
@@ -63,6 +64,7 @@ export const ops = [
     kind: 'write',
     params: (raw) => patchParams(raw, 'patch.apply'),
     async run(git, p) {
+      await assertWorktree(git);
       await apply(git, [...TARGET[p.apply], ...FLAGS], p.bytes);
       return { apply: p.apply, bytes: p.bytes.length };
     },

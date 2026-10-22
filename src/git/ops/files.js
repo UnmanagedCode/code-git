@@ -1,6 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { bad, paramsObject } from '../params.js';
 import { assertPath, OID_RE } from '../validate.js';
+import { assertWorktree } from '../worktree.js';
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -21,6 +22,7 @@ export const ops = [
       return { oid: p.oid, path: assertPath(p.path) };
     },
     async run(git, p) {
+      await assertWorktree(git);
       if (await objectType(git, p.oid) !== 'commit') throw new Refusal('REV_UNKNOWN', `${p.oid} is not a commit in this repository`);
       if (await objectType(git, `${p.oid}:${p.path}`) !== 'blob') throw new Refusal('PATH_NOT_IN_COMMIT', `${p.path} is not a file in ${p.oid.slice(0, 10)}`);
       await git(['restore', `--source=${p.oid}`, '--staged', '--worktree', '--', p.path]);

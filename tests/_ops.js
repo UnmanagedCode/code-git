@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getOp, OPS } from '../src/git/ops/index.js';
 import { ctxFor, gitFor } from './_ctx.js';
 import { HOSTILE_CONFIG } from './_diffRepo.js';
@@ -11,13 +13,26 @@ import { hermeticEnv, makeRepo } from './_git.js';
 
 /**
  * Repo config that would reshape what those ops read or write if it were not overridden: the diff fixture's keys, an
- * external diff that fails, and `apply.*` keys that make `git apply` refuse or fuzz whitespace. Set it after the
- * fixture's own commits.
+ * external diff that fails, `apply.*` keys that make `git apply` refuse or fuzz whitespace, and `core.worktree` pointing
+ * at another directory (a function of the repo: `ELSEWHERE` beside it). Set it after the fixture's own commits.
  */
 export const STAGE_HOSTILE_CONFIG = [
   ...HOSTILE_CONFIG, ['diff.external', 'false'], ['apply.whitespace', 'error'], ['apply.ignoreWhitespace', 'change'],
+  ['core.worktree', (repo) => elsewhereOf(repo)],
 ];
-export const hostile = (repo) => { for (const [k, v] of STAGE_HOSTILE_CONFIG) repo.git('config', k, v); };
+/** The directory a hostile core.worktree names; it holds `ELSEWHERE_FILES`, which no op may read, change or delete. */
+export const elsewhereOf = (repo) => path.join(repo.root, 'elsewhere');
+export const ELSEWHERE_FILES = { 'a.txt': 'ELSEWHERE a\n', 'b.txt': 'ELSEWHERE b\n', 'only-there.txt': 'ELSEWHERE only\n', '.gitignore': '*.txt\n' };
+/** Every file under the elsewhere directory with its content. */
+export const elsewhereSnapshot = (repo) => Object.fromEntries(fs.readdirSync(elsewhereOf(repo), { recursive: true })
+  .filter((f) => fs.statSync(path.join(elsewhereOf(repo), f)).isFile()).sort()
+  .map((f) => [f, fs.readFileSync(path.join(elsewhereOf(repo), f), 'utf8')]));
+export function hostile(repo) {
+  fs.mkdirSync(elsewhereOf(repo), { recursive: true });
+  for (const [f, c] of Object.entries(ELSEWHERE_FILES)) fs.writeFileSync(path.join(elsewhereOf(repo), f), c);
+  for (const [k, v] of STAGE_HOSTILE_CONFIG) repo.git('config', k, typeof v === 'function' ? v(repo) : v);
+  repo.pinWorkTree = true;
+}
 
 export async function opWorld(t, { name = 'repo' } = {}) {
   const repo = makeRepo(t, { name });
@@ -30,7 +45,7 @@ export async function opWorld(t, { name = 'repo' } = {}) {
     return def.run(gitFor(ctx), def.params(params), { target });
   };
   /** A command's raw stdout (blob bytes stay bytes). */
-  const raw = (...args) => execFileSync('git', ['-C', repo.dir, ...args], { env: hermeticEnv(repo.home) });
+  const raw = (...args) => execFileSync('git', ['-C', repo.dir, ...(repo.pinWorkTree ? ['--work-tree=.'] : []), ...args], { env: hermeticEnv(repo.home) });
   /** `path` → two-letter status, from `git status --porcelain -z` (untracked files listed individually). */
   const status = () => {
     const f = raw('status', '--porcelain', '-z', '--untracked-files=all').toString('utf8').split('\0');

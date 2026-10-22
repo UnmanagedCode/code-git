@@ -73,6 +73,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | `counts.conflicted` | Unmerged entries |
 
 - Refusal: 409 `NOT_A_REPO` with `detail` = git's stderr, when git exits 128 saying "not a git repository".
+- Then `git config --bool --get core.bare`: `true` → 409 `BARE_REPO`. Under `BASE_ARGS`' `--work-tree=.` a bare repository's status succeeds, listing its own files as untracked, so its `core.bare` decides.
 
 ### Diff sources
 
@@ -252,11 +253,11 @@ Stage, unstage or discard a selection of one file's hunks and lines. One impleme
 | `stage.unstageLines` | HEAD → index: `git diff … --cached --end-of-options <HEAD oid> -- path` | reverse | `git apply --cached -R` |
 | `stage.discardLines` | index → worktree | reverse | `git apply -R` (worktree only) |
 
-Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply.whitespace` and `apply.ignoreWhitespace`), `--unidiff-zero` when `context` is 0, and reads the patch from stdin.
+Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply.whitespace` and `apply.ignoreWhitespace`) and reads the patch from stdin. **Never `--unidiff-zero`**: the patch is built from a second re-read at `max(context, APPLY_MIN_CONTEXT)` (`src/git/ops/stage.js`; `'full'` stays full), because `git apply --unidiff-zero` matches a context-free hunk at the wrong occurrence — on a file without a final newline it exits 0 having changed other lines, even with git's own `-U0` patch. With context, git checks it, and a hunk without leading or trailing context must sit at the file's start or end.
 
 **Steps:**
 
-1. Re-run the diff and decode it as **latin1** (one character per byte), then parse it with `parseFilePatch`. A request's `header` and `text` are compared with the fresh diff's bytes decoded as UTF-8 (invalid bytes replaced) — what the UI was shown.
+1. Re-run the diff at the request's `context` and decode it as **latin1** (one character per byte), then parse it with `parseFilePatch`. A request's `header` and `text` are compared with the fresh diff's bytes decoded as UTF-8 (invalid bytes replaced) — what the UI was shown. When `context` is under `APPLY_MIN_CONTEXT`, re-run it at that context too: each selected line is found there by kind, line number on its side and text (git's edit script is the same at every `-U`; only the hunk grouping changes), and steps 2–5 build from that read. A line not found → `STALE_DIFF`.
 2. **409 `PARTIAL_UNSUPPORTED`** when the file header has `new file mode`, `deleted file mode`, `rename from`, `copy from`, `diff --cc` / `diff --combined`, `Binary files` / `GIT binary patch`, or a `160000` mode; when there are no hunks (an empty diff, a mode-only change); and for `unstageLines` on an unborn HEAD. A single path never pairs as a rename, so a staged rename reads as a new file. The UI offers hunk/line actions only for `M` files.
 3. **409 `STALE_DIFF`** when a requested header is not in the fresh diff, an index is out of range or names a context line, or a line's text differs.
 4. **Build** (only requested hunks are emitted):
@@ -415,6 +416,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `PATCH_DOES_NOT_APPLY` | 409 | `git apply` refused the patch; `stderr` |
 | `GITIGNORE_UNSUPPORTED` | 409 | The root `.gitignore` is a symlink, binary or over `STAGE_LIMITS.gitignoreMaxBytes` |
 | `PATH_NOT_IN_COMMIT` | 404 | The path is not a file in that commit |
+| `BARE_REPO` | 409 | A bare repository (`core.bare=true`): `repo.summary` and every working-tree write refuse it |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |

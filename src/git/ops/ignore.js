@@ -3,6 +3,7 @@ import { readNoIndex } from '../diff/noIndex.js';
 import { ignorePattern } from '../ignore/pattern.js';
 import { nulPaths, optBool, paramsObject } from '../params.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
+import { assertWorktree } from '../worktree.js';
 
 // Ignore a file, an extension or a directory in the root .gitignore, optionally removing what it matches from the index.
 // `.git/info/exclude` is not a target: `git apply` refuses `.git/` paths and code-git runs nothing but git.
@@ -44,6 +45,7 @@ export const ops = [
       return { kind: p.kind, pattern: ignorePattern(p.kind, p.value), value: p.value, stopTracking: optBool(p.stopTracking, 'stopTracking') };
     },
     async run(git, p) {
+      await assertWorktree(git);
       const cur = await readNoIndex(git, FILE, { maxBytes: STAGE_LIMITS.gitignoreMaxBytes });
       if (cur.kind !== 'file' && cur.kind !== 'absent') {
         throw new Refusal('GITIGNORE_UNSUPPORTED', `the root ${FILE} is ${cur.kind === 'large' ? `larger than ${STAGE_LIMITS.gitignoreMaxBytes} bytes` : `a ${cur.kind === 'other' ? 'directory' : cur.kind}`}: edit it by hand`);

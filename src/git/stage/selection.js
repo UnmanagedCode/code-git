@@ -27,10 +27,13 @@ function fileHeader(text) {
   return header;
 }
 
-/** The selected (hunk index → set of line indices) in the fresh diff, or STALE_DIFF when the request does not match it. */
+const stale = (why) => new Refusal('STALE_DIFF', `the file changed since its diff was shown (${why}): reload it and select again`);
+/** A change line's identity across diffs of one file pair at any context: its kind and its line number on its side. */
+const changeKey = (l) => (l.kind === 'del' ? `-${l.oldNo}` : `+${l.newNo}`);
+
+/** The selected change lines of the shown diff, or STALE_DIFF when the request does not match it. */
 function locate(hunks, request) {
-  const stale = (why) => new Refusal('STALE_DIFF', `the file changed since its diff was shown (${why}): reload it and select again`);
-  const selected = new Map();
+  const selected = [];
   for (const rh of request) {
     const hi = hunks.findIndex((h) => asShown(h.header) === rh.header);
     if (hi === -1) throw stale(`hunk ${rh.header} is gone`);
@@ -41,15 +44,32 @@ function locate(hunks, request) {
       if (!l) throw stale(`line ${index} of ${rh.header} is gone`);
       if (l.kind === 'context') throw stale(`line ${index} of ${rh.header} is not a change`);
       if (asShown(l.text) !== text) throw stale(`line ${index} of ${rh.header} differs`);
-      set.add(index);
+      selected.push(l);
     }
-    selected.set(hi, set);
   }
   return selected;
 }
 
 /**
- * The patch for `request` (`[{header, lines: [{index, text}]}]`) over `text`, one file's `git diff` output decoded as latin1.
+ * The selected lines, as (hunk index → line indices) of the diff the patch is built from. git's diff is the same edit
+ * script at every -U (context only groups it into hunks), so each change line has the same kind, number and text there.
+ */
+function mapOnto(hunks, lines) {
+  const at = new Map();
+  hunks.forEach((h, hi) => h.lines.forEach((l, li) => { if (l.kind !== 'context') at.set(changeKey(l), [hi, li, l]); }));
+  const selected = new Map();
+  for (const l of lines) {
+    const hit = at.get(changeKey(l));
+    if (!hit || hit[2].text !== l.text) throw stale(`line ${changeKey(l)} moved`);
+    selected.set(hit[0], (selected.get(hit[0]) ?? new Set()).add(hit[1]));
+  }
+  return selected;
+}
+
+/**
+ * The patch for `request` (`[{header, lines: [{index, text}]}]`) over `text`, one file's `git diff` output decoded as latin1
+ * at the context the request was made against. The patch itself is built from `applyText`, the same diff at the context
+ * it is applied with (default: `text`): the selected lines are mapped onto it by kind, line number and text.
  * `direction`:
  * - `forward` (stage: apply to the diff's old side): a selected −/+ is kept, an unselected − becomes context, an unselected + is dropped.
  * - `reverse` (unstage, discard: apply with -R to the diff's new side): a selected −/+ is kept, an unselected + becomes context, an unselected − is dropped.
@@ -58,11 +78,14 @@ function locate(hunks, request) {
  * so a mode change is never applied as a side effect. Returns the patch as a latin1 string.
  * Refuses PARTIAL_UNSUPPORTED, STALE_DIFF, and SELECTION_UNSUPPORTED when a "\ No newline" line would not end its side.
  */
-export function buildSelectionPatch(text, request, direction) {
-  const header = fileHeader(text).filter((l) => l.startsWith('diff --git ') || l.startsWith('--- ') || l.startsWith('+++ '));
-  const { hunks } = parseFilePatch(text);
-  if (!hunks.length) throw new Refusal('PARTIAL_UNSUPPORTED', 'the file has no text hunks: use the whole-file action');
-  const selected = locate(hunks, request);
+export function buildSelectionPatch(text, request, direction, applyText = text) {
+  fileHeader(text);
+  const shown = parseFilePatch(text).hunks;
+  if (!shown.length) throw new Refusal('PARTIAL_UNSUPPORTED', 'the file has no text hunks: use the whole-file action');
+  const lines = locate(shown, request);
+  const header = fileHeader(applyText).filter((l) => l.startsWith('diff --git ') || l.startsWith('--- ') || l.startsWith('+++ '));
+  const { hunks } = parseFilePatch(applyText);
+  const selected = mapOnto(hunks, lines);
   const forward = direction === 'forward';
   const out = [...header];
   let delta = 0;

@@ -5,6 +5,7 @@ import { bad, chunkPaths, nulPaths, paramsObject, pathList } from '../params.js'
 import { STAGE_LIMITS } from '../stage/limits.js';
 import { buildSelectionPatch } from '../stage/selection.js';
 import { assertPath } from '../validate.js';
+import { assertWorktree } from '../worktree.js';
 
 // Stage, unstage and discard whole files. Multi-path commands read their paths from stdin
 // (`--pathspec-from-file=- --pathspec-file-nul`); `ls-files` and `clean` have no such option, so their paths go after
@@ -94,7 +95,15 @@ const LINE_ACTIONS = {
   discard: { cached: false, direction: 'reverse', apply: ['-R'] },
 };
 
+/**
+ * The context a selection patch is built and applied with. Never 0: `git apply --unidiff-zero` matches a context-free
+ * hunk at the wrong occurrence (on a file without a final newline it exits 0 having changed other lines), even for
+ * git's own -U0 patch. With context, git checks it and a hunk without leading/trailing context must sit at the file's start/end.
+ */
+export const APPLY_MIN_CONTEXT = 3;
+
 async function applySelection(git, p, action) {
+  await assertWorktree(git);
   const a = LINE_ACTIONS[action];
   let revs = [];
   if (a.cached) {
@@ -103,11 +112,15 @@ async function applySelection(git, p, action) {
     revs = ['--cached', '--end-of-options', head];
   }
   // Whitespace is never ignored here: the hunks must be the file's real changes.
-  const d = await git([...DIFF_CONFIG, 'diff', ...DIFF_FLAGS, contextArg(p.context), ...revs, '--', p.path], { maxOutputBytes: DIFF_LIMITS.fileMaxOutputBytes });
-  const patch = buildSelectionPatch(d.stdout.toString('latin1'), p.hunks, a.direction);
+  const read = (context) => git([...DIFF_CONFIG, 'diff', ...DIFF_FLAGS, contextArg(context), ...revs, '--', p.path], { maxOutputBytes: DIFF_LIMITS.fileMaxOutputBytes })
+    .then((r) => r.stdout.toString('latin1'));
+  // The request is checked against the diff at its own context; the patch is built from one with enough context.
+  const shown = await read(p.context);
+  const applyContext = p.context === 'full' ? 'full' : Math.max(p.context, APPLY_MIN_CONTEXT);
+  const patch = buildSelectionPatch(shown, p.hunks, a.direction, applyContext === p.context ? shown : await read(applyContext));
   const bytes = Buffer.from(patch, 'latin1');
   // The flags override apply.whitespace / apply.ignoreWhitespace; git checks the context, so a race fails instead of fuzzing.
-  await git(['apply', ...a.apply, '--whitespace=nowarn', '--no-ignore-whitespace', ...(p.context === 0 ? ['--unidiff-zero'] : []), '-'], { stdin: bytes });
+  await git(['apply', ...a.apply, '--whitespace=nowarn', '--no-ignore-whitespace', '-'], { stdin: bytes });
   return { path: p.path, ...(action === 'discard' ? { patchB64: bytes.toString('base64') } : {}) };
 }
 
@@ -117,6 +130,7 @@ export const ops = [
     kind: 'write',
     params: (raw) => pathsOrAll(raw, 'stage.files'),
     async run(git, p) {
+      await assertWorktree(git);
       if (p.all) await git(['add', '-A']);
       else await git(['add', '-A', ...FROM_STDIN], { stdin: nulPaths(p.paths) });
       return { paths: p.paths };
@@ -152,6 +166,7 @@ export const ops = [
       return { tracked, untracked };
     },
     async run(git, p) {
+      await assertWorktree(git);
       // Both gates run before anything is changed, so a refused request discards nothing.
       if (p.tracked.length) await assertNotConflicted(git, p.tracked);
       if (p.untracked.length) await assertUntracked(git, p.untracked);

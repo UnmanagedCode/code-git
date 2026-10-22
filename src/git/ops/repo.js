@@ -1,5 +1,6 @@
 import { Refusal } from '../../refusals.js';
 import { parseStatus } from '../parse/status.js';
+import { bareRefusal, isBare } from '../worktree.js';
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -24,6 +25,8 @@ export const ops = [
         }
         throw e;
       }
+      // Under --work-tree=. a bare repository's status succeeds, listing its own files: core.bare says what it is.
+      if (await isBare(git)) throw bareRefusal();
       return parseStatus(decoder.decode(r.stdout));
     },
   },

@@ -147,7 +147,7 @@ test('discard lines changes only the worktree, and its returned patch re-applied
   const r = await stageLines(w, 'f.txt', (fd) => [[0, [at(fd, 0, 'del', 'l2'), at(fd, 0, 'add', 'L2')]]], 3, 'stage.discardLines');
   assert.equal(worktree(w, 'f.txt').toString(), text(nums(10).map((l) => (l === 'l8' ? 'L8' : l))));
   assert.equal(w.indexBlob('f.txt').toString(), text(nums(10)));
-  execFileSync('git', ['-C', w.repo.dir, 'apply', '-'], { input: Buffer.from(r.patchB64, 'base64'), env: hermeticEnv(w.repo.home) });
+  execFileSync('git', ['-C', w.repo.dir, '--work-tree=.', 'apply', '-'], { input: Buffer.from(r.patchB64, 'base64'), env: hermeticEnv(w.repo.home) });
   assert.equal(worktree(w, 'f.txt').toString(), text(edited));
 });
 
@@ -221,6 +221,39 @@ test('PARTIAL_UNSUPPORTED for added, deleted, renamed, untracked, binary, submod
   unborn.repo.write('a.txt', 'a\n');
   unborn.repo.git('add', 'a.txt');
   await assert.rejects(unborn.op('stage.unstageLines', { path: 'a.txt', hunks: any }), refused('PARTIAL_UNSUPPORTED'));
+});
+
+test('review repro A: unstaging at context 0 on a file without a final newline changes exactly the selected lines', async (t) => {
+  const w = await world(t, { 'f.txt': 'a\ng\na\nd\nf\n' });
+  w.repo.write('f.txt', 'a\nf\na\nd\nf\nf');
+  w.repo.git('add', 'f.txt');
+  const fd = await shown(w, 'staged', 'f.txt', 0);
+  const g = fd.hunks.find((h) => h.header.startsWith('@@ -2 +2 @@'));
+  const f = fd.hunks.find((h) => h.header.startsWith('@@ -5,0 +6 @@'));
+  assert.ok(g && f, fd.hunks.map((h) => h.header).join(' | '));
+  const hunks = [
+    { header: g.header, lines: [{ index: g.lines.findIndex((l) => l.kind === 'del'), text: 'g' }] },
+    { header: f.header, lines: [{ index: f.lines.findIndex((l) => l.kind === 'add'), text: 'f' }] },
+  ];
+  await w.op('stage.unstageLines', { path: 'f.txt', context: 0, hunks });
+  assert.equal(w.indexBlob('f.txt').toString(), 'a\ng\nf\na\nd\nf\n');
+});
+
+test('review repro B: staging at context 0 on a base without a final newline changes exactly the selected lines', async (t) => {
+  const w = await world(t, { 'f.txt': 'd\nc\nc\ng\nc\ng\nf\nf' });
+  w.repo.write('f.txt', 'c\ng\nc\ng\nf\nf\n');
+  const fd = await shown(w, 'unstaged', 'f.txt', 0);
+  // The second removed line (`c`, old line 2) and the removed final `f` (the one without a newline).
+  const dels = fd.hunks.flatMap((h, hi) => h.lines.map((l, li) => ({ h, hi, li, l }))).filter((x) => x.l.kind === 'del');
+  const c = dels[1];
+  const lastF = dels.at(-1);
+  assert.ok(c.l.text === 'c' && c.l.oldNo === 2 && lastF.l.text === 'f' && lastF.l.noNewline, JSON.stringify(fd.hunks));
+  const picks = [c, lastF];
+  const byHunk = new Map();
+  for (const p of picks) byHunk.set(p.hi, [...(byHunk.get(p.hi) ?? []), { index: p.li, text: p.l.text }]);
+  const hunks = [...byHunk].map(([hi, lines]) => ({ header: fd.hunks[hi].header, lines }));
+  await w.op('stage.stageLines', { path: 'f.txt', context: 0, hunks });
+  assert.equal(w.indexBlob('f.txt').toString(), 'd\nc\ng\nc\ng\nf\n');
 });
 
 test('params: path, context and a non-empty, duplicate-free selection', async (t) => {

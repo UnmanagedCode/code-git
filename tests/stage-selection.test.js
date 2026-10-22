@@ -134,3 +134,17 @@ test('STALE_DIFF: a gone hunk, an index out of range or on context, a different 
   // An empty diff (nothing left to stage): the hunk is gone too.
   assert.throws(() => buildSelectionPatch('', [pick('@@ -1 +1 @@', [[0, 'x']])], 'forward'), refused('PARTIAL_UNSUPPORTED'));
 });
+
+test('a request made against a context-0 diff is mapped by line number and text onto the apply diff, and built from it', () => {
+  const shown = diff(['@@ -3 +3 @@', '-c', '+C']);
+  const apply = diff(['@@ -1,5 +1,5 @@', ' a', ' b', '-c', '+C', ' d', ' e']);
+  const req = [pick('@@ -3 +3 @@', [[0, 'c'], [1, 'C']])];
+  assert.equal(buildSelectionPatch(shown, req, 'forward', apply), patch('@@ -1,5 +1,5 @@', ' a', ' b', '-c', '+C', ' d', ' e'));
+  // The add alone: the del becomes context in the apply diff's hunk.
+  assert.equal(buildSelectionPatch(shown, [pick('@@ -3 +3 @@', [[1, 'C']])], 'forward', apply), patch('@@ -1,5 +1,6 @@', ' a', ' b', ' c', '+C', ' d', ' e'));
+  // A line whose number or text differs in the apply read (the file moved between the reads): STALE_DIFF.
+  const moved = diff(['@@ -1,5 +1,5 @@', ' a', ' b', '-x', '+C', ' d', ' e']);
+  assert.throws(() => buildSelectionPatch(shown, req, 'forward', moved), refused('STALE_DIFF'));
+  const shifted = diff(['@@ -2,5 +2,5 @@', ' a', ' b', '-c', '+C', ' d', ' e']);
+  assert.throws(() => buildSelectionPatch(shown, req, 'forward', shifted), refused('STALE_DIFF'));
+});

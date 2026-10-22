@@ -2,6 +2,8 @@
 
 All in `src/git/runner.js` (`BASE_ARGS`, `BASE_ENV`, `READ_ENV`) and `src/git/validate.js`.
 
+- **`--work-tree=.` in `BASE_ARGS`**: a repo's `core.worktree` otherwise redirects every worktree read and write (status, add, restore, clean, apply) to another directory. The option resolves against the final directory, after an op's `-C <subpath>`. Side effect: git then treats a **bare** repository's own files (`HEAD`, `config`, `objects/`) as a working tree — `rev-parse --is-bare-repository` says `false` under it, but `config --bool --get core.bare` still says `true`, so that is the check (`src/git/worktree.js`). Test helpers pin it too once a hostile `core.worktree` is set (`repo.pinWorkTree`).
+
 - **Paths always follow `--`, and `GIT_LITERAL_PATHSPECS=1` is always set.** Without it, a path named `:(glob)*` or `*.txt` is pathspec magic matching other files. That is why `assertPath` *allows* a leading `-`: after `--` a file named `-rf` is just a file (runner tests create one).
 - **Revisions refuse a leading `-`** (`assertRev`) — `--output=/tmp/x` as a "ref" would be an option. Also pass `--end-of-options` before a revision for subcommands that parse options. Gotcha: `git rev-parse --end-of-options X` *echoes* `--end-of-options`; use `log -1 --format=%H --end-of-options X` or `rev-parse --verify`.
 - **`-C <subpath>`** needs `assertSubpath` (no leading `-`): there is no `--` before `-C`'s value.

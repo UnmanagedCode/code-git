@@ -5,7 +5,14 @@ import { LIMITS } from './limits.js';
 
 // THE choke point: every git command code-git runs goes through runGit.
 
-export const BASE_ARGS = ['--no-pager', '-c', 'color.ui=false', '-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false'];
+/**
+ * Before every subcommand. `--work-tree=.` pins the working tree to the checkout cc runs the command in, so a repo's
+ * `core.worktree` cannot redirect reads, staging, discards or restores to another directory. It resolves against the
+ * final directory, after any `-C <subpath>` an op adds (the submodule card relies on that). A bare repository would
+ * then look like a working tree of its own files: `repo.summary` and the working-tree writes check `core.bare` first
+ * (src/git/worktree.js).
+ */
+export const BASE_ARGS = ['--no-pager', '-c', 'color.ui=false', '-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false', '--work-tree=.'];
 
 /** Every call: no prompt can hang, an editor launch fails loudly, pathspecs are literal, git's messages are stable. */
 export const BASE_ENV = {
