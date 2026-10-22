@@ -30,5 +30,8 @@ test('a panel that throws while rendering is contained: the header and the other
   expect(screen.getAllByRole('alert')).toHaveLength(1);
   expect(screen.getByRole('heading', { name: 'app' })).toBeTruthy();
   expect(screen.getByRole('region', { name: 'Activity' })).toBeTruthy();
+  // A default panel's fallback has no Close: there is no other panel to give its slot to.
+  expect(screen.queryByRole('button', { name: 'Close Commit graph' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
   err.mockRestore();
 });
