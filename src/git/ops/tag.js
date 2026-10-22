@@ -1,6 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { commitOid } from '../diff/source.js';
-import { nameList, paramsOf, shortBranch } from '../refs/check.js';
+import { paramsObject } from '../params.js';
+import { nameList, shortBranch } from '../refs/check.js';
 import { REF_LIMITS } from '../refs/limits.js';
 import { tagObjects } from '../refs/resolve.js';
 import { undoRecord } from '../refs/undo.js';
@@ -27,7 +28,7 @@ export const ops = [
     name: 'tag.create',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['name', 'oid', 'message'], 'tag.create');
+      const p = paramsObject(raw, ['name', 'oid', 'message'], 'tag.create');
       if (p.message !== undefined && (typeof p.message !== 'string' || p.message.includes('\0'))) throw new Refusal('BAD_PARAMS', 'message must be a string without NUL');
       if (p.message !== undefined && Buffer.byteLength(p.message) > REF_LIMITS.tagMessageMaxBytes) {
         throw new Refusal('BAD_PARAMS', `message is over ${REF_LIMITS.tagMessageMaxBytes} bytes`);
@@ -48,7 +49,7 @@ export const ops = [
     name: 'tag.delete',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['names'], 'tag.delete');
+      const p = paramsObject(raw, ['names'], 'tag.delete');
       return { names: nameList(p.names, 'names') };
     },
     async run(git, { names }) {
@@ -62,7 +63,7 @@ export const ops = [
     kind: 'write',
     cancellable: true,
     params(raw) {
-      const p = paramsOf(raw, ['remote', 'names'], 'tag.push');
+      const p = paramsObject(raw, ['remote', 'names'], 'tag.push');
       return { remote: remoteName(p.remote), names: nameList(p.names, 'names') };
     },
     async run(git, { remote, names }) {
@@ -83,7 +84,7 @@ export const ops = [
     kind: 'write',
     cancellable: true,
     params(raw) {
-      const p = paramsOf(raw, ['remote', 'names'], 'tag.deleteRemote');
+      const p = paramsObject(raw, ['remote', 'names'], 'tag.deleteRemote');
       return { remote: remoteName(p.remote), names: nameList(p.names, 'names') };
     },
     async run(git, { remote, names }) {

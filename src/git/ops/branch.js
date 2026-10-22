@@ -2,7 +2,8 @@ import { Refusal } from '../../refusals.js';
 import { commitOid } from '../diff/source.js';
 import { parseRemotes, splitRemoteRef } from '../parse/graph.js';
 import { parseTracking } from '../parse/refs.js';
-import { fullRef, nameList, optBool, paramsOf, shortBranch } from '../refs/check.js';
+import { optBool, paramsObject } from '../params.js';
+import { fullRef, nameList, shortBranch } from '../refs/check.js';
 import { assertCcAck, assertCcHeadAck, assertNotCheckedOut, assertNotSymbolic, isCcOwned, ownHead, readHeads } from '../refs/heads.js';
 import { refEntries, refObjects } from '../refs/resolve.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
@@ -114,7 +115,7 @@ export const ops = [
     name: 'branch.create',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['name', 'from', 'checkout', 'ccOwned'], 'branch.create');
+      const p = paramsObject(raw, ['name', 'from', 'checkout', 'ccOwned'], 'branch.create');
       return {
         name: shortBranch(p.name), from: p.from === undefined ? null : assertOid(p.from),
         checkout: optBool(p.checkout, 'checkout'), ccOwned: optBool(p.ccOwned, 'ccOwned'),
@@ -140,7 +141,7 @@ export const ops = [
     name: 'branch.checkout',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['ref', 'ccOwned'], 'branch.checkout');
+      const p = paramsObject(raw, ['ref', 'ccOwned'], 'branch.checkout');
       return { ref: fullRef(p.ref, [HEADS, 'refs/remotes/']), ccOwned: optBool(p.ccOwned, 'ccOwned') };
     },
     async run(git, { ref, ccOwned }) {
@@ -159,7 +160,7 @@ export const ops = [
     name: 'branch.rename',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['name', 'newName', 'ccOwned'], 'branch.rename');
+      const p = paramsObject(raw, ['name', 'newName', 'ccOwned'], 'branch.rename');
       return { name: shortBranch(p.name), newName: shortBranch(p.newName), ccOwned: optBool(p.ccOwned, 'ccOwned') };
     },
     async run(git, { name, newName, ccOwned }) {
@@ -185,7 +186,7 @@ export const ops = [
     name: 'branch.delete',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['names', 'force', 'ccOwned'], 'branch.delete');
+      const p = paramsObject(raw, ['names', 'force', 'ccOwned'], 'branch.delete');
       return { names: nameList(p.names, 'names'), force: optBool(p.force, 'force'), ccOwned: optBool(p.ccOwned, 'ccOwned') };
     },
     async run(git, { names, force, ccOwned }) {
@@ -228,7 +229,7 @@ export const ops = [
     // remote-tracking ref here, never a half-changed index or worktree. Cancel also frees a hung SSH session.
     cancellable: true,
     params(raw) {
-      const p = paramsOf(raw, ['remote', 'branches', 'ccOwned'], 'branch.deleteRemote');
+      const p = paramsObject(raw, ['remote', 'branches', 'ccOwned'], 'branch.deleteRemote');
       return { remote: remoteName(p.remote), branches: nameList(p.branches, 'branches'), ccOwned: optBool(p.ccOwned, 'ccOwned') };
     },
     async run(git, { remote, branches, ccOwned }) {
@@ -249,7 +250,7 @@ export const ops = [
     name: 'branch.setUpstream',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['name', 'upstream'], 'branch.setUpstream');
+      const p = paramsObject(raw, ['name', 'upstream'], 'branch.setUpstream');
       if (p.upstream === undefined) throw new Refusal('BAD_PARAMS', 'upstream is required (null unsets it)');
       return { name: shortBranch(p.name), upstream: p.upstream === null ? null : fullRef(p.upstream, ['refs/remotes/']) };
     },
@@ -269,7 +270,7 @@ export const ops = [
     name: 'branch.fastForward',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['name', 'to', 'expect'], 'branch.fastForward');
+      const p = paramsObject(raw, ['name', 'to', 'expect'], 'branch.fastForward');
       return { name: shortBranch(p.name), to: assertOid(p.to), expect: assertOid(p.expect) };
     },
     async run(git, { name, to, expect }) {
@@ -293,7 +294,7 @@ export const ops = [
     name: 'branch.move',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['name', 'to', 'expect', 'ccOwned'], 'branch.move');
+      const p = paramsObject(raw, ['name', 'to', 'expect', 'ccOwned'], 'branch.move');
       return { name: shortBranch(p.name), to: assertOid(p.to), expect: assertOid(p.expect), ccOwned: optBool(p.ccOwned, 'ccOwned') };
     },
     async run(git, { name, to, expect, ccOwned }) {

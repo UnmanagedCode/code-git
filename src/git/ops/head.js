@@ -1,6 +1,6 @@
 import { Refusal } from '../../refusals.js';
 import { commitOid } from '../diff/source.js';
-import { optBool, paramsOf } from '../refs/check.js';
+import { optBool, paramsObject } from '../params.js';
 import { assertCcHeadAck, ownHead } from '../refs/heads.js';
 import { undoRecord } from '../refs/undo.js';
 import { guardOverwrite } from '../refs/write.js';
@@ -64,7 +64,7 @@ export const ops = [
     name: 'head.reset',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['to', 'mode', 'expect', 'ccOwned'], 'head.reset');
+      const p = paramsObject(raw, ['to', 'mode', 'expect', 'ccOwned'], 'head.reset');
       if (!MODES.includes(p.mode)) throw new Refusal('BAD_PARAMS', `mode must be one of ${MODES.join(', ')}`);
       return { to: assertOid(p.to), mode: p.mode, expect: assertOid(p.expect), ccOwned: optBool(p.ccOwned, 'ccOwned') };
     },
@@ -83,7 +83,7 @@ export const ops = [
     name: 'head.revert',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['oid', 'mainline'], 'head.revert');
+      const p = paramsObject(raw, ['oid', 'mainline'], 'head.revert');
       return { oid: assertOid(p.oid), mainline: mainlineOf(p.mainline) };
     },
     run: (git, params) => apply(git, 'revert', params),
@@ -92,7 +92,7 @@ export const ops = [
     name: 'head.cherryPick',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['oid', 'mainline'], 'head.cherryPick');
+      const p = paramsObject(raw, ['oid', 'mainline'], 'head.cherryPick');
       return { oid: assertOid(p.oid), mainline: mainlineOf(p.mainline) };
     },
     run: (git, params) => apply(git, 'cherry-pick', params),
@@ -101,7 +101,7 @@ export const ops = [
     name: 'head.abort',
     kind: 'write',
     params(raw) {
-      const p = paramsOf(raw, ['which'], 'head.abort');
+      const p = paramsObject(raw, ['which'], 'head.abort');
       if (typeof p.which !== 'string' || !Object.hasOwn(IN_PROGRESS, p.which)) throw new Refusal('BAD_PARAMS', "which must be 'revert' or 'cherry-pick'");
       return { which: p.which };
     },
