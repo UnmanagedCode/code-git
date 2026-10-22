@@ -18,7 +18,10 @@ const REPOS = [
 function setup() {
   const fetch = stubFetch({
     'GET api/repos': { repos: REPOS },
-    'GET api/repos/app/worktrees': { worktrees: [{ worktreeName: 'feat', branch: 'code-conductor/feat', baseBranch: 'main' }] },
+    'GET api/repos/app/worktrees': { worktrees: [
+      { worktreeName: 'feat', branch: 'code-conductor/feat', baseBranch: 'main', locked: false },
+      { worktreeName: 'held', branch: 'code-conductor/held', baseBranch: 'main', locked: true },
+    ] },
   });
   const onOpen = vi.fn();
   const onOpenChange = vi.fn();
@@ -71,6 +74,14 @@ test('expanding a project loads its worktrees; picking one opens that worktree',
   expect(within(list).getByRole('button', { name: '(main checkout)' })).toBeTruthy();
   await userEvent.click(within(list).getByRole('button', { name: /feat/ }));
   expect(onOpen).toHaveBeenCalledWith({ project: 'app', worktree: 'feat' });
+});
+
+test('a locked worktree carries a locked badge; an unlocked one does not', async () => {
+  setup();
+  await userEvent.click(await screen.findByRole('button', { name: 'Show worktrees of app' }));
+  const list = await screen.findByRole('list', { name: 'Checkouts of app' });
+  expect(within(within(list).getByRole('button', { name: /^held/ })).getByText('locked')).toBeTruthy();
+  expect(within(within(list).getByRole('button', { name: /^feat/ })).queryByText('locked')).toBeNull();
 });
 
 test('the filter narrows by project name or workspace', async () => {

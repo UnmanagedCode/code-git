@@ -40,7 +40,7 @@ export async function seed() {
     const cc = await fakeCc({
       home: app.home,
       projects: {
-        app: { dir: app.dir, workspace: 'Web', isGitRepo: true, worktrees: { feat: feat.dir } },
+        app: { dir: app.dir, workspace: 'Web', isGitRepo: true, worktrees: { feat: feat.dir }, locked: ['feat'] },
         box: { dir: app.dir, workspace: 'Web', system: 'docker', remoteId: 'cc-box', isGitRepo: true },
         plain: { dir: plain, workspace: 'Web', isGitRepo: false },
         gone: { dir: '/nowhere', workspace: 'Ops', systemUnreachable: "system 'ssh' (build-01) could not be reached: connection refused" },

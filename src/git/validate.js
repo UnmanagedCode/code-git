@@ -2,7 +2,8 @@ import { Refusal } from '../refusals.js';
 
 // Pure input checks for everything a route lets the user name. Each throws a Refusal (BAD_TARGET, BAD_REF, BAD_PATH).
 
-const isName = (s) => typeof s === 'string' && s !== '' && s.length <= 200 && !s.includes('\0') && !s.includes('/');
+// `.` and `..` would rewrite the cc URL a name is spliced into (`/api/projects/../worktrees`).
+const isName = (s) => typeof s === 'string' && s !== '' && s !== '.' && s !== '..' && s.length <= 200 && !s.includes('\0') && !s.includes('/');
 // ASCII control characters, DEL included.
 const hasControl = (s) => [...s].some((c) => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f);
 

@@ -120,7 +120,7 @@ function run(state, spec, req, res, body) {
 
 /**
  * Starts the fake and points CONDUCTOR_URL at it; `close()` restores it.
- * `projects`: {name: {dir, system?, remoteId?, workspace?, worktrees?: {name: dir}, isGitRepo?, unbornHead?,
+ * `projects`: {name: {dir, system?, remoteId?, workspace?, worktrees?: {name: dir}, locked?: [worktree names], isGitRepo?, unbornHead?,
  * systemUnreachable?, gitRefusal?, degraded?}}. A project with `system: 'docker'` still runs here: code-git
  * addresses it by {project, worktree} alone. `home` is the git HOME (default: a temp dir of its own).
  * Knobs on the returned object: `state.execCalls`, `state.violations` (any form-B or shell use), `state.disconnects`,
@@ -189,6 +189,7 @@ export async function fakeCc({ projects = {}, home } = {}) {
       if (!p) return send(res, { error: `project '${name}' not found`, code: 'PROJECT_UNKNOWN' }, 404);
       return send(res, Object.entries(p.worktrees ?? {}).map(([w, dir]) => ({
         parentProject: name, worktreeName: w, worktreePath: dir, branch: `code-conductor/${w}`, baseBranch: 'main', sessionIds: [],
+        ...(p.locked?.includes(w) ? { locked: true } : {}),
       })));
     }
     res.statusCode = 404;

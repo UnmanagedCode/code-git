@@ -20,7 +20,8 @@ export function toRepo(p) {
   };
 }
 
-export const toWorktree = (w) => ({ worktreeName: w.worktreeName, branch: w.branch ?? null, baseBranch: w.baseBranch ?? null });
+/** One worktree row; `locked` is cc's user lock (absent in cc's row = unlocked). */
+export const toWorktree = (w) => ({ worktreeName: w.worktreeName, branch: w.branch ?? null, baseBranch: w.baseBranch ?? null, locked: w.locked === true });
 
 export function mount(router) {
   router.get('/repos', route(async (_req, res) => {

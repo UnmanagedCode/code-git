@@ -40,7 +40,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 | How | Command | Notes |
 |---|---|---|
 | In cc | Library entry with `"postClone": "npm install", "postPull": "npm install"`; or adopt the checkout as a project, then Settings → Plugins → Rescan + Enable | `npm install` builds the UI through `prepare` |
-| Standalone | `npm install && PORT=7599 npm start` | Default port 7500 (`DEFAULT_PORT` in `server.js`). Without cc the UI loads, but every API route answers 503 `CONDUCTOR_UNAVAILABLE`; `/health` stays up |
+| Standalone | `npm install && PORT=7599 npm start` | Default port 7500 (`DEFAULT_PORT` in `server.js`). Without cc the UI loads, and the routes that reach cc — `api/repos`, `api/repos/:project/worktrees`, `api/ops/:name` — answer 503 `CONDUCTOR_UNAVAILABLE`. The activity routes keep working (the log shows those refused attempts), an unknown path is still a 404, and `/health` stays up |
 | UI dev server | `npm start` in one shell, `npm run dev` in another | Proxies `/api` to `PLUGIN_BACKEND` (default the backend's default port) |
 
 | Env var | Used by | Meaning |

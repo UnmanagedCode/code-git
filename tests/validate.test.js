@@ -24,6 +24,14 @@ test('assertTarget refuses malformed names', () => {
   assert.doesNotThrow(() => assertTarget({ project: 'x'.repeat(200) }));
 });
 
+test('assertTarget refuses . and .. as project or worktree names (they would rewrite the cc URL), but allows dotted names', () => {
+  for (const t of [{ project: '.' }, { project: '..' }, { project: 'app', worktree: '.' }, { project: 'app', worktree: '..' }]) {
+    refused(() => assertTarget(t), 'BAD_TARGET');
+  }
+  assert.deepEqual(assertTarget({ project: '...', worktree: '.x' }), { project: '...', worktree: '.x' });
+  assert.deepEqual(assertTarget({ project: 'a..b' }), { project: 'a..b', worktree: null });
+});
+
 test('assertRefName accepts ordinary branch and tag names', () => {
   for (const s of ['main', 'feature/x', 'v1.2.3', 'a-b_c', 'release/2024.01', 'x'.repeat(255)]) assert.equal(assertRefName(s), s);
 });

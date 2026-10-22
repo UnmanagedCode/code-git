@@ -8,7 +8,7 @@ Build the UI first: `npm install` (or `npm run prepare`) so `frontend/dist` exis
 
 | Script | Run | What it does |
 |---|---|---|
-| `seed.mjs` | imported | One deterministic world: temp repos behind the test fake cc (`tests/_fakeCc.js`, real git), the backend booted against it. Projects: `app` (ahead 2 / behind 1 of a bare origin, staged + unstaged + untracked changes, worktree `feat`), `box` (System `docker`/`cc-box`), `plain` (not a repo), `gone` (System unreachable), `notes` (claims git but is not a repo: its summary fails) |
+| `seed.mjs` | imported | One deterministic world: temp repos behind the test fake cc (`tests/_fakeCc.js`, real git), the backend booted against it. Projects: `app` (ahead 2 / behind 1 of a bare origin, staged + unstaged + untracked changes, worktree `feat` locked in cc), `box` (System `docker`/`cc-box`), `plain` (not a repo), `gone` (System unreachable), `notes` (claims git but is not a repo: its summary fails) |
 | `snap.mjs` | `node harness/playwright/snap.mjs` | Screenshots the empty shell, the open picker, two tabs + header, and the activity panel with an expanded failed entry — light and dark, 1280×800 and 390×844. Fails on a console error or a ≥400 response other than the two host URLs |
 | `golden.mjs` | `node harness/playwright/golden.mjs` | Asserts the golden path: picker → open `app` → open worktree `feat` → Ctrl+1 / Ctrl+2 → activity shows the `git status` argv → a held op is cancelled from the panel |
 | `live.mjs` | `CONDUCTOR_URL=http://127.0.0.1:<port> node harness/playwright/live.mjs [project[/worktree] …]` | **Read-only** check against a live cc (below) |
@@ -19,7 +19,7 @@ Build the UI first: `npm install` (or `npm run prepare`) so `frontend/dist` exis
 - Never calls a write route, never registers, rescans or enables the plugin in cc.
 - Refuses to run without `CONDUCTOR_URL`, and checks that `$CONDUCTOR_URL/api/health` answers `"app":"code-conductor"`.
 - Default checkouts: `code-git`, `code-git/c1-foundation`, `test`, `test/review-demo`; name others as arguments.
-- Asserts: the picker lists exactly the names of `GET $CONDUCTOR_URL/api/projects`; every `isGitRepo === false` row is disabled; each checkout's header loads without an error; the activity panel has a `status --porcelain=v2` entry with exit 0 per checkout; Ctrl+1 / Ctrl+2 switch tabs. Screenshots: `out/live/`.
+- Asserts: the picker lists exactly the names of `GET $CONDUCTOR_URL/api/projects`; every `isGitRepo === false` row is disabled; each checkout's header loads without an error and shows HEAD (a worktree's branch must equal cc's `branch` for it; a main checkout shows a branch, or the detached / unborn badge); the activity panel has a `status --porcelain=v2` entry with exit 0 per checkout; Ctrl+1 / Ctrl+2 switch tabs. Screenshots: `out/live/`.
 
 **Finding `CONDUCTOR_URL` from a cc worker session.** The session's environment has no `CONDUCTOR_URL`, but its Claude process was started with an `--mcp-config` naming cc's MCP URL. Walk up from the shell's own process and take the origin, then confirm it:
 

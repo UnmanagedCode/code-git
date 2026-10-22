@@ -11,7 +11,7 @@ import { useStore } from '@/state/store';
 function Head({ s }: { s: RepoSummary }) {
   if (s.head.unborn) {
     return (
-      <span className="flex items-center gap-1.5">
+      <span className="flex items-center gap-1.5" role="group" aria-label="HEAD">
         <GitBranchIcon className="size-4 text-muted-foreground" />
         <span className="font-mono text-sm">{s.head.branch}</span>
         <Badge variant="outline">no commits yet</Badge>
@@ -20,14 +20,14 @@ function Head({ s }: { s: RepoSummary }) {
   }
   if (s.head.branch === null) {
     return (
-      <span className="flex items-center gap-1.5">
+      <span className="flex items-center gap-1.5" role="group" aria-label="HEAD">
         <Badge variant="warning">detached</Badge>
         <span className="font-mono text-sm">{s.head.oid?.slice(0, 10)}</span>
       </span>
     );
   }
   return (
-    <span className="flex items-center gap-1.5">
+    <span className="flex items-center gap-1.5" role="group" aria-label="HEAD">
       <GitBranchIcon className="size-4 text-muted-foreground" />
       <span className="font-mono text-sm">{s.head.branch}</span>
     </span>

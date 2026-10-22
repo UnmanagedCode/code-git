@@ -18,7 +18,7 @@ export interface Repo {
   degraded: string | null;
 }
 
-export interface Worktree { worktreeName: string; branch: string | null; baseBranch: string | null }
+export interface Worktree { worktreeName: string; branch: string | null; baseBranch: string | null; locked: boolean }
 
 export interface RepoSummary {
   head: { oid: string | null; branch: string | null; unborn: boolean };

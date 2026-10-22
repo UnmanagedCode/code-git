@@ -18,23 +18,30 @@ export const BASE_ENV = {
 };
 /** Read ops only: no opportunistic index refresh. */
 export const READ_ENV = { GIT_OPTIONAL_LOCKS: '0' };
-// Base keys an op's env cannot override.
-const PINNED = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE'];
+/**
+ * Names an op's env may not set: prompts, literal pathspecs, which repo and which git binary run, the SSH transport,
+ * and every config injection (`GIT_CONFIG*`, which covers COUNT/KEY_n/VALUE_n, GLOBAL, SYSTEM, NOSYSTEM, PARAMETERS).
+ * The editors stay settable: interactive rebase supplies its todo through GIT_SEQUENCE_EDITOR.
+ */
+export const PROTECTED_ENV = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH', 'GIT_SSH_COMMAND', 'GIT_SSH'];
+export const isProtectedEnv = (name) => PROTECTED_ENV.includes(name) || name.startsWith('GIT_CONFIG');
 
 const STATUS_OF = { CANCELLED: 'cancelled', GIT_TIMEOUT: 'timeout' };
 
 /**
  * Runs one git command for an op. `ctx` = {target, op, kind: 'read'|'write', cancellable, signal, opRunId, activity, locks}.
  * Resolves {exitCode, stdout: Buffer, stderr: Buffer, durationMs}; an exit code outside `okExit` throws GIT_FAILED.
- * A write holds its project's lock for the whole command.
+ * A write holds its project's lock for the whole command. An op env naming a protected variable (isProtectedEnv) throws.
  */
 export async function runGit(ctx, args, { stdin, env: opEnv = {}, timeoutMs, maxOutputBytes, okExit = [0] } = {}) {
   const { target, kind, activity } = ctx;
   const limits = LIMITS[kind];
   if (!limits) throw new Error(`runGit: unknown kind ${kind}`);
+  // An op setting a protected name is a code-git bug: refuse before anything runs.
+  const forbidden = Object.keys(opEnv).filter(isProtectedEnv);
+  if (forbidden.length) throw new Error(`runGit: ${ctx.op} may not set ${forbidden.join(', ')}`);
   const argv = ['git', ...BASE_ARGS, ...args];
   const env = { ...BASE_ENV, ...(kind === 'read' ? READ_ENV : {}), ...opEnv };
-  for (const k of PINNED) env[k] = BASE_ENV[k];
   const stdinBytes = stdin === undefined ? 0 : Buffer.byteLength(stdin);
 
   const run = async () => {

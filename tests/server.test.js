@@ -21,6 +21,10 @@ function builtDist(t) {
   fs.writeFileSync(path.join(dist, 'assets', 'index-AbC_1.js'), 'console.log(1)');
   fs.writeFileSync(path.join(dist, 'assets', 'index-AbC_1.js.map'), '{}');
   fs.writeFileSync(path.join(dist, '.hidden.js'), 'secret');
+  // Single-segment stems, so only the extension list can refuse them.
+  fs.writeFileSync(path.join(dist, 'x.map'), '{}');
+  fs.writeFileSync(path.join(dist, 'assets', 'x.map'), '{}');
+  fs.writeFileSync(path.join(dist, 'x.txt'), 'text');
   fs.writeFileSync(path.join(dist, '.vite', 'manifest.json'), '{}');
   const outside = tempDir(t, 'cg-outside-');
   fs.writeFileSync(path.join(outside, 'leak.js'), 'leak');
@@ -45,6 +49,15 @@ test('every response carries the CSP and nosniff: health, API JSON, 404, 503 unb
   assertHeaders(health, '/health');
   const repos = await call('GET', '/api/repos');
   assert.deepEqual([repos.status, repos.body.code], [503, 'CONDUCTOR_UNAVAILABLE']);
+  // Standalone, only the routes that reach cc refuse; the activity routes and the API 404 behave as usual.
+  assert.equal((await call('GET', '/api/repos/app/worktrees')).body.code, 'CONDUCTOR_UNAVAILABLE');
+  assert.equal((await call('POST', '/api/ops/repo.summary', { target: { project: 'app' } })).body.code, 'CONDUCTOR_UNAVAILABLE');
+  const log = await call('GET', '/api/activity');
+  assert.equal(log.status, 200);
+  assert.deepEqual(log.body.entries.map((e) => [e.op, e.status, e.code]), [['repo.summary', 'refused', 'CONDUCTOR_UNAVAILABLE']]);
+  assert.equal((await call('POST', `/api/activity/${log.body.entries[0].id}/cancel`, {})).body.code, 'NOT_RUNNING');
+  assert.equal((await call('POST', '/api/activity/999/cancel', {})).body.code, 'ACTIVITY_UNKNOWN');
+  assert.equal((await call('GET', '/api/nope')).body.code, 'NOT_FOUND');
   assertHeaders(repos, 'API refusal');
   const missing = await call('GET', '/nope');
   assert.equal(missing.status, 404);
@@ -79,7 +92,7 @@ test('built: the allowlist serves the page and assets, and nothing else', async 
   assert.equal((await call('GET', '/index.html')).status, 200);
   assert.equal((await call('GET', '/theme-init.js')).status, 200);
   assert.equal((await call('GET', '/assets/index-AbC_1.js')).body, 'console.log(1)');
-  for (const p of ['/assets/index-AbC_1.js.map', '/assets/index-AbC_1.js%2Emap', '/assets/index-AbC_1.js%2emap', '/.hidden.js', '/%2Ehidden.js',
+  for (const p of ['/x.map', '/assets/x.map', '/x%2Emap', '/x.txt', '/assets/index-AbC_1.js.map', '/assets/index-AbC_1.js%2Emap', '/assets/index-AbC_1.js%2emap', '/.hidden.js', '/%2Ehidden.js',
     '/.vite/manifest.json', '/leak.js', '/pluginBridge.js', '/pluginTheme.css', '/assets', '/assets/', '/%E0%A4%A']) {
     const r = await call('GET', p);
     assert.equal(r.status, 404, p);

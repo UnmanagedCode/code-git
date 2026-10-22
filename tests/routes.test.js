@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { test } from 'node:test';
 import { buildRegistry } from '../src/git/ops/index.js';
@@ -19,6 +20,11 @@ const TEST_OPS = buildRegistry([repoOps, [
   commitOp({ name: 'test.write' }),
   commitOp({ name: 'test.cancellableWrite', cancellable: true }),
   {
+    // Two commands: the first finishes, the second is the one a test holds.
+    name: 'test.twoStep', kind: 'read', params: () => ({}),
+    async run(git) { await git(['rev-parse', 'HEAD']); await git(['status']); return { done: true }; },
+  },
+  {
     name: 'test.rev', kind: 'read',
     params: (raw) => ({ rev: assertRev(raw?.rev) }),
     async run(git, { rev }) { return (await git(['log', '-1', '--format=%H', '--end-of-options', rev])).stdout.toString().trim(); },
@@ -34,7 +40,7 @@ async function world(t) {
   const cc = await fakeCc({
     home: repo.home,
     projects: {
-      app: { dir: repo.dir, workspace: 'Dev', isGitRepo: true, worktrees: { feat: wt.dir } },
+      app: { dir: repo.dir, workspace: 'Dev', isGitRepo: true, worktrees: { feat: wt.dir, held: wt.dir }, locked: ['held'] },
       plain: { dir: plain, isGitRepo: false },
       gone: { dir: '/x', systemUnreachable: 'provider down' },
       owned: { dir: '/y', gitRefusal: 'dubious ownership: git config --global --add safe.directory /y' },
@@ -67,16 +73,36 @@ test('GET api/repos lists every cc project, unopenable ones included, with their
     ['local', null, false, null, null, null]);
 });
 
-test('GET api/repos/:project/worktrees maps cc rows; an unknown project is 404; a bad name is 400', async (t) => {
+test('GET api/repos/:project/worktrees maps cc rows, locked included (absent in cc = false); an unknown project is 404; a bad name is 400', async (t) => {
   const { call, cc } = await world(t);
   const { status, body } = await call('GET', '/api/repos/app/worktrees');
   assert.equal(status, 200);
-  assert.deepEqual(body, { worktrees: [{ worktreeName: 'feat', branch: 'code-conductor/feat', baseBranch: 'main' }] });
+  assert.deepEqual(body, { worktrees: [
+    { worktreeName: 'feat', branch: 'code-conductor/feat', baseBranch: 'main', locked: false },
+    { worktreeName: 'held', branch: 'code-conductor/held', baseBranch: 'main', locked: true },
+  ] });
   assert.equal((await call('GET', '/api/repos/nope/worktrees')).body.code, 'PROJECT_UNKNOWN');
   assert.equal((await call('GET', '/api/repos/nope/worktrees')).status, 404);
   const bad = await call('GET', '/api/repos/a%00b/worktrees');
   assert.deepEqual([bad.status, bad.body.code], [400, 'BAD_TARGET']);
   assert.equal(cc.state.execCalls.length, 0);
+});
+
+test('a .. project name is refused before cc is asked (it would normalise to another cc route)', async (t) => {
+  const { url } = await world(t);
+  // A WHATWG URL (fetch, or http.get given a URL) would normalise %2E%2E away client-side: send the path as written.
+  const get = (p) => new Promise((resolve, reject) => {
+    const { hostname, port } = new URL(url);
+    http.get({ hostname, port, path: p }, (res) => {
+      let body = '';
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+    }).on('error', reject);
+  });
+  for (const p of ['/api/repos/%2E%2E/worktrees', '/api/repos/%2e%2e/worktrees', '/api/repos/%2E/worktrees']) {
+    const r = await get(p);
+    assert.deepEqual([r.status, r.body.code], [400, 'BAD_TARGET'], p);
+  }
 });
 
 test('POST api/ops/repo.summary returns the summary for the main checkout and for a worktree', async (t) => {
@@ -207,10 +233,33 @@ test('a browser that goes away does not abort a write: it runs to completion and
   assert.notEqual(w.repo.git('rev-parse', 'HEAD'), before);
 });
 
-test('a browser that goes away aborts a cancellable op', async (t) => {
+test('a browser that goes away aborts a cancellable op; its entry ends cancelled', async (t) => {
   const w = await world(t);
-  const { held, controller } = await startHeld(t, w, 'repo.summary');
+  const { held, controller, entry } = await startHeld(t, w, 'repo.summary');
+  const stream = await sse(`${w.url}/api/activity/events`, t);
   controller.abort();
+  await held.closed;
+  assert.equal(held.disconnected, true);
+  const live = (await w.call('GET', '/api/activity')).body.entries.find((e) => e.id === entry.id);
+  const closed = live.status === 'running' ? (await stream.next((e) => e.data.id === entry.id && e.data.status !== 'running')).data : live;
+  assert.equal(closed.status, 'cancelled');
+});
+
+test('a multi-command op is cancelled only through its running entry; a finished entry of it answers NOT_RUNNING', async (t) => {
+  const w = await world(t);
+  w.cc.state.execHook = (body) => (body.argv.includes('status') ? 'hold' : undefined);
+  const response = w.call('POST', '/api/ops/test.twoStep', { target: APP });
+  const held = await w.cc.nextHeld();
+  w.cc.state.execHook = null;
+  const [first, second] = (await w.call('GET', '/api/activity')).body.entries;
+  assert.equal(first.opRunId, second.opRunId);
+  assert.deepEqual([first.status, second.status], ['ok', 'running']);
+  const stale = await w.call('POST', `/api/activity/${first.id}/cancel`, {});
+  assert.deepEqual([stale.status, stale.body.code], [409, 'NOT_RUNNING']);
+  assert.equal(held.disconnected, false);
+  assert.equal((await w.call('POST', `/api/activity/${second.id}/cancel`, {})).status, 200);
+  const r = await response;
+  assert.deepEqual([r.status, r.body.code], [409, 'CANCELLED']);
   await held.closed;
   assert.equal(held.disconnected, true);
 });

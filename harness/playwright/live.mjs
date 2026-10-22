@@ -59,7 +59,14 @@ try {
       await page.getByRole('heading', { name: label(c), exact: true }).waitFor();
       await header.getByText(/\d+ conflicted/).or(header.getByRole('alert')).first().waitFor({ timeout: 60_000 });
       check(await header.getByRole('alert').count() === 0, `${label(c)}: the summary loaded without an error`);
-      check(await header.getByText(/\d+ conflicted/).isVisible(), `${label(c)}: the header shows HEAD and change counts`);
+      check(await header.getByText(/\d+ conflicted/).isVisible(), `${label(c)}: the header shows the change counts`);
+      // HEAD: a worktree's branch must be the one cc records; a main checkout shows a branch, or the detached / unborn badge.
+      const head = (await header.getByRole('group', { name: 'HEAD' }).innerText()).replace(/\s+/g, ' ').trim();
+      const expected = c.worktree
+        ? (await (await fetch(`${cc}/api/projects/${encodeURIComponent(c.project)}/worktrees`)).json()).find((w) => w.worktreeName === c.worktree)?.branch
+        : null;
+      if (expected) check(head === expected, `${label(c)}: HEAD shows cc's branch ${expected} (got "${head}")`);
+      else check(/^detached ?[0-9a-f]{7,}$/.test(head) || /^\S+ ?no commits yet$/.test(head) || /^\S+$/.test(head), `${label(c)}: HEAD shows a branch, detached or unborn (got "${head}")`);
       await shot(label(c).replace('/', '_'));
     }
 

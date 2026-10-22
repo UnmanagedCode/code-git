@@ -67,7 +67,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 ## Runner pipeline (`runGit`)
 
 1. argv = `['git', ...BASE_ARGS, ...args]`. `BASE_ARGS` disables the pager, colour, path quoting and fsmonitor.
-2. env = `BASE_ENV` + (`READ_ENV` for reads) + the op's env, then the prompt keys re-pinned (`GIT_TERMINAL_PROMPT`, `GCM_INTERACTIVE`): an op can override `GIT_EDITOR` (an interactive-rebase todo editor, say) but never re-enable prompts.
+2. env = `BASE_ENV` + (`READ_ENV` for reads) + the op's env. An op's env naming a protected variable (`isProtectedEnv`: the names in `PROTECTED_ENV` — prompts, `GIT_LITERAL_PATHSPECS`, `GIT_DIR`/`GIT_WORK_TREE`, `GIT_EXEC_PATH`, `GIT_SSH_COMMAND`/`GIT_SSH` — and every `GIT_CONFIG*` name) throws before anything runs or is logged: a code-git bug, answered 500 `INTERNAL`. `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` stay overridable (an interactive-rebase todo editor, say).
 3. A write takes its **project's** lock (worktrees share refs and objects); reads and other projects never wait.
 4. The activity entry opens (`running`) with its own `AbortController`, combined with the op's signal.
 5. `exec` → cc. The deadline and output cap default from `LIMITS[kind]`.
@@ -79,7 +79,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 | Input | Check | Then |
 |---|---|---|
-| target | `assertTarget`: only `project`/`worktree` keys | sent as exec form A, so the System is always the project's own |
+| target | `assertTarget`: only `project`/`worktree` keys; names not `.`/`..` (they would rewrite the cc URL a name is spliced into) | sent as exec form A, so the System is always the project's own |
 | a ref to create | `assertRefName` (`git check-ref-format --allow-onelevel` rules, no leading `-`) | — |
 | a revision | `assertRev`: no leading `-`, whitespace or control characters | placed after `--end-of-options` where the subcommand parses options |
 | a path | `assertPath`: relative, no `..` segment, NUL or backslash; a leading `-` is allowed | always after `--`; `GIT_LITERAL_PATHSPECS=1` makes `:(glob)`, `*` and friends literal |
@@ -104,7 +104,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 - No state library: `createStore` + `useSyncExternalStore`. Each feature owns its store; per-checkout state is keyed by `tabKey` (`project + '\0' + (worktree ?? '')`).
 - Tabs persist under `code-git:tabs`; the active tab is mirrored into `?project=…&worktree=…` with `history.pushState` (which cc's bridge turns into `replaceState`), read on load and on `popstate`.
-- Untrusted text (argv, stderr, ref and project names, git messages) renders only as React text children: no raw-HTML API, no `href`/`src`/`style` built from data. `guards.test.ts` scans the sources for both.
+- Untrusted text (argv, stderr, ref and project names, git messages) renders only as React text children: no raw-HTML API, no `href`/`src`/`style` built from data. `guards.test.ts` scans the sources for both, and for colours that bypass the tokens (literal colours, palette shades, `white`/`black`, non-`var()` arbitrary values) outside the copied `components/ui/`.
 - Palette: `cc-theme-fallback.css` is a one-time snapshot of cc's tokens in `@layer base`; embedded, cc's unlayered `/pluginTheme.css` wins. `palette.test.ts` pins its values and the `@theme inline` block from cc's `docs/plugin-ui.md`.
 
 ## Test patterns

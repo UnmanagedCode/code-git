@@ -51,6 +51,11 @@ describe('tabsReducer', () => {
     expect(tabsReducer(s, { type: 'move', from: 0, to: 5 })).toBe(s);
   });
 
+  test('tabKey never collides across the project/worktree boundary', () => {
+    expect(tabKey(t('ab'))).not.toBe(tabKey(t('a', 'b')));
+    expect(tabKey(t('a', 'bc'))).not.toBe(tabKey(t('ab', 'c')));
+  });
+
   test('tabKey separates project and worktree unambiguously', () => {
     expect(tabKey(t('a', 'b'))).not.toBe(tabKey(t('a\0b')));
     expect(tabKey(t('a'))).not.toBe(tabKey(t('a', 'main')));

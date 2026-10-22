@@ -36,7 +36,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | `unbornHead` | boolean | A repo with no commits |
 | `systemUnreachable`, `gitRefusal`, `degraded` | string \| null | cc's reason the project cannot be read |
 
-**`Worktree`**: `{worktreeName, branch, baseBranch}` (cc's worktree rows, trimmed).
+**`Worktree`** (`toWorktree` in `src/routes/repos.js`): `{worktreeName, branch, baseBranch, locked}` — cc's worktree rows, trimmed. `locked` is `true` when the user locked the worktree in cc (cc's `locked: true`), `false` when cc's row has no `locked`.
 
 ## Ops
 
@@ -45,12 +45,12 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | Check (in order) | Refusal |
 |---|---|
 | Body is an object with only `target` and `params` | 400 `BAD_PARAMS` |
-| `target` is `{project, worktree?}` and nothing else; names non-empty, ≤ 200 chars, no NUL or `/` (`assertTarget`) | 400 `BAD_TARGET` |
+| `target` is `{project, worktree?}` and nothing else; names non-empty, ≤ 200 chars, not `.` or `..`, no NUL or `/` (`assertTarget`) | 400 `BAD_TARGET` |
 | `:name` is a registered op | 404 `UNKNOWN_OP` |
 | The op's own `params` check | 400 `BAD_PARAMS`, `BAD_REF`, `BAD_PATH` |
 | Running it | the op's refusals, plus the exec refusals below |
 
-**Cancel and disconnect.** An op is `cancellable` when its definition says so; the default is `true` for `kind: 'read'` and `false` for `kind: 'write'`. A cancellable op is aborted by `POST api/activity/:id/cancel` on any of its entries or by its HTTP client going away; the op then answers 409 `CANCELLED`. A non-cancellable op is aborted by neither: it runs to completion and its outcome lands in the activity log.
+**Cancel and disconnect.** An op is `cancellable` when its definition says so; the default is `true` for `kind: 'read'` and `false` for `kind: 'write'`. A cancellable op is aborted by `POST api/activity/:id/cancel` on the entry of its **currently running** command (an entry of one of its already-finished commands answers 409 `NOT_RUNNING`), after which the op's request answers 409 `CANCELLED`; or by its HTTP client going away, in which case nobody receives an answer and the outcome is only in the activity log (the entry ends `cancelled`). A non-cancellable op is aborted by neither: it runs to completion and its outcome lands in the activity log.
 
 ### `repo.summary` (read, cancellable)
 
@@ -143,7 +143,7 @@ The document stays at the plugin root; the active tab is in the query string, ne
 
 ## cc routes consumed
 
-Base: `$CONDUCTOR_URL`, read per call. Unset → `CONDUCTOR_UNAVAILABLE` on every API route; `/health` and the UI stay up.
+Base: `$CONDUCTOR_URL`, read per call. Unset → 503 `CONDUCTOR_UNAVAILABLE` on the routes that reach cc: `api/repos`, `api/repos/:project/worktrees` and `api/ops/:name` (after its own request checks). The activity routes (`api/activity`, `api/activity/events`, `api/activity/:id/cancel`) keep working, an unknown `api/` path is still a 404 `NOT_FOUND`, and `/health` and the UI stay up.
 
 | Route | Use | Deadline / retry |
 |---|---|---|

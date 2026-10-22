@@ -66,6 +66,7 @@ function RepoRow({ repo, onOpen }: { repo: Repo; onOpen: (t: Tab) => void }) {
                   >
                     <span>{w.worktreeName}</span>
                     {w.branch && <span className="truncate font-mono text-xs text-muted-foreground">{w.branch}</span>}
+                    {w.locked && <Badge variant="outline">locked</Badge>}
                   </button>
                 </li>
               ))}

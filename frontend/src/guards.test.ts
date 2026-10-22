@@ -47,10 +47,27 @@ test('localStorage is used only by lib/storage.ts', () => {
   expect(offenders(/localStorage/)).toEqual([path.join('src', 'lib', 'storage.ts')]);
 });
 
-test('colours come from tokens: no literal colours and no Tailwind palette colour classes', () => {
-  expect(offenders(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/)).toEqual([]);
-  const palette = '(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)';
-  expect(offenders(new RegExp(`\\b(?:bg|text|border|ring|fill|stroke|from|to|via|outline|divide)-${palette}-\\d`))).toEqual([]);
+// Colour utilities that bypass the tokens: a palette shade, white/black, or an arbitrary value that is not a var().
+const UTIL = '(?:bg|text|border|ring|fill|stroke|from|to|via|outline|divide|decoration|shadow|accent|caret|placeholder)';
+const PALETTE = '(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)';
+const LITERAL_COLOUR = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(/;
+const COLOUR_CLASS = new RegExp(`\\b${UTIL}-(?:${PALETTE}-\\d|(?:white|black)\\b|\\[(?!var\\()[^\\]]*\\])`);
+
+test('the colour patterns catch what they claim to', () => {
+  for (const bad of ['text-red-500', 'bg-white', 'text-black/40', 'bg-black/40', 'border-[#fff]', 'bg-[red]', 'text-[rgb(0,0,0)]', 'fill-[oklch(1_0_0)]']) {
+    expect(COLOUR_CLASS.test(bad) || LITERAL_COLOUR.test(bad), bad).toBe(true);
+  }
+  for (const ok of ['bg-card', 'text-muted-foreground', 'fill-[var(--primary)]', 'bg-primary/15', 'text-destructive', 'border-border', 'max-h-[60dvh]', 'text-xs']) {
+    expect(COLOUR_CLASS.test(ok) || LITERAL_COLOUR.test(ok), ok).toBe(false);
+  }
+});
+
+// components/ui/ is exempt: copied cc components carry a few literal colours plugin-ui.md permits (bg-black/40, text-white).
+test('colours come from tokens outside components/ui: no literal colours, white/black, palette or arbitrary colour classes', () => {
+  const own = all.filter((f) => !f.includes(`${path.sep}components${path.sep}ui${path.sep}`));
+  expect(own.length).toBeLessThan(all.length);
+  expect(offenders(LITERAL_COLOUR, own)).toEqual([]);
+  expect(offenders(COLOUR_CLASS, own)).toEqual([]);
 });
 
 test('no theme toggle of its own', () => {

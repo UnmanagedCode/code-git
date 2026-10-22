@@ -30,6 +30,11 @@ test('a branch with its upstream, ahead/behind and the change counts', async () 
   for (const t of ['1 staged', '2 unstaged', '3 untracked', '4 conflicted']) expect(screen.getByText(t)).toBeTruthy();
 });
 
+test('HEAD is one labelled group: the branch, the detached badge + short oid, or the unborn branch + badge', async () => {
+  show(summary());
+  expect((await screen.findByRole('group', { name: 'HEAD' })).textContent).toBe('main');
+});
+
 test('no upstream says so', async () => {
   show(summary());
   expect(await screen.findByText('no upstream')).toBeTruthy();
@@ -39,12 +44,13 @@ test('detached HEAD shows a detached badge and the short oid', async () => {
   show(summary({ head: { oid: '0123456789abcdef', branch: null, unborn: false } }));
   expect(await screen.findByText('detached')).toBeTruthy();
   expect(screen.getByText('0123456789')).toBeTruthy();
+  expect(screen.getByRole('group', { name: 'HEAD' }).textContent).toBe('detached0123456789');
 });
 
 test('an unborn HEAD shows its branch and a no-commits badge', async () => {
   show(summary({ head: { oid: null, branch: 'main', unborn: true } }));
   expect(await screen.findByText('no commits yet')).toBeTruthy();
-  expect(screen.getByText('main')).toBeTruthy();
+  expect(screen.getByRole('group', { name: 'HEAD' }).textContent).toBe('mainno commits yet');
 });
 
 test('NOT_A_REPO shows git stderr as text', async () => {

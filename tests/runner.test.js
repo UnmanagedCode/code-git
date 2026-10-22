@@ -46,14 +46,25 @@ test('the base env makes git non-interactive and literal; GIT_OPTIONAL_LOCKS=0 o
   assert.equal('GIT_OPTIONAL_LOCKS' in write, false);
 });
 
-test("an op's env is merged in but cannot re-enable prompts", async (t) => {
+test("an op's env is merged in; GIT_EDITOR and GIT_SEQUENCE_EDITOR stay overridable", async (t) => {
   const { cc } = await world(t);
-  await runGit(ctxFor(APP), ['status'], { env: { GIT_TERMINAL_PROMPT: '1', GCM_INTERACTIVE: 'always', GIT_EDITOR: 'true', MY_VAR: 'x' } });
+  await runGit(ctxFor(APP), ['status'], { env: { GIT_EDITOR: 'true', GIT_SEQUENCE_EDITOR: 'cat', MY_VAR: 'x' } });
   const { env } = cc.state.execCalls[0];
+  assert.deepEqual([env.GIT_EDITOR, env.GIT_SEQUENCE_EDITOR, env.MY_VAR], ['true', 'cat', 'x']);
   assert.equal(env.GIT_TERMINAL_PROMPT, '0');
-  assert.equal(env.GCM_INTERACTIVE, 'never');
-  assert.equal(env.GIT_EDITOR, 'true', 'a later card may set its own editor');
-  assert.equal(env.MY_VAR, 'x');
+});
+
+test("an op's env cannot set a protected name: prompts, pathspecs, repo/binary/ssh selection, any GIT_CONFIG*; nothing reaches exec", async (t) => {
+  const { cc } = await world(t);
+  const ctx = ctxFor(APP, 'write');
+  const names = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH',
+    'GIT_SSH_COMMAND', 'GIT_SSH', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+    'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG'];
+  for (const name of names) {
+    await assert.rejects(runGit(ctx, ['status'], { env: { OK: '1', [name]: 'x' } }), new RegExp(`may not set ${name}`), name);
+  }
+  assert.equal(cc.state.execCalls.length, 0);
+  assert.equal(ctx.activity.list().length, 0, 'no activity entry is opened for a refused env');
 });
 
 test('paths after -- are literal: a dash-led name and pathspec magic match only themselves', async (t) => {

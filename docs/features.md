@@ -20,7 +20,7 @@ Opened by **+** in the tab bar (label "Open repository") or the empty-state butt
 | System badge | Projects whose `system` is not `local`: `<system> · <remoteId>` (e.g. `docker · cc-box`) |
 | "no commits" badge | `unbornHead` projects |
 | Disabled row | The name and the expand chevron are disabled and the reason shows under the name, as text |
-| Expand (chevron, "Show worktrees of …") | Loads `GET api/repos/:project/worktrees`; lists **(main checkout)** then each worktree with its branch |
+| Expand (chevron, "Show worktrees of …") | Loads `GET api/repos/:project/worktrees`; lists **(main checkout)** then each worktree with its branch, and a **locked** badge on a worktree locked in cc |
 | Pick | Clicking a project name opens its main checkout; clicking a checkout row opens it. The dialog closes |
 
 Disabled reasons, first match wins (`disabledReason` in `frontend/src/state/useRepos.ts`):
