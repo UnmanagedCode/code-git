@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { buildFileTree, statusClass } from './fileTree';
+import { buildFileTree, MAX_TREE_DEPTH, statusClass } from './fileTree';
 
 const f = (path: string, status = 'M') => ({ status, path, oldPath: null });
 
@@ -14,4 +14,16 @@ test('the tree nests directories, directories before files, each by name; every 
 
 test('status colours: added, deleted, modified, renamed/copied, other', () => {
   expect(['A', 'D', 'M', 'R', 'C', 'T'].map(statusClass)).toEqual(['text-success', 'text-destructive', 'text-info', 'text-warning', 'text-warning', 'text-muted-foreground']);
+});
+
+test('a path of 20,000 components nests MAX_TREE_DEPTH directories and keeps the rest in the file name', () => {
+  const parts = Array.from({ length: 20_000 }, (_, i) => `d${i}`);
+  const tree = buildFileTree([f(parts.join('/'))]);
+  let depth = 0;
+  let node = tree[0];
+  while (node.kind === 'dir') { depth++; node = node.children[0]; }
+  expect(depth).toBe(MAX_TREE_DEPTH);
+  expect(node.name).toBe(parts.slice(MAX_TREE_DEPTH).join('/'));
+  expect(node.path).toBe(parts.join('/'));
+  expect(buildFileTree([f(Array.from({ length: MAX_TREE_DEPTH + 1 }, (_, i) => `x${i}`).join('/'))])[0].kind).toBe('dir');
 });

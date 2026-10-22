@@ -4,11 +4,15 @@ export interface TreeDir { kind: 'dir'; name: string; path: string; children: Tr
 export interface TreeFile { kind: 'file'; name: string; path: string; file: CommitFile }
 export type TreeNode = TreeDir | TreeFile;
 
-/** The changed files as nested directories: directories first, then files, each by name. */
+/** Directory levels the tree nests; deeper components stay in the file's name (a crafted path can have thousands). */
+export const MAX_TREE_DEPTH = 32;
+
+/** The changed files as nested directories (at most MAX_TREE_DEPTH deep): directories first, then files, each by name. */
 export function buildFileTree(files: CommitFile[]): TreeNode[] {
   const root: TreeDir = { kind: 'dir', name: '', path: '', children: [] };
   for (const file of files) {
-    const parts = file.path.split('/');
+    const all = file.path.split('/');
+    const parts = all.length > MAX_TREE_DEPTH + 1 ? [...all.slice(0, MAX_TREE_DEPTH), all.slice(MAX_TREE_DEPTH).join('/')] : all;
     let dir = root;
     parts.slice(0, -1).forEach((name, i) => {
       const path = parts.slice(0, i + 1).join('/');

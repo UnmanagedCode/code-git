@@ -145,3 +145,11 @@ test('impossible author and committer timestamps render — instead of crashing 
   await screen.findByText('Fix <b>it</b>');
   expect(screen.getAllByText('—')).toHaveLength(2);
 });
+
+test('Tree view renders a file whose path has 20,000 components', async () => {
+  const deep = Array.from({ length: 20_000 }, (_, i) => `d${i}`).join('/');
+  await show({ files: [{ status: 'A', path: deep, oldPath: null }] });
+  await screen.findByText('1 file');
+  fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
+  expect(document.querySelector(`[data-file="${deep}"]`)).not.toBeNull();
+});
