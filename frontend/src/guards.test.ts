@@ -22,7 +22,9 @@ test('the guards see the sources they cover', () => {
   expect(seen.length).toBeGreaterThan(25);
   for (const must of ['index.html', 'public/theme-init.js', 'src/App.tsx', 'src/shell/Shell.tsx', 'src/features/activity/ActivityEntry.tsx',
     'src/features/repos/RepoPicker.tsx', 'src/features/repo/RepoHeader.tsx', 'src/lib/api.ts', 'src/components/ui/button.tsx',
-    'src/features/diff/DiffPanel.tsx', 'src/features/diff/highlight/prism.ts', 'src/lib/download.ts']) expect(seen).toContain(must);
+    'src/features/diff/DiffPanel.tsx', 'src/features/diff/highlight/prism.ts', 'src/lib/download.ts',
+    'src/features/graph/GraphPanel.tsx', 'src/features/graph/LaneSvg.tsx', 'src/features/graph/RefChip.tsx', 'src/features/graph/drag.ts',
+    'src/features/graph/details/CommitDetails.tsx', 'src/shell/ContextMenuHost.tsx', 'src/lib/cssVars.ts']) expect(seen).toContain(must);
   expect(seen.some((f) => f.startsWith('dist') || f.includes('node_modules'))).toBe(false);
 });
 
@@ -93,4 +95,17 @@ test('index.html loads the bridge first and blocking, then the host theme and th
   expect(tags[1]).toBe('<link rel="stylesheet" href="/pluginTheme.css" vite-ignore />');
   expect(tags[2]).toBe('<script src="theme-init.js" vite-ignore>');
   expect(head).not.toMatch(/pluginBridge\.js"[^>]*(defer|async)/);
+});
+
+// Dynamic geometry goes through lib/cssVars.ts (finite px numbers only); nothing else touches an element's style.
+const STYLE_ACCESS = /\.style\b(?!-)|\bsetAttribute\(\s*['"`]style|\bcssText\b/;
+
+test('the style-access pattern catches what it claims to', () => {
+  for (const bad of ['el.style.setProperty("--x", v)', 'node.style.top = y', "el.setAttribute('style', s)", 'x.style.cssText = s', 'el.style[k] = v']) expect(STYLE_ACCESS.test(bad), bad).toBe(true);
+  for (const ok of ['setCssPx(el, "--x", 3)', "className='border-style-dashed'", 'const styles = 1', 'list-style-none', 'stylesheet']) expect(STYLE_ACCESS.test(ok), ok).toBe(false);
+});
+
+test('no .style access outside lib/cssVars.ts and components/ui', () => {
+  const own = all.filter((f) => !f.includes(`${path.sep}components${path.sep}ui${path.sep}`));
+  expect(offenders(STYLE_ACCESS, own)).toEqual([path.join('src', 'lib', 'cssVars.ts')]);
 });

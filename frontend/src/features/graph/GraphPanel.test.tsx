@@ -195,3 +195,36 @@ test('a checkout that is not a repo shows no graph', async () => {
   expect(container.textContent).toBe('');
   expect(fetch.count('POST api/ops/graph.refs')).toBe(0);
 });
+
+test('right-click: a commit row offers the commit menu, a branch chip the branch menu, a multi-selection the commits menu', async () => {
+  const world = linearWorld(5);
+  world.refs.refs.push(ref('refs/heads/feat', oid(3)));
+  await show(world);
+  fireEvent.contextMenu(rowEl(oid(4))!, { clientX: 10, clientY: 20 });
+  let menu = await screen.findByRole('menu');
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Show details', 'Copy SHA', 'Copy message']);
+  fireEvent.keyDown(menu, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  fireEvent.contextMenu(screen.getByText('feat'));
+  menu = await screen.findByRole('menu');
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Jump to commit', 'Copy name', 'Hide', 'Solo', 'Pin to left']);
+  fireEvent.keyDown(menu, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  fireEvent.click(rowEl(oid(5))!);
+  fireEvent.click(rowEl(oid(3))!, { shiftKey: true });
+  fireEvent.contextMenu(rowEl(oid(4))!);
+  menu = await screen.findByRole('menu');
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Copy 3 SHAs']);
+});
+
+test('Shift+F10 opens the focused row menu; the checked-out branch chip has no Hide', async () => {
+  await show(linearWorld(3));
+  fireEvent.keyDown(list(), { key: 'j' });
+  fireEvent.keyDown(list(), { key: 'F10', shiftKey: true });
+  const menu = await screen.findByRole('menu');
+  expect(within(menu).getAllByRole('menuitem')[0].textContent).toBe('Show details');
+  fireEvent.keyDown(menu, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  fireEvent.contextMenu(screen.getByText('main'));
+  expect(within(await screen.findByRole('menu')).queryByRole('menuitem', { name: 'Hide' })).toBeNull();
+});
