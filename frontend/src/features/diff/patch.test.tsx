@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -8,6 +10,7 @@ import { dfile, fdiff, filesResult, hunk, OID } from '@/test/diffFixtures';
 import { json, summary } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
 import { openDiff } from './openDiff';
+import { copyPatch, downloadPatch, PATCH_MAX_PATHS, patchPaths } from './patch';
 
 const APP = { project: 'app', worktree: null };
 const BYTES = new Uint8Array([0x64, 0x69, 0x66, 0x66, 0x0a, 0x00, 0xff]);
@@ -80,6 +83,26 @@ test('multi-selected files are sent as paths, a rename with its old path too; fr
   await userEvent.click(await screen.findByRole('menuitem', { name: 'Create patch from selection (download)' }));
   await waitFor(() => expect(patches()).toHaveLength(2));
   expect(patches()[1]).toEqual({ source: { kind: 'commit', rev: OID('c') }, paths: ['a.ts', 'old/c.ts', 'c.ts'] });
+});
+
+test('PATCH_MAX_PATHS mirrors the backend DIFF_LIMITS.maxPaths', async () => {
+  const backend = pathToFileURL(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/git/diff/limits.js')).href;
+  const { DIFF_LIMITS } = (await import(/* @vite-ignore */ backend)) as { DIFF_LIMITS: { maxPaths: number } };
+  expect(PATCH_MAX_PATHS).toBe(DIFF_LIMITS.maxPaths);
+});
+
+test('a selection needing more than PATCH_MAX_PATHS paths (renames count twice) is refused in the header, with no request', async () => {
+  const { patches } = await open();
+  const renames = Array.from({ length: PATCH_MAX_PATHS / 2 + 1 }, (_, i) => dfile({ path: `n${i}`, oldPath: `o${i}`, status: 'R' }));
+  expect(patchPaths(renames)).toHaveLength(PATCH_MAX_PATHS + 2);
+  await act(() => downloadPatch(APP, { kind: 'commit', rev: OID('c') }, patchPaths(renames)));
+  await act(() => copyPatch(APP, { kind: 'commit', rev: OID('c') }, patchPaths(renames)));
+  expect((await screen.findByRole('alert')).textContent).toBe(`Too many files selected for a patch (max ${PATCH_MAX_PATHS} paths); use the whole-diff patch`);
+  expect(patches()).toHaveLength(0);
+  expect(clicked).toHaveLength(0);
+  await act(() => downloadPatch(APP, { kind: 'commit', rev: OID('c') }, patchPaths(renames.slice(0, PATCH_MAX_PATHS / 2))));
+  await waitFor(() => expect(patches()).toHaveLength(1));
+  expect(screen.queryByRole('alert')).toBeNull();
 });
 
 test('a failed patch request is shown as an alert in the diff header', async () => {
