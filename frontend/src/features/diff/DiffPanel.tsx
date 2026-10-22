@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { applyLines, type LineAction } from '@/features/staging/actions';
+import { HunkActions } from '@/features/staging/HunkActions';
+import { canPartial } from '@/features/staging/partial';
+import { SelectionBar } from '@/features/staging/SelectionBar';
+import { extendRange, hunkRequest, lineKey, toggle, toRequest } from '@/features/staging/selection';
+import { clearLineSelection, setLineSelection, useLineSelection } from '@/state/lineSelection';
 import { useStore } from '@/state/store';
 import {
   contextFor, diffStore, fileKey, forceFile, loadFile, loadList, prefsStore, setSelection,
 } from '@/state/diff';
 import { tabKey, type Tab } from '@/state/tabs';
-import type { Marks } from './CodeLine';
+import type { Marks, StagingView } from './CodeLine';
 import { DiffHeader } from './DiffHeader';
 import { FileList } from './FileList';
 import { FileView } from './FileView';
@@ -66,6 +72,27 @@ function DiffView({ tab }: { tab: Tab }) {
     return { byCell, current: c ? { cellId: c.cellId, range: c } : null };
   }, [matches, current]);
   useEffect(() => { setMatchIndex(0); }, [query, key, layout]);
+
+  // Hunk and line staging (features/staging), for an unstaged or staged diff of a modified file only.
+  const generation = state?.generation ?? 0;
+  const sel = useLineSelection(tab, key, generation);
+  const [linesBusy, setLinesBusy] = useState(false);
+  const partial = !!file && !!state && canPartial(file, diff, prefs, state.source);
+  const section = state?.source.kind === 'staged' ? 'staged' : 'unstaged';
+  const runLines = (action: LineAction, req: ReturnType<typeof toRequest>) => {
+    if (!diff) return;
+    setLinesBusy(true);
+    void applyLines(tab, action, diff, context, req).finally(() => setLinesBusy(false));
+  };
+  const staging = useMemo<StagingView | undefined>(() => (partial && diff && key ? {
+    selected: sel.keys,
+    onToggle: (h, i, shift) => {
+      const k = lineKey(h, i);
+      const keys = shift && sel.anchor ? new Set([...sel.keys, ...extendRange(diff, sel.anchor, k)]) : toggle(sel.keys, k);
+      setLineSelection(tab, { fileKey: key, generation, keys, anchor: shift && sel.anchor ? sel.anchor : k });
+    },
+    hunkActions: (h) => <HunkActions section={section} busy={linesBusy} onAction={(a) => runLines(a, hunkRequest(diff, h))} />,
+  } : undefined), [partial, diff, key, sel, generation, section, linesBusy]);
   useEffect(() => {
     if (current !== -1) rootRef.current?.querySelector('[data-match-current]')?.scrollIntoView({ block: 'center' });
   }, [current, matches]);
@@ -141,6 +168,10 @@ function DiffView({ tab }: { tab: Tab }) {
               canPrevFile={viewedIndex > 0}
               canNextFile={viewedIndex !== -1 && viewedIndex < files.length - 1}
               onForce={() => forceFile(tab, file.path)}
+              staging={staging}
+              selectionBar={staging && diff && (
+                <SelectionBar count={sel.keys.size} section={section} busy={linesBusy} onAction={(a) => runLines(a, toRequest(diff, sel.keys))} onClear={() => clearLineSelection(tab)} />
+              )}
               search={searchOpen && (
                 <SearchBar query={query} onQuery={setQuery} index={current} count={matches.length} onNext={() => step(1)} onPrev={() => step(-1)} onClose={closeSearch} inputRef={inputRef} />
               )}

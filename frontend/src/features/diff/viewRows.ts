@@ -5,10 +5,14 @@ import type { Range } from './wordDiff';
 
 // What the views render: rows of cells, each cell one displayed line with its syntax segments and word emphasis.
 
-export interface Cell { id: string; kind: 'context' | 'add' | 'del'; no: number | null; text: string; segs: Seg[]; emphasis: Range[] }
+export interface Cell {
+  id: string; kind: 'context' | 'add' | 'del'; no: number | null; text: string; segs: Seg[]; emphasis: Range[];
+  /** The line's address in the FileDiff (hunk index, line index): what line staging selects. */
+  hunk: number; index: number;
+}
 
 export type ViewRow =
-  | { type: 'hunk'; id: string; header: string }
+  | { type: 'hunk'; id: string; hunk: number; header: string }
   | { type: 'unified'; id: string; cell: Cell; oldNo: number | null; newNo: number | null; change: number | null }
   | { type: 'split'; id: string; left: Cell | null; right: Cell | null; change: number | null }
   | { type: 'file'; id: string; cell: Cell };
@@ -41,7 +45,7 @@ export function buildRows(fd: FileDiff, layout: Layout, segs: SideSegs | null): 
     const i = at.get(`${ref.hunk}:${ref.index}`)?.[side];
     return {
       id: `${prefix}:${ref.hunk}:${ref.index}`, kind: ref.line.kind, no: side === 'old' ? ref.line.oldNo : ref.line.newNo, text,
-      segs: (i !== undefined && segs?.[side][i]) || [{ text, cls: null }], emphasis: ref.emphasis ?? [],
+      segs: (i !== undefined && segs?.[side][i]) || [{ text, cls: null }], emphasis: ref.emphasis ?? [], hunk: ref.hunk, index: ref.index,
     };
   };
   const sideOf = (ref: LineRef) => (ref.line.kind === 'del' ? 'old' : 'new');
@@ -57,11 +61,11 @@ export function buildRows(fd: FileDiff, layout: Layout, segs: SideSegs | null): 
   const headers = layout === 'hunk';
   if (layout === 'split') {
     return splitRows(fd.hunks, headers).map((r, i) => (r.type === 'hunk'
-      ? { type: 'hunk', id: `h${r.hunk}`, header: r.header }
+      ? { type: 'hunk', id: `h${r.hunk}`, hunk: r.hunk, header: r.header }
       : { type: 'split', id: `s${i}`, left: r.old && cell(r.old, 'old', 'l'), right: r.new && cell(r.new, 'new', 'r'), change: r.change }));
   }
   return unifiedRows(fd.hunks, headers).map((r) => (r.type === 'hunk'
-    ? { type: 'hunk', id: `h${r.hunk}`, header: r.header }
+    ? { type: 'hunk', id: `h${r.hunk}`, hunk: r.hunk, header: r.header }
     : { type: 'unified', id: `u${r.ref.hunk}:${r.ref.index}`, cell: cell(r.ref, sideOf(r.ref), 'u'), oldNo: r.ref.line.oldNo, newNo: r.ref.line.newNo, change: r.change }));
 }
 

@@ -1,10 +1,13 @@
 import type { DiffFile } from '@/features/diff/api';
+import type { DiffFileCtx } from '@/features/diff/actions';
 import { patchPaths } from '@/features/diff/patch';
 import { confirm } from '@/lib/confirm';
+import type { Target } from '@/lib/endpoints';
 import type { MenuAction } from '@/shell/menus';
-import type { Tab } from '@/state/tabs';
-import { runWorkdirOp } from '@/state/workdir';
-import { discardFiles, stageFiles, unstageFiles } from './api';
+import { diffStore, setNotice } from '@/state/diff';
+import { tabKey, type Tab } from '@/state/tabs';
+import { runWorkdirOp, workdirOf } from '@/state/workdir';
+import { discardFiles, ignoreAdd, restoreFileOp, stageFiles, unstageFiles, type IgnoreKind } from './api';
 
 // What the Changes panel does to files. Every discard asks first and sends nothing until confirmed.
 
@@ -47,6 +50,62 @@ export async function discardAll(tab: Tab, unstaged: DiffFile[]): Promise<void> 
   if (!ok) return;
   await runWorkdirOp(tab, () => discardFiles(tab, { tracked, untracked }));
 }
+
+/** What a path can be ignored as: itself, its extension (`a.log` → `log`; not a dotfile's name) and its directory. */
+export function ignoreTargets(path: string): { kind: IgnoreKind; value: string; label: string }[] {
+  const base = path.slice(path.lastIndexOf('/') + 1);
+  const dot = base.lastIndexOf('.');
+  const ext = dot > 0 && dot < base.length - 1 ? base.slice(dot + 1) : null;
+  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null;
+  return [
+    { kind: 'path', value: path, label: `'${base}'` },
+    ...(ext ? [{ kind: 'ext' as const, value: ext, label: `all '*.${ext}' files` }] : []),
+    ...(dir ? [{ kind: 'dir' as const, value: dir, label: `folder '${dir}/'` }] : []),
+  ];
+}
+
+/** Adds the pattern to the root .gitignore; for a tracked file, after confirming, also removes what it matches from the index. */
+export async function ignore(tab: Tab, f: DiffFile, kind: IgnoreKind, value: string): Promise<void> {
+  const stopTracking = f.status !== '?';
+  if (stopTracking) {
+    const target = ignoreTargets(f.path).find((x) => x.kind === kind)?.label ?? value;
+    const ok = await confirm({
+      title: `Ignore and stop tracking ${target}?`,
+      body: `A pattern is added to the root .gitignore, and every tracked file it matches is removed from the index (the files stay on disk; git add tracks them again).`,
+      confirmLabel: 'Ignore and stop tracking',
+    });
+    if (!ok) return;
+  }
+  await runWorkdirOp(tab, () => ignoreAdd(tab, { kind, value, ...(stopTracking ? { stopTracking: true } : {}) }));
+}
+
+/**
+ * Resets `path` to its version in commit `oid`, in the index and the worktree, after confirming (it overwrites
+ * uncommitted work). The entry point for "restore file" from a diff or a commit's details. A failure shows in the
+ * Changes panel and, when a diff is open, in its header.
+ */
+export async function restoreFile(t: Target, oid: string, path: string): Promise<void> {
+  const ok = await confirm({
+    title: `Restore ${path} to ${oid.slice(0, 7)}?`,
+    body: "Its staged and working-tree content are replaced by this commit's version; uncommitted changes to it are lost.",
+    irreversible: true,
+    confirmLabel: 'Restore file',
+  });
+  if (!ok) return;
+  if (!await runWorkdirOp(t, () => restoreFileOp(t, oid, path))) setNotice(t, `Could not restore ${path}: ${workdirOf(t).opError?.message ?? ''}`);
+}
+
+/** The commit a diff's new side is (a tree side), for the restore action. */
+const newCommit = (tab: Tab): string | null => {
+  const side = diffStore.get().get(tabKey(tab))?.list.result?.pair.new;
+  return side?.type === 'tree' ? side.oid : null;
+};
+
+export const RESTORE_ACTION: MenuAction<DiffFileCtx> = {
+  id: 'diff.restore', context: 'diff-file', label: 'Restore file to this version…', destructive: true,
+  when: (c) => c.files.length === 1 && c.files[0].status !== 'D' && !c.files[0].submodule && newCommit(c.tab) !== null,
+  run: (c) => { const oid = newCommit(c.tab); if (oid) void restoreFile(c.tab, oid, c.files[0].path); },
+};
 
 export const WORKDIR_FILE_ACTIONS: MenuAction<WorkdirFileCtx>[] = [
   { id: 'workdir.stage', context: 'workdir-file', label: 'Stage', when: (c) => c.section === 'unstaged', run: (c) => void stageFile(c.tab, c.file) },

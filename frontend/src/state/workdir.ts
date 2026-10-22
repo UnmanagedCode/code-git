@@ -85,7 +85,7 @@ export async function ensureWorkdir(tab: Tab): Promise<void> {
 }
 
 /** Everything that may have changed after a write: the lists, the header summary, and an open unstaged/staged diff. */
-async function afterWrite(tab: Tab): Promise<void> {
+export async function refreshAfterWrite(tab: Tab): Promise<void> {
   const kind = diffStore.get().get(tabKey(tab))?.source.kind;
   await Promise.all([refreshWorkdir(tab), loadSummary(tab), ...(kind === 'unstaged' || kind === 'staged' ? [loadList(tab)] : [])]);
 }
@@ -104,7 +104,7 @@ export async function runWorkdirOp(tab: Tab, f: () => Promise<unknown>): Promise
     put(tab, (s) => ({ ...s, opError: toOpError(e) }));
   }
   put(tab, (s) => ({ ...s, busy: false }));
-  await afterWrite(tab);
+  await refreshAfterWrite(tab);
   return ok;
 }
 

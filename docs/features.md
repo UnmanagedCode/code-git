@@ -68,15 +68,24 @@ Right slot (below `lg`: the **Changes (n)** dialog from the repo header). Stage,
 
 | Part | Behaviour |
 |---|---|
-| Header | **Changes**, **Refresh changes** (↻), ⋮ menu: **Refresh** |
+| Header | **Changes**, **Refresh changes** (↻), ⋮ menu: **Refresh**, **Apply patch…** |
 | Detached banner | On a detached HEAD: "Detached HEAD at `<oid10>`. A commit made here is on no branch." |
 | Error | The last failed op's message and git's stderr (hook output) as text; × dismisses it |
 | **Unstaged Files (n)** | Worktree changes and untracked files (`?`). Header: **Discard all…**, **Stage all**. Row hover: discard (↶, not on a conflicted file), stage (+), ⋮ |
 | **Staged Files (n)** | Index changes. Header: **Unstage all**. Row hover: unstage (−), ⋮ |
-| Row | Status letter, path (`old → new` for a rename). Click or Enter opens its unstaged / staged diff at that file. Right-click or ⋮: **Stage** / **Unstage**, **Discard…**, **Copy path** |
+| Row | Status letter, path (`old → new` for a rename). Click or Enter opens its unstaged / staged diff at that file. Right-click or ⋮: **Stage** / **Unstage**, **Discard…**, **Copy path**, then the ignore items below |
 | Commit box | **Summary** (one line), **Description**, ☐ **Amend previous commit**, ☐ **Skip Git hooks**, then the commit button(s) |
 
 **Discard** always asks first and sends nothing until confirmed: a file ("Discard changes to …?" / "Delete …?" for an untracked file), or **Discard all…**, which lists every untracked file it deletes with their count. Both say "This cannot be undone." Discard all throws away exactly the unstaged and untracked files shown (not conflicted ones); staged changes and ignored files stay.
+
+**Ignore** (row menu), into the root `.gitignore` (left unstaged):
+
+| File | Items |
+|---|---|
+| Untracked | **Ignore '‹name›'**; **Ignore all '*.ext' files** (when the name has an extension; a dotfile like `.env` has none); **Ignore folder '‹dir›/'** (when the file is in a folder) |
+| Tracked | The same three as **Ignore and stop tracking …** — confirmed first; the matching tracked files leave the index and stay on disk |
+
+**Apply patch…**: a patch file, or pasted text; apply to **Working tree** (default) or **Index only**. **Check** lists the files and line counts it changes; **Apply** is enabled only after a successful check of the same bytes and target. A patch that does not apply shows git's message; one over `APPLY_PATCH_MAX_BYTES` (`features/workdir/api.ts`, equal to `STAGE_LIMITS.applyPatchMaxBytes`) is refused before any request. There is no "both" target: apply to the working tree, then stage.
 
 **Commit button**
 
@@ -167,5 +176,19 @@ Center slot, per tab: each tab keeps its own diff; switching tabs shows that tab
 | Empty file added / deleted | "Empty file added" / "Empty file deleted" |
 | No content change (rename-only, mode-only, whitespace hidden) | "No content changes" + the mode or rename line |
 | List over its cap | An alert: the diff is too large to list; no file list |
+
+**Hunk and line staging** — only on an unstaged or staged diff of a modified (`M`) text file, with **Show all whitespace** and the Diff view (not File view); not on added, deleted, renamed, untracked, binary, submodule, conflicted or LFS-pointer files, nor on commit or compare diffs:
+
+| Control | Unstaged diff | Staged diff |
+|---|---|---|
+| Hunk header (Hunk mode) | **Stage hunk**, **Discard hunk…** | **Unstage hunk** |
+| Gutter toggle on each added/removed line (Hunk, Inline, Split) | click selects or unselects ("Select added line N" / "Select removed line N"); Shift-click selects every change line from the last clicked one | same |
+| Selection bar ("k lines selected") | **Stage lines**, **Discard lines…**, **Clear** | **Unstage lines**, **Clear** |
+
+- Within a run of removed and added lines, the i-th removed line pairs with the i-th added one (as Split shows them): staging only that pair replaces that line.
+- Discarding asks first and previews the removed/added lines. A refusal shows in the header: the file changed since it was shown (reload it), or a selection that leaves out the end-of-file newline change.
+- After each action the selection clears and the diff, the Changes lists and the header reload.
+
+**Restore file to this version…** (file list menu, one file, when the diff's new side is a commit — a commit, a range or two refs; not for a deleted file or a submodule): after a confirmation, puts that commit's version of the file in the index and the working tree, overwriting uncommitted changes to it.
 
 **Create patch** ▾: **Download .patch**, **Copy patch**; with more than one file selected also the same two for the selected files only (a renamed file brings its old path, so the rename stays a rename). A selection needing more than `PATCH_MAX_PATHS` paths (`features/diff/patch.ts`, equal to `DIFF_LIMITS.maxPaths`) is refused in the header before any request: use the whole-diff patch. A commit, or a run of commits without merges, gives a mailbox patch (`git am`); anything else a plain diff (`git apply`), binary changes included, untracked files not. The file name comes from the backend. A failed request is shown as an alert in the header.

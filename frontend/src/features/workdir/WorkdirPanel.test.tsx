@@ -258,3 +258,39 @@ test('an op that changes the files reloads an open unstaged diff, keeping the vi
   await waitFor(() => expect(w.fetch.count('POST api/ops/diff.files')).toBe(before + 3));
   expect(diffStore.get().get(tabKey(APP))?.viewed).toBe('src/a.ts');
 });
+
+test('untracked rows offer Ignore by name, extension and folder; each sends ignore.add without stopTracking', async () => {
+  const w = await show({ unstaged: [dfile({ path: 'logs/debug.log', status: '?' })] });
+  const menu = async () => {
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for logs/debug.log' }));
+    return screen.getAllByRole('menuitem').map((m) => m.textContent);
+  };
+  expect(await menu()).toEqual(['Stage', 'Discard…', 'Copy path', "Ignore 'debug.log'", "Ignore all '*.log' files", "Ignore folder 'logs/'"]);
+  await userEvent.click(screen.getByRole('menuitem', { name: "Ignore all '*.log' files" }));
+  await waitFor(() => expect(w.posts('ignore.add')).toEqual([{ kind: 'ext', value: 'log' }]));
+  await menu();
+  await userEvent.click(screen.getByRole('menuitem', { name: "Ignore folder 'logs/'" }));
+  await waitFor(() => expect(w.posts('ignore.add').at(-1)).toEqual({ kind: 'dir', value: 'logs' }));
+  await menu();
+  await userEvent.click(screen.getByRole('menuitem', { name: "Ignore 'debug.log'" }));
+  await waitFor(() => expect(w.posts('ignore.add').at(-1)).toEqual({ kind: 'path', value: 'logs/debug.log' }));
+});
+
+test('a dotfile has no extension to ignore; a root file no folder', async () => {
+  await show({ unstaged: [dfile({ path: '.env', status: '?' })] });
+  await userEvent.click(screen.getByRole('button', { name: 'Actions for .env' }));
+  expect(screen.getAllByRole('menuitem').map((m) => m.textContent).filter((t) => t?.startsWith('Ignore'))).toEqual(["Ignore '.env'"]);
+});
+
+test('a tracked row offers Ignore and stop tracking…, confirmed first; Cancel sends nothing', async () => {
+  const w = await show();
+  await userEvent.click(screen.getByRole('button', { name: 'Actions for src/a.ts' }));
+  await userEvent.click(screen.getByRole('menuitem', { name: "Ignore and stop tracking all '*.ts' files…" }));
+  expect(within(dialog()).getByText("Ignore and stop tracking all '*.ts' files?")).toBeTruthy();
+  await userEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
+  expect(w.posts('ignore.add')).toEqual([]);
+  await userEvent.click(screen.getByRole('button', { name: 'Actions for src/a.ts' }));
+  await userEvent.click(screen.getByRole('menuitem', { name: "Ignore and stop tracking 'a.ts'…" }));
+  await userEvent.click(within(dialog()).getByRole('button', { name: 'Ignore and stop tracking' }));
+  await waitFor(() => expect(w.posts('ignore.add')).toEqual([{ kind: 'path', value: 'src/a.ts', stopTracking: true }]));
+});

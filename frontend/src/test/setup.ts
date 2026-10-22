@@ -14,6 +14,7 @@ import { resetSummaries } from '@/state/useRepoSummary';
 import { resetRepos } from '@/state/useRepos';
 import { resetWorkdir } from '@/state/workdir';
 import { resetConfirm } from '@/lib/confirm';
+import { resetLineSelection } from '@/state/lineSelection';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
@@ -35,6 +36,7 @@ afterEach(() => {
   contextMenuStore.set(null);
   resetWorkdir();
   resetConfirm();
+  resetLineSelection();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();

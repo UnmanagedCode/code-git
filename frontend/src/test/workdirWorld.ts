@@ -1,6 +1,6 @@
-import type { DiffFile } from '@/features/diff/api';
+import type { DiffFile, FileDiff } from '@/features/diff/api';
 import type { RepoSummary } from '@/lib/endpoints';
-import { filesResult } from './diffFixtures';
+import { filesResult, OID } from './diffFixtures';
 import { summary as summaryFx } from './fixtures';
 import { stubFetch } from './stubFetch';
 
@@ -14,6 +14,8 @@ export interface WorkdirWorld {
   template?: { summary: string; description: string } | null;
   head?: { summary: string; description: string };
   summary?: RepoSummary;
+  /** diff.file answers by path. */
+  fileDiffs?: Record<string, FileDiff>;
   /** Per op name: a body (sent as the op result), a Response, or a function of the params. */
   answers?: Record<string, unknown>;
 }
@@ -34,7 +36,15 @@ export function workdirWorld(w: WorkdirWorld = {}) {
     'POST api/ops/repo.summary': op('repo.summary', () => w.summary ?? summaryFx()),
     'POST api/ops/diff.files': op('diff.files', (p) => {
       const kind = (p.source as { kind: string }).kind as 'unstaged' | 'staged';
-      return filesResult(lists[kind] ?? [], { commit: null });
+      const pair = kind === 'unstaged'
+        ? { old: { type: 'index' as const }, new: { type: 'worktree' as const } }
+        : { old: { type: 'tree' as const, oid: OID('a') }, new: { type: 'index' as const } };
+      return filesResult(lists[kind] ?? [], { pair, commit: null });
+    }),
+    'POST api/ops/diff.file': op('diff.file', (p) => {
+      const d = w.fileDiffs?.[p.path as string];
+      if (!d) throw new Error(`no diff stubbed for ${String(p.path)}`);
+      return d;
     }),
     'POST api/ops/commit.state': op('commit.state', () => ({ merging: w.merging ?? false })),
     'POST api/ops/commit.template': op('commit.template', () => ({ path: w.template ? '/t' : null, draft: w.template ?? null, problem: null })),

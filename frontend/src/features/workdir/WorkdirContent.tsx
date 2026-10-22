@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { EllipsisVerticalIcon, RefreshCwIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -6,6 +6,7 @@ import { useStore } from '@/state/store';
 import { tabKey, type Tab } from '@/state/tabs';
 import { useRepoSummary } from '@/state/useRepoSummary';
 import { clearOpError, ensureWorkdir, refreshWorkdir, setDialogOpen, workdirOf, workdirStore } from '@/state/workdir';
+import { ApplyPatchDialog } from './ApplyPatchDialog';
 import { CommitBox } from './CommitBox';
 import { DetachedBanner } from './DetachedBanner';
 import { FileSection } from './FileSection';
@@ -15,6 +16,7 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
   useStore(workdirStore);
   const state = workdirOf(tab);
   const { summary } = useRepoSummary(tab);
+  const [applyOpen, setApplyOpen] = useState(false);
   useEffect(() => { void ensureWorkdir(tab); }, [tabKey(tab)]);
   return (
     <div className="flex flex-col text-sm" aria-busy={state.busy || state.loading}>
@@ -29,6 +31,7 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => void refreshWorkdir(tab)}>Refresh</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setApplyOpen(true)}>Apply patch…</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         {instance === 'dialog' && (
@@ -55,6 +58,7 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
         </>
       )}
       <CommitBox tab={tab} state={state} summary={summary} instance={instance} />
+      <ApplyPatchDialog tab={tab} open={applyOpen} onOpenChange={setApplyOpen} />
     </div>
   );
 }

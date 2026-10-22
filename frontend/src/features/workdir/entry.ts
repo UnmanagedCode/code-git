@@ -2,6 +2,7 @@ import type { Target } from '@/lib/endpoints';
 import { refreshWorkdir, requestFocus, setAmend, setDialogOpen } from '@/state/workdir';
 
 export { refreshWorkdir };
+export { restoreFile } from './actions';
 
 /** Tailwind's `lg`: at and above it the right slot (the Changes panel) is shown; below it the Changes dialog. */
 export const WIDE_LG_QUERY = '(min-width: 64rem)';

@@ -1,7 +1,7 @@
 import { DIFF_FILE_ACTIONS } from '@/features/diff/actions';
 import { GRAPH_ACTIONS } from '@/features/graph/actions';
 import { TAB_ACTIONS } from '@/features/tabs/actions';
-import { WORKDIR_FILE_ACTIONS } from '@/features/workdir/actions';
+import { RESTORE_ACTION, WORKDIR_FILE_ACTIONS } from '@/features/workdir/actions';
 
 // The context-menu action registry. A feature adds its actions in its own folder and one entry in ACTIONS;
 // <ActionMenuItems context="…" ctx={…}> renders the ones for a context (docs/architecture.md → Extension points).
@@ -24,7 +24,7 @@ export interface MenuAction<C = unknown> {
   destructive?: boolean;
 }
 
-const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS, ...GRAPH_ACTIONS, ...WORKDIR_FILE_ACTIONS];
+const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS, ...GRAPH_ACTIONS, ...WORKDIR_FILE_ACTIONS, RESTORE_ACTION];
 
 /** `list` resolved for one context menu: filtered by `when`, stably sorted by order; submenus resolved too, empty ones dropped. */
 export function resolveActions<C>(list: readonly MenuAction<C>[], context: string | null, ctx: C): MenuAction<C>[] {
