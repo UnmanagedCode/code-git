@@ -207,8 +207,8 @@ try {
       // 11. Esc closes the diff.
       await body.click();
       await page.keyboard.press('Escape');
-      await page.getByText('The commit graph is coming').waitFor();
-      check(!(await diff.isVisible()), `${scheme}: Esc closes the diff and the graph placeholder is back`);
+      await page.getByRole('region', { name: 'Commit graph' }).waitFor();
+      check(!(await diff.isVisible()), `${scheme}: Esc closes the diff and the commit graph is back`);
     }
     check(errors.length === 0, `no console errors or unexpected ≥400 responses${errors.length ? `:\n${errors.join('\n')}` : ''}`);
   });

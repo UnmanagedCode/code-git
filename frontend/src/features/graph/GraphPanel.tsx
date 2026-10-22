@@ -313,7 +313,7 @@ function GraphView({ tab }: { tab: Tab }) {
   if (data.status === 'idle') return null;
   const loaded = data.commits.length;
   return (
-    <div ref={root} className="flex h-full min-h-0 flex-col" data-graph-root="" data-loaded={loaded} data-more={data.nextSkip !== null ? '' : undefined}>
+    <div ref={root} role="region" aria-label="Commit graph" className="flex h-full min-h-0 flex-col" data-graph-root="" data-loaded={loaded} data-more={data.nextSkip !== null ? '' : undefined}>
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5">
         <div className="relative flex min-w-40 flex-1 items-center sm:max-w-96">
           <SearchIcon className="pointer-events-none absolute left-2 size-4 text-muted-foreground" />
