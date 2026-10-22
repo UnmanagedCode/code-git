@@ -7,6 +7,8 @@ import { getGraph, loadUntil, PAGE } from '@/state/graph';
 import { updatePrefs } from '@/state/graphPrefs';
 import { getSelection } from '@/state/graphSelection';
 import { activityStore } from '@/state/useActivity';
+import { diffStore } from '@/state/diff';
+import { shownPanelStore } from '@/state/shownPanel';
 import { loadSummary } from '@/state/useRepoSummary';
 import { GraphPanel } from './GraphPanel';
 import { requestJump } from './jump';
@@ -202,7 +204,7 @@ test('right-click: a commit row offers the commit menu, a branch chip the branch
   await show(world);
   fireEvent.contextMenu(rowEl(oid(4))!, { clientX: 10, clientY: 20 });
   let menu = await screen.findByRole('menu');
-  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Show details', 'Copy SHA', 'Copy message']);
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Show details', 'View changes', 'Compare with working directory', 'Copy SHA', 'Copy message']);
   fireEvent.keyDown(menu, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   fireEvent.contextMenu(screen.getByText('feat'));
@@ -214,7 +216,7 @@ test('right-click: a commit row offers the commit menu, a branch chip the branch
   fireEvent.click(rowEl(oid(3))!, { shiftKey: true });
   fireEvent.contextMenu(rowEl(oid(4))!);
   menu = await screen.findByRole('menu');
-  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Copy 3 SHAs']);
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['View combined diff', 'Copy 3 SHAs']);
 });
 
 test('Shift+F10 opens the focused row menu; the checked-out branch chip has no Hide', async () => {
@@ -227,4 +229,37 @@ test('Shift+F10 opens the focused row menu; the checked-out branch chip has no H
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   fireEvent.contextMenu(screen.getByText('main'));
   expect(within(await screen.findByRole('menu')).queryByRole('menuitem', { name: 'Hide' })).toBeNull();
+});
+
+test('Enter opens the selection diff: a commit, a multi-selection as the commits source, a WIP row as unstaged', async () => {
+  const world = linearWorld(5);
+  world.summaries[''] = summary({ head: { oid: oid(5), branch: 'main', unborn: false }, counts: { staged: 0, unstaged: 1, untracked: 0, conflicted: 0 } });
+  await show(world);
+  await waitFor(() => expect(rowEl('wip:')).not.toBeNull());
+  const source = () => diffStore.get().get('app\0')?.source;
+  fireEvent.click(rowEl(oid(4))!);
+  fireEvent.keyDown(list(), { key: 'Enter' });
+  expect(source()).toEqual({ kind: 'commit', rev: oid(4) });
+  expect(shownPanelStore.get().get('app\0')).toBe('diff');
+  fireEvent.click(rowEl(oid(2))!, { shiftKey: true });
+  fireEvent.keyDown(list(), { key: 'Enter' });
+  expect(source()).toEqual({ kind: 'commits', oids: [oid(4), oid(3), oid(2)], wip: false });
+  fireEvent.click(rowEl('wip:')!);
+  fireEvent.keyDown(list(), { key: 'Enter' });
+  expect(source()).toEqual({ kind: 'unstaged' });
+});
+
+test('below lg the toolbar opens Refs and Compare as dialogs', async () => {
+  const happy = (window as unknown as { happyDOM: { setViewport(v: { width: number; height: number }): void } }).happyDOM;
+  happy.setViewport({ width: 390, height: 844 });
+  try {
+    await show(linearWorld(3));
+    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Compare' });
+    expect(within(dialog).getByRole('textbox', { name: 'Commit (sha or ref)' })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Unstaged changes/ }));
+    expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'unstaged' });
+  } finally {
+    happy.setViewport({ width: 1024, height: 768 });
+  }
 });

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import type { GraphRow } from '@/features/graph/types';
+import { linearWorld, stubGraph } from '@/test/graphBackend';
 import { checkout, commit, oid, stash } from '@/test/graphData';
 import {
   dispatchSelection, fileIntentStore, getSelection, NO_SELECTION, requestFileOpen, selectedRows, selectionReducer, type GraphSelection,
@@ -57,6 +58,8 @@ test('selectedRows resolves the selection top to bottom: WIP by checkout, a stas
 });
 
 test('requestFileOpen publishes the documented intent with an increasing seq and the current selection', () => {
+  // The intent also opens the diff (features/graph/diffWiring.ts), which lists its files.
+  stubGraph(linearWorld(2));
   dispatchSelection(TAB, { type: 'click', id: ids[1], rows });
   requestFileOpen({ tab: TAB, commit: oid(1), parent: oid(2), path: 'src/a.ts', oldPath: null });
   const first = fileIntentStore.get()!;

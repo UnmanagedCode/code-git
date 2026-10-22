@@ -8,6 +8,7 @@ import { ContextMenuHost } from '@/shell/ContextMenuHost';
 import { useGraphData } from '@/state/graph';
 import { useGraphSelection, type SelectedRow } from '@/state/graphSelection';
 import { dispatchTabs, tabKey, type Tab } from '@/state/tabs';
+import { openIn, openSelectionDiff, selectionDiff } from '../diffWiring';
 import { formatTime } from '../GraphRowView';
 import { initials } from '../initials';
 import { requestJump } from '../jump';
@@ -31,12 +32,12 @@ function DetailsView({ tab }: { tab: Tab }) {
   if (data.status === 'idle') return null;
   let body;
   if (!sel.items.length) body = <p className="text-sm text-muted-foreground">Select a commit</p>;
-  else if (sel.items.length > 1) body = <Multi items={sel.items} commits={data.commits} />;
+  else if (sel.items.length > 1) body = <Multi tab={tab} items={sel.items} commits={data.commits} checkouts={data.checkouts} />;
   else {
     const it = sel.items[0];
     if (it.kind === 'wip') {
       const c = data.checkouts.find((x) => tabKey(x.target) === tabKey(it.checkout));
-      body = c ? <Wip c={c} /> : <p className="text-sm text-muted-foreground">This checkout is gone.</p>;
+      body = c ? <Wip tab={tab} c={c} /> : <p className="text-sm text-muted-foreground">This checkout is gone.</p>;
     } else {
       body = <Commit key={it.oid} tab={tab} oid={it.oid} />;
     }
@@ -49,10 +50,13 @@ function DetailsView({ tab }: { tab: Tab }) {
   );
 }
 
-function Multi({ items, commits }: { items: SelectedRow[]; commits: { oid: string; subject: string }[] }) {
+function Multi({ tab, items, commits, checkouts }: { tab: Tab; items: SelectedRow[]; commits: { oid: string; subject: string }[]; checkouts: Checkout[] }) {
   return (
     <>
       <h2 className="text-sm font-semibold">{items.length} selected</h2>
+      {selectionDiff(tab, items, checkouts) && (
+        <Button variant="outline" size="sm" className="self-start" onClick={() => openSelectionDiff(tab)}>View combined diff</Button>
+      )}
       <ul className="flex flex-col gap-0.5 text-sm">
         {items.map((it, i) => (
           <li key={i} className="flex gap-2">
@@ -69,14 +73,18 @@ function Multi({ items, commits }: { items: SelectedRow[]; commits: { oid: strin
   );
 }
 
-function Wip({ c }: { c: Checkout }) {
+function Wip({ tab, c }: { tab: Tab; c: Checkout }) {
   const n = c.counts;
   return (
     <>
       <h2 className="text-sm font-semibold">// WIP <span className="font-normal">{c.name}</span></h2>
       <p className="text-sm">{c.branch ? <span className="font-mono">{c.branch.replace(/^refs\/heads\//, '')}</span> : <span className="text-muted-foreground">detached</span>}</p>
       {n && <p className="text-sm text-muted-foreground">{n.staged} staged · {n.unstaged} unstaged · {n.untracked} untracked · {n.conflicted} conflicted</p>}
-      {!c.isOwn && <Button variant="outline" size="sm" className="self-start" onClick={() => dispatchTabs({ type: 'open', tab: c.target })}>Open worktree</Button>}
+      <div className="flex flex-wrap gap-1">
+        <Button variant="outline" size="sm" onClick={() => openIn(tab, c.target, { kind: 'unstaged' })}>Unstaged changes</Button>
+        <Button variant="outline" size="sm" onClick={() => openIn(tab, c.target, { kind: 'staged' })}>Staged changes</Button>
+        {!c.isOwn && <Button variant="outline" size="sm" onClick={() => dispatchTabs({ type: 'open', tab: c.target })}>Open worktree</Button>}
+      </div>
     </>
   );
 }
@@ -110,6 +118,7 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
     <>
       <div className="flex flex-col gap-1">
         <h2 className="text-sm font-semibold break-words">{d.subject}</h2>
+        <Button variant="outline" size="sm" className="self-start" onClick={() => openIn(tab, tab, { kind: 'commit', rev: d.oid })}>View changes</Button>
         {d.body && <p className="text-sm break-words whitespace-pre-wrap text-muted-foreground">{d.body}</p>}
       </div>
       <Person label="Author" name={d.author.name} email={d.author.email} time={d.author.time} />

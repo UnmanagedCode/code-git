@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import { labelOf, resolveActions, type MenuAction } from '@/shell/menus';
 import { getPrefs, updatePrefs } from '@/state/graphPrefs';
+import { diffStore } from '@/state/diff';
 import { tabsStore } from '@/state/tabs';
 import { commit, oid, ref, stash, worktree } from '@/test/graphData';
 import { GRAPH_ACTIONS } from './actions';
@@ -16,9 +17,10 @@ const run = async (context: string, ctx: unknown, label: string) => {
 };
 
 test('commit, commits and stash menus: view, copy, visibility in that order', () => {
-  expect(menu('commit', { tab: TAB, commit: commit(oid(1)), refs: [], selection: [] })).toEqual(['Show details', 'Copy SHA', 'Copy message']);
+  expect(menu('commit', { tab: TAB, commit: commit(oid(1)), refs: [], selection: [] })).toEqual(['Show details', 'View changes', 'Compare with working directory', 'Copy SHA', 'Copy message']);
   expect(menu('commits', { tab: TAB, rows: [] })).toEqual(['Copy 0 SHAs']);
-  expect(menu('stash', { tab: TAB, stash: stash(oid(2), oid(1)) })).toEqual(['Show details', 'Copy message', 'Hide stashes']);
+  expect(menu('commits', { tab: TAB, rows: [{ kind: 'commit', id: oid(1), item: commit(oid(1)) }, { kind: 'commit', id: oid(2), item: commit(oid(2)) }] })).toEqual(['View combined diff', 'Copy 2 SHAs']);
+  expect(menu('stash', { tab: TAB, stash: stash(oid(2), oid(1)) })).toEqual(['Show details', 'View changes', 'Copy message', 'Hide stashes']);
 });
 
 test('branch menu: jump, copy, hide/solo/pin toggles that update prefs; no Hide on the checked-out branch', async () => {
@@ -59,10 +61,25 @@ test('copy actions write to the clipboard; Copy message reads the whole message'
 
 test('WIP and worktree menus open another checkout in a tab; the own WIP and an unknown worktree offer no Open', async () => {
   const wt = { project: 'app', worktree: 'wt' };
-  expect(menu('wip', { tab: TAB, checkout: TAB, name: 'app', isOwn: true })).toEqual([]);
+  expect(menu('wip', { tab: TAB, checkout: TAB, name: 'app', isOwn: true })).toEqual(['View unstaged changes', 'View staged changes']);
   await run('wip', { tab: TAB, checkout: wt, name: 'wt', isOwn: false }, 'Open wt in a tab');
   expect(tabsStore.get().open).toEqual([wt]);
   expect(menu('worktree', { tab: TAB, worktree: worktree('/x', null, null), ccCheckout: null })).toEqual(['Copy path']);
   await run('worktree', { tab: TAB, worktree: worktree('/x', null, null), ccCheckout: TAB }, 'Open in a tab');
   expect(tabsStore.get().open).toEqual([wt, TAB]);
+});
+
+test('the diff actions open the commit, the commit vs the working directory, the stash, and a WIP checkout', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true, result: { files: [], pair: null, commit: null, mergeBase: null, series: null } }), { status: 200 })));
+  const src = (key = 'app\0') => diffStore.get().get(key)?.source;
+  await run('commit', { tab: TAB, commit: commit(oid(1)), refs: [], selection: [] }, 'View changes');
+  expect(src()).toEqual({ kind: 'commit', rev: oid(1) });
+  await run('commit', { tab: TAB, commit: commit(oid(1)), refs: [], selection: [] }, 'Compare with working directory');
+  expect(src()).toEqual({ kind: 'worktree', rev: oid(1) });
+  await run('stash', { tab: TAB, stash: stash(oid(2), oid(1)) }, 'View changes');
+  expect(src()).toEqual({ kind: 'commit', rev: oid(2) });
+  await run('wip', { tab: TAB, checkout: { project: 'app', worktree: 'wt' }, name: 'wt', isOwn: false }, 'View staged changes');
+  expect(src('app\0wt')).toEqual({ kind: 'staged' });
+  await run('wip', { tab: TAB, checkout: TAB, name: 'app', isOwn: true }, 'View unstaged changes');
+  expect(src()).toEqual({ kind: 'unstaged' });
 });

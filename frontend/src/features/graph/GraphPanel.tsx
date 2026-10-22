@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { ArrowDownIcon, ArrowUpIcon, ListTreeIcon, RefreshCwIcon, SearchIcon, Settings2Icon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, GitCompareIcon, ListTreeIcon, RefreshCwIcon, SearchIcon, Settings2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { ComparePanel } from '@/features/diff/ComparePanel';
 import { setCssPx } from '@/lib/cssVars';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
@@ -20,6 +21,7 @@ import { CommitDetails } from './details/CommitDetails';
 import { DragGhost, startBranchDrag, toDragRef } from './drag';
 import { ColumnToggles, GraphHeader, shownColumns } from './GraphHeader';
 import { GraphRowView } from './GraphRowView';
+import { openSelectionDiff } from './diffWiring';
 import { detailsRequestStore, jumpStore, requestDetails } from './jump';
 import { labelsByOid, worktreeName, type Label } from './labels';
 import { lanesWidth } from './LaneSvg';
@@ -229,6 +231,7 @@ function GraphView({ tab }: { tab: Tab }) {
 
   // ---- narrow: refs and details in dialogs ----
   const [refsOpen, setRefsOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const details = useStore(detailsRequestStore);
   const lastDetails = useRef(details?.seq ?? 0);
@@ -303,7 +306,7 @@ function GraphView({ tab }: { tab: Tab }) {
 
   const onKeyDown = graphKeyHandler({
     rows, layout: layout.rows, focus: focusIndex, moveTo, clear: () => dispatchSelection(tab, { type: 'clear' }),
-    loadMore: () => void loadNextPage(tab), cancelSeek, focusSearch: () => searchBox.current?.focus(),
+    loadMore: () => void loadNextPage(tab), cancelSeek, focusSearch: () => searchBox.current?.focus(), openDiff: () => openSelectionDiff(tab),
     openMenu: (i) => {
       const el = body.current?.querySelector(`[data-row-id="${CSS.escape(rows[i].id)}"]`);
       rowMenu(rows[i], el ? anchorOf(el) : { x: 0, y: 0 });
@@ -350,9 +353,14 @@ function GraphView({ tab }: { tab: Tab }) {
         {search.error && <span className="text-xs text-destructive" role="alert">{search.error}</span>}
         <span className="ml-auto flex items-center gap-1">
           {!wide && (
-            <Button variant="outline" size="sm" className="h-7 gap-1 px-2" onClick={() => setRefsOpen(true)}>
-              <ListTreeIcon /> Refs
-            </Button>
+            <>
+              <Button variant="outline" size="sm" className="h-7 gap-1 px-2" onClick={() => setRefsOpen(true)}>
+                <ListTreeIcon /> Refs
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 gap-1 px-2" onClick={() => setCompareOpen(true)}>
+                <GitCompareIcon /> Compare
+              </Button>
+            </>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -458,6 +466,13 @@ function GraphView({ tab }: { tab: Tab }) {
               <DialogTitle className="px-4 pt-4">Refs</DialogTitle>
               <DialogDescription className="sr-only">Branches, remotes, tags, stashes and worktrees</DialogDescription>
               <div className="max-h-[70dvh] overflow-y-auto"><RefsPanel tab={tab} inDialog /></div>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+            <DialogContent className="max-h-[85dvh] p-0">
+              <DialogTitle className="px-4 pt-4">Compare</DialogTitle>
+              <DialogDescription className="sr-only">Pick what to diff</DialogDescription>
+              <div className="max-h-[70dvh] overflow-y-auto"><ComparePanel tab={tab} /></div>
             </DialogContent>
           </Dialog>
           <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>

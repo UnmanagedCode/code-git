@@ -12,7 +12,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Tabs | One tab per checkout (project or project/worktree). Ctrl/⌘+1…8 activate that tab, Ctrl/⌘+9 the last; tab menu (⋮ or right-click): Close, Close others, Copy name. Tabs persist across reloads; the active one is in the URL |
 | Repo header | HEAD (branch, detached, or unborn), upstream with ahead/behind, staged/unstaged/untracked/conflicted counts, the System for non-local projects, Refresh |
 | Commit graph | The checkout's history as a lane graph with ref labels, WIP and stash rows, search, keyboard and multi-select; a refs panel (hide / solo / pin) and commit details. [docs/graph.md](docs/graph.md) |
-| Diff | A commit, unstaged or staged changes, two refs (`..` / `...`), a run of commits, or a commit vs the working directory. File list; Hunk, Inline and Split modes with word-level and syntax highlighting; File view; whitespace and context controls; wrap; change navigation and in-file search; binary, rename, LFS-pointer, submodule and oversized states; patch download/copy. Picked from the Compare panel (left) |
+| Diff | A commit, unstaged or staged changes, two refs (`..` / `...`), a run of commits, or a commit vs the working directory. File list; Hunk, Inline and Split modes with word-level and syntax highlighting; File view; whitespace and context controls; wrap; change navigation and in-file search; binary, rename, LFS-pointer, submodule and oversized states; patch download/copy. Opened from the graph (a commit, a selection, a WIP row, a file in the details) or the Compare panel (left) |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
 
 Details: [docs/features.md](docs/features.md).
@@ -71,7 +71,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **The graph refreshes on its own only after code-git's own writes and when the window regains focus** (no polling): a commit made elsewhere shows on focus or Refresh.
 - **Search pages forward** to reach a match that is not loaded yet, a bounded number of pages at a time.
 - **Worktree labels need git ≥ 2.36 and commit details git ≥ 2.24** on the project's System ([docs/graph.md → Git versions](docs/graph.md#git-versions)).
-- **Below the `lg` breakpoint the Compare picker is hidden** (the left and right slots are); diffs open from the graph.
+- **Below the `lg` breakpoint the side panels are dialogs**: refs, Compare and commit details open from the graph's toolbar or a commit click instead of beside the graph.
 - **Untracked files are not in a work-in-progress patch** (`git diff` leaves them out).
 - **No image or binary preview** in the diff, and **File view has no blame**.
 - **Non-UTF-8 text shows replacement characters** in the diff.

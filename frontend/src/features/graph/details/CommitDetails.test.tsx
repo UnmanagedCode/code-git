@@ -5,6 +5,8 @@ import { commit, oid } from '@/test/graphData';
 import { detailOf, linearWorld, stubGraph } from '@/test/graphBackend';
 import { dispatchSelection, fileIntentStore } from '@/state/graphSelection';
 import { openGraph } from '@/state/graph';
+import { diffStore } from '@/state/diff';
+import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
 import { CommitDetails, } from './CommitDetails';
@@ -81,6 +83,17 @@ test('the file list: Path and Tree views, the choice persisted; a click publishe
   fireEvent.click(screen.getByRole('button', { name: /src\/lib\/a\.ts/ }));
   expect(fileIntentStore.get()).toMatchObject({ tab: TAB, commit: A, parent: P, path: 'src/lib/a.ts', oldPath: null, selection: [{ kind: 'commit', oid: A }] });
   expect(screen.getByRole('button', { name: /src\/lib\/a\.ts/ }).getAttribute('aria-current')).toBe('true');
+  expect(shownPanelStore.get().get('app\0')).toBe('diff');
+  expect(diffStore.get().get('app\0')).toMatchObject({ source: { kind: 'commit', rev: A }, viewed: 'src/lib/a.ts' });
+});
+
+test('View changes opens the commit diff; a multi-selection offers the combined diff', async () => {
+  await show({ files });
+  fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
+  expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commit', rev: A });
+  act(() => dispatchSelection(TAB, { type: 'toggle', id: P, rows: rowsOf(A, P) }));
+  fireEvent.click(screen.getByRole('button', { name: 'View combined diff' }));
+  expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commits', oids: [A, P], wip: false });
 });
 
 test('a file list over the cap shows the first FILE_RENDER_CAP and "Show all N"', async () => {

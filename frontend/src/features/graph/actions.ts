@@ -1,10 +1,11 @@
 import { runOp } from '@/lib/endpoints';
 import type { MenuAction } from '@/shell/menus';
 import { getPrefs, toggled, updatePrefs, type GraphPrefs } from '@/state/graphPrefs';
-import { dispatchSelection } from '@/state/graphSelection';
+import { dispatchSelection, toSelected } from '@/state/graphSelection';
 import { getGraph } from '@/state/graph';
 import { dispatchTabs } from '@/state/tabs';
 import type { CommitCtx, CommitsCtx, FileCtx, RefCtx, RemoteCtx, StashCtx, WipCtx, WorktreeCtx } from './contexts';
+import { openIn, selectionDiff } from './diffWiring';
 import { requestDetails, requestJump } from './jump';
 import { buildInputs } from './rows';
 import type { CommitDetail } from './types';
@@ -51,6 +52,22 @@ const refActions = (context: 'branch' | 'tag'): RefAction[] => [
 
 export const GRAPH_ACTIONS: MenuAction<never>[] = [
   { id: 'graph.commit.details', context: 'commit', label: 'Show details', group: 'view', order: 800, run: (c: CommitCtx) => select(c, c.commit.oid) },
+  {
+    id: 'graph.commit.viewChanges', context: 'commit', label: 'View changes', group: 'view', order: 801,
+    run: (c: CommitCtx) => openIn(c.tab, c.tab, { kind: 'commit', rev: c.commit.oid }),
+  },
+  {
+    id: 'graph.commit.compareWorktree', context: 'commit', label: 'Compare with working directory', group: 'view', order: 802,
+    run: (c: CommitCtx) => openIn(c.tab, c.tab, { kind: 'worktree', rev: c.commit.oid }),
+  },
+  {
+    id: 'graph.commits.viewDiff', context: 'commits', label: 'View combined diff', group: 'view', order: 800,
+    when: (c: CommitsCtx) => !!selectionDiff(c.tab, c.rows.map(toSelected), getGraph(c.tab).checkouts),
+    run: (c: CommitsCtx) => {
+      const d = selectionDiff(c.tab, c.rows.map(toSelected), getGraph(c.tab).checkouts);
+      if (d) openIn(c.tab, d.target, d.source);
+    },
+  },
   { id: 'graph.commit.copySha', context: 'commit', label: 'Copy SHA', group: 'copy', order: 900, run: (c: CommitCtx) => copy(c.commit.oid) },
   { id: 'graph.commit.copyMessage', context: 'commit', label: 'Copy message', group: 'copy', order: 901, run: (c: CommitCtx) => copyMessage(c.tab, c.commit.oid, c.commit.subject) },
   {
@@ -85,10 +102,22 @@ export const GRAPH_ACTIONS: MenuAction<never>[] = [
     id: 'graph.stash.details', context: 'stash', label: 'Show details', group: 'view', order: 800,
     run: (c: StashCtx) => select(c, `stash:${c.stash.oid}`),
   },
+  {
+    id: 'graph.stash.viewChanges', context: 'stash', label: 'View changes', group: 'view', order: 801,
+    run: (c: StashCtx) => openIn(c.tab, c.tab, { kind: 'commit', rev: c.stash.oid }),
+  },
   { id: 'graph.stash.copyMessage', context: 'stash', label: 'Copy message', group: 'copy', order: 900, run: (c: StashCtx) => copy(c.stash.subject) },
   {
     id: 'graph.stash.hide', context: 'stash', label: 'Hide stashes', group: 'visibility', order: 950,
     run: (c: StashCtx) => set(c, (p) => ({ ...p, hiddenSections: toggled(p.hiddenSections, 'stashes', true) })),
+  },
+  {
+    id: 'graph.wip.unstaged', context: 'wip', label: 'View unstaged changes', group: 'view', order: 790,
+    run: (c: WipCtx) => openIn(c.tab, c.checkout, { kind: 'unstaged' }),
+  },
+  {
+    id: 'graph.wip.staged', context: 'wip', label: 'View staged changes', group: 'view', order: 791,
+    run: (c: WipCtx) => openIn(c.tab, c.checkout, { kind: 'staged' }),
   },
   {
     id: 'graph.wip.open', context: 'wip', label: (c: WipCtx) => `Open ${c.name} in a tab`, group: 'view', order: 800,

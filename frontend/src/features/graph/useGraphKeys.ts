@@ -14,13 +14,16 @@ export interface GraphKeyActions {
   openMenu(i: number): void;
   focusSearch(): void;
   cancelSeek(): boolean;
+  /** Opens the selection's diff. */
+  openDiff(): void;
 }
 
 const inField = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
 
 /**
  * The graph's keys (docs/graph.md → Keyboard): j/k or arrows move, Shift+J/K stay in the lane, Ctrl/⌘+Home/End jump to
- * the ends, Esc clears (or cancels a running seek), Shift+F10 / ContextMenu open the row menu, Ctrl/⌘+F or / search.
+ * the ends, Esc clears (or cancels a running seek), Enter opens the selection's diff, Shift+F10 / ContextMenu open the row
+ * menu, Ctrl/⌘+F or / search.
  */
 export function graphKeyHandler(a: GraphKeyActions) {
   return (e: KeyboardEvent) => {
@@ -45,6 +48,7 @@ export function graphKeyHandler(a: GraphKeyActions) {
     else if (mod && e.key === 'End') { if (n) a.moveTo(n - 1); }
     else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { if (a.focus !== -1) a.openMenu(a.focus); }
     else if (e.key === 'Escape') { if (!a.cancelSeek()) a.clear(); }
+    else if (e.key === 'Enter' && !mod && !e.altKey && !e.shiftKey) a.openDiff();
     else if (mod || e.altKey) handled = false;
     else if (e.key === 'J' || (e.shiftKey && e.key === 'ArrowDown')) lane(1);
     else if (e.key === 'K' || (e.shiftKey && e.key === 'ArrowUp')) lane(-1);

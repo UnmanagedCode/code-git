@@ -31,6 +31,7 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 | `Esc` | Stops a running jump, else clears the selection |
 | `Shift+F10`, ContextMenu key | The focused row's menu |
 | `Ctrl/⌘+F`, `/` | Focus the search box |
+| `Enter` | Opens the selection's diff ([Diffs](#diffs)) |
 | `Enter` / `Shift+Enter` in the search box | Next / previous match; `Esc` clears the search |
 
 **Search** — one box, two modes (**Commits** / **Path**), 300 ms after typing stops (`SEARCH_DEBOUNCE_MS`); a newer query cancels the previous request.
@@ -47,14 +48,29 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 
 | Menu | Actions |
 |---|---|
-| Commit | Show details, Copy SHA, Copy message (the full message; the subject when it cannot be read) |
-| Multi-selection | Copy N SHAs (newline-separated) |
+| Commit | Show details, View changes, Compare with working directory, Copy SHA, Copy message (the full message; the subject when it cannot be read) |
+| Multi-selection | View combined diff (when the selection has one), Copy N SHAs (newline-separated) |
 | Branch / tag | Jump to commit, Copy name, Hide / Show (not offered for the checked-out branch), Solo / Unsolo; branches also Pin to left / Unpin |
 | Remote | Hide remote / Show remote, Solo remote / Unsolo remote, Show all (while something on that remote is hidden) |
-| Stash | Show details, Copy message, Hide stashes |
-| WIP of another checkout | Open X in a tab |
+| Stash | Show details, View changes, Copy message, Hide stashes |
+| WIP | View unstaged changes, View staged changes; another checkout's also Open X in a tab |
 | Worktree | Open in a tab (a cc checkout), Copy path |
 | File | Copy path |
+
+### Diffs
+
+The graph opens diffs through the diff viewer's `openDiff` (`features/graph/diffWiring.ts`); the diff replaces the graph in the center slot until it is closed.
+
+| From | Opens |
+|---|---|
+| A file in the details panel | `{kind: 'commit', rev: <commit>}` at that file (a merge against its first parent, as listed; a stash against its base) |
+| **Enter** on the list, or **View changes** / **View combined diff** in the details panel | the selection: one commit or stash → that commit; one WIP row → its checkout's unstaged changes (staged when only staged changes are pending); two or more commits → `{kind: 'commits', oids, wip}` (`wip` when the own checkout's WIP row is selected too). A selection with a stash or another checkout's WIP row among several rows opens nothing |
+| Commit menu | **View changes** (`commit`), **Compare with working directory** (`worktree`) |
+| Multi-selection menu | **View combined diff** (as Enter) |
+| WIP menu | **View unstaged changes**, **View staged changes** |
+| Stash menu | **View changes** |
+
+Another checkout's WIP opens in that checkout's tab (opened if needed).
 
 ### Refs panel
 
@@ -74,13 +90,13 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 | One WIP row | Branch or detached, change counts, **Open worktree** for another checkout |
 | Several | "N selected" and each row's short SHA and subject |
 
-- **Files**: Path or Tree view (the choice persists under `code-git:graph:fileView`); status letter coloured A added, D deleted, M modified, R/C renamed/copied (with `old → new`); the first `FILE_RENDER_CAP` then **Show all N**. A click publishes a file-open intent for the diff viewer and marks the row; right-click for the file menu.
+- **Files**: Path or Tree view (the choice persists under `code-git:graph:fileView`); status letter coloured A added, D deleted, M modified, R/C renamed/copied (with `old → new`); the first `FILE_RENDER_CAP` then **Show all N**. A click opens the commit's diff at that file (and publishes the file-open intent) and marks the row; right-click for the file menu.
 - A commit whose file list is over the output cap shows its metadata and "Too many changes to list." instead of the files.
 - **Signature badge** (git's `%G?`): G Signed (good), U Signed (unknown validity), X Expired signature, Y Expired key, R Revoked key, B Bad signature, E Unverified (cannot be checked); N (unsigned) shows none. Hover for git's signer and key.
 
 ### Narrow screens
 
-Below Tailwind's `lg` (`WIDE_GRAPH_QUERY`, 64rem) the side slots are hidden: the graph toolbar's **Refs** button opens the refs panel in a dialog, and clicking a commit (or **Show details**) opens the details in a dialog.
+Below Tailwind's `lg` (`WIDE_GRAPH_QUERY`, 64rem) the side slots are hidden: the graph toolbar's **Refs** and **Compare** buttons open the refs panel and the diff's Compare picker in dialogs, and clicking a commit (or **Show details**) opens the details in a dialog.
 
 ## Snapshot and refresh
 

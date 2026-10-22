@@ -95,7 +95,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 **Graph stores other cards read** (`frontend/src/state/graphSelection.ts`, `features/graph/drag.ts`):
 
 - `graphSelectionStore`: per `tabKey`, `{ids, anchor, focus, items}`; `items` (also `selectedRows(tab)`) are `{kind: 'commit' | 'stash', oid} | {kind: 'wip', checkout: Target}`, top to bottom.
-- `fileIntentStore`: `{seq, tab, commit, parent, path, oldPath, selection}` — the last file clicked in the details panel (`requestFileOpen`); `seq` increases per request. The graph renders no diff.
+- `fileIntentStore`: `{seq, tab, commit, parent, path, oldPath, selection}` — the last file clicked in the details panel (`requestFileOpen`); `seq` increases per request. `features/graph/diffWiring.ts` subscribes and opens the diff (`openDiff`); every graph entry point to a diff goes through `selectionDiff` / `openIn` there.
 - `branchDropStore`: `{seq, tab, source, target, at}` — every drop, before its menu opens.
 
 **Dynamic geometry** (positions, sizes from data) is set only through `setCssPx(el, '--name', px)` (`lib/cssVars.ts`: a finite number, a `--[a-z][a-z0-9-]*` name) and read by Tailwind classes such as `h-(--graph-total)`; `guards.test.ts` fails on any other `.style` access outside `components/ui/`.

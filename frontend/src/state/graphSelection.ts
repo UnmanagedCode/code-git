@@ -26,12 +26,13 @@ export type SelectionAction =
 
 export const NO_SELECTION: GraphSelection = { ids: [], anchor: null, focus: null, items: [] };
 
-const item = (r: GraphRow): SelectedRow => (r.kind === 'commit' ? { kind: 'commit', oid: r.id } : r.kind === 'stash' ? { kind: 'stash', oid: r.stash.oid } : { kind: 'wip', checkout: r.checkout.target });
+/** A row as the selection lists it. */
+export const toSelected = (r: GraphRow): SelectedRow => (r.kind === 'commit' ? { kind: 'commit', oid: r.id } : r.kind === 'stash' ? { kind: 'stash', oid: r.stash.oid } : { kind: 'wip', checkout: r.checkout.target });
 
 function withIds(sel: Omit<GraphSelection, 'items'>, rows: GraphRow[]): GraphSelection {
   const want = new Set(sel.ids);
   const ordered = rows.filter((r) => want.has(r.id));
-  return { ...sel, ids: ordered.map((r) => r.id), items: ordered.map(item) };
+  return { ...sel, ids: ordered.map((r) => r.id), items: ordered.map(toSelected) };
 }
 
 /**

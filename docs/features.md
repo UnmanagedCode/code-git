@@ -8,7 +8,7 @@
 - Follows cc's light/dark theme live when embedded; standalone, follows the OS (`frontend/public/theme-init.js`). No theme toggle of its own.
 - With no tab open the center shows "No repository open." and an **Open a repository** button.
 - The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel and the Compare panel, the right slot the commit details, the bottom slot the activity panel.
-- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the commit details as dialogs, and diffs open from the graph.
+- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the Compare picker as dialogs (**Refs**, **Compare**), and the commit details open as a dialog when a commit is clicked.
 
 ## Repo picker
 
@@ -79,7 +79,7 @@ Updates arrive over server-sent events; each event triggers a refetch of the log
 
 ## Compare panel
 
-Left slot. Picks what to diff, until the commit graph offers it. Hidden below `lg`.
+Left slot, below the refs panel. Picks what to diff beside the graph's own entry points ([graph → Diffs](graph.md#diffs)). Below `lg` it opens as a dialog from the graph toolbar's **Compare** button.
 
 | Section | Controls | Opens |
 |---|---|---|

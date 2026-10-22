@@ -1,5 +1,6 @@
 import type { CommitDetail, CommitItem, RefsResult, Stat } from '@/features/graph/types';
 import type { RepoSummary, Worktree } from '@/lib/endpoints';
+import { filesResult } from './diffFixtures';
 import { json, summary } from './fixtures';
 import { commit, oid, ref, refsResult } from './graphData';
 import { stubFetch } from './stubFetch';
@@ -63,6 +64,8 @@ export function stubGraph(world: GraphWorld) {
       return d instanceof Response ? d : { ok: true, result: d };
     },
     'GET api/activity': { entries: [] },
+    // The diff the graph opens: its file list only.
+    'POST api/ops/diff.files': { ok: true, result: filesResult([]) },
   });
 }
 
