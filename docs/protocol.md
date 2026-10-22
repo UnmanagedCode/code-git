@@ -89,7 +89,7 @@ Every diff op takes a `source` (`parseSource`, `resolveSource` and `pairArgs` in
 | `{kind: 'pair', old, new}` | as given | allowed: tree→tree, tree→index, tree→worktree, index→worktree; a tree side's `oid` is a full oid |
 
 - **Validation** (`parseSource`): an unknown kind or key, or a malformed field → `BAD_PARAMS`. `rev`, `from`, `to` pass `assertCommitish`: `assertRev`, plus no leading `^` and no `..` (ranges are built by code-git) → `BAD_REF`.
-- **A typed revision** resolves with `rev-parse --verify --quiet --end-of-options <rev>^{commit}`; no commit (exit 1, or exit 128 such as `HEAD@{999}` past the reflog, with git's message as `detail`) → 404 `REV_UNKNOWN`. Exit 128 saying "not a git repository" stays `GIT_FAILED`. `commits` oids are checked in one `cat-file --batch-check`; a non-commit → `REV_UNKNOWN`.
+- **A typed revision** resolves with `rev-parse --verify --quiet --end-of-options <rev>^{commit}`; no commit (exit 1, or exit 128 with no message, such as `HEAD@{999}` past the reflog) → 404 `REV_UNKNOWN`. Exit 128 with a message (bad config, not a repository) stays 422 `GIT_FAILED` with git's `stderr`. `commits` oids are checked in one `cat-file --batch-check`; a non-commit → `REV_UNKNOWN`.
 - **Multi-select rule** (`commits`), GitKraken's:
 
 | Selection | Diff |

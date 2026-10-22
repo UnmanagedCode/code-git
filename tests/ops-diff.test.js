@@ -68,19 +68,31 @@ test('a revision that names no commit → REV_UNKNOWN (404), for every user-type
   await assert.rejects(files({ kind: 'commits', oids: ['f'.repeat(40)] }), refused('REV_UNKNOWN'));
 });
 
-test('a revision rev-parse --verify fails on with exit 128 (HEAD@{999}) is REV_UNKNOWN, not GIT_FAILED; not-a-repo stays GIT_FAILED', async (t) => {
+test('a revision rev-parse --verify rejects with exit 128 and no message (HEAD@{999}) is REV_UNKNOWN; not-a-repo stays GIT_FAILED', async (t) => {
   const { cc, repo } = await world(t);
   for (const source of [commit('HEAD@{999}'), { kind: 'worktree', rev: 'HEAD@{999}' }, { kind: 'compare', from: 'HEAD@{999}', to: 'main', mode: '...' }]) {
-    await assert.rejects(files(source), (e) => {
-      assert.equal(e.code, 'REV_UNKNOWN');
-      assert.equal(typeof e.extra.detail, 'string');
-      return true;
-    });
+    await assert.rejects(files(source), refused('REV_UNKNOWN'));
   }
   const plain = path.join(repo.root, 'plain');
   fs.mkdirSync(plain);
   cc.state.projects.plain = { dir: plain };
   await assert.rejects(op('diff.files', { source: commit('HEAD') }, { project: 'plain' }), refused('GIT_FAILED'));
+});
+
+test('a broken repo (core.bare=maybe) makes rev-parse exit 128 with a message: GIT_FAILED with that message, never REV_UNKNOWN', async (t) => {
+  const broken = makeRepo(t, { name: 'broken' });
+  broken.commit({ 'a.txt': 'a\n' });
+  broken.git('config', 'core.bare', 'maybe');
+  const cc = await fakeCc({ projects: { broken: { dir: broken.dir } }, home: broken.home });
+  t.after(() => cc.close());
+  for (const source of [commit('HEAD'), { kind: 'worktree', rev: 'HEAD' }, { kind: 'compare', from: 'HEAD', to: 'HEAD', mode: '..' }]) {
+    await assert.rejects(op('diff.files', { source }, { project: 'broken' }), (e) => {
+      assert.equal(e.code, 'GIT_FAILED');
+      assert.equal(e.extra.exitCode, 128);
+      assert.match(e.extra.stderr, /bad boolean config value 'maybe' for 'core\.bare'/);
+      return true;
+    });
+  }
 });
 
 test('unstaged: index → worktree plus untracked files as ?, whose diff is all added lines', async (t) => {

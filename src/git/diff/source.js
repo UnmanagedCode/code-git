@@ -128,10 +128,10 @@ async function mustCommit(git, rev) {
   try {
     oid = await commitOid(git, rev);
   } catch (e) {
-    // rev-parse --verify exits 128 for some revisions it cannot resolve (`HEAD@{999}` past the reflog): still the
-    // user's revision, not a git failure. "not a git repository" stays a failure.
-    if (e.code === 'GIT_FAILED' && e.extra.exitCode === 128 && !e.extra.stderr.includes('not a git repository')) {
-      throw new Refusal('REV_UNKNOWN', `${rev} does not name a commit`, { detail: e.extra.stderr });
+    // `rev-parse --verify --quiet` rejects some revisions (`HEAD@{999}` past the reflog) with exit 128 and no message:
+    // that is the user's revision. A 128 with a message is a broken repo (bad config, not a repo): GIT_FAILED with it.
+    if (e.code === 'GIT_FAILED' && e.extra.exitCode === 128 && !e.extra.stderr.trim()) {
+      throw new Refusal('REV_UNKNOWN', `${rev} does not name a commit`);
     }
     throw e;
   }
