@@ -145,6 +145,12 @@ test('the line ending of a .gitignore append follows its last line, not its firs
   assert.equal(gitignore(l).toString(), 'a\r\nb\n/x\n');
 });
 
+test('a .gitignore whose last line has no terminator but earlier lines are CRLF keeps CRLF: "a\\r\\nb" + /x is exactly "a\\r\\nb\\r\\n/x\\r\\n"', async (t) => {
+  const w = await world(t, { '.gitignore': 'a\r\nb' });
+  await w.op('ignore.add', { kind: 'path', value: 'x' });
+  assert.deepEqual(gitignore(w), Buffer.from('a\r\nb\r\n/x\r\n'));
+});
+
 test('ignore and stop tracking refuses `.` or empty as a path or folder, and a folder given as a path, writing nothing', async (t) => {
   const w = await world(t, { 'keep.txt': 'k\n', 'src/a.ts': 'a\n', 'src/b.ts': 'b\n' });
   for (const [kind, value] of [['path', '.'], ['path', ''], ['dir', '.'], ['dir', './'], ['path', 'src/./a.ts']]) {

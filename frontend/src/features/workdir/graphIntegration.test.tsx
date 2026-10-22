@@ -58,10 +58,30 @@ test('wide: the right slot shows Changes with nothing selected, the details for 
   await waitFor(() => expect(changesInSlot()).not.toBeNull());
   expect(detailsInSlot()).toBeNull();
   expect(workdirOf(APP).focus).toBeNull();
+  // The keyboard focus is the graph's list, not the commit summary.
+  expect(document.activeElement).toBe(screen.getByRole('listbox', { name: 'Commits' }));
+  expect(document.activeElement).not.toBe(within(changesInSlot()!).getByRole('textbox', { name: 'Summary' }));
   // No diff replaced the graph: the WIP row opens the panel, and the per-file diffs are its rows.
   expect(shownPanelStore.get().get('app\0')).toBeUndefined();
   await userEvent.click(within(within(slot()).getByRole('region', { name: 'Unstaged Files' })).getByText('src/a.ts'));
   expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'unstaged' });
+});
+
+test('wide: moving the selection onto the WIP row with the keyboard (no openWorkingTree) shows Changes, not the details', async () => {
+  await show(true);
+  fireEvent.click(row(oid(1))!);
+  await waitFor(() => expect(detailsInSlot()).not.toBeNull());
+  const list = screen.getByRole('listbox', { name: 'Commits' });
+  fireEvent.keyDown(list, { key: 'k' });
+  await waitFor(() => expect(getSelection(APP).items).toEqual([{ kind: 'commit', oid: HEAD }]));
+  expect(detailsInSlot()).not.toBeNull();
+  fireEvent.keyDown(list, { key: 'k' });
+  await waitFor(() => expect(getSelection(APP).items).toEqual([{ kind: 'wip', checkout: APP }]));
+  await waitFor(() => expect(changesInSlot()).not.toBeNull());
+  expect(detailsInSlot()).toBeNull();
+  // Reached by the keyboard move alone: no focus request was made.
+  expect(workdirOf(APP).focus).toBeNull();
+  expect(workdirOf(APP).dialogOpen).toBe(false);
 });
 
 test('narrow: a WIP row click opens the Changes dialog', async () => {
