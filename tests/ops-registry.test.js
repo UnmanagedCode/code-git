@@ -82,3 +82,11 @@ test('the tag ops and the remote branch delete are registered as writes, the net
     assert.equal(d.cancellable, cancellable, name);
   }
 });
+
+test('the HEAD ops are registered as non-cancellable writes', () => {
+  for (const name of ['head.reset', 'head.revert', 'head.cherryPick', 'head.abort']) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'write', name);
+    assert.equal(d.cancellable, false, name);
+  }
+});

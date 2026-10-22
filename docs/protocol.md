@@ -394,6 +394,12 @@ RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */
 | `tag.delete` | write | `{names}` | `tag -d --end-of-options <names…>` | `{deleted, undo}` (`old` = the tag object) | `REF_UNKNOWN` (any name, before anything is deleted) |
 | `tag.push` | write, **cancellable** | `{remote, names}` | `push --porcelain --end-of-options <remote> refs/tags/<n>:refs/tags/<n>…` (never forced) | `{pushed, upToDate, rejected, undo}` | `REMOTE_UNKNOWN`; `REF_UNKNOWN`; the push refusals below |
 | `tag.deleteRemote` | write, **cancellable** | `{remote, names}` | `push --porcelain --end-of-options <remote> :refs/tags/<n>…` | `{deleted, rejected, undo}` (`undo.remoteRefs[].old` = the local tag object, else null) | `REMOTE_UNKNOWN`; the push refusals below |
+| `head.reset` | write | `{to: oid, mode: 'soft' \| 'mixed' \| 'hard', expect: oid /* HEAD now */, ccOwned?}` | hard only: `stash create` first; `reset --<mode> --end-of-options <to>` | `{undo}` (`undo.worktreeSnapshot` = the `stash create` commit of the discarded tracked changes, null when clean or not hard) | `NO_HEAD`; `REF_MOVED` (HEAD ≠ `expect`); `CC_OWNED_BRANCH` (`head: true`, any mode); `REV_UNKNOWN` |
+| `head.revert` | write | `{oid, mainline?: 1…16}` | `revert --no-edit [-m <n>] --end-of-options <oid>` (exit 0 or 1) | `{conflicts, files, oid /* the new commit, null on conflicts */, undo}` | `NO_HEAD`; `CHECKOUT_CONFLICT`; `PICK_EMPTY`; `GIT_FAILED` (a merge without `mainline`, …) |
+| `head.cherryPick` | write | `{oid, mainline?: 1…16}` | `cherry-pick [-m <n>] --end-of-options <oid>` (exit 0 or 1) | as `head.revert` | as `head.revert` |
+| `head.abort` | write | `{which: 'revert' \| 'cherry-pick'}` | `<which> --abort` | `{undo}` (`undo.head`) | `NOTHING_IN_PROGRESS` (no `REVERT_HEAD` / `CHERRY_PICK_HEAD`) |
+
+- **Revert and cherry-pick outcomes.** Stopped on conflicts (exit 1 with `REVERT_HEAD` / `CHERRY_PICK_HEAD` and unmerged files): `{conflicts: true, files}` (`diff --name-only --diff-filter=U -z`), the operation left in progress for `head.abort` or a commit. Exit 1 with nothing unmerged (the change is already in HEAD): the operation is aborted and 409 `PICK_EMPTY`. Local changes in the way: `CHECKOUT_CONFLICT`.
 
 **Remote names and pushes** (`src/git/remote/push.js`, shared with later remote ops):
 
@@ -474,6 +480,8 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `CHECKOUT_CONFLICT` | 409 | Local changes would be overwritten; `files`, `stderr` |
 | `REMOTE_UNKNOWN` | 404 | The remote name is malformed or not one of `git remote`'s |
 | `PUSH_REJECTED` | 409 | The remote rejected every ref of a push; `rejected` |
+| `PICK_EMPTY` | 409 | A revert or cherry-pick would commit nothing; nothing is left in progress |
+| `NOTHING_IN_PROGRESS` | 409 | `head.abort` with no revert or cherry-pick in progress |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |
