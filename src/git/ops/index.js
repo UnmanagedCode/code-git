@@ -1,6 +1,7 @@
 import { Refusal } from '../../refusals.js';
-import { ops as repo } from './repo.js';
 import { ops as diff } from './diff.js';
+import { ops as graph } from './graph.js';
+import { ops as repo } from './repo.js';
 
 // The op registry. A feature adds `ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run}]`
 // and one entry in the list below.
@@ -24,7 +25,7 @@ export function buildRegistry(lists) {
   return map;
 }
 
-export const OPS = buildRegistry([repo, diff]);
+export const OPS = buildRegistry([repo, diff, graph]);
 
 export function getOp(registry, name) {
   const op = registry.get(name);

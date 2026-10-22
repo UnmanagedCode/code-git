@@ -17,7 +17,7 @@
 | `src/conductor/fetch.js` | `ccFetch`: `CONDUCTOR_URL`, per-attempt deadline, caller abort → `CANCELLED`, connection-only retry |
 | `src/conductor/cc.js` | `projects()`, `worktrees(project)` |
 | `src/conductor/exec.js` | `exec(target, argv, opts)`: cc exec form A + the refusal map; `CC_EXEC_CAPS` |
-| `src/git/validate.js` | Pure input checks: `assertTarget`, `assertRefName`, `assertRev`, `assertPath`, `assertSubpath` |
+| `src/git/validate.js` | Pure input checks: `assertTarget`, `assertRefName`, `assertRev`, `assertOid`, `assertPath`, `assertSubpath` |
 | `src/git/limits.js` | `LIMITS`: per-kind timeout / output cap, stderr cap, activity ring size, cc read deadline |
 | `src/git/runner.js` | `runGit(ctx, args, opts)`: **the** choke point for git |
 | `src/git/locks.js` | `createLocks()`: keyed promise queue |
@@ -28,6 +28,8 @@
 | `src/git/diff/limits.js` | `DIFF_LIMITS`: the diff caps (list / file / patch bytes, oversize lines, max commits and paths) |
 | `src/git/parse/diff.js` | `parseRawNumstat`, `parseFilePatch`, `detectLfs`, `sideLines` — pure |
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |
+| `src/git/ops/graph.js` | `graph.refs`, `graph.page`, `graph.stats`, `graph.search`, `graph.commit` ([graph](graph.md)) |
+| `src/git/parse/graph.js` | The graph ops' parsers: NUL-field records, refs, stashes, worktrees, shortstats, commit metadata, name-status |
 | `src/activity/log.js` | `createActivityLog()`: the ring, its events, cancel |
 | `src/routes/*.js` | One file per feature, each `mount(router, deps)`; `index.js` mounts them |
 
@@ -91,6 +93,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 |---|---|---|
 | target | `assertTarget`: only `project`/`worktree` keys; names not `.`/`..` (they would rewrite the cc URL a name is spliced into) | sent as exec form A, so the System is always the project's own |
 | a ref to create | `assertRefName` (`git check-ref-format --allow-onelevel` rules, no leading `-`) | — |
+| an object id | `assertOid`: 40 or 64 lowercase hex | sent on stdin or after `--end-of-options` |
 | a revision | `assertRev`: no leading `-`, whitespace or control characters | placed after `--end-of-options` where the subcommand parses options |
 | a path | `assertPath`: relative, no `..` segment, NUL or backslash; a leading `-` is allowed | always after `--`; `GIT_LITERAL_PATHSPECS=1` makes `:(glob)`, `*` and friends literal |
 | a `-C` subpath | `assertSubpath`: `assertPath` + no leading `-` | — |

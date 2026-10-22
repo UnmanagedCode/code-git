@@ -49,7 +49,7 @@ export async function runGit(ctx, args, { stdin, env: opEnv = {}, timeoutMs, max
 
   const run = async () => {
     const { entry, signal } = activity.open({
-      opRunId: ctx.opRunId, op: ctx.op, target, argv, env: opEnv, stdinBytes, cancellable: ctx.cancellable, signal: ctx.signal,
+      opRunId: ctx.opRunId, op: ctx.op, kind, target, argv, env: opEnv, stdinBytes, cancellable: ctx.cancellable, signal: ctx.signal,
     });
     let r;
     try {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assertPath, assertRefName, assertRev, assertSubpath, assertTarget } from '../src/git/validate.js';
+import { assertOid, assertPath, assertRefName, assertRev, assertSubpath, assertTarget } from '../src/git/validate.js';
 
 const refused = (fn, code) => assert.throws(fn, (e) => e.code === code, `expected ${code}`);
 
@@ -60,4 +60,11 @@ test('assertSubpath additionally refuses a leading dash (it follows -C)', () => 
   assert.equal(assertSubpath('libs/sub'), 'libs/sub');
   refused(() => assertSubpath('-rf'), 'BAD_PATH');
   refused(() => assertSubpath('../x'), 'BAD_PATH');
+});
+
+test('assertOid: 40 or 64 lowercase hex only', () => {
+  for (const ok of ['a'.repeat(40), '0123456789abcdef'.repeat(4)]) assert.equal(assertOid(ok), ok);
+  for (const bad of ['a'.repeat(39), 'a'.repeat(41), 'a'.repeat(63), 'a'.repeat(65), 'A'.repeat(40), 'g'.repeat(40), `-${'a'.repeat(39)}`, `${'a'.repeat(40)}\n`, 'HEAD', '', null, 40]) {
+    assert.throws(() => assertOid(bad), (e) => e.code === 'BAD_REF', String(bad));
+  }
 });

@@ -39,10 +39,10 @@ export function createActivityLog({ ring = LIMITS.activityRing } = {}) {
      * Records a command about to run. `signal` (the op's) aborts it too. Resolves the entry and the signal the
      * command must run under: aborted by `signal` or by `cancel(id)`.
      */
-    open({ opRunId, op, target, argv, env = {}, stdinBytes = 0, cancellable, signal }) {
+    open({ opRunId, op, kind, target, argv, env = {}, stdinBytes = 0, cancellable, signal }) {
       const controller = new AbortController();
       const entry = {
-        id: nextId++, opRunId, op, target: { project: target.project, worktree: target.worktree ?? null }, argv: [...argv],
+        id: nextId++, opRunId, op, kind, target: { project: target.project, worktree: target.worktree ?? null }, argv: [...argv],
         env: redactEnv(env), stdinBytes, cancellable, startedAt: new Date().toISOString(),
         durationMs: null, exitCode: null, stderr: '', stderrTruncated: false, status: 'running', code: null,
       };
