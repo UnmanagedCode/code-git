@@ -101,3 +101,11 @@ test('Copy message copies the whole message, however long', async () => {
   await run('commit', { tab: TAB, commit: commit(oid(1)), refs: [], selection: [] }, 'Copy message');
   expect((writeText.mock.calls[0] as unknown[])[0]).toBe(`S\n\n${body}`);
 });
+
+test('stash Show details is offered only while the Stashes section is shown', () => {
+  const c = { tab: TAB, stash: stash(oid(2), oid(1)) };
+  expect(menu('stash', c)).toContain('Show details');
+  updatePrefs('app', (p) => ({ ...p, hiddenSections: ['stashes'] }));
+  expect(menu('stash', c)).not.toContain('Show details');
+  expect(menu('stash', c)).toContain('View changes');
+});

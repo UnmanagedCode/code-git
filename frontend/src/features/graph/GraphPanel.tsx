@@ -197,7 +197,8 @@ function GraphView({ tab }: { tab: Tab }) {
   }, [rows, scrollToRow]);
 
   const [seek, setSeek] = useState<Seek | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
+  /** A found jump's row to select once the rows include it: `rowId`, else (a hidden stash) its commit `oid`. */
+  const [pending, setPending] = useState<{ rowId: string; oid: string } | null>(null);
   const seekRef = useRef<Seek | null>(null);
   seekRef.current = seek;
   const jump = useCallback(async (oid: string, rowId: string, pages = SEEK_PAGES) => {
@@ -209,7 +210,7 @@ function GraphView({ tab }: { tab: Tab }) {
     if (ac.signal.aborted && r !== 'found') return;
     if (r === 'found') {
       setSeek(null);
-      setPending(rowId);
+      setPending({ rowId, oid });
     } else if (r === 'cancelled' || r === 'error') {
       // A failed page shows its own error (pageError) with Retry.
       setSeek(null);
@@ -219,10 +220,12 @@ function GraphView({ tab }: { tab: Tab }) {
   }, [key]);
   useEffect(() => {
     if (pending === null) return;
-    const i = index.get(pending);
-    if (i === undefined) return;
+    // The commit is loaded; a row for it (a stash row with the Stashes section hidden) may not exist: select the commit.
+    const id = index.has(pending.rowId) ? pending.rowId : index.has(pending.oid) ? pending.oid : null;
+    if (id === null) return;
+    const i = index.get(id)!;
     setPending(null);
-    dispatchSelection(tab, { type: 'move', id: pending, rows });
+    dispatchSelection(tab, { type: 'move', id, rows });
     const el = body.current;
     if (el) { el.scrollTop = Math.max(0, i * ROW_H - el.clientHeight / 2); readView(); }
   }, [pending, index]);

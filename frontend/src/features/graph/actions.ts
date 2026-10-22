@@ -100,6 +100,8 @@ export const GRAPH_ACTIONS: MenuAction<never>[] = [
   },
   {
     id: 'graph.stash.details', context: 'stash', label: 'Show details', group: 'view', order: 800,
+    // A hidden Stashes section has no stash rows to select.
+    when: (c: StashCtx) => !prefs(c).hiddenSections.includes('stashes'),
     // From the refs panel the stash's base may not be loaded yet: jump (page to it), then select the stash row.
     run: (c: StashCtx) => {
       if (c.stash.parents[0]) requestJump(c.tab, c.stash.parents[0], `stash:${c.stash.oid}`);

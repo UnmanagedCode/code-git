@@ -153,3 +153,17 @@ test('a long list shows REFS_SHOWN rows and a Show more button for the rest', as
   fireEvent.click(local().getByRole('button', { name: 'Show 33 more of 33' }));
   expect(local().getAllByRole('listitem')).toHaveLength(REFS_SHOWN + 33);
 });
+
+test('with the Stashes section hidden, clicking a stash pages to its base and selects that commit', async () => {
+  const w = world();
+  const far = stash('f'.repeat(40), oid(100), 1);
+  w.refs.stashes = [...w.refs.stashes, far];
+  await show(w);
+  fireEvent.click(screen.getByRole('button', { name: 'Hide Stashes' }));
+  fireEvent.click(within(screen.getByRole('list', { name: 'Stashes' })).getByText('stash@{1}'));
+  await waitFor(() => expect(getSelection(TAB).ids).toEqual([oid(100)]));
+  // The jump is done: a later stash shown again does not take the selection.
+  fireEvent.click(screen.getByRole('button', { name: 'Show Stashes' }));
+  await waitFor(() => expect(document.querySelector(`[data-row-id="stash:${far.oid}"]`)).not.toBeNull());
+  expect(getSelection(TAB).ids).toEqual([oid(100)]);
+});
