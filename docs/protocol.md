@@ -368,6 +368,7 @@ Behaviour, the checked-out and cc-owned rules and what each op destroys: [refs](
 - `ccOwned: true` acknowledges a `code-conductor/*` branch (the UI's confirmation). Without it: 409 `CC_OWNED_BRANCH` with `branches` (short names), plus `head: true` when the refusal is about moving this checkout's own cc-owned HEAD.
 - A branch checked out in a checkout the op may not touch: 409 `BRANCH_CHECKED_OUT` with `worktree` (that checkout's path).
 - Local changes git would overwrite: 409 `CHECKOUT_CONFLICT` with `files` and `stderr`.
+- A symbolic ref (`%(symref)` set) as the branch an op checks out, renames, fast-forwards, moves or sets the upstream of — local, or `refs/remotes/<r>/HEAD` and other remote aliases for checkout: 409 `SYMBOLIC_REF` with `target`. `branch.delete` deletes a symbolic ref itself, never its target. Every `update-ref` passes `--no-deref`.
 - Every ref-changing op returns `undo`: `UndoRecord` below.
 
 ```
@@ -375,7 +376,8 @@ UndoRecord      { refs: RefChange[], remoteRefs: RemoteRefChange[],
                   head: {old: {branch: refname|null, oid: oid|null}, new: {branch, oid}} | null,
                   worktreeSnapshot: oid | null }
 RefChange       { ref /* refs/heads/… | refs/tags/… */, old: oid|null /* null = created */, new: oid|null /* null = deleted */,
-                  upstream?: refname|null /* a deleted branch's upstream */ }
+                  upstream?: refname|null /* a deleted branch's upstream */,
+                  symref?: refname /* a deleted symbolic ref's target: restore with symbolic-ref; old and new are null */ }
 RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */, old: oid|null /* best known */, new: oid|null }
 ```
 
@@ -478,6 +480,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `REF_MOVED` | 409 | The ref is no longer at the op's `expect` |
 | `NOT_FAST_FORWARD` | 409 | The target is not a descendant of the branch |
 | `CHECKOUT_CONFLICT` | 409 | Local changes would be overwritten; `files`, `stderr` |
+| `SYMBOLIC_REF` | 409 | The branch named is a symbolic ref; `target` = the ref it points at |
 | `REMOTE_UNKNOWN` | 404 | The remote name is malformed or not one of `git remote`'s |
 | `PUSH_REJECTED` | 409 | The remote rejected every ref of a push; `rejected` |
 | `PICK_EMPTY` | 409 | A revert or cherry-pick would commit nothing; nothing is left in progress |

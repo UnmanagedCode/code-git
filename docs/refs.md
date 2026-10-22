@@ -63,6 +63,10 @@ Every op from these menus and dialogs shows a toast (bottom right): a running on
 
 This checkout is recognised by its HEAD (`symbolic-ref HEAD`), other checkouts by `for-each-ref`'s `%(worktreepath)`.
 
+### Symbolic refs
+
+A symbolic ref under `refs/heads` (`git symbolic-ref refs/heads/alias refs/heads/x`) reports its target's oid and no worktree, so writing through it would move or check out the target past both guards above. Checkout, rename, fast-forward, force-move and set-upstream refuse one with `SYMBOLIC_REF` (`target` = what it points at), as does checking out a remote alias such as `refs/remotes/origin/HEAD` (the graph does not list remote aliases). Delete removes the alias alone; its undo entry is `{ref, old: null, new: null, symref: <target>}`. `update-ref` always runs with `--no-deref`.
+
 ### code-conductor/* branches
 
 cc owns `code-conductor/*` branches: its worktree records name them. A write that removes, renames or moves one needs `ccOwned: true`, which the UI sends only after showing a warning; without it the op refuses `CC_OWNED_BRANCH` before running anything.
@@ -91,7 +95,7 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 
 | Op | Destroys | Recoverable |
 |---|---|---|
-| `branch.delete` | the branch ref (and its upstream config) | `update-ref` with `undo.refs[].old`, `branch --set-upstream-to` with `upstream` |
+| `branch.delete` | the branch ref (and its upstream config) | `update-ref` with `undo.refs[].old`, `branch --set-upstream-to` with `upstream`; a symbolic ref: `symbolic-ref <ref> <symref>` |
 | `branch.deleteRemote` | the branch on the remote | push `undo.remoteRefs[].old` (the tracking ref's last value: best known) |
 | `branch.rename` | the old name | rename back |
 | `branch.move` | the branch's position (commits only on it become unreachable from it) | `update-ref` back to `old`; the reflog |

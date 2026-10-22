@@ -7,12 +7,23 @@ const decoder = new TextDecoder('utf-8', { fatal: false });
 const text = (r) => decoder.decode(r.stdout).trim();
 const CC_PREFIX = 'code-conductor/';
 
-/** Every local branch: Map(refname → {oid, worktree: path of the checkout that has it | null, upstream: refname | null}). */
+/**
+ * Every local branch: Map(refname → {oid, worktree: path of the checkout that has it | null, upstream: refname | null,
+ * symref: the ref it points at | null}). A symbolic ref reports its target's oid and no worktree of its own.
+ */
 export async function readHeads(git) {
-  const r = await git(['for-each-ref', '--format=%(refname)%00%(objectname)%00%(worktreepath)%00%(upstream)', 'refs/heads']);
-  return new Map(parseRecords(decoder.decode(r.stdout), 4).map(([ref, oid, worktree, upstream]) => [
-    ref, { oid, worktree: worktree || null, upstream: upstream || null },
+  const r = await git(['for-each-ref', '--format=%(refname)%00%(objectname)%00%(worktreepath)%00%(upstream)%00%(symref)', 'refs/heads']);
+  return new Map(parseRecords(decoder.decode(r.stdout), 5).map(([ref, oid, worktree, upstream, symref]) => [
+    ref, { oid, worktree: worktree || null, upstream: upstream || null, symref: symref || null },
   ]));
+}
+
+/**
+ * Throws SYMBOLIC_REF (with `target`) when `entry` (a readHeads entry, or a refEntries one) is a symbolic ref: writing
+ * through it would move, check out or rename its target past the checked-out and code-conductor/* guards.
+ */
+export function assertNotSymbolic(ref, entry) {
+  if (entry?.symref) throw new Refusal('SYMBOLIC_REF', `${ref} is a symbolic ref to ${entry.symref}`, { target: entry.symref });
 }
 
 /** This checkout's HEAD: {branch: refname | null (detached), oid: oid | null (unborn)}. */

@@ -14,10 +14,13 @@ export async function guardOverwrite(git, args, opts) {
   }
 }
 
-/** `update-ref` from `expect` to `to` (compare-and-swap); a ref no longer at `expect` → REF_MOVED. */
+/**
+ * `update-ref` from `expect` to `to` (compare-and-swap); a ref no longer at `expect` → REF_MOVED. `--no-deref`: a
+ * symbolic ref is never followed to its target (callers refuse symbolic refs first; this is the second line).
+ */
 export async function casUpdate(git, ref, to, expect, message) {
   try {
-    await git(['update-ref', '-m', message, ref, to, expect]);
+    await git(['update-ref', '--no-deref', '-m', message, ref, to, expect]);
   } catch (e) {
     if (e.code === 'GIT_FAILED' && /but expected|unable to resolve reference|reference already exists/.test(e.extra.stderr ?? '')) {
       throw new Refusal('REF_MOVED', `${ref} is no longer at ${expect}`, { stderr: e.extra.stderr });

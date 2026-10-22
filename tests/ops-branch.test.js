@@ -359,3 +359,65 @@ test('checkout of a remote branch whose tracking local cannot fast-forward over 
   assert.equal(read(w.repo.dir, 'shared.txt'), 'dirty\n');
   assert.notEqual(f1, f2);
 });
+
+// ---------- symbolic refs ----------
+
+/** `alias` → code-conductor/wt, checked out in cc worktree wt; `ahead` a commit past it on main. */
+async function aliasWorld(t) {
+  const w = await refsWorld(t);
+  const wt = w.worktree('wt', 'code-conductor/wt');
+  const ahead = w.repo.commit({ 'a.txt': 'a\n' }, 'ahead');
+  w.repo.git('symbolic-ref', 'refs/heads/alias', 'refs/heads/code-conductor/wt');
+  const unchanged = () => {
+    assert.equal(w.oid('refs/heads/code-conductor/wt'), w.base, 'code-conductor/wt did not move');
+    assert.equal(w.repo.git('symbolic-ref', 'refs/heads/alias'), 'refs/heads/code-conductor/wt', 'alias is still a symbolic ref');
+    assert.equal(w.repo.git('-C', wt.dir, 'symbolic-ref', 'HEAD'), 'refs/heads/code-conductor/wt');
+    assert.equal(head(w), 'refs/heads/main');
+  };
+  return { ...w, wt, ahead, unchanged };
+}
+
+test('a symbolic ref as the subject of checkout, rename, fast-forward, move or setUpstream → SYMBOLIC_REF, nothing written', async (t) => {
+  const w = await aliasWorld(t);
+  const attempts = [
+    ['branch.checkout', { ref: 'refs/heads/alias', ccOwned: true }],
+    ['branch.rename', { name: 'alias', newName: 'renamed', ccOwned: true }],
+    ['branch.fastForward', { name: 'alias', to: w.ahead, expect: w.base }],
+    ['branch.move', { name: 'alias', to: w.ahead, expect: w.base, ccOwned: true }],
+    ['branch.setUpstream', { name: 'alias', upstream: 'refs/remotes/origin/main' }],
+  ];
+  for (const [name, params] of attempts) {
+    await assert.rejects(w.op(name, params), refused('SYMBOLIC_REF', { target: 'refs/heads/code-conductor/wt' }), name);
+    w.unchanged();
+  }
+  assert.deepEqual(w.writes(), []);
+  assert.throws(() => w.repo.git('config', 'branch.code-conductor/wt.merge'));
+});
+
+test('checkout of a symbolic remote ref (refs/remotes/origin/HEAD) → SYMBOLIC_REF, no branch created', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('remote', 'set-head', 'origin', 'main');
+  await assert.rejects(w.op('branch.checkout', { ref: 'refs/remotes/origin/HEAD' }), refused('SYMBOLIC_REF', { target: 'refs/remotes/origin/main' }));
+  assert.equal(w.exists('refs/heads/HEAD'), false);
+  assert.deepEqual(w.writes(), []);
+});
+
+test('deleting a symbolic ref deletes only it; its undo names the alias and its target, never the target\'s oid', async (t) => {
+  const w = await aliasWorld(t);
+  const r = await w.op('branch.delete', { names: ['alias'] });
+  assert.deepEqual(r.deleted, ['alias']);
+  assert.equal(w.exists('refs/heads/alias'), false);
+  assert.equal(w.oid('refs/heads/code-conductor/wt'), w.base);
+  assert.deepEqual(r.undo.refs, [{ ref: 'refs/heads/alias', old: null, new: null, symref: 'refs/heads/code-conductor/wt' }]);
+});
+
+test('every update-ref passes --no-deref', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('branch', 'free');
+  const ahead = w.repo.commit({ 'a.txt': 'a\n' }, 'ahead');
+  await w.op('branch.fastForward', { name: 'free', to: ahead, expect: w.base });
+  await w.op('branch.move', { name: 'free', to: w.base, expect: ahead });
+  const updates = w.argvs().filter((a) => a[0] === 'update-ref');
+  assert.equal(updates.length, 2);
+  for (const a of updates) assert.equal(a[1], '--no-deref');
+});

@@ -3,8 +3,8 @@ import { commitOid } from '../diff/source.js';
 import { parseRemotes, splitRemoteRef } from '../parse/graph.js';
 import { parseTracking } from '../parse/refs.js';
 import { fullRef, nameList, optBool, paramsOf, shortBranch } from '../refs/check.js';
-import { assertCcAck, assertCcHeadAck, assertNotCheckedOut, isCcOwned, ownHead, readHeads } from '../refs/heads.js';
-import { refObjects } from '../refs/resolve.js';
+import { assertCcAck, assertCcHeadAck, assertNotCheckedOut, assertNotSymbolic, isCcOwned, ownHead, readHeads } from '../refs/heads.js';
+import { refEntries, refObjects } from '../refs/resolve.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
 import { undoRecord } from '../refs/undo.js';
 import { casUpdate, guardOverwrite } from '../refs/write.js';
@@ -33,6 +33,13 @@ function headOf(heads, ref) {
   return h;
 }
 
+/** headOf, refusing a symbolic ref (SYMBOLIC_REF): the subject of a ref write must be the branch itself. */
+function plainHeadOf(heads, ref) {
+  const h = headOf(heads, ref);
+  assertNotSymbolic(ref, h);
+  return h;
+}
+
 /** `oid` names a commit, or REV_UNKNOWN. */
 async function assertCommit(git, oid) {
   if (await commitOid(git, oid) !== oid) throw new Refusal('REV_UNKNOWN', `${oid} is not a commit`);
@@ -52,11 +59,15 @@ const switchTo = (git, short) => guardOverwrite(git, ['switch', '--no-guess', '-
 async function checkoutRemote(git, ref, { heads, own, ccOwned }) {
   const remotes = parseRemotes(text(await git(['remote'])));
   const { branch } = splitRemoteRef(ref, remotes);
+  const remote = (await refEntries(git, [ref])).get(ref);
+  if (!remote) throw new Refusal('REF_UNKNOWN', `no remote branch ${ref.slice('refs/remotes/'.length)}`);
+  // refs/remotes/<r>/HEAD and other aliases: checking one out would check out its target under another name.
+  assertNotSymbolic(ref, remote);
   shortBranch(branch);
-  const remoteOid = (await refObjects(git, [ref])).get(ref);
-  if (!remoteOid) throw new Refusal('REF_UNKNOWN', `no remote branch ${ref.slice('refs/remotes/'.length)}`);
+  const remoteOid = remote.oid;
   const localRef = local(branch);
   const existing = heads.get(localRef);
+  assertNotSymbolic(localRef, existing);
   const result = { branch: localRef, created: false, localExisted: Boolean(existing), fastForwarded: false, ffBlocked: null };
   if (!existing) {
     assertCcHeadAck(own, ccOwned);
@@ -137,7 +148,7 @@ export const ops = [
       if (!ref.startsWith(HEADS)) return checkoutRemote(git, ref, { heads, own, ccOwned });
       const result = { branch: ref, created: false, localExisted: true, fastForwarded: false, ffBlocked: null };
       if (own.branch === ref) return { ...result, undo: undoRecord() };
-      const h = headOf(heads, ref);
+      const h = plainHeadOf(heads, ref);
       assertCcHeadAck(own, ccOwned);
       assertNotCheckedOut(heads, ref);
       await switchTo(git, shortOf(ref));
@@ -155,7 +166,7 @@ export const ops = [
       const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
       const ref = local(name);
       const to = local(newName);
-      const h = headOf(heads, ref);
+      const h = plainHeadOf(heads, ref);
       if (heads.has(to)) throw new Refusal('REF_EXISTS', `branch ${newName} already exists`);
       // cc's worktree record names a checked-out cc branch: renaming it breaks cc even in its own checkout.
       assertNotCheckedOut(heads, ref, { allowOwn: !isCcOwned(name), own });
@@ -198,7 +209,15 @@ export const ops = [
       }
       return {
         deleted, notMerged,
-        undo: undoRecord({ refs: deleted.map((n) => ({ ref: local(n), old: heads.get(local(n)).oid, new: null, upstream: heads.get(local(n)).upstream })) }),
+        // A symbolic ref is deleted alone (its target stays): its undo names the target, not the target's oid.
+        undo: undoRecord({
+          refs: deleted.map((n) => {
+            const h = heads.get(local(n));
+            return h.symref
+              ? { ref: local(n), old: null, new: null, symref: h.symref }
+              : { ref: local(n), old: h.oid, new: null, upstream: h.upstream };
+          }),
+        }),
       };
     },
   },
@@ -236,7 +255,7 @@ export const ops = [
     },
     async run(git, { name, upstream }) {
       const heads = await readHeads(git);
-      const previous = headOf(heads, local(name)).upstream;
+      const previous = plainHeadOf(heads, local(name)).upstream;
       if (upstream) {
         if (!(await refObjects(git, [upstream])).has(upstream)) throw new Refusal('REF_UNKNOWN', `no remote branch ${upstream.slice('refs/remotes/'.length)}`);
         await git(['branch', `--set-upstream-to=${upstream}`, '--end-of-options', name]);
@@ -256,7 +275,7 @@ export const ops = [
     async run(git, { name, to, expect }) {
       const ref = local(name);
       const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
-      const h = headOf(heads, ref);
+      const h = plainHeadOf(heads, ref);
       if (h.oid !== expect) throw new Refusal('REF_MOVED', `${name} is no longer at ${expect}`);
       assertNotCheckedOut(heads, ref, { allowOwn: true, own });
       if (to === expect) return { upToDate: true, undo: undoRecord() };
@@ -280,7 +299,7 @@ export const ops = [
     async run(git, { name, to, expect, ccOwned }) {
       const ref = local(name);
       const heads = await readHeads(git);
-      headOf(heads, ref);
+      plainHeadOf(heads, ref);
       // This checkout's own branch moves with head.reset, which also decides what happens to the index and worktree.
       assertNotCheckedOut(heads, ref);
       assertCcAck([name], ccOwned);
