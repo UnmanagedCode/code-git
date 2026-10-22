@@ -3,6 +3,7 @@ import { DIFF_LIMITS } from '../diff/limits.js';
 import { commitOid, contextArg, DIFF_CONFIG, DIFF_FLAGS, parseContext } from '../diff/source.js';
 import { bad, chunkPaths, filePath, nulPaths, paramsObject, pathList } from '../params.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
+import { assertNothingUntrackedUnder, perChunk } from '../stage/paths.js';
 import { buildSelectionPatch } from '../stage/selection.js';
 import { assertPath } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
@@ -13,7 +14,6 @@ import { assertWorktree } from '../worktree.js';
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const FROM_STDIN = ['--pathspec-from-file=-', '--pathspec-file-nul'];
-const nulFields = (r) => decoder.decode(r.stdout).split('\0').filter(Boolean);
 
 /** `{paths}` or `{all: true}`, exactly one. */
 function pathsOrAll(raw, op) {
@@ -26,27 +26,11 @@ function pathsOrAll(raw, op) {
   return { all: false, paths: pathList(p.paths, 'paths', { max: STAGE_LIMITS.maxPaths }) };
 }
 
-/** Runs `args -- <chunk>` once per chunk of `paths`; resolves every run's NUL-separated output fields. */
-async function perChunk(git, args, paths, opts) {
-  const out = [];
-  for (const chunk of chunkPaths(paths, STAGE_LIMITS.argvChunkBytes)) out.push(...nulFields(await git([...args, '--', ...chunk], opts)));
-  return out;
-}
-
 /** Every path must be a file in the index (a directory or `.` would restore everything under it): BAD_PATH otherwise. */
 async function assertIndexFiles(git, paths) {
   const listed = new Set(await perChunk(git, ['ls-files', '-c', '-z'], paths));
   const missing = paths.find((p) => !listed.has(p));
   if (missing !== undefined) throw new Refusal('BAD_PATH', `${missing} is not a file in the index`);
-}
-
-/**
- * A tracked file now a directory on disk (`df/x` → `df/x/inner`): restoring it replaces the directory with the file and
- * deletes whatever is in it, unlisted. Anything not tracked under the paths — untracked or ignored — refuses the discard.
- */
-async function assertNothingUntrackedUnder(git, paths) {
-  const found = await perChunk(git, ['ls-files', '--others', '-z'], paths);
-  if (found.length) throw new Refusal('UNTRACKED_UNDER_PATH', `${found[0]} is not tracked and a discard would delete it: move or delete it first`, { paths: found.slice(0, 100) });
 }
 
 /** Refuses CONFLICTED when any of `paths` is unmerged: restoring it would throw away the merge state. */

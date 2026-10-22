@@ -69,6 +69,22 @@ test('files.restore refuses a path that does not name one file: `.`, a trailing 
   assert.equal(w.cc.state.execCalls.filter((b) => b.argv.includes('restore')).length, 0);
 });
 
+test('files.restore of a tracked path that is now a directory holding files refuses UNTRACKED_UNDER_PATH, deleting nothing', async (t) => {
+  const w = await world(t);
+  const withFile = w.repo.commit({ 'df/x': 'file\n' }, 'df');
+  fs.rmSync(path.join(w.repo.dir, 'df', 'x'));
+  w.repo.write('df/x/precious.txt', 'PRECIOUS\n');
+  await assert.rejects(w.op('files.restore', { oid: withFile, path: 'df/x' }), (e) => e.code === 'UNTRACKED_UNDER_PATH' && e.extra.paths.includes('df/x/precious.txt'));
+  assert.equal(read(w, 'df/x/precious.txt'), 'PRECIOUS\n');
+  // An ignored file under it counts too: restore would delete it as well.
+  fs.rmSync(path.join(w.repo.dir, 'df', 'x', 'precious.txt'));
+  w.repo.write('.git/info/exclude', '*.log\n');
+  w.repo.write('df/x/debug.log', 'ignored\n');
+  await assert.rejects(w.op('files.restore', { oid: withFile, path: 'df/x' }), refused('UNTRACKED_UNDER_PATH'));
+  assert.equal(read(w, 'df/x/debug.log'), 'ignored\n');
+  assert.equal(w.execArgv().filter((a) => a.includes('restore')).length, 0);
+});
+
 test('patch.check reports numstat and changes nothing', async (t) => {
   const w = await world(t);
   const patch = edit('a.txt', 'a v2', 'a v3') + newFile('new.txt', 'n');

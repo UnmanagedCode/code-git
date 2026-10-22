@@ -73,7 +73,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | `counts.conflicted` | Unmerged entries |
 
 - Refusal: 409 `NOT_A_REPO` with `detail` = git's stderr, when git exits 128 saying "not a git repository".
-- First `git rev-parse --absolute-git-dir --show-toplevel`: the same path twice (the git dir is the working tree) → 409 `BARE_REPO`, before `status` runs. Under `BASE_ARGS`' `--work-tree=.` a bare repository's status would succeed, walking its own files as untracked. The repository's `core.bare` is never consulted: true, false (set directly or through an `[include]`) or unset, a bare repository is refused. A normal repo, a linked worktree and a `--separate-git-dir` clone have their git dir elsewhere. Outside a repository this command exits 128 → `NOT_A_REPO` as above.
+- First `git rev-parse --git-dir`: exactly `.` (the git dir is the working tree; nothing is parsed, so a path holding a newline cannot fool it) → 409 `BARE_REPO`, before `status` runs. Under `BASE_ARGS`' `--work-tree=.` a bare repository's status would succeed, walking its own files as untracked. The repository's `core.bare` is never consulted: true, false (set directly or through an `[include]`) or unset, a bare repository is refused. A normal repo (`.git`), a linked worktree — of a normal or a bare repo — and a `--separate-git-dir` clone have their git dir elsewhere. Outside a repository this command exits 128 → `NOT_A_REPO` as above.
 
 ### Diff sources
 
@@ -346,6 +346,7 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 
 - `params`: `{oid /* full commit id, OID_RE */, path}`; `path` names one file (`filePath`: no trailing `/`, no empty or `.` segment → `BAD_PATH`).
 - `git cat-file -t <oid>` must print `commit` (else 404 `REV_UNKNOWN`); `git cat-file -t <oid>:<path>` must print `blob` (else 404 `PATH_NOT_IN_COMMIT`: absent, a directory, a gitlink).
+- `git ls-files --others -z -- <path>` must print nothing (a tracked file now a directory holding untracked or ignored files) → 409 `UNTRACKED_UNDER_PATH`, `paths`.
 - Runs `git restore --source=<oid> --staged --worktree -- <path>` (GitKraken's "reset file to this commit"): index and worktree. Through an untracked symlinked directory git replaces the link with a real directory and writes inside the repo.
 - `result`: `{oid, path}`.
 

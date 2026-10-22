@@ -178,7 +178,7 @@ test('activity: GET lists entries newest last and SSE pushes running then closed
   assert.deepEqual([second.data.id, second.data.status], [first.data.id, 'ok']);
   await call('POST', '/api/ops/repo.summary', { target: { project: 'app', worktree: 'feat' } });
   const { body } = await call('GET', '/api/activity');
-  // Each summary is `git status` then the core.bare read (src/git/worktree.js): four entries, newest last.
+  // Each summary is the bare check (`rev-parse --git-dir`, src/git/worktree.js) then `git status`: four entries, newest last.
   assert.equal(body.entries.length, 4);
   assert.ok(body.entries.every((e, i) => i === 0 || body.entries[i - 1].id < e.id));
   const statuses = body.entries.filter((e) => e.argv.includes('--porcelain=v2'));

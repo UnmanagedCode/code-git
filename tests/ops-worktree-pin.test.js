@@ -47,17 +47,20 @@ test('core.worktree pointing elsewhere: diff, stage, discard, restore and line s
   assert.ok(!JSON.stringify([list, fd]).includes('ELSEWHERE'));
 });
 
-/** A bare repository registered as a cc project, its core.bare as `bare` says: 'true', 'false', 'unset' or 'include-false'. */
+/**
+ * A bare repository registered as a cc project, its core.bare as `bare` says: 'true', 'false', 'unset' or 'include-false';
+ * 'newline-path' is core.bare false at a path holding a newline (`evil\nmirror.git`), which a split on `\n` would misread.
+ */
 async function bareWorld(t, bare = 'true') {
   const root = tempDir(t, 'cg-bare-');
   const home = path.join(root, 'home');
   fs.mkdirSync(home);
-  const dir = path.join(root, 'bare.git');
+  const dir = path.join(root, bare === 'newline-path' ? 'evil\nmirror.git' : 'bare.git');
   const env = hermeticEnv(home);
   const git = (...args) => execFileSync('git', ['-C', dir, ...args], { env });
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', dir], { env });
   fs.writeFileSync(path.join(dir, 'config'), `${fs.readFileSync(path.join(dir, 'config'), 'utf8')}[secret]\n\ttoken = TOKEN-7d1e\n`);
-  if (bare === 'false') git('config', 'core.bare', 'false');
+  if (bare === 'false' || bare === 'newline-path') git('config', 'core.bare', 'false');
   if (bare === 'unset') git('config', '--unset', 'core.bare');
   if (bare === 'include-false') {
     const inc = path.join(root, 'inc.cfg');
@@ -91,7 +94,7 @@ const WRITES = [
   ['stage.discardLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
 ];
 
-for (const bare of ['true', 'false', 'unset', 'include-false']) {
+for (const bare of ['true', 'false', 'unset', 'include-false', 'newline-path']) {
   test(`a bare repository (core.bare ${bare}) is refused BARE_REPO by repo.summary and by every working-tree write; HEAD, config and refs survive`, async (t) => {
     const b = await bareWorld(t, bare);
     const before = b.snapshot();
@@ -115,18 +118,26 @@ test('repo.summary decides bareness before git status runs (no walk of a bare ob
   assert.ok(!cc.state.execCalls.some((b) => b.argv.includes('status')));
 });
 
-test('a normal repo, a linked worktree and a --separate-git-dir clone are not bare: summary and a write work', async (t) => {
+test('a normal repo, a linked worktree, a linked worktree of a bare repo and a --separate-git-dir clone are not bare: summary and a write work', async (t) => {
   const w = await opWorld(t);
   w.repo.commit({ 'a.txt': 'a\n' });
+  const env = hermeticEnv(w.repo.home);
   const wt = w.repo.worktreeAdd(path.join(w.repo.root, 'wt'), 'feature');
   const sepDir = path.join(w.repo.root, 'sep');
-  execFileSync('git', ['init', '-q', '-b', 'main', '--separate-git-dir', path.join(w.repo.root, 'sep-gitdir'), sepDir], { env: hermeticEnv(w.repo.home) });
+  execFileSync('git', ['init', '-q', '-b', 'main', '--separate-git-dir', path.join(w.repo.root, 'sep-gitdir'), sepDir], { env });
+  const bareDir = path.join(w.repo.root, 'origin.git');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bareDir], { env });
+  w.repo.git('push', '-q', bareDir, 'HEAD:main');
+  const bareWt = path.join(w.repo.root, 'bare-wt');
+  execFileSync('git', ['-C', bareDir, 'worktree', 'add', '-q', bareWt, 'main'], { env });
+  const dirs = { repo: w.repo.dir, wt: wt.dir, sep: sepDir, bareWt };
   w.cc.state.projects.wt = { dir: wt.dir };
   w.cc.state.projects.sep = { dir: sepDir };
-  for (const project of ['repo', 'wt', 'sep']) {
+  w.cc.state.projects.bareWt = { dir: bareWt };
+  for (const project of ['repo', 'wt', 'sep', 'bareWt']) {
     const target = { project, worktree: null };
     const run = (name, params) => { const def = getOp(OPS, name); return def.run(gitFor(ctxFor(target, def.kind, { op: name })), def.params(params), { target }); };
-    fs.writeFileSync(path.join(project === 'repo' ? w.repo.dir : project === 'wt' ? wt.dir : sepDir, 'n.txt'), 'n\n');
+    fs.writeFileSync(path.join(dirs[project], 'n.txt'), 'n\n');
     assert.equal((await run('repo.summary')).counts.untracked, 1, project);
     await run('stage.files', { paths: ['n.txt'] });
     assert.equal((await run('repo.summary')).counts.staged, 1, project);

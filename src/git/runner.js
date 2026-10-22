@@ -9,8 +9,8 @@ import { LIMITS } from './limits.js';
  * Before every subcommand. `--work-tree=.` pins the working tree to the checkout cc runs the command in, so a repo's
  * `core.worktree` cannot redirect reads, staging, discards or restores to another directory. It resolves against the
  * final directory, after any `-C <subpath>` an op adds (the submodule card relies on that). A bare repository would
- * then look like a working tree of its own files: `repo.summary` and the working-tree writes check `core.bare` first
- * (src/git/worktree.js).
+ * then look like a working tree of its own files: `repo.summary` and every write first check whether the git dir is
+ * the working tree itself (`rev-parse --git-dir` printing `.`; never the repo's own `core.bare`: src/git/worktree.js).
  * `submodule.recurse=false`: a repo setting it true would make restore/checkout/reset recurse into submodules, so
  * discarding a submodule row would throw away the submodule's own uncommitted work. The submodule card passes
  * `--recurse-submodules` explicitly where it wants recursion.
