@@ -2,6 +2,8 @@ import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { resetDiff } from '@/state/diff';
 import { resetShownPanels } from '@/state/shownPanel';
+import { resetDrag } from '@/features/graph/drag';
+import { contextMenuStore } from '@/shell/ContextMenuHost';
 import { resetGraph } from '@/state/graph';
 import { resetGraphPrefs } from '@/state/graphPrefs';
 import { resetGraphSelection } from '@/state/graphSelection';
@@ -24,6 +26,8 @@ afterEach(() => {
   resetGraphPrefs();
   resetGraph();
   resetGraphSelection();
+  resetDrag();
+  contextMenuStore.set(null);
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();
