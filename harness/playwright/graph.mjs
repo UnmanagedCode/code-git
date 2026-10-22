@@ -197,6 +197,7 @@ try {
     check(await page.getByRole('menu').count() === 0, 'the drop opens no menu (no branch-drop actions yet)');
 
     // ---- every scheme and viewport ----
+    await page.mouse.move(0, 0); // off every chip: no hover dimming in the screenshots
     for (const scheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: scheme });
       for (const [vp, size] of Object.entries(VIEWPORTS)) {
