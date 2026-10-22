@@ -277,6 +277,39 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 
 - `result`: `{path}`; `discardLines` also returns `{patchB64}`, the exact patch applied with `-R`. Applying it forward (`git apply`) restores the discarded lines.
 
+### `commit.create` (write)
+
+- `params`: `{summary, description?, amend?, messageOnly?, noVerify?}`.
+  - `summary`: non-empty after trimming, one line (no `\n`/`\r`). Neither field may contain NUL. → `BAD_PARAMS`.
+  - `messageOnly` needs `amend` (`BAD_PARAMS`). Booleans default to `false`.
+- Message: `joinMessage` (`src/git/commit/message.js`) — `summary.trim()`, then a blank line and the description with trailing whitespace trimmed (when non-empty), then `\n`. Sent on stdin.
+- Checks: `amend` with an unborn HEAD → 409 `NO_HEAD`. Without `amend`: `git diff --cached --quiet --no-ext-diff --no-textconv --ignore-submodules=none` exits 0 (nothing staged) **and** `git rev-parse -q --verify MERGE_HEAD` exits 1 (no merge in progress) → 409 `NOTHING_TO_COMMIT`. A merge with nothing staged commits.
+- Runs `git commit [--amend [--only]] [--no-verify] -F -`. No `--cleanup`: the repo's `commit.cleanup` applies; git's default for `-F` is `whitespace`, which keeps `#` lines.
+
+| Mode | Flags | Effect |
+|---|---|---|
+| commit | — | Staged changes; on a detached HEAD, HEAD moves and no branch does |
+| amend | `--amend` | Replaces HEAD with the staged changes + the message; a root commit stays parentless |
+| message-only amend | `--amend --only` (no paths) | Replaces HEAD's message; the tree is HEAD's, staged changes stay staged |
+| skip hooks | `--no-verify` | No `pre-commit` / `commit-msg` hooks |
+
+- A hook or signing failure → 422 `GIT_FAILED` with git's `stderr` (the hook's output).
+- `result`: `{oid}`, HEAD after the commit (`rev-parse --verify --quiet HEAD^{commit}`).
+
+### `commit.headMessage` (read, cancellable)
+
+- `params`: none. Unborn HEAD → 409 `NO_HEAD`.
+- Runs `git log -1 --no-show-signature --format=%B --end-of-options <HEAD oid>`.
+- `result`: `{oid, summary, description}` (`splitMessage`: the first non-blank line, then the rest minus one leading blank line, trailing whitespace trimmed).
+
+### `commit.template` (read, cancellable)
+
+- `params`: none.
+- `git config --path --get commit.template` (`~/` expanded). Unset → `{path: null, draft: null, problem: null}`.
+- Reads the file with `readNoIndex` (`git diff --no-index /dev/null <path>`). A symlink is followed by hand, each target relative to its link's directory, for up to `STAGE_LIMITS.templateMaxLinks` hops.
+- Comment prefix: `core.commentString`, else `core.commentChar`; `auto` or unset → `#`. Lines starting with it are dropped, then `splitMessage`.
+- `result`: `{path, draft: {summary, description} | null, problem: string | null}`. A missing, binary, non-file, over-`STAGE_LIMITS.templateMaxBytes` template or a link chain past the hop limit is a `problem`, never a refusal.
+
 ### Paging convention (for ops that list)
 
 An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b`, blobs by `cat-file -s` before reading.

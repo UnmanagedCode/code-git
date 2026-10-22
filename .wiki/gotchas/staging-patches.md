@@ -19,3 +19,11 @@ Code: `src/git/ops/stage.js`, `src/git/params.js`, `src/git/stage/`. Reference: 
 - **"\ No newline at end of file" binds to the line before it** and that line must stay the last of every side it is on; otherwise the selection needs the newline change too (`SELECTION_UNSUPPORTED`). `git apply` itself accepts the marker after a `+` line that `-` lines follow.
 - **Neutralise `apply.whitespace` / `apply.ignoreWhitespace`** with `--whitespace=nowarn --no-ignore-whitespace` (`=error` refuses trailing spaces; `ignoreWhitespace=change` fuzzes the context match).
 - **`git apply --cached` does not check the worktree**, so a path beyond a symlink is accepted into the index (nothing is written on disk); `git apply` / `--index` refuse it ("beyond a symbolic link").
+
+## Commit
+
+- **`commit --amend --only` with no paths amends the message alone**: the tree stays HEAD's and the staged changes stay staged. Plain `--amend` takes the index in.
+- **`-F` has its own cleanup default: `whitespace`**, which keeps `#` lines (`strip` is the default only when an editor runs). code-git passes no `--cleanup`, so a repo's `commit.cleanup` still wins.
+- **`diff --cached --quiet` works on an unborn HEAD** (it compares with the empty tree); with nothing staged, a commit is still valid while `MERGE_HEAD` exists.
+- **The commit template is read with git only**: `config --path --get` expands `~/`; `diff --no-index` never follows a symlink (it shows the target path, mode 120000), so symlinks are followed by hand, relative to the link's directory, with a hop limit for loops.
+- **Signing without a tty fails fast**: gpg 2 + pinentry-curses under cc's exec (no controlling terminal) exits at once ("Inappropriate ioctl for device"); a passphrase prompt never hangs there.
