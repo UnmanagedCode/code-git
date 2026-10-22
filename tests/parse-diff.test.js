@@ -138,6 +138,16 @@ test('parseFilePatch: a hunk shorter than its counts, or a line that fits no cou
   assert.throws(() => parseFilePatch(patch('diff --git a/f b/f', '@@ -1 +1 @@', '-a', '-b')), /counts/);
 });
 
+test('parseFilePatch: each line kind needs its own count left — a del past the old count, an add past the new count, a context line past either', () => {
+  const head = ['diff --git a/f b/f', 'index 1..2 100644', '--- a/f', '+++ b/f'];
+  const mismatch = /does not match its header counts/;
+  // Each is well-formed but for one line; the other counts would let a parser that skips the guard finish without error.
+  assert.throws(() => parseFilePatch(patch(...head, '@@ -1 +1,2 @@', '-a', '-b', '+c', '+d')), mismatch);
+  assert.throws(() => parseFilePatch(patch(...head, '@@ -1,2 +1 @@', '+a', '+b', '-c', '-d')), mismatch);
+  assert.throws(() => parseFilePatch(patch(...head, '@@ -1,2 +1 @@', ' a', ' b', '-c')), mismatch);
+  assert.throws(() => parseFilePatch(patch(...head, '@@ -1 +1,2 @@', ' a', ' b', '+c')), mismatch);
+});
+
 test('parseFilePatch: a gitlink yields submodule pointers (dirty too) and never text hunks', () => {
   const sub = parseFilePatch(patch('diff --git a/v b/v', `index 1111111..2222222 160000`, '--- a/v', '+++ b/v', '@@ -1 +1 @@', `-Subproject commit ${'1'.repeat(40)}`, `+Subproject commit ${'2'.repeat(40)}`));
   assert.deepEqual(sub.submodule, { old: '1'.repeat(40), new: '2'.repeat(40), dirty: false });

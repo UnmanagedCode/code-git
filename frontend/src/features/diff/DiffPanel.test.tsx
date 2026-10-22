@@ -132,6 +132,15 @@ test('Split renders the old and the new side in their own columns', async () => 
   expect(olds.some((t) => t?.includes('foo(baz)'))).toBe(false);
 });
 
+test('Split renders every added line of an add-heavy block, with an empty old cell beside each extra one', async () => {
+  await openA([dfile()], { 'src/a.ts': fdiff([hunk(1, 1, ['-one', '+ONE', '+two', '+three']), hunk(9, 11, [' k', '+only'])]) });
+  await userEvent.click(screen.getByRole('button', { name: 'Split' }));
+  await waitFor(() => expect(panel().querySelector('[data-view=split]')).toBeTruthy());
+  const news = [...panel().querySelectorAll('[data-side=new]')].map((e) => e.textContent);
+  for (const t of ['ONE', 'two', 'three', 'only']) expect(news.some((x) => x?.includes(t))).toBe(true);
+  expect(panel().querySelectorAll('[data-side=old][data-empty]')).toHaveLength(3);
+});
+
 test('the Wrap toggle flips aria-pressed', async () => {
   await openA();
   const wrap = screen.getByRole('button', { name: 'Wrap lines' });

@@ -241,6 +241,18 @@ test('an empty file added, deleted, or untracked has no hunks and only the prese
   assert.deepEqual([untracked.oldMode, untracked.newMode, untracked.hunks], [null, '100644', []]);
 });
 
+test('oversized counts added plus deleted lines: a deletion past the limit is oversized; exactly the limit is not', async (t) => {
+  const { repo } = await world(t);
+  repo.git('stash', '-q', '--include-untracked');
+  repo.git('rm', '-q', 'huge.txt');
+  repo.commit({ 'limit.txt': Array.from({ length: DIFF_LIMITS.oversizeLines }, (_, i) => `l${i}`).join('\n') + '\n' }, 'drop huge, add limit');
+  const r = await files(commit('HEAD'));
+  const by = Object.fromEntries(r.files.map((f) => [f.path, f]));
+  assert.deepEqual([by['huge.txt'].status, by['huge.txt'].added, by['huge.txt'].deleted, by['huge.txt'].oversized], ['D', 0, HUGE_LINES, true]);
+  assert.ok(HUGE_LINES > DIFF_LIMITS.oversizeLines);
+  assert.deepEqual([by['limit.txt'].added, by['limit.txt'].oversized], [DIFF_LIMITS.oversizeLines, false]);
+});
+
 test('context: 0 gives bare changes, full gives one hunk covering every line; whitespace all drops a whitespace-only change', async (t) => {
   await world(t);
   const src = commit('HEAD~1');
@@ -376,6 +388,20 @@ test('patch of a merge-free contiguous series has one From per commit; a merge c
   assert.ok(withMerge.startsWith('diff --git '));
   const root = decode(await op('diff.patch', { source: commit(oids.root) })).toString();
   assert.equal(root.match(/^From [0-9a-f]{40} /gm).length, 1);
+});
+
+test('patch of a run of commits plus work in progress is a plain diff to the working tree, never format-patch', async (t) => {
+  const { cc, oids } = await world(t);
+  const before = cc.state.execCalls.length;
+  const r = await op('diff.patch', { source: { kind: 'commits', oids: [oids.change, oids.tail], wip: true } });
+  const text = decode(r).toString();
+  const argvs = cc.state.execCalls.slice(before).map((b) => b.argv);
+  assert.equal(argvs.some((a) => a.includes('format-patch')), false);
+  assert.ok(argvs.some((a) => a.includes('diff') && a.includes('--binary') && a.includes(oids.merge)));
+  assert.ok(text.startsWith('diff --git '));
+  assert.match(text, /^\+\+\+ b\/main-only\.txt$/m);
+  assert.match(text, /^\+main unstaged$/m);
+  assert.equal(r.filename, 'diffs-worktree.patch');
 });
 
 test('patch of unstaged changes applies on HEAD; paths limit the files; binary changes are a GIT binary patch', async (t) => {

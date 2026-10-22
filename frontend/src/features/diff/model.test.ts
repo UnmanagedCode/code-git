@@ -30,6 +30,13 @@ test('splitRows: the i-th del beside the i-th add, the longer side padded; conte
   ]);
 });
 
+test('splitRows pads the old side of an add-heavy block: every added line gets a row', () => {
+  const pairs = (h: ReturnType<typeof hunk>) => splitRows([h]).filter((r) => r.type === 'pair')
+    .map((r) => (r.type === 'pair' ? [r.old?.line.text ?? null, r.new?.line.text ?? null, r.change] : null));
+  expect(pairs(hunk(1, 1, [' a', '-b', '+B', '+C', '+D', ' e']))).toEqual([['a', 'a', null], ['b', 'B', 0], [null, 'C', null], [null, 'D', null], ['e', 'e', null]]);
+  expect(pairs(hunk(1, 1, [' a', '+x', '+y']))).toEqual([['a', 'a', null], [null, 'x', 0], [null, 'y', null]]);
+});
+
 test('sideText: the old side is context + deleted lines, the new side context + added lines', () => {
   expect(sideText(H[0], 'old')).toBe('a\nb\nc\nd\ne');
   expect(sideText(H[0], 'new')).toBe('a\nB\nc');
