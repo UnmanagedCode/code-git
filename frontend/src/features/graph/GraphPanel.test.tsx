@@ -1,0 +1,197 @@
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, expect, test, vi } from 'vitest';
+import { entry, summary } from '@/test/fixtures';
+import { commit, oid, ref } from '@/test/graphData';
+import { linearWorld, paramsOf, stubGraph, type GraphWorld } from '@/test/graphBackend';
+import { getGraph, loadUntil, PAGE } from '@/state/graph';
+import { updatePrefs } from '@/state/graphPrefs';
+import { getSelection } from '@/state/graphSelection';
+import { activityStore } from '@/state/useActivity';
+import { loadSummary } from '@/state/useRepoSummary';
+import { GraphPanel } from './GraphPanel';
+import { requestJump } from './jump';
+import { ROW_H } from './windowFor';
+
+const TAB = { project: 'app', worktree: null };
+afterEach(() => vi.useRealTimers());
+
+async function show(world: GraphWorld) {
+  const fetch = stubGraph(world);
+  await loadSummary(TAB);
+  render(<GraphPanel tab={TAB} />);
+  await screen.findByRole('listbox', { name: 'Commits' });
+  await waitFor(() => expect(document.querySelector('[data-row-id]')).not.toBeNull());
+  return fetch;
+}
+const list = () => screen.getByRole('listbox', { name: 'Commits' });
+const rowEls = () => [...document.querySelectorAll<HTMLElement>('[data-row-id]')];
+const rowEl = (id: string) => document.querySelector<HTMLElement>(`[data-row-id="${id}"]`);
+/** Scrolls the list (happy-dom has no layout: the viewport height is given). */
+async function scrollTo(top: number, height = 800) {
+  const el = list();
+  Object.defineProperty(el, 'clientHeight', { configurable: true, value: height });
+  el.scrollTop = top;
+  fireEvent.scroll(el);
+  await act(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+}
+
+test('the first page is read from the tips of refs + prefs at skip 0', async () => {
+  const world = linearWorld(30);
+  world.refs.refs.push(ref('refs/tags/t', oid(12)), ref('refs/heads/gone', oid(3)));
+  updatePrefs('app', (p) => ({ ...p, hidden: ['refs/heads/gone'] }));
+  const fetch = await show(world);
+  expect(paramsOf(fetch, 'POST api/ops/graph.page')).toEqual([{ tips: [oid(12), oid(30)], skip: 0, limit: PAGE }]);
+});
+
+test('with 5,000 rows loaded the DOM holds at most 120 rows, at the top, the middle and the end', async () => {
+  const world = linearWorld(5000);
+  await show(world);
+  await act(async () => { await loadUntil(TAB, oid(1)); });
+  expect(getGraph(TAB).commits.length).toBe(5000);
+  for (const top of [0, 2500 * ROW_H, 5000 * ROW_H - 800]) {
+    await scrollTo(top);
+    const n = rowEls().length;
+    expect(n, `at ${top}`).toBeGreaterThan(20);
+    expect(n, `at ${top}`).toBeLessThanOrEqual(120);
+  }
+  expect(rowEl(oid(1))).not.toBeNull();
+});
+
+test('nearing the end of the loaded rows requests the next page at skip 500', async () => {
+  const fetch = await show(linearWorld(1200));
+  expect(paramsOf(fetch, 'POST api/ops/graph.page')).toHaveLength(1);
+  await scrollTo(380 * ROW_H);
+  await waitFor(() => expect(paramsOf(fetch, 'POST api/ops/graph.page')).toHaveLength(2));
+  expect(paramsOf(fetch, 'POST api/ops/graph.page')[1]).toMatchObject({ skip: PAGE, limit: PAGE });
+});
+
+test('a finished write reloads moved tips: the selection survives and the first visible row keeps its offset; unmoved tips reload nothing', async () => {
+  const world = linearWorld(600);
+  const fetch = await show(world);
+  await scrollTo(100 * ROW_H + 5);
+  fireEvent.click(rowEl(oid(500 - 0))!);
+  expect(getSelection(TAB).ids).toEqual([oid(500)]);
+  world.commits.unshift(commit(oid(601), [oid(600)]), commit(oid(602), [oid(601)]));
+  [world.commits[0], world.commits[1]] = [world.commits[1], world.commits[0]];
+  world.refs.refs[0] = ref('refs/heads/main', oid(602), { isHead: true });
+  world.refs.head.oid = oid(602);
+  act(() => activityStore.set({ entries: [entry({ id: 9, kind: 'write', op: 'commit.create' })], error: null }));
+  await waitFor(() => expect(getGraph(TAB).tipsKey).toBe(oid(602)));
+  await waitFor(() => expect(list().scrollTop).toBe(102 * ROW_H + 5));
+  expect(getSelection(TAB).ids).toEqual([oid(500)]);
+  const pages = paramsOf(fetch, 'POST api/ops/graph.page').length;
+  act(() => activityStore.set({ entries: [entry({ id: 9, kind: 'write' }), entry({ id: 10, kind: 'write' })], error: null }));
+  await waitFor(() => expect(fetch.count('POST api/ops/graph.refs')).toBe(3));
+  expect(paramsOf(fetch, 'POST api/ops/graph.page')).toHaveLength(pages);
+});
+
+test('j/k and the arrows move the selection; Shift+J stays in the lane; Ctrl+End and Esc', async () => {
+  const world = linearWorld(10);
+  // A side branch: S1 → S0 → oid(5), unmerged, so it takes a second lane.
+  world.commits.splice(2, 0, commit('a'.repeat(40), ['b'.repeat(40)], { subject: 'side 1' }), commit('b'.repeat(40), [oid(5)], { subject: 'side 0' }));
+  world.refs.refs.push(ref('refs/heads/side', 'a'.repeat(40)));
+  await show(world);
+  const ids = rowEls().map((e) => e.dataset.rowId!);
+  const key = (k: string, init: KeyboardEventInit = {}) => fireEvent.keyDown(list(), { key: k, ...init });
+  key('j');
+  expect(getSelection(TAB).ids).toEqual([ids[0]]);
+  key('ArrowDown');
+  key('j');
+  expect(getSelection(TAB).ids).toEqual([ids[2]]);
+  expect(rowEl(ids[2])!.getAttribute('aria-selected')).toBe('true');
+  key('k');
+  expect(getSelection(TAB).ids).toEqual([ids[1]]);
+  const col = rowEl(ids[1])!.dataset.col;
+  key('J', { shiftKey: true });
+  const after = getSelection(TAB).ids[0];
+  expect(rowEl(after)!.dataset.col).toBe(col);
+  expect(ids.indexOf(after)).toBeGreaterThan(2);
+  key('End', { ctrlKey: true });
+  expect(getSelection(TAB).ids).toEqual([ids.at(-1)]);
+  key('Escape');
+  expect(getSelection(TAB).ids).toEqual([]);
+});
+
+test('search asks git with the mode and query and marks the matching rows; Enter moves to the next match', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const world = linearWorld(20);
+  world.search = ({ query }) => ({ matches: query === 'fix' ? [oid(18), oid(11)] : [], truncated: false });
+  const fetch = await show(world);
+  const box = screen.getByRole('textbox', { name: 'Search commits' });
+  fireEvent.change(box, { target: { value: 'fix' } });
+  await act(async () => { vi.advanceTimersByTime(300); });
+  await waitFor(() => expect(rowEl(oid(18))!.hasAttribute('data-match')).toBe(true));
+  expect(paramsOf(fetch, 'POST api/ops/graph.search')).toEqual([{ mode: 'commits', query: 'fix', tips: [oid(20)] }]);
+  expect(rowEl(oid(17))!.hasAttribute('data-match')).toBe(false);
+  fireEvent.keyDown(box, { key: 'Enter' });
+  expect(getSelection(TAB).ids).toEqual([oid(18)]);
+  fireEvent.keyDown(box, { key: 'Enter' });
+  expect(getSelection(TAB).ids).toEqual([oid(11)]);
+  expect(screen.getByLabelText('Match position').textContent).toBe('2 / 2');
+  fireEvent.click(screen.getByRole('button', { name: 'Path' }));
+  await act(async () => { vi.advanceTimersByTime(300); });
+  await waitFor(() => expect(paramsOf(fetch, 'POST api/ops/graph.search').at(-1)).toEqual({ mode: 'path', query: 'fix', tips: [oid(20)] }));
+});
+
+test('a label appears once its tip row is loaded; a jump pages to it and selects it', async () => {
+  const world = linearWorld(900);
+  world.refs.refs.push(ref('refs/heads/old', oid(200)));
+  await show(world);
+  expect(screen.queryByText('old')).toBeNull();
+  expect(getGraph(TAB).commits.some((c) => c.oid === oid(200))).toBe(false);
+  act(() => requestJump(TAB, oid(200)));
+  await waitFor(() => expect(getSelection(TAB).ids).toEqual([oid(200)]));
+  await scrollTo(list().scrollTop);
+  expect(within(rowEl(oid(200))!).getByText('old')).toBeTruthy();
+});
+
+test('a jump to a commit outside the snapshot says so', async () => {
+  const world = linearWorld(10);
+  await show(world);
+  act(() => requestJump(TAB, oid(99999)));
+  expect(await screen.findByText('Not in the visible graph.')).toBeTruthy();
+});
+
+test('an HTML subject renders as text', async () => {
+  const world = linearWorld(3);
+  world.commits[0].subject = '<img src=x onerror=alert(1)>';
+  await show(world);
+  expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeTruthy();
+  expect(document.querySelector('img')).toBeNull();
+});
+
+test('WIP rows of dirty checkouts come first, the own one on top; a clean checkout has none', async () => {
+  const world = linearWorld(5);
+  world.worktrees = [{ worktreeName: 'wt', branch: 'code-conductor/wt', baseBranch: 'main', locked: false }, { worktreeName: 'clean', branch: null, baseBranch: null, locked: false }];
+  world.refs.refs.push(ref('refs/heads/code-conductor/wt', oid(3)));
+  world.summaries[''] = summary({ head: { oid: oid(5), branch: 'main', unborn: false }, counts: { staged: 0, unstaged: 2, untracked: 0, conflicted: 0 } });
+  world.summaries.wt = summary({ head: { oid: oid(3), branch: 'code-conductor/wt', unborn: false }, counts: { staged: 1, unstaged: 0, untracked: 0, conflicted: 0 } });
+  world.summaries.clean = summary({ head: { oid: oid(2), branch: null, unborn: false } });
+  await show(world);
+  await waitFor(() => expect(rowEls().map((e) => e.dataset.rowId).slice(0, 3)).toEqual(['wip:', 'wip:wt', oid(5)]));
+  expect(rowEl('wip:')!.textContent).toContain('// WIP');
+  expect(rowEl('wip:')!.querySelector('[data-edge=bottom]')!.getAttribute('stroke-dasharray')).toBe('3 3');
+});
+
+test('hovering a ref chip dims the rows outside its ancestry', async () => {
+  const world = linearWorld(6);
+  world.commits.splice(1, 0, commit('c'.repeat(40), [oid(4)], { subject: 'feature tip' }));
+  world.refs.refs.push(ref('refs/heads/feature', 'c'.repeat(40)));
+  await show(world);
+  fireEvent.mouseEnter(screen.getByText('feature'));
+  expect(rowEl(oid(6))!.hasAttribute('data-dimmed')).toBe(true);
+  expect(rowEl('c'.repeat(40))!.hasAttribute('data-dimmed')).toBe(false);
+  expect(rowEl(oid(4))!.hasAttribute('data-dimmed')).toBe(false);
+  expect(rowEl(oid(1))!.hasAttribute('data-dimmed')).toBe(false);
+  fireEvent.mouseLeave(screen.getByText('feature'));
+  expect(rowEls().some((e) => e.hasAttribute('data-dimmed'))).toBe(false);
+});
+
+test('a checkout that is not a repo shows no graph', async () => {
+  const fetch = stubGraph({ ...linearWorld(3), summaries: { '': new Response(JSON.stringify({ error: 'not a git repository', code: 'NOT_A_REPO' }), { status: 409 }) } });
+  await loadSummary(TAB);
+  const { container } = render(<GraphPanel tab={TAB} />);
+  await act(async () => { await Promise.resolve(); });
+  expect(container.textContent).toBe('');
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(0);
+});

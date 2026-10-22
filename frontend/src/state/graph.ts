@@ -71,7 +71,9 @@ const put = (tab: Tab, f: (g: GraphData) => GraphData, at = epoch) => {
   graphStore.set((m) => new Map(m).set(key, f(m.get(key) ?? EMPTY_GRAPH)));
 };
 const errInfo = (e: unknown): ErrInfo => ({ message: e instanceof Error ? e.message : String(e), code: e instanceof ApiError ? e.code ?? null : null });
-const cancelled = (e: unknown, signal?: AbortSignal) => signal?.aborted || (e instanceof ApiError && e.code === 'CANCELLED');
+const cancelled = (e: unknown, signal?: AbortSignal) => signal?.aborted || e instanceof ResetError || (e instanceof ApiError && e.code === 'CANCELLED');
+/** The store was reset (tests) while a load ran: the load stops without another request. */
+class ResetError extends Error {}
 
 /** First show of a checkout's graph: loads it unless it already has data. */
 export function openGraph(tab: Tab): Promise<void> {
@@ -115,7 +117,7 @@ async function refreshOnce(tab: Tab, reason: RefreshReason, at: number): Promise
   let read: { refs: RefsResult; checkouts: Checkout[] };
   try {
     // A visibility change only re-resolves the tips of what is already loaded.
-    read = reason === 'prefs' && prev.refs ? { refs: prev.refs, checkouts: prev.checkouts } : await readRefs(tab, reason);
+    read = reason === 'prefs' && prev.refs ? { refs: prev.refs, checkouts: prev.checkouts } : await readRefs(tab, reason, at);
   } catch (e) {
     // A cancel the user asked for is not an error: the graph stays as it was.
     if (cancelled(e)) return put(tab, (g) => ({ ...g, status: g.refs ? 'ready' : prev.status }), at);
@@ -134,6 +136,7 @@ async function refreshOnce(tab: Tab, reason: RefreshReason, at: number): Promise
     const commits: CommitItem[] = [];
     let skip: number | null = 0;
     while (skip !== null && commits.length < target && tips.length) {
+      if (at !== epoch) return;
       const page: PageResult = await runOp<PageResult>('graph.page', tab, { tips, skip, limit: Math.min(RELOAD_CHUNK, target - commits.length) });
       commits.push(...page.items);
       skip = page.nextCursor;
@@ -150,14 +153,15 @@ async function refreshOnce(tab: Tab, reason: RefreshReason, at: number): Promise
 }
 
 /** graph.refs plus every cc checkout's summary (the header's own one is reused on first show). */
-async function readRefs(tab: Tab, reason: RefreshReason): Promise<{ refs: RefsResult; checkouts: Checkout[] }> {
+async function readRefs(tab: Tab, reason: RefreshReason, at: number): Promise<{ refs: RefsResult; checkouts: Checkout[] }> {
   const [refs, wts] = await Promise.all([
     runOp<RefsResult>('graph.refs', tab),
     // Without cc's worktree list the graph still shows the own checkout.
     listWorktrees(tab.project).catch(() => []),
   ]);
   const targets: Target[] = [{ project: tab.project, worktree: null }, ...wts.map((w) => ({ project: tab.project, worktree: w.worktreeName }))];
-  await mapLimit(targets.filter((t) => reason !== 'open' || tabKey(t) !== tabKey(tab)), SUMMARY_CONCURRENCY, (t) => loadSummary(t));
+  if (at !== epoch) throw new ResetError();
+  await mapLimit(targets.filter((t) => reason !== 'open' || tabKey(t) !== tabKey(tab)), SUMMARY_CONCURRENCY, (t) => (at === epoch ? loadSummary(t) : Promise.resolve()));
   return { refs, checkouts: targets.map((t) => toCheckout(t, tab)) };
 }
 
@@ -190,6 +194,7 @@ export async function loadNextPage(tab: Tab, signal?: AbortSignal): Promise<void
   } catch (e) {
     put(tab, (x) => ({ ...x, pageLoading: false }), at);
     if (cancelled(e, signal)) return;
+    if (at !== epoch) return;
     await refreshGraph(tab, 'page-error');
     if (getGraph(tab).tipsKey === tipsKey) put(tab, (x) => ({ ...x, pageError: errInfo(e) }), at);
   }
@@ -199,8 +204,9 @@ export type SeekResult = 'found' | 'end' | 'limit' | 'cancelled';
 
 /** Pages forward until `oid` is loaded: at most `maxPages` pages, stopping at the snapshot's end or on `signal`. */
 export async function loadUntil(tab: Tab, oid: string, { maxPages = 20, signal }: { maxPages?: number; signal?: AbortSignal } = {}): Promise<SeekResult> {
+  const at = epoch;
   for (let pages = 0; ; pages++) {
-    if (signal?.aborted) return 'cancelled';
+    if (signal?.aborted || at !== epoch) return 'cancelled';
     const g = getGraph(tab);
     if (g.commits.some((c) => c.oid === oid)) return 'found';
     if (g.nextSkip === null || g.status !== 'ready') return 'end';
@@ -283,6 +289,9 @@ export function watchGraph(tab: Tab, now: () => number = Date.now): () => void {
     document.removeEventListener('visibilitychange', onFocus);
   };
 }
+
+/** A checkout's graph data, read only (the graph panel opens and watches it). */
+export const useGraphData = (tab: Tab): GraphData => useStore(graphStore).get(tabKey(tab)) ?? EMPTY_GRAPH;
 
 /** A checkout's graph data; opens it once the own summary loaded (a failed summary — not a repo — loads nothing). */
 export function useGraph(tab: Tab): GraphData {

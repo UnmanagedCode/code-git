@@ -1,0 +1,258 @@
+import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import { ArchiveIcon, ChevronDownIcon, ChevronRightIcon, CloudIcon, EyeIcon, EyeOffIcon, FolderGit2Icon, GitBranchIcon, PinIcon, TagIcon, TargetIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { useMediaQuery } from '@/lib/useMediaQuery';
+import { cn } from '@/lib/utils';
+import { ContextMenuHost, openContextMenu } from '@/shell/ContextMenuHost';
+import { useGraphData } from '@/state/graph';
+import { toggled, updatePrefs, useGraphPrefs, type GraphPrefs, type Section } from '@/state/graphPrefs';
+import type { Tab } from '@/state/tabs';
+import { CONTEXT, type RefCtx, type RemoteCtx, type StashCtx, type WorktreeCtx } from './contexts';
+import { startBranchDrag, toDragRef, useDropActive } from './drag';
+import { requestJump } from './jump';
+import { WIDE_GRAPH_QUERY } from './media';
+import { ownWorktree, worktreeName } from './labels';
+import type { Checkout, GitWorktree, Ref, Stash } from './types';
+import { resolveVisibility, sectionOf, type Visibility } from './visibility';
+
+const HOST = 'refs';
+
+/** The refs panel (left slot; a dialog on narrow screens): sections with hide / solo / pin, a filter, jump on click. */
+export function RefsPanel({ tab, inDialog = false }: { tab: Tab | null; inDialog?: boolean }) {
+  const wide = useMediaQuery(WIDE_GRAPH_QUERY);
+  if (!tab || (!inDialog && !wide)) return null;
+  return <RefsView tab={tab} />;
+}
+
+function IconToggle({ label, on, disabled, onClick, children }: { label: string; on: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={on}
+      disabled={disabled}
+      className={cn(
+        'flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-30',
+        on ? 'text-warning opacity-100' : 'opacity-0 group-hover:opacity-100',
+      )}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function RefsView({ tab }: { tab: Tab }) {
+  const data = useGraphData(tab);
+  const prefs = useGraphPrefs(tab.project);
+  const [filter, setFilter] = useState('');
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const vis = useMemo(() => (data.refs ? resolveVisibility(data.refs, prefs) : null), [data.refs, prefs]);
+  if (!data.refs || !vis) return <p className="p-3 text-sm text-muted-foreground">{data.status === 'error' ? 'Refs could not be loaded.' : 'Loading refs…'}</p>;
+  const refs = data.refs;
+  const f = filter.trim().toLowerCase();
+  const match = (s: string) => !f || s.toLowerCase().includes(f);
+  const set = (fn: (p: GraphPrefs) => GraphPrefs) => updatePrefs(tab.project, fn);
+  const toggleCollapsed = (id: string) => setCollapsed((c) => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const menu = (e: MouseEvent, context: string, ctx: unknown) => {
+    e.preventDefault();
+    openContextMenu({ host: HOST, context, ctx, at: { x: e.clientX, y: e.clientY } });
+  };
+
+  const byKind = (k: Ref['kind']) => refs.refs.filter((r) => r.kind === k && match(r.short));
+  const pinnedFirst = (list: Ref[]) => [...list.filter((r) => prefs.pinned.includes(r.name)), ...list.filter((r) => !prefs.pinned.includes(r.name))];
+  const locals = pinnedFirst(byKind('local'));
+  const remotes = byKind('remote');
+  const remoteNames = [...new Set(refs.refs.filter((r) => r.kind === 'remote').map((r) => r.remote ?? ''))].sort();
+  const tags = byKind('tag');
+  const stashes = refs.stashes.filter((s) => match(s.selector) || match(s.subject));
+  const own = refs.worktrees ? ownWorktree(refs.head, refs.worktrees) : null;
+  const worktrees = (refs.worktrees ?? []).filter((w) => !w.bare && match(worktreeName(w, data.checkouts).name));
+
+  const sectionHidden = (s: Section, list: Ref[]) => prefs.hiddenSections.includes(s) || list.some((r) => prefs.hidden.includes(r.name));
+  const showAll = (s: Section) => set((p) => ({
+    ...p, hiddenSections: p.hiddenSections.filter((x) => x !== s),
+    hidden: s === 'stashes' ? p.hidden : p.hidden.filter((n) => !refs.refs.some((r) => r.name === n && sectionOf(r) === s)),
+    hiddenRemotes: s === 'remote' ? [] : p.hiddenRemotes,
+  }));
+
+  const head = (s: Section | 'worktrees', title: string, count: number, list: Ref[] = []) => (
+    <div className="group flex items-center gap-1 px-2 pt-2 pb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <button type="button" className="flex min-w-0 flex-1 items-center gap-1 text-left" aria-expanded={!collapsed.has(s)} onClick={() => toggleCollapsed(s)}>
+        {collapsed.has(s) ? <ChevronRightIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
+        <span className="truncate">{title}</span>
+        <span className="font-normal">{count}</span>
+      </button>
+      {s !== 'worktrees' && sectionHidden(s, list) && (
+        <button type="button" className="rounded px-1 font-normal normal-case hover:bg-accent hover:text-foreground" onClick={() => showAll(s)}>Show all</button>
+      )}
+      {s !== 'worktrees' && (
+        <IconToggle label={`${prefs.hiddenSections.includes(s) ? 'Show' : 'Hide'} ${title}`} on={prefs.hiddenSections.includes(s)}
+          onClick={() => set((p) => ({ ...p, hiddenSections: toggled(p.hiddenSections, s, !p.hiddenSections.includes(s)) }))}>
+          {prefs.hiddenSections.includes(s) ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+        </IconToggle>
+      )}
+      {s !== 'worktrees' && s !== 'stashes' && (
+        <IconToggle label={`${prefs.soloedSections.includes(s) ? 'Unsolo' : 'Solo'} ${title}`} on={prefs.soloedSections.includes(s)}
+          onClick={() => set((p) => ({ ...p, soloedSections: toggled(p.soloedSections, s, !p.soloedSections.includes(s)) }))}>
+          <TargetIcon className="size-3.5" />
+        </IconToggle>
+      )}
+    </div>
+  );
+
+  return (
+    <nav className="flex flex-col pb-3 text-sm" aria-label="Refs">
+      <div className="p-2">
+        <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter refs" aria-label="Filter refs" className="h-8" />
+      </div>
+
+      {head('local', 'Local', locals.length, locals)}
+      {!collapsed.has('local') && (
+        <ul aria-label="Local branches">
+          {locals.map((r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} onMenu={(e) => menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx)} />)}
+        </ul>
+      )}
+
+      {head('remote', 'Remotes', remotes.length, remotes)}
+      {!collapsed.has('remote') && remoteNames.map((name) => {
+        const list = remotes.filter((r) => r.remote === name);
+        if (f && !list.length) return null;
+        const id = `remote:${name}`;
+        const hidden = prefs.hiddenRemotes.includes(name);
+        const soloed = prefs.soloedRemotes.includes(name);
+        return (
+          <div key={name}>
+            <div className="group flex items-center gap-1 py-0.5 pr-2 pl-4" onContextMenu={(e) => menu(e, CONTEXT.remote, { tab, remote: name } satisfies RemoteCtx)}>
+              <button type="button" className={cn('flex min-w-0 flex-1 items-center gap-1 text-left', hidden && 'opacity-50')} aria-expanded={!collapsed.has(id)} onClick={() => toggleCollapsed(id)}>
+                {collapsed.has(id) ? <ChevronRightIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
+                <CloudIcon className="size-3.5 text-muted-foreground" />
+                <span className="truncate">{name}</span>
+              </button>
+              <IconToggle label={`${hidden ? 'Show' : 'Hide'} remote ${name}`} on={hidden} onClick={() => set((p) => ({ ...p, hiddenRemotes: toggled(p.hiddenRemotes, name, !hidden) }))}>
+                {hidden ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+              </IconToggle>
+              <IconToggle label={`${soloed ? 'Unsolo' : 'Solo'} remote ${name}`} on={soloed} onClick={() => set((p) => ({ ...p, soloedRemotes: toggled(p.soloedRemotes, name, !soloed) }))}>
+                <TargetIcon className="size-3.5" />
+              </IconToggle>
+            </div>
+            {!collapsed.has(id) && (
+              <ul aria-label={`Branches on ${name}`}>
+                {list.map((r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} indent onMenu={(e) => menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx)} />)}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+
+      {head('tags', 'Tags', tags.length, tags)}
+      {!collapsed.has('tags') && (
+        <ul aria-label="Tags">
+          {tags.map((r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} onMenu={(e) => menu(e, CONTEXT.tag, { tab, ref: r } satisfies RefCtx)} />)}
+        </ul>
+      )}
+
+      {head('stashes', 'Stashes', stashes.length)}
+      {!collapsed.has('stashes') && (
+        <ul aria-label="Stashes">
+          {stashes.map((s) => <StashRow key={s.oid} tab={tab} s={s} hidden={!vis.stashesVisible} onMenu={(e) => menu(e, CONTEXT.stash, { tab, stash: s } satisfies StashCtx)} />)}
+        </ul>
+      )}
+
+      {head('worktrees', 'Worktrees', worktrees.length)}
+      {!collapsed.has('worktrees') && (
+        <>
+          {refs.worktreesError !== null && (
+            <p className="px-4 py-1 text-xs text-warning" role="note">Worktree labels need git 2.36 or later: {refs.worktreesError}</p>
+          )}
+          <ul aria-label="Worktrees">
+            {worktrees.map((w) => (
+              <WorktreeRow key={w.path} tab={tab} w={w} isOwn={w === own} checkouts={data.checkouts}
+                onMenu={(e, cc) => menu(e, CONTEXT.worktree, { tab, worktree: w, ccCheckout: cc } satisfies WorktreeCtx)} />
+            ))}
+          </ul>
+        </>
+      )}
+      <ContextMenuHost host={HOST} />
+    </nav>
+  );
+}
+
+const KIND_ICON = { local: GitBranchIcon, remote: CloudIcon, tag: TagIcon } as const;
+
+function RefRow({ tab, r, vis, prefs, all, indent = false, onMenu }: {
+  tab: Tab; r: Ref; vis: Visibility; prefs: GraphPrefs; all: Ref[]; indent?: boolean; onMenu: (e: MouseEvent) => void;
+}) {
+  const Icon = KIND_ICON[r.kind];
+  const shown = vis.visible.has(r.name);
+  const hidden = prefs.hidden.includes(r.name);
+  const soloed = prefs.soloed.includes(r.name);
+  const pinned = prefs.pinned.includes(r.name);
+  const set = (fn: (p: GraphPrefs) => GraphPrefs) => updatePrefs(tab.project, fn);
+  const jump = () => { if (r.oid) requestJump(tab, r.oid); };
+  const source = toDragRef(r);
+  const dropActive = useDropActive(source ? r.name : '\0');
+  return (
+    <li
+      className={cn('group flex items-center gap-1 py-0.5 pr-2', indent ? 'pl-9' : 'pl-5', !shown && 'opacity-50', dropActive && 'bg-accent ring-2 ring-ring ring-inset')}
+      data-ref={r.name}
+      data-drop-ref={source ? r.name : undefined}
+      data-drop-active={dropActive ? '' : undefined}
+      onContextMenu={onMenu}
+      onPointerDown={(e) => {
+        if (source) startBranchDrag(e, { tab, source, host: HOST, resolve: (n) => { const x = all.find((y) => y.name === n); return x ? toDragRef(x) : null; } });
+      }}
+    >
+      {pinned ? (
+        <button type="button" aria-label={`Jump to pinned ${r.short}`} className="shrink-0 text-primary" onClick={jump}><PinIcon className="size-3.5" /></button>
+      ) : <Icon className="size-3.5 shrink-0 text-muted-foreground" />}
+      <button type="button" className={cn('min-w-0 flex-1 truncate text-left hover:underline', r.isHead && 'font-semibold')} title={r.name} disabled={!r.oid} onClick={jump}>
+        {r.kind === 'remote' && r.remote ? r.short.slice(r.remote.length + 1) : r.short}
+      </button>
+      {r.kind === 'local' && (
+        <IconToggle label={pinned ? `Unpin ${r.short}` : `Pin ${r.short} to left`} on={pinned} onClick={() => set((p) => ({ ...p, pinned: toggled(p.pinned, r.name, !pinned) }))}>
+          <PinIcon className="size-3.5" />
+        </IconToggle>
+      )}
+      <IconToggle label={`${hidden ? 'Show' : 'Hide'} ${r.short}`} on={hidden} disabled={r.isHead} onClick={() => set((p) => ({ ...p, hidden: toggled(p.hidden, r.name, !hidden) }))}>
+        {hidden ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+      </IconToggle>
+      <IconToggle label={`${soloed ? 'Unsolo' : 'Solo'} ${r.short}`} on={soloed} onClick={() => set((p) => ({ ...p, soloed: toggled(p.soloed, r.name, !soloed) }))}>
+        <TargetIcon className="size-3.5" />
+      </IconToggle>
+    </li>
+  );
+}
+
+function StashRow({ tab, s, hidden, onMenu }: { tab: Tab; s: Stash; hidden: boolean; onMenu: (e: MouseEvent) => void }) {
+  return (
+    <li className={cn('flex items-center gap-1 py-0.5 pr-2 pl-5', hidden && 'opacity-50')} onContextMenu={onMenu}>
+      <ArchiveIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" title={s.subject}
+        onClick={() => { if (s.parents[0]) requestJump(tab, s.parents[0], `stash:${s.oid}`); }}>
+        <span className="font-mono text-xs text-muted-foreground">{s.selector}</span> {s.subject}
+      </button>
+    </li>
+  );
+}
+
+function WorktreeRow({ tab, w, isOwn, checkouts, onMenu }: {
+  tab: Tab; w: GitWorktree; isOwn: boolean; checkouts: Checkout[]; onMenu: (e: MouseEvent, cc: Checkout['target'] | null) => void;
+}) {
+  const { name, checkout } = worktreeName(w, checkouts);
+  const n = checkout?.counts;
+  const dirty = !!n && n.staged + n.unstaged + n.untracked + n.conflicted > 0;
+  return (
+    <li className="flex items-center gap-1.5 py-0.5 pr-2 pl-5" onContextMenu={(e) => onMenu(e, checkout?.target ?? null)} data-worktree={name}>
+      <FolderGit2Icon className="size-3.5 shrink-0 text-muted-foreground" />
+      <button type="button" className={cn('min-w-0 flex-1 truncate text-left hover:underline', isOwn && 'font-semibold')} title={w.path}
+        disabled={!w.head} onClick={() => { if (w.head) requestJump(tab, w.head); }}>
+        {name}
+        <span className="ml-1.5 font-mono text-xs text-muted-foreground">{w.branch ? w.branch.replace(/^refs\/heads\//, '') : w.head?.slice(0, 7) ?? ''}</span>
+      </button>
+      {dirty && <Badge variant="info">dirty</Badge>}
+      {w.locked && <Badge variant="outline">locked</Badge>}
+    </li>
+  );
+}

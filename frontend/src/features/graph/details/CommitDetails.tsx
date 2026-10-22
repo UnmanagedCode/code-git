@@ -1,0 +1,143 @@
+import { useEffect, useState } from 'react';
+import { CopyIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ApiError } from '@/lib/api';
+import { runOp } from '@/lib/endpoints';
+import { useMediaQuery } from '@/lib/useMediaQuery';
+import { ContextMenuHost } from '@/shell/ContextMenuHost';
+import { useGraphData } from '@/state/graph';
+import { useGraphSelection, type SelectedRow } from '@/state/graphSelection';
+import { dispatchTabs, tabKey, type Tab } from '@/state/tabs';
+import { formatTime } from '../GraphRowView';
+import { initials } from '../initials';
+import { requestJump } from '../jump';
+import { WIDE_GRAPH_QUERY } from '../media';
+import type { Checkout, CommitDetail } from '../types';
+import { FileList } from './FileList';
+import { SignatureBadge } from './SignatureBadge';
+
+const HOST = 'details';
+
+/** The details panel (right slot; a dialog on narrow screens) for the graph's selection. */
+export function CommitDetails({ tab, inDialog = false }: { tab: Tab | null; inDialog?: boolean }) {
+  const wide = useMediaQuery(WIDE_GRAPH_QUERY);
+  if (!tab || (!inDialog && !wide)) return null;
+  return <DetailsView key={tabKey(tab)} tab={tab} />;
+}
+
+function DetailsView({ tab }: { tab: Tab }) {
+  const sel = useGraphSelection(tab);
+  const data = useGraphData(tab);
+  let body;
+  if (!sel.items.length) body = <p className="text-sm text-muted-foreground">Select a commit</p>;
+  else if (sel.items.length > 1) body = <Multi items={sel.items} commits={data.commits} />;
+  else {
+    const it = sel.items[0];
+    if (it.kind === 'wip') {
+      const c = data.checkouts.find((x) => tabKey(x.target) === tabKey(it.checkout));
+      body = c ? <Wip c={c} /> : <p className="text-sm text-muted-foreground">This checkout is gone.</p>;
+    } else {
+      body = <Commit key={it.oid} tab={tab} oid={it.oid} />;
+    }
+  }
+  return (
+    <aside className="flex flex-col gap-3 p-3" aria-label="Commit details">
+      {body}
+      <ContextMenuHost host={HOST} />
+    </aside>
+  );
+}
+
+function Multi({ items, commits }: { items: SelectedRow[]; commits: { oid: string; subject: string }[] }) {
+  return (
+    <>
+      <h2 className="text-sm font-semibold">{items.length} selected</h2>
+      <ul className="flex flex-col gap-0.5 text-sm">
+        {items.map((it, i) => (
+          <li key={i} className="flex gap-2">
+            {it.kind === 'wip' ? <span className="text-muted-foreground">// WIP {it.checkout.worktree ?? it.checkout.project}</span> : (
+              <>
+                <span className="font-mono text-xs text-muted-foreground">{it.oid.slice(0, 7)}</span>
+                <span className="truncate">{commits.find((c) => c.oid === it.oid)?.subject ?? ''}</span>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function Wip({ c }: { c: Checkout }) {
+  const n = c.counts;
+  return (
+    <>
+      <h2 className="text-sm font-semibold">// WIP <span className="font-normal">{c.name}</span></h2>
+      <p className="text-sm">{c.branch ? <span className="font-mono">{c.branch.replace(/^refs\/heads\//, '')}</span> : <span className="text-muted-foreground">detached</span>}</p>
+      {n && <p className="text-sm text-muted-foreground">{n.staged} staged · {n.unstaged} unstaged · {n.untracked} untracked · {n.conflicted} conflicted</p>}
+      {!c.isOwn && <Button variant="outline" size="sm" className="self-start" onClick={() => dispatchTabs({ type: 'open', tab: c.target })}>Open worktree</Button>}
+    </>
+  );
+}
+
+function Person({ label, name, email, time }: { label: string; name: string; email: string; time: number }) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border-2 border-primary text-xs font-semibold">{initials(name, email)}</span>
+      <span className="min-w-0">
+        <span className="block truncate"><span className="text-muted-foreground">{label} </span>{name} <span className="text-muted-foreground">&lt;{email}&gt;</span></span>
+        <span className="block text-xs text-muted-foreground">{formatTime(time)}</span>
+      </span>
+    </div>
+  );
+}
+
+function Commit({ tab, oid }: { tab: Tab; oid: string }) {
+  const [d, setD] = useState<CommitDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    runOp<CommitDetail>('graph.commit', tab, { oid }, { signal: ac.signal })
+      .then((r) => { if (!ac.signal.aborted) setD(r); })
+      .catch((e) => { if (!ac.signal.aborted && !(e instanceof ApiError && e.code === 'CANCELLED')) setError(e instanceof Error ? e.message : String(e)); });
+    return () => ac.abort();
+  }, [oid]);
+  if (error) return <p className="text-sm text-destructive" role="alert">{error}</p>;
+  if (!d) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  const sameCommitter = d.committer.name === d.author.name && d.committer.email === d.author.email;
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        <h2 className="text-sm font-semibold break-words">{d.subject}</h2>
+        {d.body && <p className="text-sm break-words whitespace-pre-wrap text-muted-foreground">{d.body}</p>}
+      </div>
+      <Person label="Author" name={d.author.name} email={d.author.email} time={d.author.time} />
+      {!sameCommitter && <Person label="Committer" name={d.committer.name} email={d.committer.email} time={d.committer.time} />}
+      {d.coAuthors.length > 0 && (
+        <section aria-label="Co-authors" className="text-sm">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase">Co-authors</h3>
+          <ul>{d.coAuthors.map((c, i) => <li key={i}>{c.name} <span className="text-muted-foreground">&lt;{c.email}&gt;</span></li>)}</ul>
+        </section>
+      )}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-mono text-xs break-all" aria-label="Commit SHA">{d.oid}</span>
+        <Button variant="ghost" size="icon-sm" className="size-6" aria-label="Copy SHA" onClick={() => navigator.clipboard?.writeText(d.oid)}><CopyIcon /></Button>
+        <SignatureBadge status={d.signature.status} signer={d.signature.signer} keyId={d.signature.key} />
+      </div>
+      {d.parents.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 text-sm" role="group" aria-label="Parents">
+          <span className="text-muted-foreground">{d.parents.length > 1 ? 'Parents' : 'Parent'}</span>
+          {d.parents.map((p) => (
+            <Button key={p} variant="outline" size="sm" className="h-6 px-1.5 font-mono text-xs" aria-label={`Jump to parent ${p.slice(0, 7)}`} onClick={() => requestJump(tab, p)}>{p.slice(0, 7)}</Button>
+          ))}
+        </div>
+      )}
+      {d.parents.length > 1 && <p className="text-xs text-muted-foreground">Changes against the first parent</p>}
+      {d.files ? <FileList tab={tab} commit={d.oid} parent={d.parents[0] ?? null} files={d.files} host={HOST} /> : (
+        <p className="text-sm text-destructive" role="alert">
+          {d.filesError?.code === 'OUTPUT_TOO_LARGE' ? 'Too many changes to list.' : `The changed files could not be listed: ${d.filesError?.message ?? 'unknown error'}`}
+        </p>
+      )}
+    </>
+  );
+}

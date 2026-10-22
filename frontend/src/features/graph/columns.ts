@@ -18,7 +18,13 @@ export const COLUMNS: Record<ColumnId, ColumnDef> = {
 
 export const COLUMN_IDS = Object.keys(COLUMNS) as ColumnId[];
 export const OPTIONAL_COLUMNS = COLUMN_IDS.filter((id) => COLUMNS[id].optional) as OptionalColumnId[];
-export const isColumnId = (v: unknown): v is ColumnId => typeof v === 'string' && v in COLUMNS;
+export const isColumnId = (v: unknown): v is ColumnId => typeof v === 'string' && Object.hasOwn(COLUMNS, v);
 
 /** `w` within the column's resize bounds. */
 export const clampWidth = (id: ColumnId, w: number): number => Math.min(COLUMNS[id].max, Math.max(COLUMNS[id].min, Math.round(w)));
+
+/** Each column's width class: resizable widths come from `--col-<id>` (set with setCssPx), the message takes the rest. */
+export const CELL_CLASS: Record<ColumnId, string> = {
+  refs: 'w-(--col-refs)', graph: 'w-(--col-graph)', message: 'min-w-30 flex-1', author: 'w-(--col-author)',
+  date: 'w-(--col-date)', sha: 'w-(--col-sha)', changes: 'w-(--col-changes)',
+};

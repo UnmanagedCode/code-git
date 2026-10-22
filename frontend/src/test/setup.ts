@@ -3,6 +3,7 @@ import { afterEach, beforeEach, vi } from 'vitest';
 import { resetDiff } from '@/state/diff';
 import { resetShownPanels } from '@/state/shownPanel';
 import { resetDrag } from '@/features/graph/drag';
+import { resetJump } from '@/features/graph/jump';
 import { contextMenuStore } from '@/shell/ContextMenuHost';
 import { resetGraph } from '@/state/graph';
 import { resetGraphPrefs } from '@/state/graphPrefs';
@@ -27,6 +28,7 @@ afterEach(() => {
   resetGraph();
   resetGraphSelection();
   resetDrag();
+  resetJump();
   contextMenuStore.set(null);
   vi.useRealTimers();
   vi.unstubAllGlobals();

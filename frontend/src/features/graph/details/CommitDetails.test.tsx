@@ -1,0 +1,112 @@
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { expect, test } from 'vitest';
+import { json } from '@/test/fixtures';
+import { commit, oid } from '@/test/graphData';
+import { detailOf, linearWorld, stubGraph } from '@/test/graphBackend';
+import { dispatchSelection, fileIntentStore } from '@/state/graphSelection';
+import { openGraph } from '@/state/graph';
+import { jumpStore } from '../jump';
+import type { GraphRow } from '../types';
+import { CommitDetails, } from './CommitDetails';
+import { FILE_RENDER_CAP } from './FileList';
+
+const TAB = { project: 'app', worktree: null };
+const A = oid(2);
+const P = oid(1);
+const files = [
+  { status: 'A', path: 'src/new.ts', oldPath: null }, { status: 'D', path: 'gone.txt', oldPath: null },
+  { status: 'M', path: 'src/lib/a.ts', oldPath: null }, { status: 'R', path: 'src/b.ts', oldPath: 'b.ts' },
+];
+const rowsOf = (...ids: string[]): GraphRow[] => ids.map((id) => ({ kind: 'commit', id, item: commit(id) }));
+
+async function show(detail: Parameters<typeof detailOf>[1] | Response, select: string[] = [A]) {
+  const world = linearWorld(2);
+  world.detail = () => (detail instanceof Response ? detail : detailOf(commit(A, [P], { subject: 'Fix <b>it</b>' }), detail));
+  const fetch = stubGraph(world);
+  await openGraph(TAB);
+  const rows = rowsOf(A, P);
+  dispatchSelection(TAB, { type: 'click', id: select[0], rows });
+  for (const id of select.slice(1)) dispatchSelection(TAB, { type: 'toggle', id, rows });
+  render(<CommitDetails tab={TAB} />);
+  return fetch;
+}
+
+test('nothing selected asks for a selection', async () => {
+  stubGraph(linearWorld(1));
+  render(<CommitDetails tab={TAB} />);
+  expect(screen.getByText('Select a commit')).toBeTruthy();
+});
+
+test('a commit: subject and body as text, author and a differing committer, co-authors, full SHA, parents that jump', async () => {
+  const fetch = await show({
+    body: 'Line one\n\n<script>alert(1)</script>', committer: { name: 'Cee', email: 'c@x.org', time: 1 },
+    coAuthors: [{ name: 'Bob', email: 'bob@x.org' }], files,
+  });
+  expect(await screen.findByText('Fix <b>it</b>')).toBeTruthy();
+  expect(screen.getByText(/Line one/).textContent).toBe('Line one\n\n<script>alert(1)</script>');
+  expect(document.querySelector('aside script, aside b')).toBeNull();
+  expect(screen.getByText('Committer')).toBeTruthy();
+  expect(within(screen.getByRole('region', { name: 'Co-authors' })).getByText('Bob')).toBeTruthy();
+  expect(screen.getByLabelText('Commit SHA').textContent).toBe(A);
+  fireEvent.click(screen.getByRole('button', { name: `Jump to parent ${P.slice(0, 7)}` }));
+  expect(jumpStore.get()).toMatchObject({ oid: P, rowId: P });
+  expect(fetch.calls.find((c) => c.url.pathname === '/api/ops/graph.commit')!.body).toEqual({ target: { project: 'app' }, params: { oid: A } });
+});
+
+test('signature badges per %G? status; none for N', async () => {
+  await show({ signature: { status: 'G', signer: 'Ann', key: 'ABC' } });
+  const badge = await screen.findByText('Signed');
+  expect(badge.getAttribute('title')).toBe('Good signature: Ann, key ABC');
+  for (const [status, text] of [['B', 'Bad signature'], ['R', 'Revoked key'], ['E', 'Unverified'], ['X', 'Expired signature']] as const) {
+    const { SignatureBadge } = await import('./SignatureBadge');
+    const { unmount } = render(<SignatureBadge status={status} signer={null} keyId={null} />);
+    expect(screen.getByText(text).getAttribute('data-signature')).toBe(status);
+    unmount();
+  }
+  const { SignatureBadge } = await import('./SignatureBadge');
+  const { container } = render(<SignatureBadge status="N" signer={null} keyId={null} />);
+  expect(container.textContent).toBe('');
+});
+
+test('the file list: Path and Tree views, the choice persisted; a click publishes a file-open intent and marks the row', async () => {
+  await show({ files });
+  await screen.findByText('4 files');
+  expect(screen.getByText('b.ts → src/b.ts')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
+  expect(localStorage.getItem('code-git:graph:fileView')).toBe('tree');
+  expect(screen.getByText('lib')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Path' }));
+  fireEvent.click(screen.getByRole('button', { name: /src\/lib\/a\.ts/ }));
+  expect(fileIntentStore.get()).toMatchObject({ tab: TAB, commit: A, parent: P, path: 'src/lib/a.ts', oldPath: null, selection: [{ kind: 'commit', oid: A }] });
+  expect(screen.getByRole('button', { name: /src\/lib\/a\.ts/ }).getAttribute('aria-current')).toBe('true');
+});
+
+test('a file list over the cap shows the first FILE_RENDER_CAP and "Show all N"', async () => {
+  const many = Array.from({ length: FILE_RENDER_CAP + 5 }, (_, i) => ({ status: 'M', path: `f${i}.txt`, oldPath: null }));
+  await show({ files: many });
+  await screen.findByText(`${many.length} files`);
+  expect(document.querySelectorAll('[data-file]').length).toBe(FILE_RENDER_CAP);
+  fireEvent.click(screen.getByRole('button', { name: `Show all ${many.length}` }));
+  expect(document.querySelectorAll('[data-file]').length).toBe(many.length);
+});
+
+test('too many changes to list: the metadata renders and the file list says so', async () => {
+  await show({ files: null, filesError: { code: 'OUTPUT_TOO_LARGE', message: 'git output exceeded 33554432 bytes', limitBytes: 33554432 } });
+  expect(await screen.findByText('Fix <b>it</b>')).toBeTruthy();
+  expect(screen.getByRole('alert').textContent).toBe('Too many changes to list.');
+  expect(screen.queryByRole('region', { name: 'Changed files' })).toBeNull();
+});
+
+test('a merge says its changes are against the first parent; a failed load shows its error', async () => {
+  await show({ parents: [P, oid(9)] });
+  expect(await screen.findByText('Changes against the first parent')).toBeTruthy();
+  act(() => dispatchSelection(TAB, { type: 'clear' }));
+  expect(screen.getByText('Select a commit')).toBeTruthy();
+});
+
+test('a failed load shows its error; a multi-selection lists the commits', async () => {
+  await show(json({ error: 'bad object', code: 'GIT_FAILED' }, 422));
+  expect((await screen.findByRole('alert')).textContent).toBe('bad object');
+  act(() => dispatchSelection(TAB, { type: 'toggle', id: P, rows: rowsOf(A, P) }));
+  expect(screen.getByText('2 selected')).toBeTruthy();
+});
