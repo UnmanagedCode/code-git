@@ -117,3 +117,29 @@ test('clicking a ref while the scroll prefetch is loading still jumps to it', as
   await waitFor(() => expect(getSelection(TAB).ids).toEqual([oid(100)]));
   expect(screen.queryByText('Not in the visible graph.')).toBeNull();
 });
+
+test('a stash whose base is not loaded: Show details pages to the base and selects the stash row', async () => {
+  const w = world();
+  const far = stash('f'.repeat(40), oid(100), 1);
+  w.refs.stashes = [...w.refs.stashes, far];
+  await show(w);
+  fireEvent.contextMenu(within(screen.getByRole('list', { name: 'Stashes' })).getByText('stash@{1}'));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Show details' }));
+  await waitFor(() => expect(getSelection(TAB).ids).toEqual([`stash:${far.oid}`]));
+});
+
+test('a pinned remote branch floats to the top of its remote and is marked like a local pin', async () => {
+  await show();
+  fireEvent.click(screen.getByRole('button', { name: 'Pin origin/feat to left' }));
+  expect(getPrefs('app').pinned).toEqual(['refs/remotes/origin/feat']);
+  expect(names('Branches on origin')).toEqual(['refs/remotes/origin/feat', 'refs/remotes/origin/main']);
+  expect(screen.getByRole('button', { name: 'Jump to pinned origin/feat' })).toBeTruthy();
+});
+
+test('hiding a remote shows the Remotes "Show all", which shows it again', async () => {
+  await show();
+  expect(screen.queryByRole('button', { name: 'Show all' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Hide remote up' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Show all' }));
+  expect(getPrefs('app').hiddenRemotes).toEqual([]);
+});

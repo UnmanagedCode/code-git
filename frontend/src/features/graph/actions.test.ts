@@ -83,3 +83,12 @@ test('the diff actions open the commit, the commit vs the working directory, the
   await run('wip', { tab: TAB, checkout: TAB, name: 'app', isOwn: true }, 'View unstaged changes');
   expect(src()).toEqual({ kind: 'unstaged' });
 });
+
+test('remote Show all appears when the remote itself is hidden though none of its branches is', async () => {
+  const c = { tab: TAB, remote: 'origin' };
+  updatePrefs('app', (p) => ({ ...p, hiddenRemotes: ['origin'], hidden: [] }));
+  expect(menu('remote', c)).toEqual(['Show remote', 'Solo remote', 'Show all']);
+  await run('remote', c, 'Show all');
+  expect(getPrefs('app').hiddenRemotes).toEqual([]);
+  expect(menu('remote', { tab: TAB, remote: 'up' })).not.toContain('Show all');
+});

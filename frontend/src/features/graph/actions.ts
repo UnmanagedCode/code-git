@@ -25,7 +25,7 @@ async function copyMessage(tab: CommitCtx['tab'], oid: string, subject: string) 
 }
 const prefs = (c: { tab: { project: string } }) => getPrefs(c.tab.project);
 const set = (c: { tab: { project: string } }, f: (p: GraphPrefs) => GraphPrefs) => updatePrefs(c.tab.project, f);
-const select = (c: CommitCtx | StashCtx, id: string) => {
+const select = (c: CommitCtx, id: string) => {
   const g = getGraph(c.tab);
   const { rows } = buildInputs(g.commits, [], g.refs?.stashes ?? []);
   dispatchSelection(c.tab, { type: 'move', id, rows });
@@ -100,7 +100,11 @@ export const GRAPH_ACTIONS: MenuAction<never>[] = [
   },
   {
     id: 'graph.stash.details', context: 'stash', label: 'Show details', group: 'view', order: 800,
-    run: (c: StashCtx) => select(c, `stash:${c.stash.oid}`),
+    // From the refs panel the stash's base may not be loaded yet: jump (page to it), then select the stash row.
+    run: (c: StashCtx) => {
+      if (c.stash.parents[0]) requestJump(c.tab, c.stash.parents[0], `stash:${c.stash.oid}`);
+      requestDetails(c.tab);
+    },
   },
   {
     id: 'graph.stash.viewChanges', context: 'stash', label: 'View changes', group: 'view', order: 801,

@@ -65,14 +65,15 @@ function RefsView({ tab }: { tab: Tab }) {
   const byKind = (k: Ref['kind']) => refs.refs.filter((r) => r.kind === k && match(r.short));
   const pinnedFirst = (list: Ref[]) => [...list.filter((r) => prefs.pinned.includes(r.name)), ...list.filter((r) => !prefs.pinned.includes(r.name))];
   const locals = pinnedFirst(byKind('local'));
-  const remotes = byKind('remote');
+  const remotes = pinnedFirst(byKind('remote'));
   const remoteNames = [...new Set(refs.refs.filter((r) => r.kind === 'remote').map((r) => r.remote ?? ''))].sort();
   const tags = byKind('tag');
   const stashes = refs.stashes.filter((s) => match(s.selector) || match(s.subject));
   const own = refs.worktrees ? ownWorktree(refs.head, refs.worktrees) : null;
   const worktrees = (refs.worktrees ?? []).filter((w) => !w.bare && match(worktreeName(w, data.checkouts).name));
 
-  const sectionHidden = (s: Section, list: Ref[]) => prefs.hiddenSections.includes(s) || list.some((r) => prefs.hidden.includes(r.name));
+  const sectionHidden = (s: Section, list: Ref[]) => prefs.hiddenSections.includes(s) || list.some((r) => prefs.hidden.includes(r.name))
+    || (s === 'remote' && prefs.hiddenRemotes.length > 0);
   const showAll = (s: Section) => set((p) => ({
     ...p, hiddenSections: p.hiddenSections.filter((x) => x !== s),
     hidden: s === 'stashes' ? p.hidden : p.hidden.filter((n) => !refs.refs.some((r) => r.name === n && sectionOf(r) === s)),
@@ -212,7 +213,7 @@ function RefRow({ tab, r, vis, prefs, all, indent = false, onMenu }: {
       <button type="button" className={cn('min-w-0 flex-1 truncate text-left hover:underline', r.isHead && 'font-semibold')} title={r.name} disabled={!r.oid} onClick={jump}>
         {r.kind === 'remote' && r.remote ? r.short.slice(r.remote.length + 1) : r.short}
       </button>
-      {r.kind === 'local' && (
+      {r.kind !== 'tag' && (
         <IconToggle label={pinned ? `Unpin ${r.short}` : `Pin ${r.short} to left`} on={pinned} onClick={() => set((p) => ({ ...p, pinned: toggled(p.pinned, r.name, !pinned) }))}>
           <PinIcon className="size-3.5" />
         </IconToggle>
