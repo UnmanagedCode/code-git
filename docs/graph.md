@@ -40,7 +40,7 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 - **Path**: commits touching a repo-relative path (literal: `*` and `:(glob)` are characters), with git's default history simplification.
 - Matches come from git over the whole snapshot, not only the loaded rows; matching rows are highlighted (`data-match`). The counter reads `i / n` with "(+m not loaded)"; next/previous moves to the nearest loaded match after/before the focused row, and past the last loaded one pages forward to an unloaded match. Over `SEARCH_MAX` matches the counter says so ("first N matches").
 
-**Jumps** — clicking a ref in the refs panel, a parent in the details panel, **Jump to commit** in a ref menu, or a search match that is not loaded yet pages forward until the commit is loaded, then selects it and scrolls it to the middle. While it pages: "Loading… N commits" (**Stop** or Esc cancels). After `SEEK_PAGES` pages: "Not within the first N commits" with **Load more**; when the snapshot ends first: "Not in the visible graph" (a SHA search match need not be reachable from the visible refs).
+**Jumps** — clicking a ref, a pinned-ref icon, a stash or a worktree in the refs panel, a parent in the details panel, **Jump to commit** in a ref menu, or a search match that is not loaded yet pages forward until the commit is loaded, then selects it and scrolls it to the middle. A jump requested while a diff is shown closes the diff first, so the graph is back to show it. While it pages: "Loading… N commits" (**Stop** or Esc cancels). After `SEEK_PAGES` pages: "Not within the first N commits" with **Load more**; when the snapshot ends first: "Not in the visible graph" (a SHA search match need not be reachable from the visible refs). A page that fails ends the jump silently: the page-error banner says why, with **Retry**. A load already running (the first load, a refresh, the scroll prefetch) is waited for and does not count against `SEEK_PAGES`.
 
 **Drag** — drag a branch chip (graph or refs panel; local or remote) onto another branch chip: the target is highlighted (`data-drop-active`), Esc cancels, dropping on itself does nothing. A drop opens the `branch-drop` menu; with no action registered for it, nothing opens.
 
@@ -54,7 +54,7 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 | Multi-selection | View combined diff (when the selection has one), Copy N SHAs (newline-separated) |
 | Branch / tag | Jump to commit, Copy name, Hide / Show (not offered for the checked-out branch), Solo / Unsolo; branches also Pin to left / Unpin |
 | Remote | Hide remote / Show remote, Solo remote / Unsolo remote, Show all (while something on that remote is hidden) |
-| Stash | Show details, View changes, Copy message, Hide stashes |
+| Stash | Show details (not while the Stashes section is hidden: there is no stash row to select), View changes, Copy message, Hide stashes |
 | WIP | View unstaged changes, View staged changes; another checkout's also Open X in a tab |
 | Worktree | Open in a tab (a cc checkout), Copy path |
 | File | Copy path |
@@ -78,7 +78,7 @@ Another checkout's WIP opens in that checkout's tab (opened if needed).
 
 - **Filter refs**: case-insensitive substring of the short name (stashes: selector or subject; worktrees: their name).
 - Sections, each collapsible: **Local** (pinned first, with a pin icon that jumps), **Remotes** (one group per remote, pinned first likewise), **Tags**, **Stashes**, **Worktrees** (every git worktree of the project with its cc name, branch or detached commit, **dirty** and **locked** badges; when git cannot list them — git < 2.36 — a notice with git's message).
-- A row click jumps to its commit. Hover a row for its pin (branches, local or remote), eye (hide) and target (solo) toggles; active toggles stay visible. The checked-out branch's eye is disabled. Refs not shown in the graph are dimmed.
+- A row click jumps to its commit; a stash row to its stash row, or — while the Stashes section is hidden — to its base commit. Hover a row for its pin (branches, local or remote), eye (hide) and target (solo) toggles; active toggles stay visible. The checked-out branch's eye is disabled. Refs not shown in the graph are dimmed.
 - Section headers: eye (hide the section), target (solo the section; not for Stashes), **Show all** while anything in the section is hidden. Remote group headers: eye and target for the remote, right-click for the remote menu.
 - **Visibility rules** (`resolveVisibility`): any solo (ref, remote or section) shows only the soloed refs, overriding hides; otherwise every ref minus the hidden ones, hidden remotes and hidden sections; the checked-out branch is never hidden. HEAD and detached worktree HEADs are always graphed unless soloing. A WIP row shows only for a checkout with uncommitted changes: the own checkout's whatever is hidden or soloed; another's when its branch is shown, or when it is detached and nothing is soloed.
 - Hide, solo, pin and the columns persist **per project** (all its checkouts share them) under storage key `code-git:graph:<project>`; names of refs that no longer exist are kept and do nothing.
@@ -114,7 +114,7 @@ Below Tailwind's `lg` (`WIDE_GRAPH_QUERY`, 64rem) the side slots are hidden: the
   Concurrent triggers coalesce: one run in flight plus one queued rerun.
 - **A run**: `graph.refs`, cc's worktree list and the `repo.summary` of every checkout of the project (at most `SUMMARY_CONCURRENCY` at once, into the shared summary store) — on the first show without the own checkout's, which the header has just loaded; then the tips. Unchanged tips: only labels, WIP rows and the layout update. Changed tips: pages are read (`RELOAD_CHUNK` at a time) until as many rows as before are loaded (at least `PAGE`), then swapped in with **one** store update — the old rows stay meanwhile.
 - **Kept across a swap**: the first visible row stays at the same offset (else the first surviving selected row is scrolled to); the selection keeps the rows that still exist.
-- **Kept across a remount** (a diff closed, a tab shown again): the same scroll anchor (`viewMemory`), and the focus goes back to the list when the panel that replaced the graph took it away.
+- **Kept across a remount** (a diff closed, a tab shown again): the same scroll anchor and search query and mode (`viewMemory`), and the focus goes back to the list when the panel that replaced the graph took it away.
 - **Errors**: a failing `graph.page` (e.g. a tip garbage-collected) triggers one refresh; when the tips did not move, the error stays with **Retry**. A failing refs read shows the error with **Retry**, keeping any rows already shown. A cancel (from the activity panel) is not an error.
 
 ## Lane layout
