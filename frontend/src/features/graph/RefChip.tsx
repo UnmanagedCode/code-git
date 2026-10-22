@@ -12,6 +12,7 @@ export interface ChipHandlers {
   onContextMenu?: (e: MouseEvent, l: Label) => void;
   onPointerDown?: (e: PointerEvent, l: Label) => void;
   onClick?: (l: Label) => void;
+  onDoubleClick?: (l: Label) => void;
 }
 
 /** The ref name a chip stands for, as drag/drop data: branches only. */
@@ -41,6 +42,7 @@ export function RefChip({ label, color, handlers }: { label: Label; color: numbe
       onContextMenu={(e) => handlers?.onContextMenu?.(e, label)}
       onPointerDown={(e) => handlers?.onPointerDown?.(e, label)}
       onClick={(e) => { if (handlers?.onClick) { e.stopPropagation(); handlers.onClick(label); } }}
+      onDoubleClick={(e) => { if (handlers?.onDoubleClick) { e.stopPropagation(); handlers.onDoubleClick(label); } }}
     >
       <Icon className="size-3 shrink-0" />
       <span className="truncate">{clip(label.text)}</span>

@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from '@/components/ui/dropdown-menu';
-import { actionsFor, labelOf, type MenuAction } from './menus';
+import { actionsFor, labelOf, type ResolvedAction } from './menus';
 
-function items<C>(list: MenuAction<C>[], ctx: C): ReactNode[] {
+function items<C>(list: ResolvedAction<C>[], ctx: C): ReactNode[] {
   const out: ReactNode[] = [];
   list.forEach((a, i) => {
     if (i > 0 && (a.group ?? '') !== (list[i - 1].group ?? '')) out.push(<DropdownMenuSeparator key={`sep:${a.id}`} />);

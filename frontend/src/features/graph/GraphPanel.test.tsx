@@ -208,12 +208,13 @@ test('right-click: a commit row offers the commit menu, a branch chip the branch
   await show(world);
   fireEvent.contextMenu(rowEl(oid(4))!, { clientX: 10, clientY: 20 });
   let menu = await screen.findByRole('menu');
-  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Show details', 'View changes', 'Compare with working directory', 'Copy SHA', 'Copy message']);
+  // The graph's own items close the menu; write actions (features/branches) come before them.
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent).slice(-5)).toEqual(['Show details', 'View changes', 'Compare with working directory', 'Copy SHA', 'Copy message']);
   fireEvent.keyDown(menu, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   fireEvent.contextMenu(screen.getByText('feat'));
   menu = await screen.findByRole('menu');
-  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Jump to commit', 'Copy name', 'Hide', 'Solo', 'Pin to left']);
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent).slice(-5)).toEqual(['Jump to commit', 'Copy name', 'Hide', 'Solo', 'Pin to left']);
   fireEvent.keyDown(menu, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   fireEvent.click(rowEl(oid(5))!);

@@ -13,7 +13,8 @@ export type Tracked<T> = { ok: true; result: T } | { ok: false; error: ApiError 
 export interface TrackOptions<T> {
   /** Shown while the op runs. */
   running: string;
-  done: (result: T) => string | ToastText;
+  /** null: nothing to say (the caller goes on to ask something); the running toast is dismissed. */
+  done: (result: T) => string | ToastText | null;
   /** Overrides for the error toast; by default the error's message, with git's stderr as the description. */
   failed?: (error: ApiError) => Partial<ToastText>;
   /**
@@ -47,6 +48,10 @@ export async function trackOp<T>(fn: () => Promise<T>, o: TrackOptions<T>): Prom
   try {
     const result = await fn();
     const d = o.done(result);
+    if (d === null) {
+      if (id !== undefined) toast.dismiss(id);
+      return { ok: true, result };
+    }
     const t: ToastText = typeof d === 'string' ? { title: d } : d;
     if (t.tone === 'warning') toast.warning(clip(t.title), opts(t, id, ERROR_MS));
     else toast.success(clip(t.title), opts(t, id));

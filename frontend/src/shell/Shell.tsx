@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FolderGit2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RefDialogHost } from '@/features/branches/RefDialogHost';
 import { RepoPicker } from '@/features/repos/RepoPicker';
 import { RepoHeader } from '@/features/repo/RepoHeader';
 import { TabBar } from '@/features/tabs/TabBar';
@@ -54,6 +55,7 @@ export function Shell() {
       )}
       <Slot slot="bottom" tab={tab} />
       <RepoPicker open={pickerOpen} onOpenChange={setPickerOpen} onOpen={(t) => dispatchTabs({ type: 'open', tab: t })} />
+      <RefDialogHost />
     </div>
   );
 }

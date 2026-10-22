@@ -27,3 +27,13 @@ test('runPrimary returns false and runs nothing when the context has no primary 
   expect(runPrimary('none', { ok: true })).toBe(false);
   expect(ran).toEqual([]);
 });
+
+test('a submenu built from the ctx resolves its children per call; one with no child left is dropped', async () => {
+  const { resolveActions } = await import('./menus');
+  const list: MenuAction<{ remotes: string[] }>[] = [{
+    id: 'push', context: 'z', label: 'Push to',
+    children: (c) => c.remotes.map((r) => ({ id: `push.${r}`, context: 'z', label: r, run: () => {} })),
+  }];
+  expect(resolveActions(list, 'z', { remotes: ['origin', 'up'] })[0].children?.map((a) => a.label)).toEqual(['origin', 'up']);
+  expect(resolveActions(list, 'z', { remotes: [] })).toEqual([]);
+});

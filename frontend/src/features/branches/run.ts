@@ -12,7 +12,7 @@ export const CONFLICT_FILES_SHOWN = 5;
 
 export interface RefOpLabels<T> {
   running: string;
-  done: (result: T) => string | ToastText;
+  done: (result: T) => string | ToastText | null;
   failed?: (error: ApiError) => Partial<ToastText> | undefined;
   toastRunning?: boolean;
 }
