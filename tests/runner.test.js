@@ -26,7 +26,7 @@ test('argv is git + BASE_ARGS + the op args; stdout comes back as bytes', async 
   const r = await runGit(ctxFor(APP), ['rev-parse', '--abbrev-ref', 'HEAD']);
   assert.equal(r.stdout.toString().trim(), 'main');
   assert.deepEqual(cc.state.execCalls[0].argv, ['git', ...BASE_ARGS, 'rev-parse', '--abbrev-ref', 'HEAD']);
-  assert.deepEqual(BASE_ARGS, ['--no-pager', '-c', 'color.ui=false', '-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false', '--work-tree=.']);
+  assert.deepEqual(BASE_ARGS, ['--no-pager', '-c', 'color.ui=false', '-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false', '-c', 'submodule.recurse=false', '--work-tree=.']);
 });
 
 test('the base env makes git non-interactive and literal; GIT_OPTIONAL_LOCKS=0 on reads only', async (t) => {

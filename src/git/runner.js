@@ -11,8 +11,13 @@ import { LIMITS } from './limits.js';
  * final directory, after any `-C <subpath>` an op adds (the submodule card relies on that). A bare repository would
  * then look like a working tree of its own files: `repo.summary` and the working-tree writes check `core.bare` first
  * (src/git/worktree.js).
+ * `submodule.recurse=false`: a repo setting it true would make restore/checkout/reset recurse into submodules, so
+ * discarding a submodule row would throw away the submodule's own uncommitted work. The submodule card passes
+ * `--recurse-submodules` explicitly where it wants recursion.
  */
-export const BASE_ARGS = ['--no-pager', '-c', 'color.ui=false', '-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false', '--work-tree=.'];
+export const BASE_ARGS = [
+  '--no-pager', '-c', 'color.ui=false', '-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false', '-c', 'submodule.recurse=false', '--work-tree=.',
+];
 
 /** Every call: no prompt can hang, an editor launch fails loudly, pathspecs are literal, git's messages are stable. */
 export const BASE_ENV = {

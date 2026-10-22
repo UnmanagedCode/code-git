@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { STAGE_LIMITS } from '../src/git/stage/limits.js';
+import { bindRepo } from './_git.js';
 import { hostile, noViolations, opWorld, refused } from './_ops.js';
 
 /** a.txt, b.txt, `*.txt`, `-rf` and gone.txt committed; then hostile config. */
@@ -218,4 +219,20 @@ test('params: exactly one of paths/all; 1…maxPaths valid paths; discard needs 
     await assert.rejects(w.op('stage.discardFiles', p), refused('BAD_PARAMS'), JSON.stringify(p));
   }
   assert.equal(w.cc.state.execCalls.length, 0);
+});
+
+test('with submodule.recurse=true in the repo, discarding a submodule row leaves the submodule\'s own uncommitted work alone', async (t) => {
+  const w = await opWorld(t);
+  const sub = bindRepo(path.join(w.repo.root, 'sub-src'), w.repo.home);
+  fs.mkdirSync(sub.dir);
+  sub.git('init', '-q', '-b', 'main');
+  sub.commit({ 'inner.txt': 'committed\n' }, 'sub');
+  w.repo.git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub.dir, 'mod');
+  w.repo.git('commit', '-q', '-m', 'add mod');
+  // Uncommitted work inside the submodule; the parent shows `mod` as modified.
+  fs.writeFileSync(path.join(w.repo.dir, 'mod', 'inner.txt'), 'uncommitted work\n');
+  hostile(w.repo);
+  w.repo.git('config', 'submodule.recurse', 'true');
+  await w.op('stage.discardFiles', { tracked: ['mod'] });
+  assert.equal(fs.readFileSync(path.join(w.repo.dir, 'mod', 'inner.txt'), 'utf8'), 'uncommitted work\n');
 });
