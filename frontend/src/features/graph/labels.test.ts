@@ -105,3 +105,16 @@ test('many labels on one commit are appended, not copied per label', () => {
   expect(m.get(M)).toHaveLength(n);
   expect(iterations).toBeLessThan(100);
 });
+
+test('two local branches on one commit each pair with their own remote twin, never the other\'s', () => {
+  const both = refsResult({
+    head: { oid: M, branch: 'refs/heads/a', detached: false, unborn: false },
+    refs: [ref('refs/heads/a', X), ref('refs/heads/b', X), ref('refs/remotes/origin/b', X), ref('refs/remotes/origin/a', X), ref('refs/remotes/origin/c', X)],
+    worktrees: [],
+  });
+  const m = labelsByOid(both, resolveVisibility(both, DEFAULT_PREFS), []);
+  const twins = (text: string) => (m.get(X)!.find((l) => l.text === text) as { remotes: { name: string }[] }).remotes.map((r) => r.name);
+  expect(twins('a')).toEqual(['refs/remotes/origin/a']);
+  expect(twins('b')).toEqual(['refs/remotes/origin/b']);
+  expect(kinds(m, X)).toEqual(['head:a', 'local:b', 'remote:origin/c']);
+});
