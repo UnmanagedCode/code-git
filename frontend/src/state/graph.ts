@@ -56,11 +56,13 @@ export const graphStore = createStore<ReadonlyMap<string, GraphData>>(new Map())
 let epoch = 0;
 const runs = new Map<string, { promise: Promise<void>; again: boolean }>();
 const statsInFlight = new Set<string>();
+const pageLoads = new Map<string, Promise<void>>();
 
 export function resetGraph(): void {
   epoch++;
   runs.clear();
   statsInFlight.clear();
+  pageLoads.clear();
   graphStore.set(new Map());
 }
 
@@ -175,12 +177,21 @@ function toCheckout(t: Target, own: Tab): Checkout {
 }
 
 /**
- * Loads the next page of the current snapshot. A failure (say a tip was garbage-collected) triggers one refresh; if
- * the tips did not move, the error stays for Retry.
+ * Loads the next page of the current snapshot; while one is loading, resolves when that one ends. A failure (say a tip
+ * was garbage-collected) triggers one refresh; if the tips did not move, the error stays for Retry.
  */
-export async function loadNextPage(tab: Tab, signal?: AbortSignal): Promise<void> {
+export function loadNextPage(tab: Tab, signal?: AbortSignal): Promise<void> {
+  const key = tabKey(tab);
+  const running = pageLoads.get(key);
+  if (running) return running;
   const g = getGraph(tab);
-  if (g.pageLoading || g.nextSkip === null || g.status !== 'ready') return;
+  if (g.nextSkip === null || g.status !== 'ready') return Promise.resolve();
+  const p = loadPage(tab, g, signal).finally(() => { if (pageLoads.get(key) === p) pageLoads.delete(key); });
+  pageLoads.set(key, p);
+  return p;
+}
+
+async function loadPage(tab: Tab, g: GraphData, signal?: AbortSignal): Promise<void> {
   const { generation, tips, nextSkip, tipsKey } = g;
   const at = epoch;
   put(tab, (x) => ({ ...x, pageLoading: true, pageError: null }), at);
@@ -200,22 +211,37 @@ export async function loadNextPage(tab: Tab, signal?: AbortSignal): Promise<void
   }
 }
 
-export type SeekResult = 'found' | 'end' | 'limit' | 'cancelled';
+/** `error`: a page failed (its error is on the store as pageError). */
+export type SeekResult = 'found' | 'end' | 'limit' | 'error' | 'cancelled';
 
-/** Pages forward until `oid` is loaded: at most `maxPages` pages, stopping at the snapshot's end or on `signal`. */
+/** `p`, or sooner when `signal` aborts. */
+const orAbort = (p: Promise<unknown>, signal?: AbortSignal) => (signal
+  ? Promise.race([p, new Promise<void>((r) => { if (signal.aborted) r(); else signal.addEventListener('abort', () => r(), { once: true }); })])
+  : p);
+
+/**
+ * Pages forward until `oid` is loaded: at most `maxPages` pages of its own, stopping at the snapshot's end, on a page
+ * failure or on `signal`. A load already running (the first load, a refresh, the scroll prefetch) is waited for, not
+ * taken for the end of the snapshot.
+ */
 export async function loadUntil(tab: Tab, oid: string, { maxPages = 20, signal }: { maxPages?: number; signal?: AbortSignal } = {}): Promise<SeekResult> {
   const at = epoch;
-  for (let pages = 0; ; pages++) {
+  const key = tabKey(tab);
+  let pages = 0;
+  for (;;) {
     if (signal?.aborted || at !== epoch) return 'cancelled';
+    const run = runs.get(key);
+    if (run) { await orAbort(run.promise, signal); continue; }
     const g = getGraph(tab);
     if (g.commits.some((c) => c.oid === oid)) return 'found';
-    if (g.nextSkip === null || g.status !== 'ready') return 'end';
+    if (g.status !== 'ready' || g.nextSkip === null) return 'end';
+    const busy = pageLoads.get(key);
+    if (busy) { await orAbort(busy, signal); continue; }
     if (pages >= maxPages) return 'limit';
-    const before = g.commits.length;
-    await loadNextPage(tab, signal);
+    pages++;
+    await orAbort(loadNextPage(tab, signal), signal);
     if (signal?.aborted) return 'cancelled';
-    // No progress: the page failed (its error is on the store) or another load is running.
-    if (getGraph(tab).commits.length === before) return 'end';
+    if (getGraph(tab).pageError) return 'error';
   }
 }
 

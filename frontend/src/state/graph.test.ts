@@ -236,3 +236,51 @@ test('a failed first load shows the error; a cancelled one is not an error', asy
   await refreshGraph(TAB, 'manual');
   expect(getGraph(TAB)).toMatchObject({ status: 'error', error: { code: 'SYSTEM_UNREACHABLE' } });
 });
+
+/** Holds graph.page answers for the given skips until released. */
+function holdPages(world: ReturnType<typeof linearWorld>, skips: number[]) {
+  const held: (() => void)[] = [];
+  world.page = (p) => {
+    const answer = { ok: true, result: { items: world.commits.slice(p.skip, p.skip + p.limit), nextCursor: p.skip + p.limit < world.commits.length ? p.skip + p.limit : null } };
+    return skips.includes(p.skip) ? new Promise((r) => held.push(() => r(answer))) : answer;
+  };
+  return { release: () => { while (held.length) held.shift()!(); }, count: () => held.length };
+}
+
+test('a seek while the scroll prefetch is loading waits for that page instead of reporting the end', async () => {
+  const world = linearWorld(1500);
+  const fetch = stubGraph(world);
+  await openGraph(TAB);
+  const hold = holdPages(world, [PAGE]);
+  const prefetch = loadNextPage(TAB);
+  await flush();
+  expect(hold.count()).toBe(1);
+  const seek = loadUntil(TAB, oid(200));
+  await flush();
+  expect(paramsOf(fetch, 'POST api/ops/graph.page')).toHaveLength(2);
+  hold.release();
+  expect(await seek).toBe('found');
+  await prefetch;
+  expect(paramsOf(fetch, 'POST api/ops/graph.page').map((p) => (p as { skip: number }).skip)).toEqual([0, PAGE, 2 * PAGE]);
+});
+
+test('a seek during the first load waits for it', async () => {
+  const world = linearWorld(800);
+  stubGraph(world);
+  const hold = holdPages(world, [0]);
+  const opening = openGraph(TAB);
+  await flush();
+  const seek = loadUntil(TAB, oid(700));
+  await flush();
+  hold.release();
+  expect(await seek).toBe('found');
+  await opening;
+});
+
+test('a seek whose page fails ends with error, not end', async () => {
+  const world = linearWorld(800);
+  stubGraph(world);
+  await openGraph(TAB);
+  world.page = () => json({ error: 'bad object', code: 'GIT_FAILED' }, 422);
+  expect(await loadUntil(TAB, oid(10))).toBe('error');
+});

@@ -52,7 +52,7 @@ export function GraphPanel({ tab }: { tab: Tab | null }) {
   return tab ? <GraphView key={tabKey(tab)} tab={tab} /> : null;
 }
 
-interface Seek { oid: string; rowId: string; status: 'loading' | Exclude<SeekResult, 'found' | 'cancelled'>; ac: AbortController; pages: number }
+interface Seek { oid: string; rowId: string; status: 'loading' | Exclude<SeekResult, 'found' | 'cancelled' | 'error'>; ac: AbortController; pages: number }
 
 function GraphView({ tab }: { tab: Tab }) {
   const key = tabKey(tab);
@@ -197,7 +197,8 @@ function GraphView({ tab }: { tab: Tab }) {
     if (r === 'found') {
       setSeek(null);
       setPending(rowId);
-    } else if (r === 'cancelled') {
+    } else if (r === 'cancelled' || r === 'error') {
+      // A failed page shows its own error (pageError) with Retry.
       setSeek(null);
     } else {
       setSeek({ ...s, status: r });

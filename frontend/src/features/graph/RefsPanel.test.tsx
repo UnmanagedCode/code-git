@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
+import { loadNextPage } from '@/state/graph';
 import { getPrefs } from '@/state/graphPrefs';
 import { getSelection } from '@/state/graphSelection';
 import { loadSummary } from '@/state/useRepoSummary';
@@ -101,4 +102,18 @@ test('a graph that never opened (not a repo) leaves the refs panel empty', () =>
   stubGraph(world());
   const { container } = render(<RefsPanel tab={TAB} />);
   expect(container.textContent).toBe('');
+});
+
+test('clicking a ref while the scroll prefetch is loading still jumps to it', async () => {
+  const w = world();
+  const held: (() => void)[] = [];
+  const answer = (p: { skip: number; limit: number }) => ({ ok: true, result: { items: w.commits.slice(p.skip, p.skip + p.limit), nextCursor: p.skip + p.limit < w.commits.length ? p.skip + p.limit : null } });
+  w.page = (p) => (p.skip === 0 ? answer(p) : new Promise((r) => held.push(() => r(answer(p)))));
+  await show(w);
+  await act(async () => { void loadNextPage(TAB); });
+  await waitFor(() => expect(held).toHaveLength(1));
+  fireEvent.click(within(screen.getByRole('list', { name: 'Local branches' })).getByRole('button', { name: 'old' }));
+  await act(async () => { held.shift()!(); });
+  await waitFor(() => expect(getSelection(TAB).ids).toEqual([oid(100)]));
+  expect(screen.queryByText('Not in the visible graph.')).toBeNull();
 });
