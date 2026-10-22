@@ -232,6 +232,7 @@ The ops below change the index or the worktree (`kind: 'write'`, not cancellable
 | Each tracked path names one file: no trailing `/`, no empty or `.` segment (`filePath`, at params) | — | 400 `BAD_PATH` |
 | Each tracked path is a file in the index (not a directory, not `.`) | `git ls-files -c -z -- <tracked>` lists every one | 400 `BAD_PATH` |
 | No tracked path is unmerged | `git ls-files -u -z -- <tracked>` prints nothing | 409 `CONFLICTED` |
+| Nothing untracked or ignored lies under a tracked path (a tracked file now a directory on disk: restoring it would delete the directory's contents) | `git ls-files --others -z -- <tracked>` prints nothing | 409 `UNTRACKED_UNDER_PATH`, `paths` = the first 100 found |
 | No untracked path ends in `/` (a nested repository) | — | 400 `BAD_PATH` |
 | git lists exactly the requested untracked set | `git ls-files --others --exclude-standard -z -- <untracked>` | 400 `BAD_PATH` (an ignored, tracked, missing path, a directory, a path through a symlinked directory) |
 
@@ -418,6 +419,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `PATCH_DOES_NOT_APPLY` | 409 | `git apply` refused the patch; `stderr` |
 | `GITIGNORE_UNSUPPORTED` | 409 | The root `.gitignore` is a symlink, binary or over `STAGE_LIMITS.gitignoreMaxBytes` |
 | `PATH_NOT_IN_COMMIT` | 404 | The path is not a file in that commit |
+| `UNTRACKED_UNDER_PATH` | 409 | A tracked path to discard is now a directory holding untracked or ignored files; `paths` |
 | `BARE_REPO` | 409 | A bare repository (its git dir is the working tree, whatever `core.bare` says): `repo.summary` and every write refuse it |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |

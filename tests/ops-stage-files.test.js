@@ -236,3 +236,17 @@ test('with submodule.recurse=true in the repo, discarding a submodule row leaves
   await w.op('stage.discardFiles', { tracked: ['mod'] });
   assert.equal(fs.readFileSync(path.join(w.repo.dir, 'mod', 'inner.txt'), 'utf8'), 'uncommitted work\n');
 });
+
+test('discarding a tracked path that is now a directory on disk refuses UNTRACKED_UNDER_PATH, deleting nothing (untracked or ignored)', async (t) => {
+  const w = await world(t);
+  w.repo.commit({ 'df/x': 'file\n', '.gitignore': '*.log\n' });
+  fs.rmSync(path.join(w.repo.dir, 'df', 'x'));
+  w.repo.write('df/x/inner', 'untracked work\n');
+  await assert.rejects(w.op('stage.discardFiles', { tracked: ['df/x'] }), refused('UNTRACKED_UNDER_PATH'));
+  assert.equal(read(w, 'df/x/inner'), 'untracked work\n');
+  fs.rmSync(path.join(w.repo.dir, 'df', 'x', 'inner'));
+  w.repo.write('df/x/debug.log', 'ignored but still a file\n');
+  await assert.rejects(w.op('stage.discardFiles', { tracked: ['df/x', 'a.txt'] }), refused('UNTRACKED_UNDER_PATH'));
+  assert.equal(read(w, 'df/x/debug.log'), 'ignored but still a file\n');
+  assert.equal(w.execArgv().filter((a) => a.includes('restore')).length, 0);
+});

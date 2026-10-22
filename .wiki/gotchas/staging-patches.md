@@ -8,6 +8,7 @@ Code: `src/git/ops/stage.js`, `src/git/params.js`, `src/git/stage/`. Reference: 
 - **`GIT_LITERAL_PATHSPECS=1` covers pathspecs read from a file too**: `*.txt` from stdin matches only `*.txt`.
 - **`ls-files --others -- <path>` is the untracked gate before `clean`.** git lists a path there only when it is untracked and not ignored and not reached through a symlinked directory; an untracked directory lists its files instead of itself, and a nested repository as `dir/`. Requiring the listing to equal the request is what keeps `clean` off ignored, tracked and outside files.
 - **`clean` without `-x` does not delete an ignored file even when it is named** — a backstop, not the gate.
+- **`restore --worktree <tracked file>` replaces a directory now standing there**, deleting its untracked *and ignored* contents. Discard refuses `UNTRACKED_UNDER_PATH` when `ls-files --others -- <tracked>` (no `--exclude-standard`, so ignored files count) lists anything.
 - **Unstaging on an unborn HEAD** is `rm --cached` (nothing to `reset` to); `rm --cached -- .` on an empty index needs `--ignore-unmatch`.
 
 ## Selection patches (`buildSelectionPatch`)

@@ -40,6 +40,15 @@ async function assertIndexFiles(git, paths) {
   if (missing !== undefined) throw new Refusal('BAD_PATH', `${missing} is not a file in the index`);
 }
 
+/**
+ * A tracked file now a directory on disk (`df/x` → `df/x/inner`): restoring it replaces the directory with the file and
+ * deletes whatever is in it, unlisted. Anything not tracked under the paths — untracked or ignored — refuses the discard.
+ */
+async function assertNothingUntrackedUnder(git, paths) {
+  const found = await perChunk(git, ['ls-files', '--others', '-z'], paths);
+  if (found.length) throw new Refusal('UNTRACKED_UNDER_PATH', `${found[0]} is not tracked and a discard would delete it: move or delete it first`, { paths: found.slice(0, 100) });
+}
+
 /** Refuses CONFLICTED when any of `paths` is unmerged: restoring it would throw away the merge state. */
 async function assertNotConflicted(git, paths) {
   const unmerged = await perChunk(git, ['ls-files', '-u', '-z'], paths);
@@ -178,6 +187,7 @@ export const ops = [
       // Both gates run before anything is changed, so a refused request discards nothing.
       if (p.tracked.length) await assertIndexFiles(git, p.tracked);
       if (p.tracked.length) await assertNotConflicted(git, p.tracked);
+      if (p.tracked.length) await assertNothingUntrackedUnder(git, p.tracked);
       if (p.untracked.length) await assertUntracked(git, p.untracked);
       if (p.tracked.length) await git(['restore', '--worktree', ...FROM_STDIN], { stdin: nulPaths(p.tracked) });
       // No -d (directories) and no -x (ignored files).
