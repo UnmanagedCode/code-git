@@ -1,0 +1,21 @@
+{
+  "routes": [
+    {
+      "name": "server",
+      "tests": ["tests/*.test.js"],
+      "runner": "node-test",
+      "baselineCommand": "node --test \"tests/*.test.js\"",
+      "testCommand": "node --test {tests}"
+    },
+    {
+      "name": "ui",
+      "tests": ["frontend/src/**/*.test.ts", "frontend/src/**/*.test.tsx"],
+      "runner": "vitest",
+      "baselineCommand": "npx vitest run --config frontend/vitest.config.ts --reporter=json --outputFile=\"$CODE_MUTANT_REPORT_DIR/vitest.json\"",
+      "testCommand": "npx vitest run --config frontend/vitest.config.ts --reporter=json --outputFile=\"$CODE_MUTANT_REPORT_DIR/vitest.json\" {tests}"
+    }
+  ],
+  "isolation": "copy",
+  "preserve": ["node_modules"],
+  "baseBranch": "master"
+}

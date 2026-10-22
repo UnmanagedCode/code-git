@@ -1,0 +1,170 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { capStderr, createActivityLog } from '../src/activity/log.js';
+import { BASE_ARGS, runGit } from '../src/git/runner.js';
+import { ctxFor } from './_ctx.js';
+import { fakeCc } from './_fakeCc.js';
+import { makeRepo } from './_git.js';
+
+const APP = { project: 'app', worktree: null };
+
+async function world(t) {
+  const repo = makeRepo(t);
+  repo.commit({ 'a.txt': 'a\n' });
+  const cc = await fakeCc({ projects: { app: { dir: repo.dir } }, home: repo.home });
+  t.after(() => cc.close());
+  return { repo, cc };
+}
+
+/** Runs `args` and returns [the promise's outcome, every event the log emitted]. */
+async function runLogged(ctx, args, opts) {
+  const events = [];
+  ctx.activity.events.on('activity', (e) => events.push(e));
+  const outcome = await runGit(ctx, args, opts).then((r) => ({ r }), (e) => ({ e }));
+  return { ...outcome, events, entry: ctx.activity.list().at(-1) };
+}
+
+test('a successful command: running then ok, with argv, target, exit code and duration recorded exactly', async (t) => {
+  await world(t);
+  const ctx = ctxFor({ project: 'app', worktree: null }, 'read', { op: 'repo.summary', opRunId: 'run-9' });
+  const { events, entry } = await runLogged(ctx, ['status', '--porcelain=v2']);
+  assert.deepEqual(events.map((e) => e.status), ['running', 'ok']);
+  assert.equal(events[0].exitCode, null);
+  assert.deepEqual(entry.argv, ['git', ...BASE_ARGS, 'status', '--porcelain=v2']);
+  assert.deepEqual(entry.target, { project: 'app', worktree: null });
+  assert.equal(entry.op, 'repo.summary');
+  assert.equal(entry.opRunId, 'run-9');
+  assert.equal(entry.exitCode, 0);
+  assert.equal(entry.code, null);
+  assert.equal(typeof entry.durationMs, 'number');
+  assert.equal(entry.stdinBytes, 0);
+  assert.ok(!Number.isNaN(Date.parse(entry.startedAt)));
+});
+
+test('a non-zero exit closes the entry failed/GIT_FAILED with stderr', async (t) => {
+  await world(t);
+  const { e, entry } = await runLogged(ctxFor(APP), ['rev-parse', '--verify', 'nope']);
+  assert.equal(e.code, 'GIT_FAILED');
+  assert.equal(entry.status, 'failed');
+  assert.equal(entry.code, 'GIT_FAILED');
+  assert.equal(entry.exitCode, 128);
+  assert.match(entry.stderr, /fatal/);
+});
+
+test('cc refusals close the entry as timeout or refused', async (t) => {
+  const { cc } = await world(t);
+  cc.state.execHook = () => ({ status: 504, body: { error: 'x', code: 'EXEC_TIMEOUT', stdout: '', stderr: Buffer.from('slow').toString('base64') } });
+  const timedOut = await runLogged(ctxFor(APP), ['status']);
+  assert.equal(timedOut.entry.status, 'timeout');
+  assert.equal(timedOut.entry.code, 'GIT_TIMEOUT');
+  assert.equal(timedOut.entry.stderr, 'slow');
+  cc.state.execHook = () => ({ status: 502, body: { error: 'x', code: 'SYSTEM_UNREACHABLE' } });
+  const refused = await runLogged(ctxFor(APP), ['status']);
+  assert.equal(refused.entry.status, 'refused');
+  assert.equal(refused.entry.code, 'SYSTEM_UNREACHABLE');
+});
+
+test('cancel aborts a running cancellable entry: cc sees the disconnect and the entry ends cancelled', async (t) => {
+  const { cc } = await world(t);
+  cc.state.execHook = () => 'hold';
+  const ctx = ctxFor(APP, 'read');
+  const p = runLogged(ctx, ['status']);
+  const held = await cc.nextHeld();
+  const running = ctx.activity.list().at(-1);
+  assert.equal(running.status, 'running');
+  assert.equal(running.cancellable, true);
+  ctx.activity.cancel(running.id);
+  const { e, entry } = await p;
+  assert.equal(e.code, 'CANCELLED');
+  assert.equal(entry.status, 'cancelled');
+  await held.closed;
+  assert.equal(held.disconnected, true);
+});
+
+test('cancel refuses an unknown id, a non-cancellable entry (even while running) and a finished one', async (t) => {
+  const { cc } = await world(t);
+  const ctx = ctxFor(APP, 'write', { cancellable: false });
+  assert.throws(() => ctx.activity.cancel(42), (e) => e.code === 'ACTIVITY_UNKNOWN');
+  cc.state.execHook = () => 'hold';
+  const p = runGit(ctx, ['status']);
+  const held = await cc.nextHeld();
+  const entry = ctx.activity.list().at(-1);
+  assert.equal(entry.cancellable, false);
+  assert.throws(() => ctx.activity.cancel(entry.id), (e) => e.code === 'NOT_CANCELLABLE');
+  held.release();
+  await p;
+  assert.throws(() => ctx.activity.cancel(entry.id), (e) => e.code === 'NOT_CANCELLABLE');
+  assert.equal(held.disconnected, false);
+
+  cc.state.execHook = null;
+  const readCtx = ctxFor(APP, 'read');
+  await runGit(readCtx, ['status']);
+  assert.throws(() => readCtx.activity.cancel(readCtx.activity.list()[0].id), (e) => e.code === 'NOT_RUNNING');
+});
+
+test("the op's signal aborting cancels the entry too", async (t) => {
+  const { cc } = await world(t);
+  cc.state.execHook = () => 'hold';
+  const controller = new AbortController();
+  const ctx = ctxFor(APP, 'read', { signal: controller.signal });
+  const p = runLogged(ctx, ['status']);
+  await cc.nextHeld();
+  controller.abort();
+  const { entry } = await p;
+  assert.equal(entry.status, 'cancelled');
+});
+
+test('hook output reaches the entry: a pre-commit hook writing to stderr during a write', async (t) => {
+  const { repo } = await world(t);
+  repo.hook('pre-commit', '#!/bin/sh\necho "hook says <b>hi</b>" >&2\n');
+  const { r, entry } = await runLogged(ctxFor(APP, 'write', { cancellable: false }), ['commit', '--allow-empty', '-m', 'x']);
+  assert.equal(r.exitCode, 0);
+  assert.match(entry.stderr, /hook says <b>hi<\/b>/);
+  assert.equal(entry.cancellable, false);
+});
+
+test('stderr is capped to its tail and flagged truncated', async (t) => {
+  const { repo } = await world(t);
+  repo.hook('pre-commit', '#!/bin/sh\nhead -c 70000 /dev/zero | tr "\\0" x >&2\necho END >&2\n');
+  const { entry } = await runLogged(ctxFor(APP, 'write'), ['commit', '--allow-empty', '-m', 'x']);
+  assert.equal(entry.stderrTruncated, true);
+  assert.equal(entry.stderr.length, 64 * 1024);
+  assert.ok(entry.stderr.endsWith('END\n'));
+  assert.deepEqual(capStderr(Buffer.from('short')), { stderr: 'short', stderrTruncated: false });
+  assert.deepEqual(capStderr(Buffer.from('abcdef'), 4), { stderr: 'cdef', stderrTruncated: true });
+  assert.deepEqual(capStderr(Buffer.from('abcd'), 4), { stderr: 'abcd', stderrTruncated: false });
+  assert.equal(capStderr(Buffer.from([0xff, 0x41])).stderr, '�A', 'invalid UTF-8 is replaced, never thrown on');
+});
+
+test("only the op's own env is recorded, and secret-looking values are redacted", async (t) => {
+  await world(t);
+  const env = { GH_TOKEN: 't', MY_PASSWORD: 'p', API_KEY: 'k', CLIENT_SECRET: 's', PLAIN: 'v' };
+  const { entry } = await runLogged(ctxFor(APP), ['status'], { env, stdin: 'four' });
+  assert.deepEqual(entry.env, { GH_TOKEN: '[redacted]', MY_PASSWORD: '[redacted]', API_KEY: '[redacted]', CLIENT_SECRET: '[redacted]', PLAIN: 'v' });
+  assert.equal(entry.stdinBytes, 4);
+  assert.equal(JSON.stringify(entry).includes('four'), false, 'stdin content is never recorded');
+});
+
+test('the ring keeps the newest entries, newest last; snapshots do not alias the log', () => {
+  const log = createActivityLog({ ring: 3 });
+  for (let i = 0; i < 5; i++) {
+    const { entry } = log.open({ opRunId: 'r', op: 'x.y', target: { project: 'p' }, argv: ['git', String(i)], cancellable: true });
+    log.close(entry, { status: 'ok', exitCode: 0 });
+  }
+  const list = log.list();
+  assert.deepEqual(list.map((e) => e.argv[1]), ['2', '3', '4']);
+  list[0].argv.push('mutated');
+  list[0].target.project = 'q';
+  assert.deepEqual(log.list()[0].argv, ['git', '2']);
+  assert.equal(log.list()[0].target.project, 'p');
+  assert.notEqual(log.newRunId(), log.newRunId());
+});
+
+test('a closed entry is not closed again', () => {
+  const log = createActivityLog();
+  const { entry } = log.open({ opRunId: 'r', op: 'x.y', target: { project: 'p' }, argv: ['git'], cancellable: true });
+  log.close(entry, { status: 'ok', exitCode: 0 });
+  log.close(entry, { status: 'failed', exitCode: 1 });
+  assert.equal(log.list()[0].status, 'ok');
+  assert.equal(log.list()[0].exitCode, 0);
+});

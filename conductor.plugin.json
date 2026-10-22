@@ -1,0 +1,14 @@
+{
+  "id": "code-git",
+  "name": "Code Git",
+  "version": "0.1.0",
+  "pluginApi": 1,
+  "backend": {
+    "start": "npm start",
+    "healthPath": "/health"
+  },
+  "frontend": {
+    "path": "/",
+    "navLabel": "Git"
+  }
+}
