@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { DISPLAY_MAX } from '@/lib/clip';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 import { loadNextPage } from '@/state/graph';
@@ -96,6 +97,14 @@ test('a worktrees failure (old git) shows a notice in the Worktrees section', as
   w.refs.worktreesError = "error: unknown switch `z'";
   await show(w);
   expect(screen.getByRole('note').textContent).toContain("unknown switch `z'");
+});
+
+test('a huge worktree-listing error is cut for display', async () => {
+  const w = world();
+  w.refs.worktrees = null;
+  w.refs.worktreesError = 'e'.repeat(1_000_000);
+  await show(w);
+  expect(screen.getByRole('note').textContent!.length).toBeLessThan(DISPLAY_MAX + 100);
 });
 
 test('a graph that never opened (not a repo) leaves the refs panel empty', () => {

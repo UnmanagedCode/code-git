@@ -100,7 +100,7 @@ function Wip({ tab, c }: { tab: Tab; c: Checkout }) {
   return (
     <>
       <h2 className="text-sm font-semibold">// WIP <span className="font-normal">{clip(c.name)}</span></h2>
-      <p className="text-sm">{c.branch ? <span className="font-mono">{c.branch.replace(/^refs\/heads\//, '')}</span> : <span className="text-muted-foreground">detached</span>}</p>
+      <p className="text-sm">{c.branch ? <span className="font-mono">{clip(c.branch.replace(/^refs\/heads\//, ''))}</span> : <span className="text-muted-foreground">detached</span>}</p>
       {n && <p className="text-sm text-muted-foreground">{n.staged} staged · {n.unstaged} unstaged · {n.untracked} untracked · {n.conflicted} conflicted</p>}
       <div className="flex flex-wrap gap-1">
         <Button variant="outline" size="sm" onClick={() => openIn(tab, c.target, { kind: 'unstaged' })}>Unstaged changes</Button>

@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
-import { json } from '@/test/fixtures';
-import { commit, oid, stash } from '@/test/graphData';
+import { json, summary } from '@/test/fixtures';
+import { checkout, commit, oid, stash } from '@/test/graphData';
 import { detailOf, linearWorld, stubGraph } from '@/test/graphBackend';
 import { dispatchSelection, fileIntentStore } from '@/state/graphSelection';
 import { openGraph } from '@/state/graph';
+import { loadSummary } from '@/state/useRepoSummary';
 import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
@@ -175,4 +176,20 @@ test('a 1 MB subject is cut to DISPLAY_MAX', async () => {
   render(<CommitDetails tab={TAB} />);
   const h = await screen.findByRole('heading', { level: 2 });
   expect(h.textContent).toBe(`${'z'.repeat(DISPLAY_MAX)}…`);
+});
+
+test('a huge signer and key, and a huge WIP branch name, are cut for display', async () => {
+  const huge = 's'.repeat(1_000_000);
+  const { SignatureBadge } = await import('./SignatureBadge');
+  render(<SignatureBadge status="G" signer={huge} keyId={huge} />);
+  expect(screen.getByText('Signed').getAttribute('title')!.length).toBeLessThanOrEqual('Good signature: '.length + DISPLAY_MAX + 1);
+  const world = linearWorld(2);
+  world.summaries[''] = summary({ head: { oid: oid(2), branch: `b${huge}`, unborn: false }, counts: { staged: 0, unstaged: 1, untracked: 0, conflicted: 0 } });
+  stubGraph(world);
+  await loadSummary(TAB);
+  await openGraph(TAB);
+  dispatchSelection(TAB, { type: 'click', id: 'wip:', rows: [{ kind: 'wip', id: 'wip:', checkout: checkout(null) }] });
+  render(<CommitDetails tab={TAB} />);
+  const branch = await screen.findByText(/^bs+…$/);
+  expect(branch.textContent!.length).toBe(DISPLAY_MAX + 1);
 });

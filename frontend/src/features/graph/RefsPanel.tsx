@@ -188,7 +188,7 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
       {!collapsed.has('worktrees') && (
         <>
           {refs.worktreesError !== null && (
-            <p className="px-4 py-1 text-xs text-warning" role="note">Worktree labels need git 2.36 or later: {refs.worktreesError}</p>
+            <p className="px-4 py-1 text-xs text-warning" role="note">Worktree labels need git 2.36 or later: {clip(refs.worktreesError)}</p>
           )}
           <ul aria-label="Worktrees">
             {capped('worktrees', worktrees, (w) => (
