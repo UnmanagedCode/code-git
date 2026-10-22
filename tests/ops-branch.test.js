@@ -421,3 +421,20 @@ test('every update-ref passes --no-deref', async (t) => {
   assert.equal(updates.length, 2);
   for (const a of updates) assert.equal(a[1], '--no-deref');
 });
+
+test('on a code-conductor/* HEAD, checking out its own remote twin only fast-forwards it and needs no ccOwned', async (t) => {
+  const w = await refsWorld(t);
+  const wt = w.worktree('wt', 'code-conductor/wt');
+  const tip = w.repo.git('-C', wt.dir, 'rev-parse', 'HEAD');
+  w.repo.write('../wt/w.txt', 'w\n');
+  w.repo.git('-C', wt.dir, 'add', 'w.txt');
+  w.repo.git('-C', wt.dir, 'commit', '-q', '-m', 'agent');
+  const agent = w.repo.git('-C', wt.dir, 'rev-parse', 'HEAD');
+  w.repo.git('-C', wt.dir, 'push', '-q', '-u', 'origin', 'code-conductor/wt');
+  w.repo.git('-C', wt.dir, 'reset', '-q', '--hard', tip);
+  const r = await w.op('branch.checkout', { ref: 'refs/remotes/origin/code-conductor/wt' }, 'wt');
+  assert.deepEqual({ created: r.created, fastForwarded: r.fastForwarded }, { created: false, fastForwarded: true });
+  assert.equal(head(w, wt.dir), 'refs/heads/code-conductor/wt');
+  assert.equal(w.repo.git('-C', wt.dir, 'rev-parse', 'HEAD'), agent);
+  assert.equal(r.undo.head.old.branch, 'refs/heads/code-conductor/wt');
+});

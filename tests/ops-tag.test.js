@@ -111,3 +111,18 @@ test('with push.followTags=true a remote branch delete and a one-tag push publis
   assert.deepEqual(remoteTags(), ['refs/tags/v1']);
   assert.deepEqual(r.undo.remoteRefs, [{ remote: 'origin', ref: 'refs/tags/v1', old: null, new: w.oid('refs/tags/v1') }]);
 });
+
+test('a partly rejected push is a result, not a refusal: pushed names what landed, rejected the refused ref with its reason', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('tag', 'v2', w.base);
+  w.repo.git('push', '-q', 'origin', 'v2');
+  const next = w.repo.commit({ 'n.txt': 'n\n' }, 'n');
+  w.repo.git('tag', '-f', 'v2', next);
+  w.repo.git('tag', 'v1', next);
+  const r = await w.op('tag.push', { remote: 'origin', names: ['v1', 'v2'] });
+  assert.deepEqual(r.pushed, ['v1']);
+  assert.deepEqual(r.rejected, [{ ref: 'refs/tags/v2', reason: 'already exists' }]);
+  assert.deepEqual(r.undo.remoteRefs, [{ remote: 'origin', ref: 'refs/tags/v1', old: null, new: next }]);
+  assert.equal(onOrigin(w, 'refs/tags/v1'), next);
+  assert.equal(onOrigin(w, 'refs/tags/v2'), w.base);
+});
