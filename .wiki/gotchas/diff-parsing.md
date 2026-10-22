@@ -4,7 +4,7 @@ Code: `src/git/parse/diff.js`, `src/git/diff/source.js`. Reference: `docs/protoc
 
 - **Consume a hunk by its header counts, never by line prefix.** A content line can read `diff --git a/x b/x`, `@@ -1 +1 @@` or `--- a`; only the `-a,b +c,d` counts say where the hunk ends. `\ No newline at end of file` can follow the last counted line, so peek for it after the counts are spent.
 - **`--raw --numstat -z` prints every raw record first, then every numstat record**, in the same order: join by index, never by path. A rename's raw record has two path fields; its numstat record is `a\td\t` followed by two more NUL fields (old, new). A path can start with `:` — fields are taken positionally, not by pattern.
-- **An unmerged path appears twice** in both lists (a `U` record, then an `M` one); keep the `U` entry only (`parseRawNumstat`).
+- **An unmerged path appears twice in an index → worktree diff** (a `U` record, then an `M` one, in both lists); keep the `U` entry only (`parseRawNumstat`). `--cached` (tree → index) emits only the `U` record; a tree → worktree diff (`git diff HEAD`) only the `M` one.
 - **Repo config that reshapes the text** — every key is overridden on every diff command, and `tests/_diffRepo.js` sets all of them so the op tests run against them:
 
 | Config | Effect if left alone | Override |
@@ -21,6 +21,8 @@ Code: `src/git/parse/diff.js`, `src/git/diff/source.js`. Reference: `docs/protoc
 | `diff.submodule=log\|diff` | a gitlink becomes a log or an inline diff | `--submodule=short` |
 | `core.quotePath`, `core.abbrev` | quoted paths, short oids | `BASE_ARGS` + `-z`, `--no-abbrev` |
 | `format.*` (signature, headers, to/cc, coverLetter, numbered, thread, useAutoBase, from, attach, notes, signOff, forceInBodyFrom) | format-patch output changes | `FORMAT_PATCH_FLAGS` |
+
+  **Not neutralised — known residual risk:** `filter.<driver>.clean` / `.process` (selected by `.gitattributes`) still run when git reads a worktree file for a diff (index → worktree, tree → worktree, untracked `--no-index`). Git has no diff flag to turn them off; C1's `git status` already runs them for tracked files. Extdiff and textconv are not the only config that runs a program.
 
   Left alone on purpose (they choose hunks, not the format): `diff.algorithm`, `diff.indentHeuristic`, `diff.renameLimit`, `diff.orderFile` (raw and numstat keep one order), `diff.ignoreSubmodules`, `core.autocrlf`.
 - **`rev-parse --verify --end-of-options X` does not echo `--end-of-options`** (without `--verify` it does), but it accepts `^X` and ranges — hence `assertCommitish` refuses a leading `^` and any `..`.

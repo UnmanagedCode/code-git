@@ -9,7 +9,8 @@ const GITLINK = '160000';
 /**
  * `git diff --raw --numstat -z --no-abbrev` → DiffFile[] (without `oversized`, which the op adds). All raw records come
  * first, then the numstat records in the same order: the n-th numstat record belongs to the n-th raw record.
- * An unmerged path is listed twice (a `U` record, then an `M` one); only the `U` entry is kept.
+ * An index → worktree diff lists an unmerged path twice (a `U` record, then an `M` one); only the `U` entry is kept.
+ * (`--cached` lists it once as `U`; a tree → worktree diff once as `M`.)
  */
 export function parseRawNumstat(out) {
   const f = out.split('\0');
