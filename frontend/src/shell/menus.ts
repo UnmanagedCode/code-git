@@ -1,3 +1,4 @@
+import { DIFF_FILE_ACTIONS } from '@/features/diff/actions';
 import { TAB_ACTIONS } from '@/features/tabs/actions';
 
 // The context-menu action registry. A feature adds its actions in its own folder and one entry in ACTIONS;
@@ -13,7 +14,7 @@ export interface MenuAction<C = unknown> {
   destructive?: boolean;
 }
 
-const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS];
+const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS];
 
 export function actionsFor<C>(context: string, ctx: C): MenuAction<C>[] {
   return (ACTIONS as unknown as MenuAction<C>[]).filter((a) => a.context === context && (a.when?.(ctx) ?? true));

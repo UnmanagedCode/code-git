@@ -22,7 +22,7 @@ export function mount(router, { ops, activity, locks }) {
       target, op: op.name, kind: op.kind, cancellable: op.cancellable, signal: controller.signal,
       opRunId: activity.newRunId(), activity, locks,
     };
-    const result = await op.run((args, opts) => runGit(ctx, args, opts), params);
+    const result = await op.run((args, opts) => runGit(ctx, args, opts), params, { target });
     res.json({ ok: true, result });
   }));
 }

@@ -11,6 +11,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Repo picker | Lists every cc project, grouped by workspace, filterable. A project that cannot be opened (not a git repo, System unreachable, git refusal, unreadable record) is listed but disabled, with the reason. Expanding a project lists its main checkout and its worktrees |
 | Tabs | One tab per checkout (project or project/worktree). Ctrl/⌘+1…8 activate that tab, Ctrl/⌘+9 the last; tab menu (⋮ or right-click): Close, Close others, Copy name. Tabs persist across reloads; the active one is in the URL |
 | Repo header | HEAD (branch, detached, or unborn), upstream with ahead/behind, staged/unstaged/untracked/conflicted counts, the System for non-local projects, Refresh |
+| Diff | A commit, unstaged or staged changes, two refs (`..` / `...`), a run of commits, or a commit vs the working directory. File list; Hunk, Inline and Split modes with word-level and syntax highlighting; File view; whitespace and context controls; wrap; change navigation and in-file search; binary, rename, LFS-pointer, submodule and oversized states; patch download/copy. Picked from the Compare panel (left) |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
 
 Details: [docs/features.md](docs/features.md).
@@ -56,7 +57,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 | `npm test` | typecheck, then backend, then UI tests |
 | `npm run test:server` | `node --test "tests/*.test.js"` |
 | `npm run test:ui` | `vitest run --config frontend/vitest.config.ts` |
-| `node harness/playwright/snap.mjs` / `golden.mjs` | screenshots / golden path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
+| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` | screenshots / golden path / the diff path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
 | `node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" baseline` | mutation trust gates ([harness/mutation/README.md](harness/mutation/README.md)) |
 
 ## Known limitations
@@ -66,4 +67,8 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **The activity log is in memory**: capped (`LIMITS.activityRing` in `src/git/limits.js`) and cleared when the backend restarts.
 - **Git prompts are disabled.** Credentials must come from the target System's credential helper or ssh-agent; an op that would prompt fails instead.
 - **Output over an op's cap is refused (`OUTPUT_TOO_LARGE`), never clipped.**
+- **Below the `lg` breakpoint the Compare picker is hidden** (the left and right slots are); diffs open from the graph.
+- **Untracked files are not in a work-in-progress patch** (`git diff` leaves them out).
+- **No image or binary preview** in the diff, and **File view has no blame**.
+- **Non-UTF-8 text shows replacement characters** in the diff.
 - **Writes are not cancellable by default**: an op opts in only where aborting mid-command is safe; a closed browser tab does not abort a write.

@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import { ACTIVITY_PANEL } from '@/features/activity/panel';
+import { COMPARE_PANEL, DIFF_PANEL } from '@/features/diff/panel';
 import { GRAPH_PLACEHOLDER } from '@/features/repo/GraphPlaceholder';
 import type { Tab } from '@/state/tabs';
 
@@ -14,8 +15,10 @@ export interface PanelDef {
   /** Rendered with the active tab (null when none is open). */
   component: ComponentType<{ tab: Tab | null }>;
   order: number;
+  /** Shown only while useShownPanel names it; it then replaces the slot's other panels. */
+  onDemand?: boolean;
 }
 
-const PANELS: PanelDef[] = [ACTIVITY_PANEL, GRAPH_PLACEHOLDER];
+const PANELS: PanelDef[] = [ACTIVITY_PANEL, GRAPH_PLACEHOLDER, COMPARE_PANEL, DIFF_PANEL];
 
 export const panelsFor = (slot: PanelSlot): PanelDef[] => PANELS.filter((p) => p.slot === slot).sort((a, b) => a.order - b.order);

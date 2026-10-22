@@ -40,3 +40,11 @@ test("C1's registry holds repo.summary as a cancellable read", () => {
   assert.equal(s.kind, 'read');
   assert.equal(s.cancellable, true);
 });
+
+test('the diff ops are registered as cancellable reads', () => {
+  for (const name of ['diff.files', 'diff.file', 'diff.patch']) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'read', name);
+    assert.equal(d.cancellable, true, name);
+  }
+});
