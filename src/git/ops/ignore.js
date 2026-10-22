@@ -24,7 +24,9 @@ function appendPatch(text, line) {
   const lines = text.split('\n');
   const endsWithNewline = lines.at(-1) === '';
   if (endsWithNewline) lines.pop();
-  const crlf = lines[0].endsWith('\r');
+  // The line ending of the last terminated line (a file with a stray LF line first still gets CRLF if it ends that way).
+  const terminated = endsWithNewline ? lines : lines.slice(0, -1);
+  const crlf = (terminated.at(-1) ?? lines.at(-1)).endsWith('\r');
   const eol = crlf ? '\r' : '';
   const body = lines.map((l) => ` ${l}`);
   if (!endsWithNewline) {

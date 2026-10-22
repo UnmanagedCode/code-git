@@ -75,7 +75,7 @@ Right slot, while the graph has nothing or a single WIP row selected (below `lg`
 | Row | Status letter, path (`old → new` for a rename). Click or Enter opens its unstaged / staged diff at that file. Right-click or ⋮: **Stage** / **Unstage**, **Discard…**, **Copy path**, then the ignore items below |
 | Commit box | **Summary** (one line), **Description**, ☐ **Amend previous commit**, ☐ **Skip Git hooks**, then the commit button(s) |
 
-**Discard** always asks first and sends nothing until confirmed: a file ("Discard changes to …?" / "Delete …?" for an untracked file), or **Discard all…**, which lists every untracked file it deletes with their count. Both say "This cannot be undone." Discard all throws away exactly the unstaged and untracked files shown (not conflicted ones); staged changes and ignored files stay.
+**Discard** always asks first and sends nothing until confirmed: a file ("Discard changes to …?" / "Delete …?" for an untracked file), or **Discard all…**, which lists every untracked file it deletes with their count. Both say "This cannot be undone." Discard all throws away exactly the unstaged and untracked files shown; staged changes and ignored files stay, and conflicted files are left untouched — the confirmation says how many.
 
 **Ignore** (row menu), into the root `.gitignore` (left unstaged):
 

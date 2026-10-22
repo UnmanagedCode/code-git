@@ -175,7 +175,16 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 - **Residual risks.** `commit.gpgSign=true` runs the configured signer; a signer that cannot sign (no key, or no pinentry: the exec has no tty) fails at once as `GIT_FAILED` — verified with gpg 2 + pinentry-curses (`RUN_REAL_GPG=1` test in `tests/ops-commit.test.js`). A signer that waits forever would run until the write timeout. Commit messages are assumed UTF-8 (`i18n.commitEncoding` is not read).
   - **`git apply --index` writes through an untracked symlink.** It checks a path's leading directories against the index only, so with an untracked `link → /outside` a patch creating `link/x` writes `/outside/x` (exit 0). Plain `git apply` (worktree) lstat-checks and refuses ("beyond a symbolic link"); `--cached` writes only the index. So no op passes `--index`: `patch.apply` offers worktree and index only. Any later op that would use `--index` (stash, cherry-pick by patch) must not, or must first refuse every path git's worktree check refuses.
-  - `filter.<driver>.clean` / `.process` run when `git apply` or a selection re-read touches a worktree file, as for any diff of one.
+  - **Programs a hostile repo config or `.gitattributes` makes git run** (accepted: cc projects are the user's own; the same class as C1's `git status` running filters):
+
+| Config | Runs on |
+|---|---|
+| `filter.<driver>.smudge` / `.process` | writing a worktree file: `patch.apply` (worktree), `stage.discardLines`, `stage.discardFiles` (tracked), `files.restore` |
+| `filter.<driver>.clean` / `.process` | reading a worktree file into git: `stage.files`, `stage.stageLines` and every diff of a worktree side (including the selection ops' re-reads) |
+| `core.hooksPath` (and `.git/hooks`) | `commit.create` (pre-commit, commit-msg, …), unless **Skip Git hooks** |
+| `commit.gpgSign` / `gpg.program` | `commit.create` |
+
+  - **A project whose `.git` is a file pointing at another repository's git dir makes code-git act on that repository.** That is git's own model (cc worktrees use `.git` files legitimately) and cc projects are the user's own; the same class as the other hostile-repo residuals. `--work-tree=.` keeps the working tree the checkout's, not the git dir.
 
 ### What each destructive op destroys
 

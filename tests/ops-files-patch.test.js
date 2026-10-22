@@ -73,7 +73,7 @@ test('patch.check reports numstat and changes nothing', async (t) => {
   const w = await world(t);
   const patch = edit('a.txt', 'a v2', 'a v3') + newFile('new.txt', 'n');
   const r = await w.op('patch.check', { patchB64: b64(patch) });
-  assert.deepEqual(r.files, [{ path: 'a.txt', oldPath: null, added: 1, deleted: 1 }, { path: 'new.txt', oldPath: null, added: 1, deleted: 0 }]);
+  assert.deepEqual(r.files, [{ path: 'a.txt', added: 1, deleted: 1 }, { path: 'new.txt', added: 1, deleted: 0 }]);
   assert.equal(read(w, 'a.txt'), 'a v2\n');
   assert.equal(exists(w, 'new.txt'), false);
   const argv = w.execArgv().find((a) => a.includes('apply'));

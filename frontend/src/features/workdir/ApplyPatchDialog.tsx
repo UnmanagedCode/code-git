@@ -104,8 +104,8 @@ export function ApplyPatchDialog({ tab, open, onOpenChange }: { tab: Tab; open: 
         {ready && (
           <ul aria-label="Files the patch changes" className="max-h-48 overflow-y-auto rounded-md border bg-muted/40 p-2 font-mono text-xs">
             {checked.files.map((f) => (
-              <li key={`${f.oldPath ?? ''}\0${f.path}`} className="flex gap-2">
-                <span className="min-w-0 flex-1 truncate">{clip(f.oldPath ? `${f.oldPath} → ${f.path}` : f.path)}</span>
+              <li key={f.path} className="flex gap-2">
+                <span className="min-w-0 flex-1 truncate">{clip(f.path)}</span>
                 <span className="shrink-0 text-muted-foreground">{f.added === null ? 'binary' : `+${f.added} −${f.deleted}`}</span>
               </li>
             ))}

@@ -42,10 +42,11 @@ export async function discardFile(tab: Tab, f: DiffFile): Promise<void> {
 export async function discardAll(tab: Tab, unstaged: DiffFile[]): Promise<void> {
   const tracked = unstaged.filter((f) => canDiscard(f) && f.status !== '?').map((f) => f.path);
   const untracked = unstaged.filter((f) => f.status === '?').map((f) => f.path);
+  const conflicted = unstaged.filter((f) => f.status === 'U').length;
   if (!tracked.length && !untracked.length) return;
   const ok = await confirm({
     title: 'Discard all unstaged changes?',
-    body: `${tracked.length} tracked ${tracked.length === 1 ? 'file loses its' : 'files lose their'} unstaged changes${untracked.length ? `, and ${untracked.length === 1 ? 'this untracked file is' : 'these untracked files are'} deleted` : ''}. Staged changes and ignored files stay.`,
+    body: `${tracked.length} tracked ${tracked.length === 1 ? 'file loses its' : 'files lose their'} unstaged changes${untracked.length ? `, and ${untracked.length === 1 ? 'this untracked file is' : 'these untracked files are'} deleted` : ''}. Staged changes and ignored files stay${conflicted ? `, and ${conflicted} conflicted ${conflicted === 1 ? 'file is' : 'files are'} left untouched (resolve ${conflicted === 1 ? 'it' : 'them'} first)` : ''}.`,
     ...(untracked.length ? { items: untracked, count: untracked.length } : {}),
     irreversible: true,
     confirmLabel: 'Discard all',

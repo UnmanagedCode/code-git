@@ -136,6 +136,15 @@ test('a .gitignore edited between the read and the apply makes the apply fail; t
   assert.equal(gitignore(w).toString(), 'a\nedited meanwhile\n');
 });
 
+test('the line ending of a .gitignore append follows its last line, not its first ("\\na\\r\\n" gets CRLF)', async (t) => {
+  const w = await world(t, { '.gitignore': '\na\r\n' });
+  await w.op('ignore.add', { kind: 'path', value: 'x' });
+  assert.equal(gitignore(w).toString(), '\na\r\n/x\r\n');
+  const l = await world(t, { '.gitignore': 'a\r\nb\n' });
+  await l.op('ignore.add', { kind: 'path', value: 'x' });
+  assert.equal(gitignore(l).toString(), 'a\r\nb\n/x\n');
+});
+
 test('ignore and stop tracking refuses `.` or empty as a path or folder, and a folder given as a path, writing nothing', async (t) => {
   const w = await world(t, { 'keep.txt': 'k\n', 'src/a.ts': 'a\n', 'src/b.ts': 'b\n' });
   for (const [kind, value] of [['path', '.'], ['path', ''], ['dir', '.'], ['dir', './'], ['path', 'src/./a.ts']]) {

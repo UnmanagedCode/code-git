@@ -316,6 +316,11 @@ test('Discard all lists at most FILE_RENDER_CAP untracked names, then how many m
   await waitFor(() => expect((w.posts('stage.discardFiles')[0] as { untracked: string[] }).untracked).toHaveLength(FILE_RENDER_CAP + 3));
 });
 
+test('Discard all says how many conflicted files it leaves untouched', async () => {
+  await show({ unstaged: [M, dfile({ path: 'c1.ts', status: 'U' }), dfile({ path: 'c2.ts', status: 'U' })] });
+  await userEvent.click(screen.getByRole('button', { name: 'Discard all…' }));
+  expect(within(dialog()).getByText(/2 conflicted files are left untouched/)).toBeTruthy();
+});
 
 test('a template draft shows the template file it was read from', async () => {
   workdirWorld({ unstaged: [M], staged: [STAGED], template: { summary: 'feat:', description: '' } });

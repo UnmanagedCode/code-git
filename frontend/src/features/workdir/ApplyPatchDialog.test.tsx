@@ -14,7 +14,7 @@ const PATCH = 'diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+b\n';
 const b64 = (s: string) => Buffer.from(s).toString('base64');
 
 async function openDialog(w: WorkdirWorld = {}) {
-  const world = workdirWorld({ answers: { 'patch.check': { files: [{ path: 'a', oldPath: null, added: 1, deleted: 1 }] }, ...w.answers } });
+  const world = workdirWorld({ answers: { 'patch.check': { files: [{ path: 'a', added: 1, deleted: 1 }] }, ...w.answers } });
   render(<Shell />);
   act(() => dispatchTabs({ type: 'open', tab: APP }));
   await userEvent.click(await screen.findByRole('button', { name: 'Changes menu' }));

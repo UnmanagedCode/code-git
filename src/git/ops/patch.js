@@ -33,20 +33,13 @@ async function apply(git, args, bytes) {
   return r;
 }
 
-/** `--numstat -z` → [{path, oldPath, added, deleted}] (`null` counts for a binary file). */
+/** `git apply --numstat -z` → [{path, added, deleted}] (`null` counts for a binary file); a rename is listed by its new path. */
 function parseNumstat(out) {
-  const f = out.split('\0');
-  const files = [];
-  for (let i = 0; i < f.length; i++) {
-    const m = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/.exec(f[i]);
-    if (!m) continue;
-    const count = (v) => (v === '-' ? null : Number(v));
-    // A rename's record has an empty path, then the old and new paths.
-    const renamed = m[3] === '';
-    files.push({ path: renamed ? f[i + 2] : m[3], oldPath: renamed ? f[i + 1] : null, added: count(m[1]), deleted: count(m[2]) });
-    if (renamed) i += 2;
-  }
-  return files;
+  const count = (v) => (v === '-' ? null : Number(v));
+  return out.split('\0').flatMap((rec) => {
+    const m = /^(\d+|-)\t(\d+|-)\t([\s\S]+)$/.exec(rec);
+    return m ? [{ path: m[3], added: count(m[1]), deleted: count(m[2]) }] : [];
+  });
 }
 
 export const ops = [

@@ -337,7 +337,7 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
   - Absent → `new file mode 100644`, `--- /dev/null`.
   - Empty → `@@ -0,0 +1,1 @@` with `--unidiff-zero`.
   - No final newline → the last line is re-emitted with one (`-last`, `\ No newline at end of file`, `+last`).
-  - A file whose first line ends in CR gets `\r\n` on the new lines.
+  - A file whose last terminated line ends in CR gets `\r\n` on the new lines (the last line decides, not the first: `"\na\r\n"` gets CRLF).
 - `stopTracking: true` (the UI confirms it): first `git ls-files -z -c -- <value>` (`path`, `dir`) or `git ls-files -z -c -i --exclude=<pattern>` (`ext`: this pattern only, never `--exclude-standard`) — a `path` that lists anything but itself is a folder → 400 `BAD_PATH` before anything is written — then, after `.gitignore`, `git rm --cached -q --pathspec-from-file=- --pathspec-file-nul` of that list. The files stay on disk. `.gitignore` is written first; a failing `rm` is 422 `GIT_FAILED` with `step: 'stopTracking'` and a message saying `.gitignore` was already changed.
 - `result`: `{pattern, added, untracked: paths removed from the index}`.
 
@@ -351,7 +351,7 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 ### `patch.check` (read, cancellable) and `patch.apply` (write)
 
 - `params`: `{patchB64, apply?: 'worktree' | 'index'}` (default `worktree`). Strict base64, decoded 1…`STAGE_LIMITS.applyPatchMaxBytes` bytes. `apply: 'both'` (`git apply --index`) is refused `BAD_PARAMS`: see the residual risks in architecture.
-- `patch.check`: `git apply --check --numstat -z [--cached] --whitespace=nowarn --no-ignore-whitespace -`. `result`: `{files: [{path, oldPath, added, deleted}]}` (`oldPath` for a rename; counts `null` for binary).
+- `patch.check`: `git apply --check --numstat -z [--cached] --whitespace=nowarn --no-ignore-whitespace -`. `result`: `{files: [{path, added, deleted}]}` (counts `null` for binary; `--numstat -z` names a rename by its new path only).
 - `patch.apply`: `git apply [--cached] --whitespace=nowarn --no-ignore-whitespace -`. `result`: `{apply, bytes}`.
 - Atomic: no `--reject`, so all of it applies or none. Never `--unsafe-paths`, `--directory`, `-p`, `--include`/`--exclude`, `--3way`, `--index`.
 - Exit 1 (does not apply) or 128 (no valid patch in the input; an `..`, absolute or `.git/` path) → 409 `PATCH_DOES_NOT_APPLY` with `exitCode` and `stderr`. Worktree mode also refuses a path beyond a symlink; index mode never writes to disk.

@@ -10,7 +10,7 @@ export interface CommitParams extends Draft { amend?: boolean; messageOnly?: boo
 export interface TemplateResult { path: string | null; draft: Draft | null; problem: string | null }
 export type IgnoreKind = 'path' | 'ext' | 'dir';
 export type ApplyTarget = 'worktree' | 'index';
-export interface PatchFile { path: string; oldPath: string | null; added: number | null; deleted: number | null }
+export interface PatchFile { path: string; added: number | null; deleted: number | null }
 
 /** Mirrors the backend's STAGE_LIMITS.applyPatchMaxBytes (src/git/stage/limits.js); a test pins them equal. */
 export const APPLY_PATCH_MAX_BYTES = 512 * 1024;
