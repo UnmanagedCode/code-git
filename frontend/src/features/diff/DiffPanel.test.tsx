@@ -210,6 +210,16 @@ test('file states: binary, LFS, conflicted, rename-only, submodule pointer', asy
   expect(posts('diff.file').map((p) => p.path)).not.toContain('c.txt');
 });
 
+test('an empty file added or deleted says so, not "No content changes"', async () => {
+  await openA([dfile({ path: 'new-empty', status: 'A', added: 0, deleted: 0 }), dfile({ path: 'gone-empty', status: 'D', added: 0, deleted: 0 })], {
+    'new-empty': fdiff([], { oldMode: null, newMode: '100644' }), 'gone-empty': fdiff([], { oldMode: '100644', newMode: null }),
+  });
+  expect(await screen.findByText('Empty file added')).toBeTruthy();
+  await userEvent.click(screen.getByRole('option', { name: /gone-empty/ }));
+  expect(await screen.findByText('Empty file deleted')).toBeTruthy();
+  expect(screen.queryByText('No content changes')).toBeNull();
+});
+
 test("a merge commit's parent select refetches the list with parent 2", async () => {
   const { posts } = world(filesResult([dfile()], { commit: { oid: OID('m'), parents: [OID('1'), OID('2')] } }), { 'src/a.ts': A_DIFF });
   show();

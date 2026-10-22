@@ -119,6 +119,7 @@ Center slot, per tab: each tab keeps its own diff; switching tabs shows that tab
 | Submodule (gitlink) | "Submodule pointer `<old7> → <new7>`" (— for an absent side), a **dirty** badge for a dirty worktree side |
 | Git LFS pointer | A card with each side's object id (12 characters) and size; **Show pointer** shows the pointer text |
 | Over the file cap | "Too large to display (over N MB)"; in Inline, Split or File view also **Switch to Hunk mode** |
+| Empty file added / deleted | "Empty file added" / "Empty file deleted" |
 | No content change (rename-only, mode-only, whitespace hidden) | "No content changes" + the mode or rename line |
 | List over its cap | An alert: the diff is too large to list; no file list |
 

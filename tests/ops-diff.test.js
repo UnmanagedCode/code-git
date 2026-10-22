@@ -211,6 +211,21 @@ test('file states: binary, rename with similarity and an edit, LFS pointers, ove
   assert.equal((await file(pair, 'src/app.ts')).lfs, null);
 });
 
+test('an empty file added, deleted, or untracked has no hunks and only the present side has a mode', async (t) => {
+  const { repo } = await world(t);
+  repo.git('stash', '-q', '--include-untracked');
+  repo.commit({ 'empty.txt': '' }, 'add empty');
+  const added = await file(commit('HEAD'), 'empty.txt');
+  assert.deepEqual([added.oldMode, added.newMode, added.hunks], [null, '100644', []]);
+  repo.git('rm', '-q', 'empty.txt');
+  repo.git('commit', '-q', '-m', 'drop empty');
+  const deleted = await file(commit('HEAD'), 'empty.txt');
+  assert.deepEqual([deleted.oldMode, deleted.newMode, deleted.hunks], ['100644', null, []]);
+  repo.write('fresh-empty.txt', '');
+  const untracked = await file({ kind: 'unstaged' }, 'fresh-empty.txt', { untracked: true });
+  assert.deepEqual([untracked.oldMode, untracked.newMode, untracked.hunks], [null, '100644', []]);
+});
+
 test('context: 0 gives bare changes, full gives one hunk covering every line; whitespace all drops a whitespace-only change', async (t) => {
   await world(t);
   const src = commit('HEAD~1');

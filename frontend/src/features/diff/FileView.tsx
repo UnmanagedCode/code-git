@@ -110,6 +110,9 @@ function Body({ file, state, forced, prefs, rows, marks, onForce }: FileViewProp
     );
   }
   if (!d.hunks.length) {
+    // An absent side's mode is null: an empty file added or deleted has no hunks but is a real change.
+    if (!d.oldMode && d.newMode) return <Note><p>Empty file added</p></Note>;
+    if (d.oldMode && !d.newMode) return <Note><p>Empty file deleted</p></Note>;
     const mode = d.oldMode && d.newMode && d.oldMode !== d.newMode ? `mode ${d.oldMode} → ${d.newMode}` : null;
     const ren = file.oldPath ? `renamed from ${file.oldPath}${file.similarity !== null ? ` (${file.similarity}% similar)` : ''}` : null;
     return <Note><p>No content changes</p>{mode && <p className="font-mono">{mode}</p>}{ren && <p className="font-mono">{ren}</p>}</Note>;
