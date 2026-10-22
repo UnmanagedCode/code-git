@@ -122,4 +122,4 @@ Center slot, per tab: each tab keeps its own diff; switching tabs shows that tab
 | No content change (rename-only, mode-only, whitespace hidden) | "No content changes" + the mode or rename line |
 | List over its cap | An alert: the diff is too large to list; no file list |
 
-**Create patch** ▾: **Download .patch**, **Copy patch**; with more than one file selected also the same two for the selected files only. A commit, or a run of commits without merges, gives a mailbox patch (`git am`); anything else a plain diff (`git apply`), binary changes included, untracked files not. The file name comes from the backend. A failed request is shown as an alert in the header.
+**Create patch** ▾: **Download .patch**, **Copy patch**; with more than one file selected also the same two for the selected files only (a renamed file brings its old path, so the rename stays a rename). A commit, or a run of commits without merges, gives a mailbox patch (`git am`); anything else a plain diff (`git apply`), binary changes included, untracked files not. The file name comes from the backend. A failed request is shown as an alert in the header.

@@ -365,6 +365,29 @@ test('patch of unstaged changes applies on HEAD; paths limit the files; binary c
   await assert.rejects(op('diff.patch', { source: commit('HEAD'), paths: [] }), refused('BAD_PARAMS'));
 });
 
+test('a patch of a rename limited to both its paths pairs it (rename from/to) and applies to the commit tree, mailbox and plain', async (t) => {
+  const { repo, oids } = await world(t);
+  const env = hermeticEnv(repo.home);
+  const ren = ['old/name.js', 'new/name.js'];
+  const sources = [['mailbox', commit(oids.change), 'am'], ['plain', { kind: 'pair', old: { type: 'tree', oid: oids.merge }, new: { type: 'tree', oid: oids.change } }, 'apply']];
+  for (const [form, source, how] of sources) {
+    const text = decode(await op('diff.patch', { source, paths: ren })).toString();
+    assert.equal(text.startsWith('From '), form === 'mailbox', form);
+    assert.match(text, /^rename from old\/name\.js$/m, form);
+    assert.match(text, /^rename to new\/name\.js$/m, form);
+    const clone = path.join(repo.root, `clone-${form}`);
+    execFileSync('git', ['clone', '-q', '--no-checkout', repo.dir, clone], { env });
+    execFileSync('git', ['-C', clone, 'checkout', '-q', oids.merge], { env });
+    const file = path.join(repo.root, `${form}.patch`);
+    fs.writeFileSync(file, text);
+    execFileSync('git', ['-C', clone, how, ...(how === 'apply' ? ['--index'] : ['-q']), file], { env });
+    const blob = (rev, p) => execFileSync('git', ['-C', clone, 'rev-parse', `${rev}:${p}`], { env, encoding: 'utf8' }).trim();
+    const tree = how === 'am' ? 'HEAD' : '';
+    assert.equal(blob(tree, 'new/name.js'), repo.git('rev-parse', `${oids.change}:new/name.js`), form);
+    assert.throws(() => blob(tree, 'old/name.js'), undefined, `${form}: the old path is gone`);
+  }
+});
+
 test('patch filenames: staged / worktree name the project (sanitised, capped), a compare names both ends', async (t) => {
   const { cc, oids } = await world(t);
   const odd = 'my proj_..é';

@@ -1,7 +1,7 @@
 import { decodeBase64, downloadBytes } from '@/lib/download';
 import type { Target } from '@/lib/endpoints';
 import { setNotice } from '@/state/diff';
-import { createPatch, type DiffFilesResult, type DiffSource } from './api';
+import { createPatch, type DiffFile, type DiffFilesResult, type DiffSource } from './api';
 
 /**
  * The source to make a patch from: the commit or the run of commits itself (so the backend can write a mailbox
@@ -12,6 +12,12 @@ export function patchSource(source: DiffSource, r: DiffFilesResult): DiffSource 
   if (source.kind === 'commits') return source;
   return { kind: 'pair', ...r.pair };
 }
+
+/**
+ * The `paths` of a patch of `files`: a rename or copy brings its old path too, since git pairs a rename only when both
+ * sides are in the pathspec (else the patch adds the new file and never deletes the old one).
+ */
+export const patchPaths = (files: DiffFile[]): string[] => files.flatMap((f) => (f.oldPath ? [f.oldPath, f.path] : [f.path]));
 
 /** Runs a patch request; a failure is shown in the tab's diff header instead of being lost. */
 async function withNotice(t: Target, f: () => Promise<void>): Promise<void> {

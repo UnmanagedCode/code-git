@@ -31,7 +31,7 @@ async function open(patch: Response | object = { ok: true, result: { filename: '
   const fetch = stubFetch({
     'GET api/activity': { entries: [] },
     'POST api/ops/repo.summary': { ok: true, result: summary() },
-    'POST api/ops/diff.files': { ok: true, result: filesResult([dfile({ path: 'a.ts' }), dfile({ path: 'b.ts' }), dfile({ path: 'c.ts' })], { commit: { oid: OID('c'), parents: [OID('p')] } }) },
+    'POST api/ops/diff.files': { ok: true, result: filesResult([dfile({ path: 'a.ts' }), dfile({ path: 'b.ts' }), dfile({ path: 'c.ts', oldPath: 'old/c.ts', status: 'R', similarity: 90 })], { commit: { oid: OID('c'), parents: [OID('p')] } }) },
     'POST api/ops/diff.file': { ok: true, result: fdiff([hunk(1, 1, ['+x'])]) },
     'POST api/ops/diff.patch': patch,
   });
@@ -68,18 +68,18 @@ test('Copy: the decoded patch text goes to the clipboard', async () => {
   await waitFor(() => expect(writeText).toHaveBeenCalledWith('From abc\n'));
 });
 
-test('multi-selected files are sent as paths; from the file menu too', async () => {
+test('multi-selected files are sent as paths, a rename with its old path too; from the file menu too', async () => {
   const { patches } = await open();
   await userEvent.click(screen.getByRole('option', { name: /a\.ts/ }));
-  fireEvent.click(screen.getByRole('option', { name: /c\.ts/ }), { ctrlKey: true });
+  fireEvent.click(screen.getByRole('option', { name: /→ c\.ts/ }), { ctrlKey: true });
   expect(diffStore.get().get(tabKey(APP))?.selected.sort()).toEqual(['a.ts', 'c.ts']);
   await menu('Download .patch of 2 selected files');
   await waitFor(() => expect(patches()).toHaveLength(1));
-  expect(patches()[0]).toEqual({ source: { kind: 'commit', rev: OID('c') }, paths: ['a.ts', 'c.ts'] });
+  expect(patches()[0]).toEqual({ source: { kind: 'commit', rev: OID('c') }, paths: ['a.ts', 'old/c.ts', 'c.ts'] });
   await userEvent.click(screen.getByRole('button', { name: 'Actions for c.ts' }));
   await userEvent.click(await screen.findByRole('menuitem', { name: 'Create patch from selection (download)' }));
   await waitFor(() => expect(patches()).toHaveLength(2));
-  expect(patches()[1]).toEqual({ source: { kind: 'commit', rev: OID('c') }, paths: ['a.ts', 'c.ts'] });
+  expect(patches()[1]).toEqual({ source: { kind: 'commit', rev: OID('c') }, paths: ['a.ts', 'old/c.ts', 'c.ts'] });
 });
 
 test('a failed patch request is shown as an alert in the diff header', async () => {

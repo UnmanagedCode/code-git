@@ -155,7 +155,7 @@ LfsPointer { oid /* sha256 hex */, size }
 
 ### `diff.patch` (read, cancellable)
 
-- `params`: `{source, paths?}`; `paths` 1…`DIFF_LIMITS.maxPaths`, each `assertPath`.
+- `params`: `{source, paths?}`; `paths` 1…`DIFF_LIMITS.maxPaths`, each `assertPath`. Git pairs a rename or copy only when **both** its paths are in `paths`; with the new path alone the patch adds it and never deletes the old one (the UI sends both: `patchPaths` in `features/diff/patch.ts`).
 - **Mailbox** (`git am`-able) for one non-merge commit, or a merge-free contiguous `series` without `wip`: `git format-patch --stdout FORMAT_PATCH_FLAGS DIFF_FLAGS --end-of-options <base>..<tip> -- [paths]` (`--root <tip>` from a root commit). `FORMAT_PATCH_FLAGS` (`src/git/diff/source.js`) switches off every `format.*` key that adds a signature, headers, recipients, a cover letter, numbering, threading, a base, a From override, attachments, notes or a sign-off.
 - **Plain** (`git apply`-able) otherwise: `git diff --binary DIFF_FLAGS <pair> -- [paths]`. Binary changes are included; untracked files are not.
 - Capped at `DIFF_LIMITS.patchMaxOutputBytes`.

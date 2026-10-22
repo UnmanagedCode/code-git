@@ -12,7 +12,7 @@ import { languageFor } from './highlight';
 import { useTokenizer } from './highlight/useTokenizer';
 import { changeBlocks } from './model';
 import { closeDiff, openDiff } from './openDiff';
-import { copyPatch, downloadPatch, patchSource } from './patch';
+import { copyPatch, downloadPatch, patchPaths, patchSource } from './patch';
 import { SearchBar } from './SearchBar';
 import { useDiffKeys } from './useDiffKeys';
 import { buildRows, findMatches, highlightSides } from './viewRows';
@@ -100,7 +100,7 @@ function DiffView({ tab }: { tab: Tab }) {
         notice={state.notice}
         onParent={(parent) => state.source.kind === 'commit' && openDiff(tab, { ...state.source, parent }, state.viewed ? { path: state.viewed } : {})}
         onRefresh={() => void loadList(tab)}
-        onPatch={(how, selectedOnly) => void (how === 'download' ? downloadPatch : copyPatch)(tab, psource, selectedOnly ? state.selected : undefined)}
+        onPatch={(how, selectedOnly) => void (how === 'download' ? downloadPatch : copyPatch)(tab, psource, selectedOnly ? patchPaths(files.filter((f) => state.selected.includes(f.path))) : undefined)}
         onClose={() => closeDiff(tab)}
       />
       {list?.error ? (
