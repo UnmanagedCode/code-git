@@ -15,8 +15,8 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
 );
 
 /**
- * Picks what to diff until the commit graph offers it: work in progress, one commit, or two refs. Typed refs are
- * checked by listing the diff first; a refusal stays here as text and the diff is not opened.
+ * Picks what to diff by name, beside the commit graph's own entry points: work in progress, one commit, or two refs.
+ * Typed refs are checked by listing the diff first; a refusal stays here as text and the diff is not opened.
  */
 function Compare({ tab }: { tab: Tab }) {
   const { summary } = useRepoSummary(tab);
