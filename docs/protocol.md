@@ -386,9 +386,21 @@ RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */
 | `branch.checkout` | write | `{ref: refs/heads/… \| refs/remotes/…, ccOwned?}` | local: `switch --no-guess --end-of-options <name>`. Remote, no local twin: `switch --no-guess --track -c <b> --end-of-options <ref>`; local twin: switch to it, then `merge --ff-only --end-of-options <oid>` when it tracks `ref` and is behind it | `{branch, created, localExisted, fastForwarded, ffBlocked: path[]\|null, undo}` | `REF_UNKNOWN`; `BRANCH_CHECKED_OUT` (elsewhere); `CC_OWNED_BRANCH`; `CHECKOUT_CONFLICT` |
 | `branch.rename` | write | `{name, newName, ccOwned?}` | `branch -m --end-of-options <name> <newName>` | `{ref, undo}` | `REF_UNKNOWN`; `REF_EXISTS`; `BRANCH_CHECKED_OUT` (another checkout, or a checked-out cc branch anywhere); `CC_OWNED_BRANCH` (either name) |
 | `branch.delete` | write | `{names, force?, ccOwned?}` | `branch -d\|-D --end-of-options <names…>` (exit 0 or 1), then the heads again | `{deleted, notMerged, undo}` | `REF_UNKNOWN`, `BRANCH_CHECKED_OUT` (any checkout, this one included), `CC_OWNED_BRANCH` — for any name, before anything is deleted; `GIT_FAILED` for a name git kept for another reason |
+| `branch.deleteRemote` | write, **cancellable** | `{remote, branches: string[] /* names on the remote */, ccOwned?}` | `push --porcelain --end-of-options <remote> :refs/heads/<b>…` | `{deleted, rejected: [{ref, reason}], undo}` (`undo.remoteRefs[].old` = the tracking ref before) | `REMOTE_UNKNOWN`; `CC_OWNED_BRANCH`; the push refusals below |
 | `branch.setUpstream` | write | `{name, upstream: refs/remotes/… \| null}` | `branch --set-upstream-to=<u> --end-of-options <name>` / `branch --unset-upstream --end-of-options <name>` (skipped when none is set) | `{name, upstream, previous}` | `REF_UNKNOWN` (branch or upstream) |
 | `branch.fastForward` | write | `{name, to: oid, expect: oid}` | `merge-base --is-ancestor <expect> <to>`; this checkout's branch: `merge --ff-only --end-of-options <to>`; else `update-ref -m "code-git: fast-forward" refs/heads/<name> <to> <expect>` | `{upToDate, undo}` | `REF_UNKNOWN`; `REF_MOVED` (not at `expect`); `BRANCH_CHECKED_OUT` (another checkout); `NOT_FAST_FORWARD`; `CHECKOUT_CONFLICT` |
 | `branch.move` | write | `{name, to: oid, expect: oid, ccOwned?}` | `update-ref -m "code-git: reset" refs/heads/<name> <to> <expect>` | `{undo}` | `REF_UNKNOWN`; `BRANCH_CHECKED_OUT` (any checkout: this one's branch moves with `head.reset`); `CC_OWNED_BRANCH`; `REV_UNKNOWN`; `REF_MOVED` |
+| `tag.create` | write | `{name, oid, message?}` | non-blank `message`: `tag -a --cleanup=verbatim -F - --end-of-options <name> <oid>`, the message on stdin (≤ `REF_LIMITS.tagMessageMaxBytes`, no NUL); else `tag --end-of-options <name> <oid>` | `{ref, oid /* tag object, or the commit for a lightweight tag */, undo}` | `REF_EXISTS`; `REV_UNKNOWN` |
+| `tag.delete` | write | `{names}` | `tag -d --end-of-options <names…>` | `{deleted, undo}` (`old` = the tag object) | `REF_UNKNOWN` (any name, before anything is deleted) |
+| `tag.push` | write, **cancellable** | `{remote, names}` | `push --porcelain --end-of-options <remote> refs/tags/<n>:refs/tags/<n>…` (never forced) | `{pushed, upToDate, rejected, undo}` | `REMOTE_UNKNOWN`; `REF_UNKNOWN`; the push refusals below |
+| `tag.deleteRemote` | write, **cancellable** | `{remote, names}` | `push --porcelain --end-of-options <remote> :refs/tags/<n>…` | `{deleted, rejected, undo}` (`undo.remoteRefs[].old` = the local tag object, else null) | `REMOTE_UNKNOWN`; the push refusals below |
+
+**Remote names and pushes** (`src/git/remote/push.js`, shared with later remote ops):
+
+- `remote` is checked in `params` (non-empty, ≤ 200 characters, no leading `-`, whitespace or control character) and then must be one of `git remote`'s names; either failure is 404 `REMOTE_UNKNOWN`, the first before any exec.
+- A push runs with `NETWORK_LIMITS` (`src/git/remote/limits.js`) and accepts exit 0, 1 and 128; the result comes from the `--porcelain` ref lines. No env is added: `BASE_ENV` already disables every prompt.
+- No ref line and a non-zero exit: 502 `REMOTE_AUTH_FAILED` or 502 `REMOTE_UNREACHABLE` (`classifyRemoteFailure` in `src/git/parse/push.js`), with `stderr`; anything else (a pre-push hook that refused) 422 `GIT_FAILED` with `stderr`. Hooks always run.
+- Every ref rejected and none updated or up to date: 409 `PUSH_REJECTED` with `rejected: [{ref, reason}]`. A partly rejected push succeeds and lists `rejected`.
 
 ### Paging convention (for ops that list)
 
@@ -460,6 +472,8 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `REF_MOVED` | 409 | The ref is no longer at the op's `expect` |
 | `NOT_FAST_FORWARD` | 409 | The target is not a descendant of the branch |
 | `CHECKOUT_CONFLICT` | 409 | Local changes would be overwritten; `files`, `stderr` |
+| `REMOTE_UNKNOWN` | 404 | The remote name is malformed or not one of `git remote`'s |
+| `PUSH_REJECTED` | 409 | The remote rejected every ref of a push; `rejected` |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |
@@ -467,6 +481,8 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `INTERNAL` | 500 | A code-git bug (logged) |
 | `SYSTEM_UNREACHABLE` | 502 | The project's System cannot be asked; `detail` = cc's code |
 | `GIT_UNAVAILABLE` | 502 | git could not start on the System; `errno` |
+| `REMOTE_AUTH_FAILED` | 502 | The remote refused the credentials, or would have prompted for them; `stderr` |
+| `REMOTE_UNREACHABLE` | 502 | The remote could not be reached; `stderr` |
 | `CONDUCTOR_UNAVAILABLE` | 503 | No `CONDUCTOR_URL`, cc did not answer, or answered without a usable body |
 | `GIT_TIMEOUT` | 504 | The command passed its deadline and was killed; partial `stderr` |
 

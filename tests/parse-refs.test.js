@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { splitRemoteRef } from '../src/git/parse/graph.js';
+import { classifyRemoteFailure, parsePushPorcelain } from '../src/git/parse/push.js';
 import { parseConflictFiles, parseTracking } from '../src/git/parse/refs.js';
 
 const rec = (...fields) => `${fields.join('\0')}\n`;
@@ -39,4 +40,48 @@ test('splitRemoteRef takes the longest remote name prefixing the path, the rest 
   assert.deepEqual(splitRemoteRef('refs/remotes/origin/feature/a', ['origin']), { remote: 'origin', branch: 'feature/a' });
   assert.deepEqual(splitRemoteRef('refs/remotes/a/b/feat', ['a', 'a/b']), { remote: 'a/b', branch: 'feat' });
   assert.deepEqual(splitRemoteRef('refs/remotes/gone/x/y', []), { remote: 'gone', branch: 'x/y' });
+});
+
+test('parsePushPorcelain sorts every flag: updated (fast-forward, forced, deleted, new), rejected with its reason, up to date', () => {
+  const out = 'To ../origin.git\n'
+    + ' \trefs/heads/ff:refs/heads/ff\t1111111..2222222\n'
+    + '+\trefs/heads/forced:refs/heads/forced\t+3333333...4444444 (forced update)\n'
+    + '-\t:refs/tags/old\t[deleted]\n'
+    + '*\trefs/tags/v1:refs/tags/v1\t[new tag]\n'
+    + '!\trefs/tags/v2:refs/tags/v2\t[rejected] (already exists)\n'
+    + '!\trefs/heads/hooked:refs/heads/hooked\t[remote rejected] (pre-receive hook declined)\n'
+    + '=\trefs/heads/main:refs/heads/main\t[up to date]\n'
+    + 'Done\n';
+  assert.deepEqual(parsePushPorcelain(out), {
+    updated: [
+      { ref: 'refs/heads/ff', flag: ' ', summary: '1111111..2222222' },
+      { ref: 'refs/heads/forced', flag: '+', summary: '+3333333...4444444 (forced update)' },
+      { ref: 'refs/tags/old', flag: '-', summary: '[deleted]' },
+      { ref: 'refs/tags/v1', flag: '*', summary: '[new tag]' },
+    ],
+    rejected: [{ ref: 'refs/tags/v2', reason: 'already exists' }, { ref: 'refs/heads/hooked', reason: 'pre-receive hook declined' }],
+    upToDate: ['refs/heads/main'],
+  });
+  assert.deepEqual(parsePushPorcelain('To x\nDone\n'), { updated: [], rejected: [], upToDate: [] });
+});
+
+test('classifyRemoteFailure: each auth pattern → REMOTE_AUTH_FAILED, each unreachable pattern → REMOTE_UNREACHABLE, else null', () => {
+  const auth = [
+    "fatal: could not read Username for 'https://h': terminal prompts disabled",
+    "fatal: could not read Password for 'https://u@h': No such device",
+    'fatal: Authentication failed for \'https://h/r.git/\'',
+    'git@h: Permission denied (publickey).',
+    'Host key verification failed.',
+    'remote: HTTP Basic: Access denied',
+  ];
+  for (const s of auth) assert.equal(classifyRemoteFailure(s), 'REMOTE_AUTH_FAILED', s);
+  const unreachable = [
+    'fatal: unable to access \'https://h/\': Could not resolve host: h',
+    'ssh: connect to host h port 22: Connection refused',
+    'ssh: connect to host h port 22: Connection timed out',
+    "fatal: 'nope' does not appear to be a git repository",
+    "fatal: unable to access 'https://h/': SSL certificate problem",
+  ];
+  for (const s of unreachable) assert.equal(classifyRemoteFailure(s), 'REMOTE_UNREACHABLE', s);
+  assert.equal(classifyRemoteFailure('error: failed to push some refs\npre-push hook said no'), null);
 });

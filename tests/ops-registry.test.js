@@ -74,3 +74,11 @@ test('the branch ops: tracking is a cancellable read; the local branch writes ar
     assert.equal(d.cancellable, false, name);
   }
 });
+
+test('the tag ops and the remote branch delete are registered as writes, the network ones cancellable', () => {
+  for (const [name, cancellable] of [['tag.create', false], ['tag.delete', false], ['tag.push', true], ['tag.deleteRemote', true], ['branch.deleteRemote', true]]) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'write', name);
+    assert.equal(d.cancellable, cancellable, name);
+  }
+});

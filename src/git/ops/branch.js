@@ -5,6 +5,7 @@ import { parseTracking } from '../parse/refs.js';
 import { fullRef, nameList, optBool, paramsOf, shortBranch } from '../refs/check.js';
 import { assertCcAck, assertCcHeadAck, assertNotCheckedOut, isCcOwned, ownHead, readHeads } from '../refs/heads.js';
 import { refObjects } from '../refs/resolve.js';
+import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
 import { undoRecord } from '../refs/undo.js';
 import { casUpdate, guardOverwrite } from '../refs/write.js';
 import { assertOid } from '../validate.js';
@@ -198,6 +199,30 @@ export const ops = [
       return {
         deleted, notMerged,
         undo: undoRecord({ refs: deleted.map((n) => ({ ref: local(n), old: heads.get(local(n)).oid, new: null, upstream: heads.get(local(n)).upstream })) }),
+      };
+    },
+  },
+  {
+    name: 'branch.deleteRemote',
+    kind: 'write',
+    // Each remote ref update is atomic on the remote: an abort leaves at most unreferenced objects there and a stale
+    // remote-tracking ref here, never a half-changed index or worktree. Cancel also frees a hung SSH session.
+    cancellable: true,
+    params(raw) {
+      const p = paramsOf(raw, ['remote', 'branches', 'ccOwned'], 'branch.deleteRemote');
+      return { remote: remoteName(p.remote), branches: nameList(p.branches, 'branches'), ccOwned: optBool(p.ccOwned, 'ccOwned') };
+    },
+    async run(git, { remote, branches, ccOwned }) {
+      await knownRemote(git, remote);
+      assertCcAck(branches, ccOwned);
+      // Assumes the default fetch refspec: refs/heads/<b> on the remote ↔ refs/remotes/<remote>/<b> here.
+      const tracking = await refObjects(git, branches.map((b) => `refs/remotes/${remote}/${b}`));
+      const result = await push(git, remote, branches.map((b) => `:${HEADS}${b}`));
+      assertSomethingPushed(result, remote);
+      const deleted = result.updated.filter((u) => u.flag === '-').map((u) => shortOf(u.ref));
+      return {
+        deleted, rejected: result.rejected,
+        undo: undoRecord({ remoteRefs: deleted.map((b) => ({ remote, ref: local(b), old: tracking.get(`refs/remotes/${remote}/${b}`) ?? null, new: null })) }),
       };
     },
   },
