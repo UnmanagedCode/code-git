@@ -362,6 +362,25 @@ test('search: the union of the message and author runs is capped at SEARCH_MAX a
   assert.deepEqual([under.result.matches.length, under.result.truncated], [half, false]);
 });
 
+test('search: a commit matching both message and author is listed once, without inflating the count or tripping truncated', async (t) => {
+  const { repo } = await world(t);
+  const both = 600;
+  // Every commit matches the query by message and by author: the two runs return the same 600 commits.
+  buildGraphFixture(repo.dir, repo.home, {
+    commits: both, branches: 0, merged: 0, tags: 0, subject: (n) => `zqx ${n}`, author: () => 'Zqx Both <zb@example.com>',
+  });
+  assert.ok(2 * both > SEARCH_MAX && both < SEARCH_MAX);
+  const { result } = await run('graph.search', { mode: 'commits', query: 'zqx', tips: tipsOf(repo, 'main') });
+  assert.equal(result.matches.length, both);
+  assert.equal(new Set(result.matches).size, both);
+  assert.equal(result.truncated, false);
+  const c = commitsNamed(repo, [['qqboth in the message', 'Qqboth Person']]);
+  const one = await run('graph.search', { mode: 'commits', query: 'qqboth', tips: tipsOf(repo, 'main') });
+  assert.deepEqual(one.result, { matches: [c['qqboth in the message']], truncated: false });
+  // Both runs ran, and each matches it: its subject and its author both hold the query.
+  assert.equal(one.entries.filter((e) => e.status === 'ok' && (e.argv.includes('--grep=qqboth') || e.argv.includes('--author=qqboth'))).length, 2);
+});
+
 // ---------- graph.stats ----------
 
 test('stats: counts for a normal and a root commit, zeros for an empty commit, null for a merge', async (t) => {
