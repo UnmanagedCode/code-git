@@ -1,7 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { DIFF_LIMITS } from '../diff/limits.js';
 import { commitOid, contextArg, DIFF_CONFIG, DIFF_FLAGS, parseContext } from '../diff/source.js';
-import { bad, chunkPaths, nulPaths, paramsObject, pathList } from '../params.js';
+import { bad, chunkPaths, filePath, nulPaths, paramsObject, pathList } from '../params.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
 import { buildSelectionPatch } from '../stage/selection.js';
 import { assertPath } from '../validate.js';
@@ -31,6 +31,13 @@ async function perChunk(git, args, paths, opts) {
   const out = [];
   for (const chunk of chunkPaths(paths, STAGE_LIMITS.argvChunkBytes)) out.push(...nulFields(await git([...args, '--', ...chunk], opts)));
   return out;
+}
+
+/** Every path must be a file in the index (a directory or `.` would restore everything under it): BAD_PATH otherwise. */
+async function assertIndexFiles(git, paths) {
+  const listed = new Set(await perChunk(git, ['ls-files', '-c', '-z'], paths));
+  const missing = paths.find((p) => !listed.has(p));
+  if (missing !== undefined) throw new Refusal('BAD_PATH', `${missing} is not a file in the index`);
 }
 
 /** Refuses CONFLICTED when any of `paths` is unmerged: restoring it would throw away the merge state. */
@@ -159,7 +166,7 @@ export const ops = [
     kind: 'write',
     params(raw) {
       const p = paramsObject(raw, ['tracked', 'untracked'], 'stage.discardFiles');
-      const tracked = pathList(p.tracked ?? [], 'tracked', { min: 0, max: STAGE_LIMITS.maxPaths });
+      const tracked = pathList(p.tracked ?? [], 'tracked', { min: 0, max: STAGE_LIMITS.maxPaths }).map(filePath);
       const untracked = pathList(p.untracked ?? [], 'untracked', { min: 0, max: STAGE_LIMITS.maxPaths });
       if (!tracked.length && !untracked.length) throw bad('stage.discardFiles needs at least one path');
       if (tracked.length + untracked.length > STAGE_LIMITS.maxPaths) throw bad(`at most ${STAGE_LIMITS.maxPaths} paths`);
@@ -168,6 +175,7 @@ export const ops = [
     async run(git, p) {
       await assertWorktree(git);
       // Both gates run before anything is changed, so a refused request discards nothing.
+      if (p.tracked.length) await assertIndexFiles(git, p.tracked);
       if (p.tracked.length) await assertNotConflicted(git, p.tracked);
       if (p.untracked.length) await assertUntracked(git, p.untracked);
       if (p.tracked.length) await git(['restore', '--worktree', ...FROM_STDIN], { stdin: nulPaths(p.tracked) });

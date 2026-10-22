@@ -1,6 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { clip } from '@/lib/clip';
 import type { RepoSummary } from '@/lib/endpoints';
 import type { Tab } from '@/state/tabs';
 import {
@@ -83,7 +84,10 @@ export function CommitBox({ tab, state, summary, instance }: { tab: Tab; state: 
           {detached ? ' (detached HEAD)' : ''}
         </Button>
       )}
-      {state.templateProblem && <p className="text-xs text-muted-foreground">{state.templateProblem}</p>}
+      {state.templateDraft && state.templatePath && (
+        <p className="truncate text-xs text-muted-foreground" title={clip(state.templatePath)}>Template: <span className="font-mono">{clip(state.templatePath)}</span></p>
+      )}
+      {state.templateProblem && <p className="text-xs text-muted-foreground">{clip(state.templateProblem)}</p>}
     </section>
   );
 }

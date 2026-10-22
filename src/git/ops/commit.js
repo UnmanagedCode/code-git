@@ -37,16 +37,24 @@ async function commentPrefix(git) {
   return !v || v === 'auto' ? '#' : v;
 }
 
+/** `p` against `base` when relative — never against the backend's own working directory (path.resolve would). */
+const against = (base, p) => (p.startsWith('/') ? p : path.posix.normalize(path.posix.join(base, p)));
+
 /**
- * The template's bytes, following symlinks by hand (each target relative to its link's directory) for up to
- * STAGE_LIMITS.templateMaxLinks hops: a dotfile manager's symlink works with git commands only. `{bytes}` or `{problem}`.
+ * The template's bytes, following symlinks by hand for up to STAGE_LIMITS.templateMaxLinks hops: a dotfile manager's
+ * symlink works with git commands only. A relative template path is the repo toplevel's (git's own reading, from the
+ * checkout); each relative link target its link's directory's. `{bytes}` or `{problem}`.
  */
 async function readTemplate(git, file) {
   let cur = file;
+  if (!cur.startsWith('/')) {
+    const top = await git(['rev-parse', '--show-toplevel']);
+    cur = against(decoder.decode(top.stdout).replace(/\n$/, ''), cur);
+  }
   for (let hop = 0; hop <= STAGE_LIMITS.templateMaxLinks; hop++) {
     const r = await readNoIndex(git, cur, { maxBytes: STAGE_LIMITS.templateMaxBytes });
     if (r.kind === 'file') return { bytes: r.bytes };
-    if (r.kind === 'symlink') { cur = path.posix.resolve(path.posix.dirname(cur), r.linkTarget); continue; }
+    if (r.kind === 'symlink') { cur = against(path.posix.dirname(cur), r.linkTarget); continue; }
     const why = {
       absent: 'does not exist', other: 'is not a file', binary: 'is a binary file',
       large: `is larger than ${STAGE_LIMITS.templateMaxBytes} bytes`,

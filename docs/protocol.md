@@ -229,6 +229,8 @@ The ops below change the index or the worktree (`kind: 'write'`, not cancellable
 
 | Gate | Command (per chunk) | Refusal |
 |---|---|---|
+| Each tracked path names one file: no trailing `/`, no empty or `.` segment (`filePath`, at params) | — | 400 `BAD_PATH` |
+| Each tracked path is a file in the index (not a directory, not `.`) | `git ls-files -c -z -- <tracked>` lists every one | 400 `BAD_PATH` |
 | No tracked path is unmerged | `git ls-files -u -z -- <tracked>` prints nothing | 409 `CONFLICTED` |
 | No untracked path ends in `/` (a nested repository) | — | 400 `BAD_PATH` |
 | git lists exactly the requested untracked set | `git ls-files --others --exclude-standard -z -- <untracked>` | 400 `BAD_PATH` (an ignored, tracked, missing path, a directory, a path through a symlinked directory) |
@@ -312,7 +314,7 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 
 - `params`: none.
 - `git config --path --get commit.template` (`~/` expanded). Unset → `{path: null, draft: null, problem: null}`.
-- Reads the file with `readNoIndex` (`git diff --no-index /dev/null <path>`). A symlink is followed by hand, each target relative to its link's directory, for up to `STAGE_LIMITS.templateMaxLinks` hops.
+- Reads the file with `readNoIndex` (`git diff --no-index /dev/null <path>`). A relative template path resolves against the repo toplevel (`git rev-parse --show-toplevel`); a symlink is followed by hand, each relative target against its link's directory, for up to `STAGE_LIMITS.templateMaxLinks` hops.
 - Comment prefix: `core.commentString`, else `core.commentChar`; `auto` or unset → `#`. Lines starting with it are dropped, then `splitMessage`.
 - `result`: `{path, draft: {summary, description} | null, problem: string | null}`. A missing, binary, non-file, over-`STAGE_LIMITS.templateMaxBytes` template or a link chain past the hop limit is a `problem`, never a refusal.
 
@@ -328,7 +330,7 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 | `dir` | `/<dir>/` (a trailing `/` in `value` is dropped first) | that directory |
 | `ext` | `*.<ext>` (non-empty, no `/`, no leading `.`, else `BAD_PARAMS`) | such files at any depth |
 
-  `\`, `*`, `?`, `[` and each trailing space are escaped with `\`; the `/` or `*.` prefix means a pattern never starts with `#` or `!`. A control character → `BAD_PATH`; `path` / `dir` also pass `assertPath`.
+  `\`, `*`, `?`, `[` and each trailing space are escaped with `\`; the `/` or `*.` prefix means a pattern never starts with `#` or `!`. A control character → `BAD_PATH`; `path` / `dir` also pass `assertPath` and refuse an empty or `.` segment (`BAD_PATH`): never `.`, the whole repository.
 - Reads `.gitignore` with `readNoIndex`. A symlink, binary, directory, or a file over `STAGE_LIMITS.gitignoreMaxBytes` → 409 `GITIGNORE_UNSUPPORTED`.
 - A line already equal to the pattern (a trailing `\r` ignored) → nothing is written (`added: false`).
 - Else `git apply --whitespace=nowarn --no-ignore-whitespace -` (worktree, unstaged) of one hunk with the **whole file as context**: a concurrent edit makes the apply fail (422 `GIT_FAILED`) instead of being overwritten.
@@ -336,12 +338,12 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
   - Empty → `@@ -0,0 +1,1 @@` with `--unidiff-zero`.
   - No final newline → the last line is re-emitted with one (`-last`, `\ No newline at end of file`, `+last`).
   - A file whose first line ends in CR gets `\r\n` on the new lines.
-- `stopTracking: true` (the UI confirms it): `git ls-files -z -c -- <value>` (`path`, `dir`) or `git ls-files -z -c -i --exclude=<pattern>` (`ext`: this pattern only, never `--exclude-standard`), then `git rm --cached -q --pathspec-from-file=- --pathspec-file-nul` of that list. The files stay on disk. `.gitignore` is written first; a failing `rm` is 422 `GIT_FAILED` with `step: 'stopTracking'` and a message saying `.gitignore` was already changed.
+- `stopTracking: true` (the UI confirms it): first `git ls-files -z -c -- <value>` (`path`, `dir`) or `git ls-files -z -c -i --exclude=<pattern>` (`ext`: this pattern only, never `--exclude-standard`) — a `path` that lists anything but itself is a folder → 400 `BAD_PATH` before anything is written — then, after `.gitignore`, `git rm --cached -q --pathspec-from-file=- --pathspec-file-nul` of that list. The files stay on disk. `.gitignore` is written first; a failing `rm` is 422 `GIT_FAILED` with `step: 'stopTracking'` and a message saying `.gitignore` was already changed.
 - `result`: `{pattern, added, untracked: paths removed from the index}`.
 
 ### `files.restore` (write)
 
-- `params`: `{oid /* full commit id, OID_RE */, path}`.
+- `params`: `{oid /* full commit id, OID_RE */, path}`; `path` names one file (`filePath`: no trailing `/`, no empty or `.` segment → `BAD_PATH`).
 - `git cat-file -t <oid>` must print `commit` (else 404 `REV_UNKNOWN`); `git cat-file -t <oid>:<path>` must print `blob` (else 404 `PATH_NOT_IN_COMMIT`: absent, a directory, a gitlink).
 - Runs `git restore --source=<oid> --staged --worktree -- <path>` (GitKraken's "reset file to this commit"): index and worktree. Through an untracked symlinked directory git replaces the link with a real directory and writes inside the repo.
 - `result`: `{oid, path}`.

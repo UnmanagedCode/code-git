@@ -13,6 +13,13 @@ export function escapeGlob(s) {
   return body.trimEnd() + '\\ '.repeat(trailing);
 }
 
+/** A file or folder below the root: assertPath, no empty or `.` segment (never `.`, the whole repository). */
+function onePath(p, what) {
+  assertPath(p);
+  if (p.split('/').some((seg) => seg === '' || seg === '.')) throw new Refusal('BAD_PATH', `${p} must name one ${what} below the root`);
+  return p;
+}
+
 /**
  * `kind`: `path` → `/<path>` (that file), `dir` → `/<dir>/` (that directory), `ext` → `*.<ext>` (every such file, at any
  * depth). A control character → BAD_PATH; an empty extension or one with `/` → BAD_PARAMS.
@@ -20,8 +27,8 @@ export function escapeGlob(s) {
 export function ignorePattern(kind, value) {
   if (typeof value !== 'string') throw new Refusal('BAD_PARAMS', 'value must be a string');
   if (hasControl(value)) throw new Refusal('BAD_PATH', 'an ignore pattern cannot hold a control character');
-  if (kind === 'path') return `/${escapeGlob(assertPath(value))}`;
-  if (kind === 'dir') return `/${escapeGlob(assertPath(value).replace(/\/+$/, ''))}/`;
+  if (kind === 'path') return `/${escapeGlob(onePath(value, 'file'))}`;
+  if (kind === 'dir') return `/${escapeGlob(onePath(value.replace(/\/+$/, ''), 'folder'))}/`;
   if (kind === 'ext') {
     if (!value || value.includes('/') || value.startsWith('.')) throw new Refusal('BAD_PARAMS', 'ext must be an extension without dot or slash');
     return `*.${escapeGlob(value)}`;

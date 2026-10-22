@@ -136,6 +136,19 @@ test('a .gitignore edited between the read and the apply makes the apply fail; t
   assert.equal(gitignore(w).toString(), 'a\nedited meanwhile\n');
 });
 
+test('ignore and stop tracking refuses `.` or empty as a path or folder, and a folder given as a path, writing nothing', async (t) => {
+  const w = await world(t, { 'keep.txt': 'k\n', 'src/a.ts': 'a\n', 'src/b.ts': 'b\n' });
+  for (const [kind, value] of [['path', '.'], ['path', ''], ['dir', '.'], ['dir', './'], ['path', 'src/./a.ts']]) {
+    await assert.rejects(w.op('ignore.add', { kind, value, stopTracking: true }), (e) => ['BAD_PATH', 'BAD_PARAMS'].includes(e.code), `${kind} ${value}`);
+  }
+  await assert.rejects(w.op('ignore.add', { kind: 'path', value: 'src', stopTracking: true }), refused('BAD_PATH'));
+  assert.equal(fs.existsSync(path.join(w.repo.dir, '.gitignore')), false);
+  assert.deepEqual(w.repo.git('ls-files').split('\n').sort(), ['keep.txt', 'src/a.ts', 'src/b.ts']);
+  // The folder kind covers it.
+  const r = await w.op('ignore.add', { kind: 'dir', value: 'src', stopTracking: true });
+  assert.deepEqual(r.untracked.sort(), ['src/a.ts', 'src/b.ts']);
+});
+
 test('ignore.add params', async (t) => {
   const w = await world(t);
   for (const p of [{}, { kind: 'path' }, { kind: 'path', value: 'x', stopTracking: 'yes' }, { kind: 'path', value: 'x', extra: 1 }, { kind: 'glob', value: 'x' }]) {

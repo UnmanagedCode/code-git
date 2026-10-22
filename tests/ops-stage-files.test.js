@@ -123,6 +123,23 @@ test('discard all (unstaged + untracked lists) leaves staged changes and ignored
   assert.ok(!clean.includes('-x') && !clean.includes('-d') && !clean.includes('-fd'));
 });
 
+test('tracked discard paths must each name one file in the index: `.`, a directory, a trailing slash or `.` segment discard nothing', async (t) => {
+  const w = await world(t);
+  w.repo.commit({ 'dir/c.txt': 'c\n' });
+  w.repo.write('a.txt', 'a2\n');
+  w.repo.write('dir/c.txt', 'c2\n');
+  for (const bad of ['.', 'dir', 'dir/', 'a.txt/', './a.txt', 'dir/./c.txt', 'gone-never.txt']) {
+    await assert.rejects(w.op('stage.discardFiles', { tracked: ['a.txt', bad] }), refused('BAD_PATH'), bad);
+  }
+  assert.equal(read(w, 'a.txt'), 'a2\n');
+  assert.equal(read(w, 'dir/c.txt'), 'c2\n');
+  assert.equal(w.execArgv().filter((a) => a.includes('restore')).length, 0);
+  // A file deleted from the worktree is still a file in the index.
+  fs.rmSync(path.join(w.repo.dir, 'b.txt'));
+  await w.op('stage.discardFiles', { tracked: ['b.txt'] });
+  assert.equal(read(w, 'b.txt'), 'b\n');
+});
+
 test('a conflicted path is refused CONFLICTED and nothing is discarded', async (t) => {
   const w = await world(t);
   w.repo.branch('other');

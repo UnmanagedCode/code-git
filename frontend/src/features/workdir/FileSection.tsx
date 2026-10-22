@@ -5,7 +5,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/compon
 import type { DiffFile } from '@/features/diff/api';
 import { fileLabel, STATUS_LABEL } from '@/features/diff/FileList';
 import { openDiff } from '@/features/diff/openDiff';
-import { clip } from '@/lib/clip';
+import { clip, FILE_RENDER_CAP } from '@/lib/clip';
 import { isTextEntry } from '@/lib/textEntry';
 import { cn } from '@/lib/utils';
 import { ActionMenuItems } from '@/shell/ActionMenu';
@@ -75,6 +75,9 @@ function Row({ tab, file, section, busy }: { tab: Tab; file: DiffFile; section: 
  * and U unstages the focused row (never while typing in a field).
  */
 export function FileSection({ tab, section, files, busy }: { tab: Tab; section: Section; files: DiffFile[]; busy: boolean }) {
+  // The first FILE_RENDER_CAP rows until "Show all N": a huge working tree does not mount every row at once.
+  const [all, setAll] = useState(false);
+  const shown = all ? files : files.slice(0, FILE_RENDER_CAP);
   const onKeyDown = (e: KeyboardEvent<HTMLUListElement>) => {
     if (e.altKey || e.ctrlKey || e.metaKey || isTextEntry(e.target as Element)) return;
     const row = (e.target as Element).closest('li[role="option"]');
@@ -85,7 +88,7 @@ export function FileSection({ tab, section, files, busy }: { tab: Tab; section: 
       rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]?.focus();
       return;
     }
-    const file = i === -1 ? undefined : files[i];
+    const file = i === -1 ? undefined : shown[i];
     if (!file || busy) return;
     if (e.key.toLowerCase() === 's' && section === 'unstaged') { e.preventDefault(); void stageFile(tab, file); }
     if (e.key.toLowerCase() === 'u' && section === 'staged') { e.preventDefault(); void unstageFile(tab, file); }
@@ -105,9 +108,14 @@ export function FileSection({ tab, section, files, busy }: { tab: Tab; section: 
         )}
       </div>
       {files.length ? (
-        <ul role="listbox" aria-label={label} className="pb-1" onKeyDown={onKeyDown}>
-          {files.map((f) => <Row key={`${f.oldPath ?? ''}\0${f.path}`} tab={tab} file={f} section={section} busy={busy} />)}
-        </ul>
+        <>
+          <ul role="listbox" aria-label={label} className="pb-1" onKeyDown={onKeyDown}>
+            {shown.map((f) => <Row key={`${f.oldPath ?? ''}\0${f.path}`} tab={tab} file={f} section={section} busy={busy} />)}
+          </ul>
+          {shown.length < files.length && (
+            <Button variant="ghost" size="sm" className="mb-1 ml-2 h-6 px-2 text-xs" onClick={() => setAll(true)}>Show all {files.length}</Button>
+          )}
+        </>
       ) : (
         <p className="px-3 pb-2 text-xs text-muted-foreground">{section === 'unstaged' ? 'No unstaged changes.' : 'Nothing staged.'}</p>
       )}

@@ -215,6 +215,32 @@ test('commit.template: a `~/` path expands to HOME; a symlinked template is foll
   assert.deepEqual(r.draft, { summary: 'Subject from dotfiles', description: '' });
 });
 
+test('commit.template: a relative template path resolves against the repo toplevel, and each relative link against its link\'s directory', async (t) => {
+  const w = await world(t);
+  fs.mkdirSync(path.join(w.repo.dir, 'tmpl', 'real'), { recursive: true });
+  fs.writeFileSync(path.join(w.repo.dir, 'tmpl', 'real', 'msg'), 'Subject from a relative link\n');
+  fs.symlinkSync('real/msg', path.join(w.repo.dir, 'tmpl', 'link'));
+  w.repo.git('config', 'commit.template', 'tmpl/link');
+  const r = await w.op('commit.template');
+  assert.equal(r.problem, null);
+  assert.deepEqual(r.draft, { summary: 'Subject from a relative link', description: '' });
+});
+
+test('commit.template: core.commentString is preferred, and core.commentChar is the fallback', async (t) => {
+  const w = await world(t);
+  const file = path.join(w.repo.root, 'tmpl.txt');
+  fs.writeFileSync(file, '; semicolon line\n# hash line\n');
+  w.repo.git('config', 'commit.template', file);
+  w.repo.git('config', 'core.commentString', ';');
+  assert.deepEqual((await w.op('commit.template')).draft, { summary: '# hash line', description: '' });
+  w.repo.git('config', '--unset', 'core.commentString');
+  w.repo.git('config', 'core.commentChar', ';');
+  assert.deepEqual((await w.op('commit.template')).draft, { summary: '# hash line', description: '' });
+  // Both set: commentString wins.
+  w.repo.git('config', 'core.commentString', '#');
+  assert.deepEqual((await w.op('commit.template')).draft, { summary: '; semicolon line', description: '' });
+});
+
 test('commit.template problems are reported, never thrown: missing, binary, directory, too large, a link loop', async (t) => {
   const w = await world(t);
   const at = (name) => path.join(w.repo.root, name);

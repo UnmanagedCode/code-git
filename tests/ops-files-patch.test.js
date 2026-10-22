@@ -58,6 +58,17 @@ test('files.restore through an untracked symlinked directory writes inside the r
   assert.equal(read(w, 'link/t.txt'), 'v1\n');
 });
 
+test('files.restore refuses a path that does not name one file: `.`, a trailing slash, an empty or `.` segment', async (t) => {
+  const w = await world(t);
+  w.repo.write('a.txt', 'changed\n');
+  for (const p of ['.', 'a.txt/', 'dir/', './a.txt', 'dir//c.txt', 'dir/./c.txt']) {
+    await assert.rejects(w.op('files.restore', { oid: w.first, path: p }), refused('BAD_PATH'), p);
+  }
+  await assert.rejects(w.op('files.restore', { oid: w.first, path: 'dir' }), refused('PATH_NOT_IN_COMMIT'));
+  assert.equal(read(w, 'a.txt'), 'changed\n');
+  assert.equal(w.cc.state.execCalls.filter((b) => b.argv.includes('restore')).length, 0);
+});
+
 test('patch.check reports numstat and changes nothing', async (t) => {
   const w = await world(t);
   const patch = edit('a.txt', 'a v2', 'a v3') + newFile('new.txt', 'n');

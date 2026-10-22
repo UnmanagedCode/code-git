@@ -19,6 +19,13 @@ export function optBool(v, what) {
   return v ?? false;
 }
 
+/** A path naming one file: assertPath, and no trailing `/`, no empty or `.` segment (so never `.` or a directory spelled `dir/`). */
+export function filePath(p) {
+  assertPath(p);
+  if (p.endsWith('/') || p.split('/').some((seg) => seg === '' || seg === '.')) throw new Refusal('BAD_PATH', `${p} must name one file`);
+  return p;
+}
+
 /** A list of `min…max` repo-relative paths, each passing assertPath, duplicates dropped (first kept). */
 export function pathList(v, what, { min = 1, max }) {
   if (!Array.isArray(v) || v.length < min || v.length > max) throw bad(`${what} must list ${min}…${max} paths`);

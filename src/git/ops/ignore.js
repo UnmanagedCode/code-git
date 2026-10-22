@@ -50,6 +50,16 @@ export const ops = [
       if (cur.kind !== 'file' && cur.kind !== 'absent') {
         throw new Refusal('GITIGNORE_UNSUPPORTED', `the root ${FILE} is ${cur.kind === 'large' ? `larger than ${STAGE_LIMITS.gitignoreMaxBytes} bytes` : `a ${cur.kind === 'other' ? 'directory' : cur.kind}`}: edit it by hand`);
       }
+      // What stop-tracking removes is listed first, so a refused request writes nothing. Only what this one pattern
+      // matches (never --exclude-standard): an already-ignored tracked file stays tracked.
+      let untracked = [];
+      if (p.stopTracking) {
+        const match = p.kind === 'ext' ? ['-i', `--exclude=${p.pattern}`] : ['--', p.value];
+        const r = await git(['ls-files', '-z', '-c', ...match]);
+        untracked = decoder.decode(r.stdout).split('\0').filter(Boolean);
+        // A file pattern stops tracking that file only: a path that is a folder in the index is refused.
+        if (p.kind === 'path' && untracked.some((f) => f !== p.value)) throw new Refusal('BAD_PATH', `${p.value} is a folder: ignore it as a folder`);
+      }
       const text = cur.kind === 'file' ? cur.bytes.toString('latin1') : null;
       const present = text !== null && text.split('\n').some((l) => l.replace(/\r$/, '') === p.pattern);
       if (!present) {
@@ -58,19 +68,12 @@ export const ops = [
           stdin: Buffer.from(`${patch.join('\n')}\n`, 'latin1'),
         });
       }
-      let untracked = [];
-      if (p.stopTracking) {
-        // Only what this one pattern matches (never --exclude-standard): an already-ignored tracked file stays tracked.
-        const match = p.kind === 'ext' ? ['-i', `--exclude=${p.pattern}`] : ['--', p.value];
-        const r = await git(['ls-files', '-z', '-c', ...match]);
-        untracked = decoder.decode(r.stdout).split('\0').filter(Boolean);
-        if (untracked.length) {
-          try {
-            await git(['rm', '--cached', '-q', '--pathspec-from-file=-', '--pathspec-file-nul'], { stdin: nulPaths(untracked) });
-          } catch (e) {
-            if (e.code !== 'GIT_FAILED') throw e;
-            throw new Refusal('GIT_FAILED', `${FILE} ${present ? 'already had' : 'now has'} ${p.pattern}, but removing the matching files from the index failed`, { ...e.extra, step: 'stopTracking' });
-          }
+      if (untracked.length) {
+        try {
+          await git(['rm', '--cached', '-q', '--pathspec-from-file=-', '--pathspec-file-nul'], { stdin: nulPaths(untracked) });
+        } catch (e) {
+          if (e.code !== 'GIT_FAILED') throw e;
+          throw new Refusal('GIT_FAILED', `${FILE} ${present ? 'already had' : 'now has'} ${p.pattern}, but removing the matching files from the index failed`, { ...e.extra, step: 'stopTracking' });
         }
       }
       return { pattern: p.pattern, added: !present, untracked };

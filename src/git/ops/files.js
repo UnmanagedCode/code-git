@@ -1,6 +1,6 @@
 import { Refusal } from '../../refusals.js';
-import { bad, paramsObject } from '../params.js';
-import { assertPath, OID_RE } from '../validate.js';
+import { bad, filePath, paramsObject } from '../params.js';
+import { OID_RE } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
@@ -19,7 +19,7 @@ export const ops = [
     params(raw) {
       const p = paramsObject(raw, ['oid', 'path'], 'files.restore');
       if (typeof p.oid !== 'string' || !OID_RE.test(p.oid)) throw bad('oid must be a full commit id');
-      return { oid: p.oid, path: assertPath(p.path) };
+      return { oid: p.oid, path: filePath(p.path) };
     },
     async run(git, p) {
       await assertWorktree(git);

@@ -26,6 +26,8 @@ export interface WorkdirState {
   /** The commit.template draft, null when there is none; the draft equal to it counts as unedited. */
   templateDraft: Draft | null;
   templateProblem: string | null;
+  /** The resolved commit.template path the template draft was read from. */
+  templatePath: string | null;
   amend: { on: boolean; head: Draft | null; saved: Draft | null };
   noVerify: boolean;
   /** A focus request for the summary box of one instance (the slot or the narrow dialog), consumed by it. */
@@ -36,7 +38,7 @@ export interface WorkdirState {
 export const EMPTY_DRAFT: Draft = { summary: '', description: '' };
 const fresh = (): WorkdirState => ({
   unstaged: null, staged: null, merging: false, loading: false, error: null, busy: false, opError: null, draft: EMPTY_DRAFT,
-  templateDraft: null, templateProblem: null, amend: { on: false, head: null, saved: null }, noVerify: false, focus: null, dialogOpen: false,
+  templateDraft: null, templateProblem: null, templatePath: null, amend: { on: false, head: null, saved: null }, noVerify: false, focus: null, dialogOpen: false,
 });
 
 /** Per checkout, keyed by tabKey. */
@@ -77,7 +79,7 @@ export async function ensureWorkdir(tab: Tab): Promise<void> {
     const t = await commitTemplate(tab);
     put(tab, (s) => {
       const fill = !!t.draft && !s.amend.on && sameDraft(s.draft, EMPTY_DRAFT);
-      return { ...s, templateDraft: t.draft, templateProblem: t.problem, draft: fill && t.draft ? t.draft : s.draft };
+      return { ...s, templateDraft: t.draft, templateProblem: t.problem, templatePath: t.path, draft: fill && t.draft ? t.draft : s.draft };
     });
   } catch {
     // No template is not an error worth showing: the box simply starts empty.

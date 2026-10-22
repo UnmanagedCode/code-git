@@ -10,9 +10,8 @@ import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
-import { DISPLAY_MAX } from '@/lib/clip';
+import { DISPLAY_MAX, FILE_RENDER_CAP } from '@/lib/clip';
 import { BODY_SHOWN, CO_AUTHORS_SHOWN, CommitDetails } from './CommitDetails';
-import { FILE_RENDER_CAP } from './FileList';
 
 const TAB = { project: 'app', worktree: null };
 const A = oid(2);

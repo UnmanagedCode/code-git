@@ -1,3 +1,6 @@
+/** Rows of a file list rendered before its "Show all N" (the commit details', the Changes panel's, a confirmation's). */
+export const FILE_RENDER_CAP = 1000;
+
 /** Characters of untrusted text (a subject, a name, a path) shown at once; copy actions use the whole value. */
 export const DISPLAY_MAX = 2048;
 

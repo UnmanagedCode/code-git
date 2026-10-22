@@ -70,7 +70,7 @@ Right slot, while the graph has nothing or a single WIP row selected (below `lg`
 | Header | **Changes**, **Reload changes** (↻), ⋮ menu: **Refresh**, **Apply patch…** |
 | Detached banner | On a detached HEAD: "Detached HEAD at `<oid10>`. A commit made here is on no branch." |
 | Error | The last failed op's message and git's stderr (hook output) as text; × dismisses it |
-| **Unstaged Files (n)** | Worktree changes and untracked files (`?`). Header: **Discard all…**, **Stage all**. Row hover: discard (↶, not on a conflicted file), stage (+), ⋮ |
+| **Unstaged Files (n)** | Worktree changes and untracked files (`?`). Header: **Discard all…**, **Stage all**. Row hover (always shown on a touch screen): discard (↶, not on a conflicted file), stage (+), ⋮. A list longer than `FILE_RENDER_CAP` (`lib/clip.ts`) shows that many rows, then **Show all N** |
 | **Staged Files (n)** | Index changes. Header: **Unstage all**. Row hover: unstage (−), ⋮ |
 | Row | Status letter, path (`old → new` for a rename). Click or Enter opens its unstaged / staged diff at that file. Right-click or ⋮: **Stage** / **Unstage**, **Discard…**, **Copy path**, then the ignore items below |
 | Commit box | **Summary** (one line), **Description**, ☐ **Amend previous commit**, ☐ **Skip Git hooks**, then the commit button(s) |
@@ -94,7 +94,7 @@ Right slot, while the graph has nothing or a single WIP row selected (below `lg`
 | Amend (ticked) | **Amend commit** (staged changes + the message) and **Update message only** (the message alone; the staged changes stay staged) | a summary; Update message only also needs the message changed from HEAD's |
 
 - Ticking **Amend** loads HEAD's message into the fields and keeps the draft aside; unticking puts the draft back.
-- **Commit template** (`commit.template`): pre-fills the box once per tab while it is empty and Amend is off, and again after each commit; a template problem (missing, binary, …) shows under the button.
+- **Commit template** (`commit.template`): pre-fills the box once per tab while it is empty and Amend is off, and again after each commit; "Template: ‹path›" under the button names the file it was read from; a template problem (missing, binary, …) shows there instead.
 - After a commit the box goes back to the template (or empty) and Amend is unticked; a failed commit keeps the draft.
 
 **Keys** (only while focus is inside the plugin frame)

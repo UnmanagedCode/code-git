@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { clip } from '@/lib/clip';
+import { clip, FILE_RENDER_CAP } from '@/lib/clip';
 import { settleConfirm, usePendingConfirm } from '@/lib/confirm';
 
 /** Renders the pending confirm() (lib/confirm.ts), if any. Mounted once, by the Changes panel. Everything is text. */
@@ -18,7 +18,8 @@ export function ConfirmHost() {
           {o.count !== undefined && <p className="text-sm">{o.count} {o.count === 1 ? 'file' : 'files'}</p>}
           {!!o.items?.length && (
             <ul aria-label="Affected files" className="max-h-48 overflow-y-auto rounded-md border bg-muted/40 p-2 font-mono text-xs">
-              {o.items.map((it) => <li key={it} className="truncate" title={clip(it)}>{clip(it)}</li>)}
+              {o.items.slice(0, FILE_RENDER_CAP).map((it) => <li key={it} className="truncate" title={clip(it)}>{clip(it)}</li>)}
+              {o.items.length > FILE_RENDER_CAP && <li className="text-muted-foreground">…and {o.items.length - FILE_RENDER_CAP} more</li>}
             </ul>
           )}
           {!!o.preview?.length && (
