@@ -98,11 +98,24 @@ test('index.html loads the bridge first and blocking, then the host theme and th
 });
 
 // Dynamic geometry goes through lib/cssVars.ts (finite px numbers only); nothing else touches an element's style.
-const STYLE_ACCESS = /\.style\b(?!-)|\bsetAttribute\(\s*['"`]style|\bcssText\b/;
+const STYLE_ACCESS = new RegExp([
+  String.raw`\.style\b(?!-)`, // el.style.x, el.style[k]
+  String.raw`\[\s*['"\`]style['"\`]\s*\]`, // el['style']
+  String.raw`\battributeStyleMap\b`, // the typed-OM style map
+  String.raw`\bsetAttribute(?:NS)?\([^)]*['"\`]style['"\`]`, // setAttribute('style', …), setAttributeNS(ns, 'style', …)
+  String.raw`\bcssText\b`,
+].join('|'));
 
 test('the style-access pattern catches what it claims to', () => {
-  for (const bad of ['el.style.setProperty("--x", v)', 'node.style.top = y', "el.setAttribute('style', s)", 'x.style.cssText = s', 'el.style[k] = v']) expect(STYLE_ACCESS.test(bad), bad).toBe(true);
-  for (const ok of ['setCssPx(el, "--x", 3)', "className='border-style-dashed'", 'const styles = 1', 'list-style-none', 'stylesheet']) expect(STYLE_ACCESS.test(ok), ok).toBe(false);
+  for (const bad of [
+    'el.style.setProperty("--x", v)', 'node.style.top = y', "el.setAttribute('style', s)", 'x.style.cssText = s', 'el.style[k] = v',
+    "el['style'].top = y", 'el["style"] = s', 'el[ `style` ]', "el.attributeStyleMap.set('top', CSS.px(1))",
+    "el.setAttributeNS(null, 'style', s)", 'el.setAttributeNS(SVG_NS, "style", s)', 'el.setAttribute( "style" , s)',
+  ]) expect(STYLE_ACCESS.test(bad), bad).toBe(true);
+  for (const ok of [
+    'setCssPx(el, "--x", 3)', "className='border-style-dashed'", 'const styles = 1', 'list-style-none', 'stylesheet',
+    "el.setAttribute('data-style', s)", "el['styles']", "setAttributeNS(null, 'class', s)",
+  ]) expect(STYLE_ACCESS.test(ok), ok).toBe(false);
 });
 
 test('no .style access outside lib/cssVars.ts and components/ui', () => {
