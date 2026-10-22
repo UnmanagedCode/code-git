@@ -12,6 +12,8 @@ import { shownPanelStore } from '@/state/shownPanel';
 import { loadSummary } from '@/state/useRepoSummary';
 import { GraphPanel } from './GraphPanel';
 import { requestJump } from './jump';
+import { LANE_CAP } from './layout';
+import { TIPS_MAX } from './visibility';
 import { ROW_H } from './windowFor';
 
 const TAB = { project: 'app', worktree: null };
@@ -271,4 +273,32 @@ test('a commit with an impossible timestamp renders — in the Date column inste
   await show(world);
   expect(within(rowEl(oid(2))!).getByText('—')).toBeTruthy();
   expect(within(rowEl(oid(3))!).queryByText('—')).toBeNull();
+});
+
+test('2,000 parallel branches: drawn paths per row stay bounded by the drawn lanes, at the top, middle and end', async () => {
+  const n = 2000;
+  const base = oid(99999);
+  const world = linearWorld(1);
+  world.commits = [...Array.from({ length: n }, (_, i) => commit(oid(i + 1), [base], { subject: `tip ${i}` })), commit(base)];
+  world.refs.refs = Array.from({ length: n }, (_, i) => ref(`refs/heads/b${i}`, oid(i + 1)));
+  world.refs.head = { oid: oid(1), branch: 'refs/heads/b0', detached: false, unborn: false };
+  await show(world);
+  await act(async () => { await loadUntil(TAB, base); });
+  expect(getGraph(TAB).commits.length).toBe(n + 1);
+  let most = 0;
+  for (const top of [0, 1000 * ROW_H, (n + 1) * ROW_H - 800]) {
+    await scrollTo(top);
+    for (const r of rowEls()) most = Math.max(most, r.querySelectorAll('path').length);
+  }
+  expect(most).toBeGreaterThan(LANE_CAP);
+  expect(most).toBeLessThanOrEqual(3 * (LANE_CAP + 1));
+  expect(rowEl(base)!.querySelectorAll('[data-edge=top]').length).toBe(LANE_CAP + 1);
+});
+
+test('more ref tips than one request takes: the graph pages the first TIPS_MAX and says so', async () => {
+  const world = linearWorld(3);
+  world.refs.refs.push(...Array.from({ length: TIPS_MAX + 7 }, (_, i) => ref(`refs/tags/t${i}`, `${i}`.padStart(40, 'a'))));
+  const fetch = await show(world);
+  expect((paramsOf(fetch, 'POST api/ops/graph.page')[0] as { tips: string[] }).tips).toHaveLength(TIPS_MAX);
+  expect(screen.getByRole('status').textContent).toContain(`of ${(TIPS_MAX + 8).toLocaleString()} ref tips`);
 });

@@ -8,6 +8,7 @@ import { LaneSvg } from './LaneSvg';
 import { RefChip, type ChipHandlers } from './RefChip';
 import { initials } from './initials';
 import { formatTime } from './time';
+import type { Through } from './layout';
 import type { GraphRow, LayoutRow, Stat } from './types';
 
 /** Chips shown before the rest collapse into "+N". */
@@ -16,6 +17,8 @@ export const CHIPS_SHOWN = 2;
 export interface RowViewProps {
   row: GraphRow;
   layout: LayoutRow;
+  /** Lines passing through this row (passThroughs). */
+  through: Through[];
   labels: Label[];
   columns: ColumnId[];
   graphWidth: number;
@@ -107,7 +110,7 @@ export const GraphRowView = memo(function GraphRowView(p: RowViewProps) {
   const cell = (id: ColumnId) => {
     switch (id) {
       case 'refs': return <Chips labels={p.labels} color={layout.color} chips={p.chips} />;
-      case 'graph': return <LaneSvg row={row} layout={layout} width={p.graphWidth} initials={item ? initials(item.author.name, item.author.email) : ''} />;
+      case 'graph': return <LaneSvg row={row} layout={layout} through={p.through} width={p.graphWidth} initials={item ? initials(item.author.name, item.author.email) : ''} />;
       case 'message': return <Message row={row} />;
       case 'author':
         return item && (

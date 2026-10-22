@@ -24,6 +24,7 @@ import { GraphRowView } from './GraphRowView';
 import { openSelectionDiff } from './diffWiring';
 import { detailsRequestStore, jumpStore, requestDetails } from './jump';
 import { labelsByOid, worktreeName, type Label } from './labels';
+import { passThroughs, type Through } from './layout';
 import { lanesWidth } from './LaneSvg';
 import { WIDE_GRAPH_QUERY } from './media';
 import { RefsPanel } from './RefsPanel';
@@ -33,7 +34,7 @@ import type { Checkout, GraphRow, Stash } from './types';
 import { graphKeyHandler } from './useGraphKeys';
 import { useGraphLayout } from './useGraphLayout';
 import { useGraphSearch } from './useGraphSearch';
-import { resolveVisibility } from './visibility';
+import { resolveVisibility, TIPS_MAX } from './visibility';
 import { ROW_H, windowFor } from './windowFor';
 import './graph.css';
 
@@ -113,6 +114,8 @@ function GraphView({ tab }: { tab: Tab }) {
     return () => ro.disconnect();
   }, [readView, data.status]);
   const { start, end } = windowFor(view.top, view.h, rows.length);
+  // Pass-through lines for the rendered rows only, from the layout's lane runs.
+  const through = useMemo(() => passThroughs(layout.state.spans, start, end, layout.state.cap), [layout.state, start, end]);
 
   useLayoutEffect(() => {
     const el = root.current;
@@ -384,6 +387,11 @@ function GraphView({ tab }: { tab: Tab }) {
           <Button variant="outline" size="sm" className="h-7" onClick={() => void refreshGraph(tab, 'manual')}>Retry</Button>
         </div>
       )}
+      {vis && vis.tipsDropped > 0 && (
+        <div className="border-b px-3 py-1.5 text-sm text-warning" role="status">
+          Graphing {TIPS_MAX.toLocaleString()} of {(TIPS_MAX + vis.tipsDropped).toLocaleString()} ref tips (the most one request takes): hide or solo refs to choose which.
+        </div>
+      )}
       {data.pageError && (
         <div className="flex items-center gap-2 border-b px-3 py-1.5 text-sm" role="alert">
           <span className="text-destructive">Could not load more commits: {data.pageError.message}</span>
@@ -436,6 +444,7 @@ function GraphView({ tab }: { tab: Tab }) {
                       key={row.id}
                       row={row}
                       layout={lay}
+                      through={through[k] ?? NO_THROUGH}
                       labels={labels.get(row.kind === 'commit' ? row.id : row.kind === 'stash' ? row.stash.oid : '') ?? NO_LABELS}
                       columns={columns}
                       graphWidth={graphWidth}
@@ -490,5 +499,6 @@ function GraphView({ tab }: { tab: Tab }) {
 }
 
 const NO_LABELS: Label[] = [];
+const NO_THROUGH: Through[] = [];
 /** The commit a row stands on, for hover dimming. */
 const rowOid = (r: GraphRow): string | null => (r.kind === 'commit' ? r.id : r.kind === 'stash' ? r.stash.parents[0] ?? null : r.checkout.headOid);

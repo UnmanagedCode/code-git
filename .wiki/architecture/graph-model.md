@@ -12,6 +12,8 @@ How the commit graph's pieces fit, and the words used for them. Behaviour: `docs
 | **row** | A `GraphRow`: `commit` (id = oid), `wip` (id `wip:<worktree or ''>`), `stash` (id `stash:<oid>`) — the latter two are pseudo-rows built by `buildInputs`, not git output |
 | **layout input** | `{id, parents, dashed}` per row: WIP → its HEAD, stash → its base only, both dashed |
 | **lane** | A column slot waiting for one oid, with a colour index (`LANE_COLOURS`) and a dashed flag |
+| **span** (lane run) | One lane's line from the row that opens it to the row it ends in; stored once in `LayoutState.spans`, drawn through the rows strictly between (`passThroughs`) |
+| **gutter** | Where every lane at or past `LANE_CAP` is drawn: one column, so a row's drawing is bounded |
 | **reserved lane** | Lane 0…k-1 held for the k pinned branches' commits until their rows arrive |
 | **checkout** | A cc checkout of the project (main or a worktree) with its `repo.summary` HEAD and counts (`Checkout` in `features/graph/types.ts`) — distinct from a git worktree (`GitWorktree`, from `worktree list`) |
 | **jump** / **seek** | A request to show a commit that may not be loaded: pages forward (bounded) until it is (`requestJump` → `loadUntil`) |
@@ -19,6 +21,7 @@ How the commit graph's pieces fit, and the words used for them. Behaviour: `docs
 ## Decisions
 
 - **The layout is pure and resumable** (`extendLayout(state, inputs)`): pages stream in, and laying out page 2 after page 1 must equal laying out both at once — a test pins it on random DAGs. `useGraphLayout` extends when the new inputs only append, else lays out again; 5,000 rows are cheap on the main thread, no worker.
+- **Pass-throughs are derived, not stored per row**: storing every occupied lane in both halves of every row grew with branches × rows (≈ 4M edges for 2,000 parallel branches; 5,000 ran out of memory). Rows keep only their node's edges, clamped to the drawn width; lane runs give the rest for the visible window.
 - **Lanes never shift sideways**; a lane freed by a root or a convergence is reused by the next new tip. Two lanes may wait for the same parent and converge at its row. The lowest waiting lane wins, so a pinned branch's first-parent chain stays in its reserved lane.
 - **No lane waits for a row that may never come**: a WIP row links to its HEAD, and a stash is placed, only once that commit is loaded (`buildInputs`); otherwise a hidden HEAD would draw a lane through every row.
 - **WIP rows come from `repo.summary` of every cc checkout** (bounded concurrency, the shared summary store), not from `git worktree list` — the summary has the counts. Worktree **labels** ("in X") come from `worktree list` and are joined to cc names: by branch, by commit when detached, the project name for the main checkout, else the directory's name (`worktreeName`).

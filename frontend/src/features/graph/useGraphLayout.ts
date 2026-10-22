@@ -13,7 +13,7 @@ const samePrefix = (prev: LayoutInput[], next: LayoutInput[]) =>
  * loaded) the layout is extended from where it stopped; anything else (a reload, WIP or a stash changing, pins) lays
  * out again from the top.
  */
-export function useGraphLayout(inputs: LayoutInput[], pinnedTips: string[]): { rows: LayoutRow[]; width: number } {
+export function useGraphLayout(inputs: LayoutInput[], pinnedTips: string[]): { rows: LayoutRow[]; width: number; state: LayoutState } {
   const cache = useRef<Cache | null>(null);
   const pins = pinnedTips.join(',');
   const c = cache.current;
@@ -29,5 +29,5 @@ export function useGraphLayout(inputs: LayoutInput[], pinnedTips: string[]): { r
     const all = extendLayout(createLayout({ pinnedTips }), inputs);
     cache.current = { pins, inputs, state: all.state, rows: all.rows };
   }
-  return { rows: cache.current!.rows, width: cache.current!.state.width };
+  return { rows: cache.current!.rows, width: cache.current!.state.width, state: cache.current!.state };
 }

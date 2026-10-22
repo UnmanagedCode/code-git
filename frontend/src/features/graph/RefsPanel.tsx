@@ -17,12 +17,14 @@ import type { Checkout, GitWorktree, Ref, Stash } from './types';
 import { resolveVisibility, sectionOf, type Visibility } from './visibility';
 
 const HOST = 'refs';
+/** Rows a list shows before "Show more", and how many each click adds: the filter finds the rest. */
+export const REFS_SHOWN = 200;
 
 /** The refs panel (left slot; a dialog on narrow screens): sections with hide / solo / pin, a filter, jump on click. */
 export function RefsPanel({ tab, inDialog = false }: { tab: Tab | null; inDialog?: boolean }) {
   const wide = useMediaQuery(WIDE_GRAPH_QUERY);
   if (!tab || (!inDialog && !wide)) return null;
-  return <RefsView tab={tab} />;
+  return <RefsView tab={tab} inDialog={inDialog} />;
 }
 
 function IconToggle({ label, on, disabled, onClick, children }: { label: string; on: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
@@ -43,11 +45,28 @@ function IconToggle({ label, on, disabled, onClick, children }: { label: string;
   );
 }
 
-function RefsView({ tab }: { tab: Tab }) {
+function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const data = useGraphData(tab);
   const prefs = useGraphPrefs(tab.project);
   const [filter, setFilter] = useState('');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [limits, setLimits] = useState<Readonly<Record<string, number>>>({});
+  /** The first rows of list `id`, and a "Show more" item when it has more. */
+  const capped = <T,>(id: string, list: T[], render: (x: T) => ReactNode) => {
+    const n = limits[id] ?? REFS_SHOWN;
+    return (
+      <>
+        {list.slice(0, n).map(render)}
+        {list.length > n && (
+          <li className="py-0.5 pl-5">
+            <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setLimits((l) => ({ ...l, [id]: n + REFS_SHOWN }))}>
+              Show {Math.min(REFS_SHOWN, list.length - n)} more of {list.length - n}
+            </button>
+          </li>
+        )}
+      </>
+    );
+  };
   const vis = useMemo(() => (data.refs ? resolveVisibility(data.refs, prefs) : null), [data.refs, prefs]);
   // A graph that never opened (the checkout is not a repo) has no refs to wait for.
   if (data.status === 'idle') return null;
@@ -106,7 +125,8 @@ function RefsView({ tab }: { tab: Tab }) {
   );
 
   return (
-    <nav className="flex flex-col pb-3 text-sm" aria-label="Refs">
+    // In the left slot the refs scroll on their own, so the Compare panel below them stays in reach.
+    <nav className={cn('flex flex-col pb-3 text-sm', !inDialog && 'max-h-[60dvh] overflow-y-auto border-b')} aria-label="Refs">
       <div className="p-2">
         <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter refs" aria-label="Filter refs" className="h-8" />
       </div>
@@ -114,7 +134,7 @@ function RefsView({ tab }: { tab: Tab }) {
       {head('local', 'Local', locals.length, locals)}
       {!collapsed.has('local') && (
         <ul aria-label="Local branches">
-          {locals.map((r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} onMenu={(e) => menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx)} />)}
+          {capped('local', locals, (r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} onMenu={(e) => menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx)} />)}
         </ul>
       )}
 
@@ -142,7 +162,7 @@ function RefsView({ tab }: { tab: Tab }) {
             </div>
             {!collapsed.has(id) && (
               <ul aria-label={`Branches on ${name}`}>
-                {list.map((r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} indent onMenu={(e) => menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx)} />)}
+                {capped(id, list, (r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} indent onMenu={(e) => menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx)} />)}
               </ul>
             )}
           </div>
@@ -152,14 +172,14 @@ function RefsView({ tab }: { tab: Tab }) {
       {head('tags', 'Tags', tags.length, tags)}
       {!collapsed.has('tags') && (
         <ul aria-label="Tags">
-          {tags.map((r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} onMenu={(e) => menu(e, CONTEXT.tag, { tab, ref: r } satisfies RefCtx)} />)}
+          {capped('tags', tags, (r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} onMenu={(e) => menu(e, CONTEXT.tag, { tab, ref: r } satisfies RefCtx)} />)}
         </ul>
       )}
 
       {head('stashes', 'Stashes', stashes.length)}
       {!collapsed.has('stashes') && (
         <ul aria-label="Stashes">
-          {stashes.map((s) => <StashRow key={s.oid} tab={tab} s={s} hidden={!vis.stashesVisible} onMenu={(e) => menu(e, CONTEXT.stash, { tab, stash: s } satisfies StashCtx)} />)}
+          {capped('stashes', stashes, (s) => <StashRow key={s.oid} tab={tab} s={s} hidden={!vis.stashesVisible} onMenu={(e) => menu(e, CONTEXT.stash, { tab, stash: s } satisfies StashCtx)} />)}
         </ul>
       )}
 
@@ -170,7 +190,7 @@ function RefsView({ tab }: { tab: Tab }) {
             <p className="px-4 py-1 text-xs text-warning" role="note">Worktree labels need git 2.36 or later: {refs.worktreesError}</p>
           )}
           <ul aria-label="Worktrees">
-            {worktrees.map((w) => (
+            {capped('worktrees', worktrees, (w) => (
               <WorktreeRow key={w.path} tab={tab} w={w} isOwn={w === own} checkouts={data.checkouts}
                 onMenu={(e, cc) => menu(e, CONTEXT.worktree, { tab, worktree: w, ccCheckout: cc } satisfies WorktreeCtx)} />
             ))}

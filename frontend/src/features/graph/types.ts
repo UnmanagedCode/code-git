@@ -60,8 +60,14 @@ export type GraphRow =
 export interface LayoutInput { id: RowId; parents: string[]; dashed: boolean }
 /** A line in one half of a row: lane `from` at the half's top to lane `to` at its bottom. */
 export interface Edge { from: number; to: number; color: number; dashed: boolean }
-export interface LayoutRow { col: number; color: number; top: Edge[]; bottom: Edge[] }
-export interface Lane { expect: string; color: number; dashed: boolean }
+/**
+ * One row's node and its own edges: `in` — lanes ending in the node (top half); `out` — the lanes it continues into
+ * (bottom half). Lines passing through the row are not stored here (LayoutState.spans).
+ */
+export interface LayoutRow { col: number; color: number; in: Edge[]; out: Edge[] }
+/** A lane's run: drawn straight through every row strictly between `from` and `to` (null: still open). */
+export interface Span { lane: number; color: number; dashed: boolean; from: number; to: number | null }
+export interface Lane { expect: string; color: number; dashed: boolean; /** Its run, an index into LayoutState.spans. */ span: number }
 export interface LayoutState {
   lanes: (Lane | null)[];
   nextColor: number;
@@ -69,4 +75,10 @@ export interface LayoutState {
   reserved: string[];
   /** The widest the layout has been, in lanes. */
   width: number;
+  /** Rows laid out so far. */
+  rows: number;
+  /** Every lane run so far, in the order they started. */
+  spans: Span[];
+  /** Lanes drawn one by one; the rest share a gutter (LANE_CAP). */
+  cap: number;
 }

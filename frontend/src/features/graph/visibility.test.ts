@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { DEFAULT_PREFS, type GraphPrefs } from '@/state/graphPrefs';
 import { refsResult, ref, oid, worktree } from '@/test/graphData';
-import { resolveVisibility } from './visibility';
+import { resolveVisibility, TIPS_MAX } from './visibility';
 
 const M = oid(1);
 const F = oid(2);
@@ -65,4 +65,15 @@ test('wipVisible: the own checkout whatever is hidden or soloed; another when it
 test('the stashes section hidden hides stashes', () => {
   expect(resolveVisibility(refs, DEFAULT_PREFS).stashesVisible).toBe(true);
   expect(resolveVisibility(refs, prefs({ hiddenSections: ['stashes'] })).stashesVisible).toBe(false);
+});
+
+test('tips are clamped to TIPS_MAX, keeping HEAD, detached worktree HEADs and branches before remotes and tags', () => {
+  const many = Array.from({ length: TIPS_MAX + 5 }, (_, i) => ref(`refs/tags/t${i}`, oid(100 + i)));
+  const big = refsResult({ ...refs, refs: [...many, ...refs.refs] });
+  const v = resolveVisibility(big, DEFAULT_PREFS);
+  expect(v.tips).toHaveLength(TIPS_MAX);
+  expect(v.tipsDropped).toBe(TIPS_MAX + 5 + 5 - TIPS_MAX);
+  for (const keep of [M, F, O, W]) expect(v.tips).toContain(keep);
+  expect(v.tips).toEqual([...v.tips].sort());
+  expect(resolveVisibility(refs, DEFAULT_PREFS).tipsDropped).toBe(0);
 });

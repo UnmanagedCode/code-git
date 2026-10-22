@@ -120,7 +120,12 @@ Pure, in `features/graph/layout.ts`; `extendLayout(state, inputs)` continues exa
 - Each lane slot holds the oid it waits for, its colour and whether it is dashed. Per row: the lanes waiting for the row converge into its column — a pinned tip's reserved lane, else the lowest waiting lane, else the first free slot (reserved slots skipped), else a new one at the end. The first parent continues in that column with its colour; each further parent reuses a lane already waiting for it or opens a free slot with the next colour. A row with no parents frees its column. Lanes never shift sideways; trailing free slots are trimmed.
 - **Pins**: pinned branches' commits reserve lanes 0…k-1 in pin order; a reserved lane stays empty until its tip row arrives (possibly in a later page).
 - A WIP row links to its HEAD only once that commit is loaded, and a stash is placed only above a loaded base, so no lane waits for a row that may never arrive.
-- Rendering: one SVG per row (numeric attributes only), each edge a line or a cubic curve within its half-row; test hooks `data-edge="top|bottom" data-from data-to`, the row's `data-col`.
+- **Bounded by the drawn width, not by the number of refs**:
+  - A row stores only its node's edges — `in` (lanes ending in it) and `out` (lanes it continues into). A line that merely passes through rows is stored once, as a lane run (`Span`: lane, colour, the rows it starts and ends at) in the layout state, and drawn only for the rendered rows (`passThroughs`).
+  - Only the first `LANE_CAP` lanes are drawn one by one; every lane past it is drawn in one overflow gutter (a node there is drawn in the gutter too, `data-overflow`), and an edge is stored once per drawn shape. So a row draws at most `LANE_CAP + 1` pass-through lines plus its node's `LANE_CAP + 1` in- and out-edges, however many branches are open.
+  - The tips are clamped to `TIPS_MAX` (the most one `graph.page` request takes): HEAD and detached worktree HEADs first, then the checked-out branch, local branches, remotes, tags. A notice says how many were left out; hiding or soloing refs chooses which.
+  - The refs panel lists the first `REFS_SHOWN` rows of each list, with **Show more**; the filter finds the rest.
+- Rendering: one SVG per row (numeric attributes only), each node edge a line or a cubic curve within its half-row, each pass-through one straight line; test hooks `data-edge="top|bottom|through" data-from data-to`, the row's `data-col`.
 
 ## Performance
 

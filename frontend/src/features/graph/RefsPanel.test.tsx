@@ -8,7 +8,7 @@ import { loadSummary } from '@/state/useRepoSummary';
 import { oid, ref, stash } from '@/test/graphData';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
 import { GraphPanel } from './GraphPanel';
-import { RefsPanel } from './RefsPanel';
+import { REFS_SHOWN, RefsPanel } from './RefsPanel';
 
 const TAB = { project: 'app', worktree: null };
 
@@ -142,4 +142,14 @@ test('hiding a remote shows the Remotes "Show all", which shows it again', async
   fireEvent.click(screen.getByRole('button', { name: 'Hide remote up' }));
   fireEvent.click(screen.getByRole('button', { name: 'Show all' }));
   expect(getPrefs('app').hiddenRemotes).toEqual([]);
+});
+
+test('a long list shows REFS_SHOWN rows and a Show more button for the rest', async () => {
+  const w = world();
+  w.refs.refs.push(...Array.from({ length: REFS_SHOWN + 30 }, (_, i) => ref(`refs/heads/many/${String(i).padStart(3, '0')}`, oid(800))));
+  await show(w);
+  const local = () => within(screen.getByRole('list', { name: 'Local branches' }));
+  expect(local().getAllByRole('listitem').filter((li) => li.hasAttribute('data-ref'))).toHaveLength(REFS_SHOWN);
+  fireEvent.click(local().getByRole('button', { name: 'Show 33 more of 33' }));
+  expect(local().getAllByRole('listitem')).toHaveLength(REFS_SHOWN + 33);
 });
