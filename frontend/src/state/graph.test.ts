@@ -315,3 +315,20 @@ test('a seek whose page fails ends with error, not end', async () => {
   world.page = () => json({ error: 'bad object', code: 'GIT_FAILED' }, 422);
   expect(await loadUntil(TAB, oid(10))).toBe('error');
 });
+
+test('a prefetch page already loading does not use up the seek\'s maxPages', async () => {
+  const world = linearWorld(2500);
+  const fetch = stubGraph(world);
+  await openGraph(TAB);
+  const hold = holdPages(world, [PAGE]);
+  void loadNextPage(TAB);
+  await flush();
+  // oid(1500) is commit index 1000: in the page after the prefetch's, exactly one page of the seek's own.
+  const seek = loadUntil(TAB, oid(1500), { maxPages: 1 });
+  await flush();
+  hold.release();
+  expect(await seek).toBe('found');
+  expect(paramsOf(fetch, 'POST api/ops/graph.page').map((p) => (p as { skip: number }).skip)).toEqual([0, PAGE, 2 * PAGE]);
+  // Without a prefetch the budget binds: oid(1) is two pages away.
+  expect(await loadUntil(TAB, oid(1), { maxPages: 1 })).toBe('limit');
+});
