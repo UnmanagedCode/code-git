@@ -23,6 +23,10 @@
 | `src/git/locks.js` | `createLocks()`: keyed promise queue |
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
 | `src/git/ops/repo.js` | `repo.summary` |
+| `src/git/ops/diff.js` | `diff.files`, `diff.file`, `diff.patch`; `patchFilename` |
+| `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`, `OID_RE`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS` |
+| `src/git/diff/limits.js` | `DIFF_LIMITS`: the diff caps (list / file / patch bytes, oversize lines, max commits and paths) |
+| `src/git/parse/diff.js` | `parseRawNumstat`, `parseFilePatch`, `detectLfs`, `sideLines` — pure |
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |
 | `src/activity/log.js` | `createActivityLog()`: the ring, its events, cancel |
 | `src/routes/*.js` | One file per feature, each `mount(router, deps)`; `index.js` mounts them |
@@ -40,6 +44,10 @@
 | `state/store.ts` | `createStore` + `useStore` (`useSyncExternalStore`) |
 | `state/tabs.ts` | `tabsReducer` (pure), `tabsStore`, `tabKey`, persistence |
 | `state/useRepos.ts`, `useActivity.ts`, `useRepoSummary.ts` | One store per feature; per-checkout state is a map keyed by `tabKey` |
+| `state/shownPanel.ts` | Which on-demand panel each tab shows (`showPanel`, `hidePanel`, `useShownPanel`); `pruneClosedTabs` drops a closed tab's keys from a tab-keyed store |
+| `state/diff.ts` | `diffStore` (per tab: source, list, selection, viewed path, file diffs by `fileKey`), `prefsStore` (persisted `code-git:diff-prefs`), the list/file loaders |
+| `features/diff/` | `openDiff.ts` (the entry point), `api.ts` (wire types + op wrappers), `model.ts` / `viewRows.ts` / `wordDiff.ts` / `segments.ts` (pure row models), `highlight/` (Prism, lazily loaded), the panels and views |
+| `lib/download.ts` | `downloadBytes` (blob URL → `a.download`), `decodeBase64`: the only object-URL / download-link builder |
 | `shell/Shell.tsx` | Layout, panel slots, picker |
 | `shell/panels.ts`, `shell/menus.ts`, `shell/ActionMenu.tsx` | The panel and context-menu registries |
 | `features/<feature>/` | Feature components and their tests |
@@ -53,7 +61,9 @@ What a later card touches to add a feature — each is one file of its own plus 
 |---|---|---|
 | A backend op | `src/git/ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run}]` | the list passed to `buildRegistry` in `src/git/ops/index.js` |
 | Backend routes (rarely: ops go through `api/ops/:name`) | `src/routes/<feature>.js` exporting `mount(router, deps)` | `mountRoutes` in `src/routes/index.js` |
-| A panel | a `PanelDef` (`{id, slot, title, component, order}`) in `frontend/src/features/<feature>/` | `PANELS` in `frontend/src/shell/panels.ts` |
+| A panel | a `PanelDef` (`{id, slot, title, component, order, onDemand?}`) in `frontend/src/features/<feature>/` | `PANELS` in `frontend/src/shell/panels.ts` |
+| A panel shown on demand (the diff) | a `PanelDef` with `onDemand: true`; show it with `showPanel(tab, id)` (`state/shownPanel.ts`) | `PANELS`; while shown it replaces its slot's other panels for that tab |
+| Opening a diff (graph, details panel) | call `openDiff(target, source, {path?})` from `features/diff/openDiff.ts`; `closeDiff(target)` | nothing |
 | Context-menu actions | `MenuAction[]` (`{id, context, label, when?, run, destructive?}`) in the feature folder | `ACTIONS` in `frontend/src/shell/menus.ts`; render with `<ActionMenuItems context ctx>` |
 | Per-checkout UI state | `frontend/src/state/<feature>.ts`: a `createStore` map keyed by `tabKey` | nothing; add its reset to `frontend/src/test/setup.ts` |
 
@@ -62,7 +72,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 - `name` matches `^[a-z]+\.[a-zA-Z]+$` and is unique.
 - `kind` is `'read'` or `'write'`.
 - `cancellable`, when given, is a boolean; it defaults to `kind === 'read'`. A write sets `cancellable: true` only where aborting mid-command cannot leave the repo half-changed (fetch, push), and its card states why.
-- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params)` returns JSON. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`.
+- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target})` returns JSON. `target` is the call's validated `{project, worktree}` (worktree `null` = main checkout), for an op that names its output after the checkout (`diff.patch`); git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`.
 
 ## Runner pipeline (`runGit`)
 
@@ -86,6 +96,22 @@ What a later card touches to add a feature — each is one file of its own plus 
 | a `-C` subpath | `assertSubpath`: `assertPath` + no leading `-` | — |
 
 **No process or filesystem access in `src/`** except `src/http/static.js` reading `frontend/dist`: git runs only through cc. A test (`exec.test.js` guard) enforces it.
+
+## Diff
+
+- **Paging unit = one file.** `diff.files` is one `--raw --numstat -z` command under `DIFF_LIMITS.listMaxOutputBytes`; past it the whole list is refused (`OUTPUT_TOO_LARGE`), never shown partial. Each file's hunks are a separate `diff.file` under `fileMaxOutputBytes`.
+- **Pinned pair.** `diff.files` returns the resolved `pair`; the UI loads every file with `{kind: 'pair', ...pair}`, so a moving HEAD or ref cannot mix two commits in one view. Work-in-progress sides are refetched by Refresh or a new `openDiff`.
+- **Config that reshapes diff text is overridden on every command** (`DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`); the list of keys and their overrides: [wiki: gotchas/diff-parsing](../.wiki/gotchas/diff-parsing.md). The test fixture (`tests/_diffRepo.js`) sets all of them.
+- **Contract for later cards.** `openDiff(target, source, {path})` opens a diff (the graph's details panel and multi-select). `FileDiff` → `Hunk` (id = `header`) → `DiffLine` is the model per-hunk/line staging addresses as `(hunk index, line index)`; a patch rebuilt from it needs `whitespace: 'none'` ([protocol](protocol.md#difffile-read-cancellable)).
+- **UI state.** `diffStore` is keyed by `tabKey`; a list load bumps `generation`, and a file answer for an older generation is dropped. `fileKey` = path + context + whitespace, so switching mode or context refetches only what is missing. Inline, Split and File view request `context: 'full'`; Hunk mode the chosen context.
+- **Rows** render as `div`s in chunks of `CHUNK_ROWS` with `content-visibility: auto` (`Chunked` in `features/diff/CodeLine.tsx`); a change block's first row carries `data-change-index`, a search match `data-match` / `data-match-current`.
+
+### Rendering safety: highlighting
+
+- `highlight/prismManual.ts` sets `globalThis.Prism = {manual: true, …}` and is the first import of `highlight/prism.ts`, so Prism never highlights `language-*` elements on load. `prism.ts` is reached only by `import()` (its own chunk).
+- Only `Prism.tokenize` is used. `highlightLines` flattens the token tree to `{text, cls}` segments; `cls` comes only from the fixed `TOKEN_CLASS` map; `CodeLine` renders them as React text. `guards.test.ts` refuses `Prism.highlight`, `highlightElement` and `highlightAll` anywhere.
+- Bounded per file side: past `HIGHLIGHT_MAX_LINE_CHARS`, `HIGHLIGHT_MAX_LINES` or `HIGHLIGHT_MAX_SIDE_CHARS` the side is plain and the tokenizer is not called. Word emphasis is bounded by `WORD_DIFF_MAX_CHARS` / `WORD_DIFF_MAX_TOKENS`.
+- A patch download is a local `blob:` URL of `text/x-diff` bytes, clicked and revoked, never rendered; its name is the backend's sanitized `filename`. Only `lib/download.ts` builds object URLs or download links (guard test).
 
 ## Long ops, cancel and paging
 
@@ -111,6 +137,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 - **Backend** (`tests/`, `node --test`): `_fakeCc.js` is a real HTTP server standing in for cc. Its `POST /api/exec` validates the request like cc (unknown keys, form A/B, env names, caps), records any form-B or `shell` use in `state.violations`, and runs **real git** in the resolved directory with a hermetic env (temp `HOME`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL`). It enforces timeout, output cap and spawn failure, and kills the command on client disconnect. Knobs: `execHook(body)` → a canned answer, `'hold'` (answer when `release()`d; `nextHeld()` resolves it, `held.disconnected` / `held.closed` report a client abort) or `'reset'`; `systemDown(project)`.
 - A "remote" project (`system: 'docker'`) runs locally, proving the plugin addresses it by `{project, worktree}` alone.
+- `_diffRepo.js`: `diffRepo(t)` — one repo with every diff source and file state (merge, root, orphan, side branch, rename, binary, LFS pointer, oversized file, gitlink, `-rf` and `:(glob)*`, staged/unstaged/untracked, symlinks) and a hostile `.git/config` set last; the Playwright seed's `diffs` project reuses it.
 - `_git.js`: `makeRepo(t)` (temp dir, `main`, pinned identity and dates, cleaned up after the test), `bareRemote`, `worktreeAdd`, `hook`. `_ctx.js` builds a runner context; `_app.js` boots the server on port 0 and reads SSE.
-- **UI** (`frontend/src/**/*.test.{ts,tsx}`, Vitest + happy-dom): `test/stubFetch.ts` (route table; an unstubbed or root-relative request fails), `test/fakeEventSource.ts`, `test/fixtures.ts`; `test/setup.ts` resets every store, storage and the URL after each test.
-- **Harnesses**: `harness/playwright/` (seeded screenshots, golden path, read-only live check) and `harness/mutation/` (code-mutant routes `server` and `ui`).
+- **UI** (`frontend/src/**/*.test.{ts,tsx}`, Vitest + happy-dom): `test/stubFetch.ts` (route table; an unstubbed or root-relative request fails), `test/fakeEventSource.ts`, `test/fixtures.ts`, `test/diffFixtures.ts` (`dfile`, `filesResult`, `hunk`, `fdiff`); `test/setup.ts` resets every store, storage and the URL after each test.
+- **Harnesses**: `harness/playwright/` (seeded screenshots, golden path, the diff path, read-only live check) and `harness/mutation/` (code-mutant routes `server` and `ui`).

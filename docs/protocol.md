@@ -74,9 +74,98 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 
 - Refusal: 409 `NOT_A_REPO` with `detail` = git's stderr, when git exits 128 saying "not a git repository".
 
+### Diff sources
+
+Every diff op takes a `source` (`parseSource`, `resolveSource` and `pairArgs` in `src/git/diff/source.js`). A source resolves to a **pair** of pinned sides: `{old: Side, new: Side}`, `Side` = `{type: 'tree', oid}` | `{type: 'index'}` | `{type: 'worktree'}`.
+
+| `source` | Old side → new side | Notes |
+|---|---|---|
+| `{kind: 'commit', rev, parent?}` | the commit's parent `parent` → the commit | `parent` 1-based, default 1 (a merge's first parent); a root commit diffs against the empty tree; `parent` past the commit's parents → `BAD_PARAMS` |
+| `{kind: 'unstaged'}` | index → worktree | the file list adds untracked files (`status: '?'`) |
+| `{kind: 'staged'}` | HEAD → index | an unborn HEAD → the empty tree |
+| `{kind: 'compare', from, to, mode}` | `..`: `from` → `to`; `...`: merge base → `to` | no merge base → `NO_MERGE_BASE` |
+| `{kind: 'worktree', rev}` | `rev` → worktree | tracked files only (staged + unstaged) |
+| `{kind: 'commits', oids, wip?}` | see the multi-select rule | full oids, 1…`DIFF_LIMITS.maxCommits`, unique |
+| `{kind: 'pair', old, new}` | as given | allowed: tree→tree, tree→index, tree→worktree, index→worktree; a tree side's `oid` is a full oid |
+
+- **Validation** (`parseSource`): an unknown kind or key, or a malformed field → `BAD_PARAMS`. `rev`, `from`, `to` pass `assertCommitish`: `assertRev`, plus no leading `^` and no `..` (ranges are built by code-git) → `BAD_REF`.
+- **A typed revision** resolves with `rev-parse --verify --quiet --end-of-options <rev>^{commit}`; no commit → 404 `REV_UNKNOWN`. `commits` oids are checked in one `cat-file --batch-check`; a non-commit → `REV_UNKNOWN`.
+- **Multi-select rule** (`commits`), GitKraken's:
+
+| Selection | Diff |
+|---|---|
+| A contiguous first-parent run (one tip; `rev-list --first-parent` from it yields exactly the selection) | combined: oldest's first parent (empty tree for a root) → newest |
+| Exactly 2 commits, not contiguous | direct: older → newer (the ancestor, or by commit date when diverged) |
+| 3 or more, not contiguous | 409 `DIFF_NOT_CONTIGUOUS` |
+| `wip: true` | allowed only on a contiguous run whose newest is HEAD; the new side is then the worktree. Otherwise `DIFF_NOT_CONTIGUOUS` |
+
+**`Resolved`** (in `diff.files`' result): `{pair, commit: {oid, parents} | null, mergeBase: string | null, series: {oids /* newest first */, direct, wip, merges} | null}`. `commit` is set for `kind: 'commit'`; `mergeBase` for `...`; `series` for `commits` (`merges`: a commit of the run is a merge). The UI sends `{kind: 'pair', ...pair}` for every later `diff.file`, so the files it lists and the hunks it shows come from the same commits.
+
+**Every diff command** carries `DIFF_CONFIG` (`-c diff.suppressBlankEmpty=false`, before the subcommand) and `DIFF_FLAGS` (`--no-color --no-ext-diff --no-textconv --no-relative -M --src-prefix=a/ --dst-prefix=b/ --inter-hunk-context=0 --submodule=short`), both in `src/git/diff/source.js`. `whitespace` (`none` default, `eol`, `change`, `all`) adds `WHITESPACE_FLAGS[whitespace]`.
+
+### `diff.files` (read, cancellable)
+
+- `params`: `{source, whitespace?}`.
+- Runs `git diff … --raw --numstat -z --no-abbrev <pair> --`, capped at `DIFF_LIMITS.listMaxOutputBytes` (`src/git/diff/limits.js`); for an index → worktree pair also `git ls-files --others --exclude-standard -z`.
+- `result`: `Resolved` + `files: DiffFile[]`, in git's order, untracked files last:
+
+| `DiffFile` field | Meaning |
+|---|---|
+| `path`, `oldPath` | `oldPath` only for a rename/copy |
+| `status` | `A` `M` `D` `R` `C` `T` `U` (unmerged: listed once, as `U`), `?` (untracked) |
+| `similarity` | rename/copy score, else `null` |
+| `added`, `deleted` | numstat counts; `null` for binary and untracked files |
+| `binary` | numstat `-\t-` |
+| `submodule` | either side's mode is `160000` (a gitlink) |
+| `oversized` | `added + deleted > DIFF_LIMITS.oversizeLines`: the UI asks before loading it |
+| `oldMode`, `newMode`, `oldOid`, `newOid` | from the raw record; `null` for an absent side (a worktree side has no oid) |
+
+- Over the cap: 422 `OUTPUT_TOO_LARGE` with `limitBytes` — never a partial or empty list.
+
+### `diff.file` (read, cancellable)
+
+- `params`: `{source, path, oldPath?, untracked?, context?, whitespace?}`. `context`: 0…1000 or `'full'` (the whole file), default 3. Paths pass `assertPath`. `untracked: true` only for an index → worktree pair (`BAD_PARAMS` otherwise) and never with `oldPath`.
+- Runs `git diff … -U<context> <pair> -- [oldPath] path`, capped at `DIFF_LIMITS.fileMaxOutputBytes`; over it: 422 `OUTPUT_TOO_LARGE` with `limitBytes`.
+- Untracked: first `git ls-files --others --exclude-standard -z -- path` must list exactly `path`, else 400 `BAD_PATH` (git lists no path through a symlinked directory); then `git diff --no-index … -- /dev/null path` (exit 0 or 1). An untracked symlink shows as mode `120000` with one added line, its target path — the target's content is never read.
+- `result` = `FileDiff`, the model per-hunk/line staging builds on:
+
+```
+FileDiff { path, oldPath, binary, unmerged, oldMode, newMode,
+           lfs: {old: LfsPointer|null, new: LfsPointer|null} | null,
+           submodule: {old: oid|null, new: oid|null, dirty: boolean} | null,
+           hunks: Hunk[] }
+Hunk     { header /* "@@ -a,b +c,d @@ section", unique per file: the hunk's id */, oldStart, oldLines, newStart, newLines, lines: DiffLine[] }
+DiffLine { kind: 'context'|'add'|'del', text /* exact, no newline */, oldNo, newNo, noNewline }
+LfsPointer { oid /* sha256 hex */, size }
+```
+
+| Field | Rule |
+|---|---|
+| A line's address | `(hunk index, line index)`; a hunk's id is its `header` |
+| `unmerged` | git emitted `diff --cc`; `hunks` is empty |
+| `submodule` | a gitlink: the `Subproject commit <oid>[-dirty]` lines; `hunks` is empty |
+| `lfs` | a side whose single hunk starts at line 1 and is a Git LFS spec-v1 pointer; null for binary and gitlinks |
+| `noNewline` | git printed `\ No newline at end of file` after the line |
+
+- A caller that rebuilds a patch from `FileDiff` (staging a hunk or line) must request `whitespace: 'none'`: with whitespace ignored the hunks are not the file's real changes.
+
+### `diff.patch` (read, cancellable)
+
+- `params`: `{source, paths?}`; `paths` 1…`DIFF_LIMITS.maxPaths`, each `assertPath`.
+- **Mailbox** (`git am`-able) for one non-merge commit, or a merge-free contiguous `series` without `wip`: `git format-patch --stdout FORMAT_PATCH_FLAGS DIFF_FLAGS --end-of-options <base>..<tip> -- [paths]` (`--root <tip>` from a root commit). `FORMAT_PATCH_FLAGS` (`src/git/diff/source.js`) switches off every `format.*` key that adds a signature, headers, recipients, a cover letter, numbering, threading, a base, a From override, attachments, notes or a sign-off.
+- **Plain** (`git apply`-able) otherwise: `git diff --binary DIFF_FLAGS <pair> -- [paths]`. Binary changes are included; untracked files are not.
+- Capped at `DIFF_LIMITS.patchMaxOutputBytes`.
+- `result`: `{filename, base64, bytes}` — the bytes base64-encoded, so the download is byte-exact.
+
+| Source | `filename` |
+|---|---|
+| a commit | `<oid7>.patch` |
+| tree → tree (a run, a direct compare, two refs) | `<old7>..<new7>.patch` |
+| index → worktree / tree → index / tree → worktree | `<project>-unstaged.patch` / `-staged` / `-worktree`; the project name reduced to `[A-Za-z0-9._-]` (others → `_`), at most 80 characters |
+
 ### Paging convention (for ops that list)
 
-No C1 op pages. An op that does returns `{items, nextCursor}` (`nextCursor: null` on the last page) and pages **by git arguments**, never by slicing output (cc's exec is buffered): log by `--max-count` from a cursor commit, diffs by a `--numstat` summary then one path at a time, blame by `-L a,b`, blobs by `cat-file -s` before reading.
+The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. An op that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page) and pages **by git arguments**, never by slicing output (cc's exec is buffered): log by `--max-count` from a cursor commit, diffs by a `--numstat` summary then one path at a time, blame by `-L a,b`, blobs by `cat-file -s` before reading.
 
 ## Activity
 
@@ -117,10 +206,13 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `UNKNOWN_OP` | 404 | No such op |
 | `ACTIVITY_UNKNOWN` | 404 | No such activity entry |
 | `NOT_FOUND` | 404 | No such API route |
+| `REV_UNKNOWN` | 404 | A revision does not name a commit |
 | `NOT_A_REPO` | 409 | The checkout is not a git repository |
 | `NOT_CANCELLABLE` | 409 | The entry's op does not allow cancel |
 | `NOT_RUNNING` | 409 | The entry already finished |
 | `CANCELLED` | 409 | The op was cancelled |
+| `NO_MERGE_BASE` | 409 | `A...B` has no common ancestor |
+| `DIFF_NOT_CONTIGUOUS` | 409 | A multi-selection the multi-select rule cannot diff |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |

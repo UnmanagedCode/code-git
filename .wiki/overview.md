@@ -14,6 +14,7 @@ Shape: `server.js` → `src/app.js` (wiring) → `src/routes/*` → `src/git/ops
 | **op run** | One call of an op; its commands share an `opRunId` |
 | **activity entry** | One git command as logged: argv, target, status, exit code, stderr tail. Diagnostic only |
 | **tabKey** | `project + '\0' + (worktree ?? '')`: the key of a checkout's UI state |
+| **diff source** | What a diff compares (`commit`, `unstaged`, `staged`, `compare`, `worktree`, `commits`, `pair`); resolved to a **pair** of pinned sides (`tree` oid / `index` / `worktree`) |
 | **System** | Where a project lives (`local`, `docker`, `ssh`, …), from cc's project row |
 
 ## Decisions worth knowing
