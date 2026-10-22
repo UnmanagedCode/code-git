@@ -9,6 +9,7 @@ const pointer = (c, size) => `version https://git-lfs.github.com/spec/v1\noid sh
 export const LFS = { old: { oid: 'a'.repeat(64), size: 12345 }, new: { oid: 'b'.repeat(64), size: 67890 } };
 export const GITLINK = { old: '1'.repeat(40), new: '2'.repeat(40) };
 export const SECRET_MARKER = 'SECRET-MARKER-7f3a9c';
+export const NULL_MARKER = 'NULL-FILE-MARKER-41d2e8';
 export const XSS_LINE = '<img src=x onerror=alert(1)>';
 export const HUGE_LINES = 10_001;
 
@@ -32,8 +33,9 @@ const HOSTILE_CONFIG = [
 /**
  * History (first parent on main):  root → m1 → merge(m1, topic) → change → tail = HEAD;
  * `topic` = root → t1; `side` = change → s1 → s2; `orphan` = one unrelated root commit.
- * WIP: tail.txt staged, main-only.txt unstaged, untracked notes.txt, symlinks `out` → / and `secret-link` → a file
- * outside the repo holding SECRET_MARKER. `hostileRan` is the path an external diff or textconv driver would create.
+ * WIP: tail.txt staged, main-only.txt unstaged, untracked notes.txt, symlinks `out` → /, `secret-link` → a file
+ * outside the repo holding SECRET_MARKER, `dir-link` → a directory outside the repo holding a file `null` with
+ * NULL_MARKER, and `bare-dir-link` → an empty directory outside the repo. `hostileRan` is the path an external diff or textconv driver would create.
  */
 export function diffRepo(t, { name = 'diffs' } = {}) {
   const repo = makeRepo(t, { name });
@@ -79,6 +81,13 @@ export function diffRepo(t, { name = 'diffs' } = {}) {
   fs.writeFileSync(secret, `${SECRET_MARKER}\n`);
   fs.symlinkSync('/', path.join(repo.dir, 'out'));
   fs.symlinkSync(secret, path.join(repo.dir, 'secret-link'));
+  const linked = path.join(repo.root, 'linked-dir');
+  fs.mkdirSync(linked);
+  fs.writeFileSync(path.join(linked, 'null'), `${NULL_MARKER}\n`);
+  fs.symlinkSync(linked, path.join(repo.dir, 'dir-link'));
+  const bare = path.join(repo.root, 'bare-dir');
+  fs.mkdirSync(bare);
+  fs.symlinkSync(bare, path.join(repo.dir, 'bare-dir-link'));
 
   // Hostile config last, so the fixture's own commands above are unaffected.
   const hostileRan = path.join(repo.root, 'hostile-ran');

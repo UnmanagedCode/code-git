@@ -24,7 +24,10 @@ Code: `src/git/parse/diff.js`, `src/git/diff/source.js`. Reference: `docs/protoc
 
   Left alone on purpose (they choose hunks, not the format): `diff.algorithm`, `diff.indentHeuristic`, `diff.renameLimit`, `diff.orderFile` (raw and numstat keep one order), `diff.ignoreSubmodules`, `core.autocrlf`.
 - **`rev-parse --verify --end-of-options X` does not echo `--end-of-options`** (without `--verify` it does), but it accepts `^X` and ranges — hence `assertCommitish` refuses a leading `^` and any `..`.
-- **Untracked files need the `ls-files` gate before `--no-index`.** `git diff --no-index /dev/null out/etc/passwd` would read through a symlinked directory; `ls-files --others` never lists such a path. An untracked **symlink itself** is safe: `--no-index` shows mode `120000` and its target path (`readlink`), not the target's content.
+- **Untracked files need two gates before `--no-index`** (`diff.file` in `src/git/ops/diff.js`):
+  - `ls-files --others` must list the path: it never lists a path *through* a symlinked directory (`out/etc/passwd`).
+  - **A symlink *to a directory* is listed as the link itself**, and `git diff --no-index /dev/null <link>` stats through it, sees a directory, and diffs `<link>/null` — a regular file named `null` outside the repo, if one exists (else exit 1, empty output). So a stat-only probe (`--no-index --raw -z`, zero oids, no content read) must name exactly one entry equal to the path, or the read is refused. `git hash-object -- <link>` would also tell them apart (exit 128 for a directory), but on a file symlink it reads the outside target's content to hash it.
+  - A symlink to a file is safe: `--no-index` shows mode `120000` and its target path (`readlink`), not the target's content.
 - **A gitlink (mode 160000) is never a text hunk**: its `Subproject commit <oid>[-dirty]` lines become `FileDiff.submodule`. A gitlink can be committed without a submodule (`update-index --cacheinfo 160000,<oid>,path` plus an empty directory, so `add -A` keeps it) — that is how the fixture makes one offline.
 - **The empty tree id** comes from `hash-object -t tree --stdin` (empty stdin, no `-w`): it differs between sha1 and sha256 repos, so it is never hard-coded.
 - **`format-patch --root <tip>`** for a run starting at a root commit; `base..tip` otherwise. Only for merge-free runs: a merge commit gets a plain `diff --binary`.

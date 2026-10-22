@@ -126,7 +126,11 @@ Every diff op takes a `source` (`parseSource`, `resolveSource` and `pairArgs` in
 
 - `params`: `{source, path, oldPath?, untracked?, context?, whitespace?}`. `context`: 0…1000 or `'full'` (the whole file), default 3. Paths pass `assertPath`. `untracked: true` only for an index → worktree pair (`BAD_PARAMS` otherwise) and never with `oldPath`.
 - Runs `git diff … -U<context> <pair> -- [oldPath] path`, capped at `DIFF_LIMITS.fileMaxOutputBytes`; over it: 422 `OUTPUT_TOO_LARGE` with `limitBytes`.
-- Untracked: first `git ls-files --others --exclude-standard -z -- path` must list exactly `path`, else 400 `BAD_PATH` (git lists no path through a symlinked directory); then `git diff --no-index … -- /dev/null path` (exit 0 or 1). An untracked symlink shows as mode `120000` with one added line, its target path — the target's content is never read.
+- Untracked, three steps, each refusal 400 `BAD_PATH`:
+  1. `git ls-files --others --exclude-standard -z -- path` must list exactly `path` (git lists no path through a symlinked directory).
+  2. A stat-only probe, `git diff --no-index --raw -z … -- /dev/null path`, must name exactly one entry, `path` itself. A symlink to a directory fails it: `--no-index` would diff `path/null`, a file outside the repo. The probe reads no content (its oids are zeros).
+  3. `git diff --no-index … -- /dev/null path` (exit 0 or 1).
+- An untracked symlink to a file shows as mode `120000` with one added line, its target path; the target's content is never read. A symlink to a directory is refused.
 - `result` = `FileDiff`, the model per-hunk/line staging builds on:
 
 ```

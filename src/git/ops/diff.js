@@ -35,6 +35,19 @@ async function untracked(git) {
   }));
 }
 
+/**
+ * `git diff --no-index /dev/null <path>` reads `<path>` itself only when it is not a directory to git's stat: a symlink to
+ * a directory (listed by ls-files as the link) becomes `<path>/null`, a file outside the repo. This raw probe only stats
+ * (it prints zero oids, no content); unless it names exactly one entry, `path` itself, the read is refused.
+ */
+async function assertNoIndexReadsItself(git, path) {
+  const r = await git([...DIFF_CONFIG, 'diff', '--no-index', ...DIFF_FLAGS, '--raw', '-z', '--no-abbrev', '--', '/dev/null', path], { okExit: [0, 1] });
+  const f = decoder.decode(r.stdout).split('\0');
+  if (f.length !== 3 || !f[0].startsWith(':') || f[1] !== path || f[2] !== '') {
+    throw new Refusal('BAD_PATH', `${path} is a link to a directory: its content is not shown`);
+  }
+}
+
 /** The download name, built here only: `[A-Za-z0-9._-]`, the project name capped at 80 characters. */
 export function patchFilename(project, resolved) {
   const { pair, commit } = resolved;
@@ -90,9 +103,10 @@ export const ops = [
       let r;
       if (p.untracked) {
         if (!isWip(pair)) throw bad('untracked is allowed only for an index → worktree diff');
-        // Only a path git itself lists as untracked: this keeps `--no-index` from reading through a symlinked directory.
+        // Only a path git itself lists as untracked: no path through a symlinked directory.
         const listed = await git(['ls-files', '--others', '--exclude-standard', '-z', '--', p.path]);
         if (decoder.decode(listed.stdout) !== `${p.path}\0`) throw new Refusal('BAD_PATH', `${p.path} is not an untracked file`);
+        await assertNoIndexReadsItself(git, p.path);
         r = await git([...DIFF_CONFIG, 'diff', '--no-index', ...flags, '--', '/dev/null', p.path], { okExit: [0, 1], maxOutputBytes: DIFF_LIMITS.fileMaxOutputBytes });
       } else {
         const { opts, revs } = pairArgs(pair);

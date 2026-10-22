@@ -7,7 +7,7 @@ import { DIFF_LIMITS } from '../src/git/diff/limits.js';
 import { getOp, OPS } from '../src/git/ops/index.js';
 import { startApp } from './_app.js';
 import { ctxFor, gitFor } from './_ctx.js';
-import { APP_NEW, diffRepo, GITLINK, HUGE_LINES, LFS, SECRET_MARKER } from './_diffRepo.js';
+import { APP_NEW, diffRepo, GITLINK, HUGE_LINES, LFS, NULL_MARKER, SECRET_MARKER } from './_diffRepo.js';
 import { fakeCc } from './_fakeCc.js';
 import { hermeticEnv, makeRepo } from './_git.js';
 
@@ -72,7 +72,9 @@ test('unstaged: index → worktree plus untracked files as ?, whose diff is all 
   const { cc } = await world(t);
   const r = await files({ kind: 'unstaged' });
   assert.deepEqual(r.pair, { old: { type: 'index' }, new: { type: 'worktree' } });
-  assert.deepEqual(r.files.map((f) => [f.path, f.status]), [['main-only.txt', 'M'], ['notes.txt', '?'], ['out', '?'], ['secret-link', '?']]);
+  assert.deepEqual(r.files.map((f) => [f.path, f.status]), [
+    ['main-only.txt', 'M'], ['bare-dir-link', '?'], ['dir-link', '?'], ['notes.txt', '?'], ['out', '?'], ['secret-link', '?'],
+  ]);
   const u = r.files.find((f) => f.path === 'notes.txt');
   assert.deepEqual([u.added, u.deleted, u.binary, u.oversized], [null, null, false, false]);
   const d = await file({ kind: 'unstaged' }, 'notes.txt', { untracked: true });
@@ -100,6 +102,22 @@ test('an untracked symlink shows its target path (mode 120000), never the target
   const lines = d.hunks.flatMap((h) => h.lines);
   assert.deepEqual(lines.map((l) => [l.kind, l.text]), [['add', secret]]);
   assert.equal(JSON.stringify(d).includes(SECRET_MARKER), false);
+});
+
+test('an untracked symlink to a directory is refused BAD_PATH: never <link>/null, whether the target has a null file or not', async (t) => {
+  const { cc } = await world(t);
+  for (const link of ['dir-link', 'bare-dir-link', 'out']) {
+    const before = cc.state.execCalls.length;
+    await assert.rejects(file({ kind: 'unstaged' }, link, { untracked: true }), (e) => {
+      assert.equal(e.code, 'BAD_PATH');
+      assert.equal(JSON.stringify({ message: e.message, extra: e.extra }).includes(NULL_MARKER), false);
+      return true;
+    });
+    // Only the stat-only raw probe ran with --no-index: no patch was ever produced through the link.
+    const noIndex = cc.state.execCalls.slice(before).filter((b) => b.argv.includes('--no-index'));
+    assert.equal(noIndex.length, 1, link);
+    assert.ok(noIndex[0].argv.includes('--raw'), link);
+  }
 });
 
 test('gitlink: listed as a submodule; its diff is the two pointers and no hunks', async (t) => {
