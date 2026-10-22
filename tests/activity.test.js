@@ -41,6 +41,16 @@ test('a successful command: running then ok, with argv, target, exit code and du
   assert.ok(!Number.isNaN(Date.parse(entry.startedAt)));
 });
 
+test("an entry records its op's kind, so a client can tell a finished write from a read", async (t) => {
+  await world(t);
+  const read = await runLogged(ctxFor(APP, 'read'), ['status']);
+  const write = await runLogged(ctxFor(APP, 'write'), ['status']);
+  assert.deepEqual(read.events.map((e) => e.kind), ['read', 'read']);
+  assert.deepEqual(write.events.map((e) => e.kind), ['write', 'write']);
+  assert.equal(read.entry.kind, 'read');
+  assert.equal(write.entry.kind, 'write');
+});
+
 test('a non-zero exit closes the entry failed/GIT_FAILED with stderr', async (t) => {
   await world(t);
   const { e, entry } = await runLogged(ctxFor(APP), ['rev-parse', '--verify', 'nope']);

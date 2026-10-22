@@ -1,0 +1,9 @@
+/* Lane colours: hue rotations of the theme's --primary, so they follow cc's theme. One class per LANE_COLOURS (layout.ts). */
+.lane-0 { --lane: oklch(from var(--primary) l c calc(h + 0)); }
+.lane-1 { --lane: oklch(from var(--primary) l c calc(h + 45)); }
+.lane-2 { --lane: oklch(from var(--primary) l c calc(h + 90)); }
+.lane-3 { --lane: oklch(from var(--primary) l c calc(h + 135)); }
+.lane-4 { --lane: oklch(from var(--primary) l c calc(h + 180)); }
+.lane-5 { --lane: oklch(from var(--primary) l c calc(h + 225)); }
+.lane-6 { --lane: oklch(from var(--primary) l c calc(h + 270)); }
+.lane-7 { --lane: oklch(from var(--primary) l c calc(h + 315)); }

@@ -7,8 +7,8 @@
 - Full-width page: the tab bar, the active checkout's header, the panel slots (`left`, `center`, `right`, `bottom`), and the repo picker dialog. It caps no content width, so it does not read `--cc-session-width`.
 - Follows cc's light/dark theme live when embedded; standalone, follows the OS (`frontend/public/theme-init.js`). No theme toggle of its own.
 - With no tab open the center shows "No repository open." and an **Open a repository** button.
-- The center slot holds a placeholder for the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the Compare panel; the bottom slot holds the activity panel.
-- **Below the `lg` breakpoint the left and right slots are hidden**, and with them the Compare picker; diffs then open from the graph.
+- The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel and the Compare panel, the right slot the commit details, the bottom slot the activity panel.
+- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the Compare picker as dialogs (**Refs**, **Compare**), and the commit details open as a dialog when a commit is clicked.
 
 ## Repo picker
 
@@ -57,6 +57,10 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 | Refresh | Reloads the summary (spins while loading) |
 | Error | `NOT_A_REPO`: "Not a git repository" plus git's stderr in a block; any other refusal: its message. A refresh the user cancelled from the activity panel is not an error: the previous summary stays |
 
+## Commit graph
+
+The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree). Full behaviour: [graph](graph.md).
+
 ## Activity panel
 
 Bottom slot, collapsible (the **Activity** toggle). Newest entry first.
@@ -75,7 +79,7 @@ Updates arrive over server-sent events; each event triggers a refetch of the log
 
 ## Compare panel
 
-Left slot. Picks what to diff, until the commit graph offers it. Hidden below `lg`.
+Left slot, below the refs panel. Picks what to diff beside the graph's own entry points ([graph → Diffs](graph.md#diffs)). Below `lg` it opens as a dialog from the graph toolbar's **Compare** button.
 
 | Section | Controls | Opens |
 |---|---|---|

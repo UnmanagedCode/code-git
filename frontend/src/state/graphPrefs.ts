@@ -1,0 +1,88 @@
+import { clampWidth, COLUMN_IDS, COLUMNS, isColumnId, type ColumnId, type OptionalColumnId } from '@/features/graph/columns';
+import { useMemo } from 'react';
+import { getItem, setItem } from '@/lib/storage';
+import { createStore, useStore } from './store';
+
+// Per-project graph preferences (visibility, pins, columns), persisted under `graph:<project>`: refs are shared by
+// every checkout of a project, so its worktree tabs share one record.
+
+export type Section = 'local' | 'remote' | 'tags' | 'stashes';
+const SECTIONS: Section[] = ['local', 'remote', 'tags', 'stashes'];
+
+export interface GraphPrefs {
+  hidden: string[];
+  hiddenRemotes: string[];
+  hiddenSections: Section[];
+  soloed: string[];
+  soloedRemotes: string[];
+  soloedSections: Exclude<Section, 'stashes'>[];
+  /** Full refnames, in pin order. */
+  pinned: string[];
+  columns: { order: ColumnId[]; visible: OptionalColumnId[]; widths: Partial<Record<ColumnId, number>> };
+}
+
+export const DEFAULT_PREFS: GraphPrefs = {
+  hidden: [], hiddenRemotes: [], hiddenSections: [], soloed: [], soloedRemotes: [], soloedSections: [], pinned: [],
+  columns: { order: [...COLUMN_IDS], visible: [], widths: {} },
+};
+
+const strings = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && x !== ''))] : []);
+const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T[] => strings(v).filter((x): x is T => (allowed as readonly string[]).includes(x));
+
+/** A stored record made safe: unknown or ill-typed entries dropped, column order repaired, widths clamped. */
+export function validatePrefs(raw: unknown): GraphPrefs {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return DEFAULT_PREFS;
+  const r = raw as Record<string, unknown>;
+  const cols = (r.columns && typeof r.columns === 'object' && !Array.isArray(r.columns) ? r.columns : {}) as Record<string, unknown>;
+  const order = strings(cols.order).filter(isColumnId);
+  for (const id of COLUMN_IDS) if (!order.includes(id)) order.push(id);
+  const widths: Partial<Record<ColumnId, number>> = {};
+  if (cols.widths && typeof cols.widths === 'object') {
+    for (const [k, v] of Object.entries(cols.widths)) if (isColumnId(k) && COLUMNS[k].resizable && Number.isFinite(v)) widths[k] = clampWidth(k, v as number);
+  }
+  return {
+    hidden: strings(r.hidden), hiddenRemotes: strings(r.hiddenRemotes), hiddenSections: oneOf(r.hiddenSections, SECTIONS),
+    soloed: strings(r.soloed), soloedRemotes: strings(r.soloedRemotes), soloedSections: oneOf(r.soloedSections, ['local', 'remote', 'tags'] as const),
+    pinned: strings(r.pinned),
+    columns: { order, visible: oneOf(cols.visible, COLUMN_IDS.filter((id) => COLUMNS[id].optional) as OptionalColumnId[]), widths },
+  };
+}
+
+const key = (project: string) => `graph:${project}`;
+
+export function loadPrefs(project: string): GraphPrefs {
+  try {
+    return validatePrefs(JSON.parse(getItem(key(project)) ?? 'null'));
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+/** Loaded on first read, by project. */
+export const graphPrefsStore = createStore<ReadonlyMap<string, GraphPrefs>>(new Map());
+export const resetGraphPrefs = (): void => graphPrefsStore.set(new Map());
+
+export function getPrefs(project: string): GraphPrefs {
+  const m = graphPrefsStore.get();
+  const have = m.get(project);
+  if (have) return have;
+  const loaded = loadPrefs(project);
+  graphPrefsStore.set(new Map(m).set(project, loaded));
+  return loaded;
+}
+
+export function updatePrefs(project: string, f: (p: GraphPrefs) => GraphPrefs): void {
+  const next = validatePrefs(f(getPrefs(project)));
+  graphPrefsStore.set((m) => new Map(m).set(project, next));
+  setItem(key(project), JSON.stringify(next));
+}
+
+export function useGraphPrefs(project: string): GraphPrefs {
+  const m = useStore(graphPrefsStore);
+  // Read storage without writing the store during render; the first update stores it.
+  const stored = useMemo(() => loadPrefs(project), [project]);
+  return m.get(project) ?? stored;
+}
+
+/** `list` with `item` added (at the end) or removed. */
+export const toggled = <T>(list: T[], item: T, on: boolean): T[] => (on ? (list.includes(item) ? list : [...list, item]) : list.filter((x) => x !== item));

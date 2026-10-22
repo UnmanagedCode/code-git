@@ -7,6 +7,7 @@ import { shownPanelStore } from '@/state/shownPanel';
 import { dispatchTabs, tabKey } from '@/state/tabs';
 import { dfile, fdiff, filesResult, hunk, OID } from '@/test/diffFixtures';
 import { json, summary } from '@/test/fixtures';
+import { refsResult } from '@/test/graphData';
 import { stubFetch } from '@/test/stubFetch';
 import type { DiffFile, DiffFilesResult, FileDiff } from './api';
 import { openDiff } from './openDiff';
@@ -26,6 +27,10 @@ function world(list: DiffFilesResult | Response | ((body: { target: { project: s
   const fetch = stubFetch({
     'GET api/activity': { entries: [] },
     'POST api/ops/repo.summary': { ok: true, result: summary() },
+    // The graph the diff replaces: an empty repo.
+    'POST api/ops/graph.refs': { ok: true, result: refsResult({ head: { oid: null, branch: 'refs/heads/main', detached: false, unborn: true } }) },
+    'GET api/repos/app/worktrees': { worktrees: [] },
+    'GET api/repos/other/worktrees': { worktrees: [] },
     'POST api/ops/diff.files': (_u: URL, init?: RequestInit) => {
       if (list instanceof Response) return list;
       return { ok: true, result: typeof list === 'function' ? list(JSON.parse(String(init?.body))) : list };
@@ -58,20 +63,22 @@ async function openA(files: DiffFile[] = [dfile()], byPath: Record<string, FileD
 
 const panel = () => screen.getByRole('region', { name: 'Diff' });
 
-test('openDiff shows the diff instead of the graph placeholder; Close diff restores it, and so does Esc', async () => {
+test('openDiff shows the diff instead of the commit graph; Close diff restores it, and so does Esc', async () => {
   world(filesResult([dfile()]), { 'src/a.ts': A_DIFF });
   show();
-  expect(screen.getByText(/commit graph/)).toBeTruthy();
+  const graph = () => screen.queryByRole('region', { name: 'Commit graph' });
+  expect(await screen.findByRole('region', { name: 'Commit graph' })).toBeTruthy();
   act(() => openDiff(APP, { kind: 'commit', rev: 'HEAD' }));
   expect(await screen.findByRole('region', { name: 'Diff' })).toBeTruthy();
-  expect(screen.queryByText(/commit graph/)).toBeNull();
+  expect(graph()).toBeNull();
   await userEvent.click(screen.getByRole('button', { name: 'Close diff' }));
   expect(screen.queryByRole('region', { name: 'Diff' })).toBeNull();
-  expect(screen.getByText(/commit graph/)).toBeTruthy();
+  expect(graph()).toBeTruthy();
   act(() => openDiff(APP, { kind: 'commit', rev: 'HEAD' }));
   await screen.findByRole('listbox', { name: 'Changed files' });
   fireEvent.keyDown(panel(), { key: 'Escape' });
   expect(screen.queryByRole('region', { name: 'Diff' })).toBeNull();
+  expect(graph()).toBeTruthy();
   expect(diffStore.get().size).toBe(0);
 });
 

@@ -1,4 +1,4 @@
-> See also: [README](../README.md) · [features](features.md) · [protocol](protocol.md)
+> See also: [README](../README.md) · [features](features.md) · [protocol](protocol.md) · [graph](graph.md)
 
 # Architecture
 
@@ -17,17 +17,19 @@
 | `src/conductor/fetch.js` | `ccFetch`: `CONDUCTOR_URL`, per-attempt deadline, caller abort → `CANCELLED`, connection-only retry |
 | `src/conductor/cc.js` | `projects()`, `worktrees(project)` |
 | `src/conductor/exec.js` | `exec(target, argv, opts)`: cc exec form A + the refusal map; `CC_EXEC_CAPS` |
-| `src/git/validate.js` | Pure input checks: `assertTarget`, `assertRefName`, `assertRev`, `assertPath`, `assertSubpath` |
+| `src/git/validate.js` | Pure input checks: `assertTarget`, `assertRefName`, `assertRev`, `OID_RE` / `assertOid` (the one full-oid check, the diff sources use it too), `assertPath`, `assertSubpath` |
 | `src/git/limits.js` | `LIMITS`: per-kind timeout / output cap, stderr cap, activity ring size, cc read deadline |
 | `src/git/runner.js` | `runGit(ctx, args, opts)`: **the** choke point for git |
 | `src/git/locks.js` | `createLocks()`: keyed promise queue |
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
 | `src/git/ops/repo.js` | `repo.summary` |
 | `src/git/ops/diff.js` | `diff.files`, `diff.file`, `diff.patch`; `patchFilename` |
-| `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`, `OID_RE`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS` |
+| `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS` |
 | `src/git/diff/limits.js` | `DIFF_LIMITS`: the diff caps (list / file / patch bytes, oversize lines, max commits and paths) |
 | `src/git/parse/diff.js` | `parseRawNumstat`, `parseFilePatch`, `detectLfs`, `sideLines` — pure |
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |
+| `src/git/ops/graph.js` | `graph.refs`, `graph.page`, `graph.stats`, `graph.search`, `graph.commit` ([graph](graph.md)) |
+| `src/git/parse/graph.js` | The graph ops' parsers: NUL-field records, refs, stashes, worktrees, shortstats, commit metadata, name-status |
 | `src/activity/log.js` | `createActivityLog()`: the ring, its events, cancel |
 | `src/routes/*.js` | One file per feature, each `mount(router, deps)`; `index.js` mounts them |
 
@@ -51,6 +53,10 @@
 | `shell/Shell.tsx` | Layout, panel slots, picker |
 | `shell/panels.ts`, `shell/menus.ts`, `shell/ActionMenu.tsx` | The panel and context-menu registries |
 | `features/<feature>/` | Feature components and their tests |
+| `features/graph/` | The commit graph ([graph](graph.md)): pure `layout.ts` (lanes), `rows.ts` (row order), `visibility.ts` (hide/solo → tips), `labels.ts`, `ancestry.ts`, `columns.ts` (the column catalogue), `windowFor.ts` (virtual window); the panels `GraphPanel.tsx`, `RefsPanel.tsx`, `details/`; `actions.ts` (`GRAPH_ACTIONS`), `contexts.ts`, `drag.ts`, `jump.ts`; `panel.ts` (the three `PanelDef`s) |
+| `state/graph.ts`, `state/graphPrefs.ts`, `state/graphSelection.ts` | Graph data per checkout (snapshot, pages, stats, refresh triggers); per-project prefs; selection and the file-open intent |
+| `shell/ContextMenuHost.tsx` | A context menu at the pointer for any registered context (`openContextMenu`) |
+| `lib/cssVars.ts`, `lib/limit.ts` | `setCssPx` (the only `.style` user); `mapLimit` (bounded concurrency) |
 | `components/ui/`, `lib/utils.ts`, `lib/modalFocus.ts`, `lib/textEntry.ts`, `lib/useMediaQuery.ts` | Copied from cc's `web/src` on first use; the plugin's own code from then on |
 
 ## Extension points
@@ -64,8 +70,35 @@ What a later card touches to add a feature — each is one file of its own plus 
 | A panel | a `PanelDef` (`{id, slot, title, component, order, onDemand?}`) in `frontend/src/features/<feature>/` | `PANELS` in `frontend/src/shell/panels.ts` |
 | A panel shown on demand (the diff) | a `PanelDef` with `onDemand: true`; show it with `showPanel(tab, id)` (`state/shownPanel.ts`) | `PANELS`; while shown it replaces its slot's other panels for that tab |
 | Opening a diff (graph, details panel) | call `openDiff(target, source, {path?})` from `features/diff/openDiff.ts`; `closeDiff(target)` | nothing |
-| Context-menu actions | `MenuAction[]` (`{id, context, label, when?, run, destructive?}`) in the feature folder | `ACTIONS` in `frontend/src/shell/menus.ts`; render with `<ActionMenuItems context ctx>` |
+| Context-menu actions | `MenuAction[]` in the feature folder (fields below) | `ACTIONS` in `frontend/src/shell/menus.ts`; render with `<ActionMenuItems context ctx>` inside a `DropdownMenuContent`, or open at the pointer with `openContextMenu({host, context, ctx, at})` and a mounted `<ContextMenuHost host>` |
 | Per-checkout UI state | `frontend/src/state/<feature>.ts`: a `createStore` map keyed by `tabKey` | nothing; add its reset to `frontend/src/test/setup.ts` |
+
+**`MenuAction<C>`**: `{id, context, label: string | (ctx) => string, when?, run?, children?, group?, order?, destructive?}`. `children` is a submenu (its children inherit the context; a submenu with no child left after `when` is not shown); `group` puts a separator between consecutive actions of different groups; `order` (default 500) sorts, ties keep registration order. A menu with no action does not open.
+
+**Order convention**: 100 checkout / navigation, 200 create, 300 history-rewriting, 400 stash, 800 view, 900 copy, 950 visibility.
+
+**Graph contexts** (`features/graph/contexts.ts`; every ctx has `tab`):
+
+| `context` | ctx |
+|---|---|
+| `commit` | `{commit: CommitItem, refs: Ref[]` (visible refs at it)`, selection: RowId[]}` |
+| `commits` | `{rows: GraphRow[]}`, two or more selected rows, top to bottom |
+| `wip` | `{checkout: Target, name, isOwn}` |
+| `branch` | `{ref: Ref}`, local or remote (check `ref.kind`) |
+| `tag` | `{ref: Ref}` |
+| `stash` | `{stash: Stash}` |
+| `remote` | `{remote: string}` |
+| `worktree` | `{worktree: GitWorktree, ccCheckout: Target \| null}` |
+| `file` | `{commit: oid, parent: oid \| null, file: {status, path, oldPath}}` |
+| `branch-drop` | `{source: DragRef, target: DragRef}` — a branch chip dropped on another; `DragRef = {name: full refname, kind: 'local' \| 'remote', short, remote, oid}` |
+
+**Graph stores other cards read** (`frontend/src/state/graphSelection.ts`, `features/graph/drag.ts`):
+
+- `graphSelectionStore`: per `tabKey`, `{ids, anchor, focus, items}`; `items` (also `selectedRows(tab)`) are `{kind: 'commit' | 'stash', oid} | {kind: 'wip', checkout: Target}`, top to bottom.
+- `fileIntentStore`: `{seq, tab, commit, parent, path, oldPath, selection}` — the last file clicked in the details panel (`requestFileOpen`); `seq` increases per request. `features/graph/diffWiring.ts` subscribes and opens the diff (`openDiff`); every graph entry point to a diff goes through `selectionDiff` / `openIn` there.
+- `branchDropStore`: `{seq, tab, source, target, at}` — every drop, before its menu opens.
+
+**Dynamic geometry** (positions, sizes from data) is set only through `setCssPx(el, '--name', px)` (`lib/cssVars.ts`: a finite number, a `--[a-z][a-z0-9-]*` name) and read by Tailwind classes such as `h-(--graph-total)`; `guards.test.ts` fails on any other `.style` access outside `components/ui/`.
 
 **Op definition rules** (enforced by `buildRegistry` at load; a violation throws):
 
@@ -91,6 +124,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 |---|---|---|
 | target | `assertTarget`: only `project`/`worktree` keys; names not `.`/`..` (they would rewrite the cc URL a name is spliced into) | sent as exec form A, so the System is always the project's own |
 | a ref to create | `assertRefName` (`git check-ref-format --allow-onelevel` rules, no leading `-`) | — |
+| an object id | `assertOid`: 40 or 64 lowercase hex | sent on stdin or after `--end-of-options` |
 | a revision | `assertRev`: no leading `-`, whitespace or control characters | placed after `--end-of-options` where the subcommand parses options |
 | a path | `assertPath`: relative, no `..` segment, NUL or backslash; a leading `-` is allowed | always after `--`; `GIT_LITERAL_PATHSPECS=1` makes `:(glob)`, `*` and friends literal |
 | a `-C` subpath | `assertSubpath`: `assertPath` + no leading `-` | — |
@@ -140,4 +174,5 @@ What a later card touches to add a feature — each is one file of its own plus 
 - `_diffRepo.js`: `diffRepo(t)` — one repo with every diff source and file state (merge, root, orphan, side branch, rename, binary, LFS pointer, oversized file, gitlink, `-rf` and `:(glob)*`, staged/unstaged/untracked, symlinks) and a hostile `.git/config` set last; the Playwright seed's `diffs` project reuses it.
 - `_git.js`: `makeRepo(t)` (temp dir, `main`, pinned identity and dates, cleaned up after the test), `bareRemote`, `worktreeAdd`, `hook`. `_ctx.js` builds a runner context; `_app.js` boots the server on port 0 and reads SSE.
 - **UI** (`frontend/src/**/*.test.{ts,tsx}`, Vitest + happy-dom): `test/stubFetch.ts` (route table; an unstubbed or root-relative request fails), `test/fakeEventSource.ts`, `test/fixtures.ts`, `test/diffFixtures.ts` (`dfile`, `filesResult`, `hunk`, `fdiff`); `test/setup.ts` resets every store, storage and the URL after each test.
-- **Harnesses**: `harness/playwright/` (seeded screenshots, golden path, the diff path, read-only live check) and `harness/mutation/` (code-mutant routes `server` and `ui`).
+- **Graph tests**: `tests/_graphFixture.js` (`buildGraphFixture`: a seeded large history via `git fast-import`); UI side `test/graphData.ts` (row/ref builders) and `test/graphBackend.ts` (`stubGraph(world)`: the graph ops over a mutable in-memory world). Tests that mock `@/shell/menus` call `vi.resetModules()` and import the menu modules dynamically: `test/setup.ts` has already loaded the real registry.
+- **Harnesses**: `harness/playwright/` (seeded screenshots, golden path, the diff path, the graph's visual and perf checks, read-only live checks) and `harness/mutation/` (code-mutant routes `server` and `ui`).

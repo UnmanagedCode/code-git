@@ -57,7 +57,7 @@ try {
       await page.goto(`${world.url}/?project=diffs`);
       await page.evaluate(() => localStorage.clear());
       await page.goto(`${world.url}/?project=diffs`);
-      await page.getByText('The commit graph is coming').waitFor();
+      await page.getByRole('region', { name: 'Commit graph' }).waitFor();
 
       // 12 (part): a bad ref is refused inline, and no diff opens.
       expectedRefusals = 1;
@@ -207,8 +207,8 @@ try {
       // 11. Esc closes the diff.
       await body.click();
       await page.keyboard.press('Escape');
-      await page.getByText('The commit graph is coming').waitFor();
-      check(!(await diff.isVisible()), `${scheme}: Esc closes the diff and the graph placeholder is back`);
+      await page.getByRole('region', { name: 'Commit graph' }).waitFor();
+      check(!(await diff.isVisible()), `${scheme}: Esc closes the diff and the commit graph is back`);
     }
     check(errors.length === 0, `no console errors or unexpected ≥400 responses${errors.length ? `:\n${errors.join('\n')}` : ''}`);
   });

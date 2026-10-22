@@ -167,9 +167,41 @@ LfsPointer { oid /* sha256 hex */, size }
 | tree → tree (a run, a direct compare, two refs) | `<old7>..<new7>.patch` |
 | index → worktree / tree → index / tree → worktree | `<project>-unstaged.patch` / `-staged` / `-worktree`; the project name reduced to `[A-Za-z0-9._-]` (others → `_`), at most 80 characters |
 
+### Graph ops (`src/git/ops/graph.js`; all reads, cancellable)
+
+Every log-family command adds `--no-show-signature --no-ext-diff --no-textconv`. Constants at the top of `src/git/ops/graph.js`: `PAGE_MAX`, `TIPS_MAX`, `SEARCH_MAX`, `STATS_MAX`, `QUERY_MAX`. An **oid** param is 40 or 64 lowercase hex (`assertOid`, else `BAD_REF`); an oid list is deduplicated and sorted, and goes to git on **stdin**, never argv. Unknown param keys are `BAD_PARAMS`. Behaviour and git version floors: [graph](graph.md).
+
+| Op | `params` | Runs (after `git` + `BASE_ARGS`) | `result` |
+|---|---|---|---|
+| `graph.refs` | none (as `repo.summary`) | `for-each-ref` (refs/heads, refs/remotes, refs/tags); `remote`; `rev-parse --verify -q HEAD`; `symbolic-ref -q HEAD`; `worktree list --porcelain -z`; `stash list` — in parallel | `{head, refs: Ref[], stashes: Stash[], worktrees: GitWorktree[] \| null, worktreesError: string \| null}` |
+| `graph.page` | `{tips: oid[] (0..TIPS_MAX), skip: int ≥ 0, limit: 1..PAGE_MAX}` | `log --stdin --topo-order --format=… --skip=<skip> --max-count=<limit+1>` | `{items: CommitItem[], nextCursor: number \| null}` |
+| `graph.stats` | `{oids: oid[] (1..STATS_MAX)}` | `log --no-walk=unsorted --stdin --root --format=%x00%H%x00%P --shortstat` | `{stats: {[oid]: {files, insertions, deletions} \| null}}` |
+| `graph.search` | `{mode: 'commits' \| 'path', query: string, tips: oid[] (0..TIPS_MAX)}` | below | `{matches: oid[], truncated: boolean}` |
+| `graph.commit` | `{oid}` | `log -1 --no-walk --format=… <oid>`, then `diff-tree -r -z --no-commit-id --name-status -M --root --no-ext-diff --no-textconv [<first parent>] <oid>` (full-hex oids need no `--end-of-options`) | `CommitDetail` |
+
+- **Empty `tips`** (`graph.page`, `graph.search`): an empty result, no command run.
+- `head`: `{oid: string|null, branch: full refname|null, detached, unborn}` (`branch` is `refs/heads/…`, unlike `repo.summary`'s short name).
+- **`Ref`**: `{name: full refname, kind: 'local'|'remote'|'tag', short, remote: string|null, oid: string|null, isHead}`. `oid` is the commit the ref names; an annotated tag is peeled (`%(*objectname)`); `null` when it does not reach a commit (a tag of a tree; a tag of a tag on a git that peels one level only). `remote` is the longest `git remote` name prefixing the path after `refs/remotes/` (remote names may hold `/`), else its first segment. `refs/remotes/*/HEAD` symrefs are skipped.
+- **`Stash`**: `{oid, parents: oid[], selector: 'stash@{n}', time: unix s, subject}`, newest first.
+- **`GitWorktree`**: `{path, head: oid|null, branch: full refname|null, detached, bare, locked}`, as git lists them (main first).
+- **`worktree list -z` failing** (git < 2.36): `worktrees: null`, `worktreesError` = its stderr; its activity entry is `failed`. Any other command failing fails the op.
+- **`CommitItem`**: `{oid, parents: oid[], author: {name, email}, time: author unix s, subject}`.
+- **`graph.page` cursor**: `nextCursor = skip + limit` when git returned `limit + 1` rows, else `null`.
+- **`graph.stats`**: `null` = a merge (no stat); a non-merge with no stat line is `{files: 0, insertions: 0, deletions: 0}`.
+- **`graph.search`**: `query` is 1..`QUERY_MAX` characters with no control character (`BAD_PARAMS`).
+  - `commits`: the union of `log --stdin --topo-order --format=%H -i -F --grep=<query>`, the same with `--author=<query>` (git ANDs the two, so they run apart), and — when the query matches `/^[0-9a-f]{4,64}$/i` — `rev-parse --disambiguate=<lowercased>` (exit 0 or 128) filtered to commits by `cat-file --batch-check`. The query is always inside one `--grep=`/`--author=` element, so an option-shaped query is a pattern; `-F` makes it a fixed string.
+  - `path`: `assertPath(query)` (`BAD_PATH`), then `log --stdin --topo-order --format=%H -- <query>`; `GIT_LITERAL_PATHSPECS=1` keeps it literal.
+  - Each log asks for `SEARCH_MAX + 1`; `matches` holds at most `SEARCH_MAX`, and `truncated` is true when any command or the union passed it. A sha match may be unreachable from the tips.
+- **`CommitDetail`** (`graph.commit`): `{oid, parents, author: {name, email, time}, committer: {name, email, time}, subject, body, coAuthors: [{name, email}], signature: {status, signer|null, key|null}, files: [{status, path, oldPath|null}] | null, filesError: {code, message, limitBytes?} | null}`.
+  - `signature.status` is git's `%G?` letter (`N` = unsigned). `%G?` runs the repo's signing program for this one commit; no other graph op asks for it.
+  - `coAuthors` come from `Co-authored-by:` trailers; a value that is not `Name <email>` is dropped.
+  - `files`: a merge against its first parent, a root commit against the empty tree; `status` is the first letter of git's (`A`, `M`, `D`, `R`, `C`, `T`, …); a rename/copy carries `oldPath`.
+  - The two commands are separate: when the file list fails (e.g. 422 `OUTPUT_TOO_LARGE` on a huge commit), `files` is `null` and `filesError` says why, and the metadata is still returned. A cancel cancels the op; a failing metadata command fails it.
+
 ### Paging convention (for ops that list)
 
-The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. An op that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page) and pages **by git arguments**, never by slicing output (cc's exec is buffered): log by `--max-count` from a cursor commit, diffs by a `--numstat` summary then one path at a time, blame by `-L a,b`, blobs by `cat-file -s` before reading.
+An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b`, blobs by `cat-file -s` before reading.
+
 
 ## Activity
 
@@ -184,6 +216,7 @@ The diff is paged one file at a time: `diff.files` lists every file with one com
 | `argv` | Exactly what ran, `git` first |
 | `env` | The op's own env overlay (not the base env); values of names matching `/TOKEN\|PASS\|SECRET\|KEY/i` are `[redacted]` |
 | `stdinBytes` | Size of stdin; its content is never recorded |
+| `kind` | `read` \| `write`, from the op definition |
 | `cancellable` | From the op definition |
 | `startedAt` | ISO time |
 | `durationMs`, `exitCode` | cc's; `null` while running or when the command never ran to an exit |

@@ -13,6 +13,10 @@ Build the UI first: `npm install` (or `npm run prepare`) so `frontend/dist` exis
 | `golden.mjs` | `node harness/playwright/golden.mjs` | Asserts the golden path: picker → open `app` → open worktree `feat` → Ctrl+1 / Ctrl+2 → activity shows the `git status` argv → a held op is cancelled from the panel |
 | `diff.mjs` | `node harness/playwright/diff.mjs` | Asserts the diff path on `diffs`, in light then dark: a bad ref refused inline → `HEAD~1` from Compare → Hunk (syntax tokens, word emphasis, hunk headers) → Inline (file lines + deleted lines) → Split (both sides, Wrap at phone width) → File view → Ctrl+F / Alt+↓ → binary, rename, LFS, oversized, submodule states → untrusted `<img>` text and `window.Prism.manual` → patch download (name, `From <oid>`) → unstaged / staged / `main..side` vs `main...side` → Esc. Screenshots `out/diff-*-{light,dark}.png`, Hunk and Split also at phone width (opened on desktop, then resized). Fails on a console error or a ≥400 response other than the one deliberate `REV_UNKNOWN` |
 | `live.mjs` | `CONDUCTOR_URL=http://127.0.0.1:<port> node harness/playwright/live.mjs [project[/worktree] …]` | **Read-only** check against a live cc (below) |
+| `graphSeed.mjs` | imported | The commit graph's own world (separate from `seed.mjs`): `lanes` — a small merge/branch topology with tags, a stash, a dirty main checkout, cc worktree `wt` (dirty, on `feature/b`) and `side` (clean), a `Co-authored-by` commit and an HTML-looking subject (the header comment of `graphSeed.mjs` has the exact shape); `big` — the perf fixture (`tests/_graphFixture.js` defaults) |
+| `graph.mjs` | `node harness/playwright/graph.mjs` | Asserts the graph on `lanes` through data attributes (lanes, WIP rows, labels, stash placement, hide/solo/pin persisted, columns persisted and aligned, search modes, keyboard, selection, details, menus, hover dimming, drag target, untrusted text, the refs panel above the Compare panel in the left slot, a details file opening its diff and Esc returning to the graph), then screenshots light/dark × 1280×800/390×844 plus the phone dialogs (Refs, Compare, Details) into `out/graph/`. Fails on a console error or a ≥400 response other than the two host URLs |
+| `graph-perf.mjs` | `node harness/playwright/graph-perf.mjs` | The scroll measurement on `big` (conditions and gates: [docs/graph.md → Performance](../../docs/graph.md#performance)); writes `out/graph-perf.json` |
+| `live-graph.mjs` | `CONDUCTOR_URL=http://127.0.0.1:<port> node harness/playwright/live-graph.mjs [project[/worktree]]` | **Read-only** scroll measurement of a live checkout's graph (default `code-conductor`); gate: the DOM bound only; writes `out/live/graph-perf.json` and `out/live/graph.png` |
 
 ## `live.mjs` — read-only against a live cc
 
@@ -30,3 +34,10 @@ curl -s "$u/api/health"   # → "app":"code-conductor"
 ```
 
 Other cc instances (scratch ccs) may listen on other ports: never pick one by port scan.
+
+## `live-graph.mjs` — read-only graph measurement
+
+- Same refusals as `live.mjs`: no `CONDUCTOR_URL`, or `$CONDUCTOR_URL/api/health` not answering `"app":"code-conductor"`, stops it. Find the URL as above.
+- Opens the checkout by URL (`?project=…`), so the picker is never used, and scrolls its graph to the end of the snapshot.
+- What runs: `repo.summary` of each of the project's cc checkouts and the `graph.*` ops — all `kind: 'read'` with `GIT_OPTIONAL_LOCKS=0` — plus cc's project and worktree listings. The script fails if the page calls any other op or any non-read command lands in the activity log.
+- Never Rescans, Enables or restarts anything.

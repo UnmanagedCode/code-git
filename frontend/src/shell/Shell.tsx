@@ -5,8 +5,9 @@ import { RepoPicker } from '@/features/repos/RepoPicker';
 import { RepoHeader } from '@/features/repo/RepoHeader';
 import { TabBar } from '@/features/tabs/TabBar';
 import { useTabShortcuts } from '@/features/tabs/useTabShortcuts';
-import { useShownPanel } from '@/state/shownPanel';
+import { hidePanel, useShownPanel } from '@/state/shownPanel';
 import { activeTab, dispatchTabs, tabKey, useTabs, type Tab } from '@/state/tabs';
+import { PanelBoundary } from './PanelBoundary';
 import { panelsFor, type PanelSlot } from './panels';
 
 function Slot({ slot, tab, className }: { slot: PanelSlot; tab: Tab | null; className?: string }) {
@@ -17,7 +18,11 @@ function Slot({ slot, tab, className }: { slot: PanelSlot; tab: Tab | null; clas
   if (!panels.length) return null;
   return (
     <div className={className} data-slot-name={slot}>
-      {panels.map(({ id, component: C }) => <C key={id} tab={tab} />)}
+      {panels.map(({ id, title, onDemand, component: C }) => (
+        <PanelBoundary key={id} title={title} resetKey={tab ? tabKey(tab) : ''} onClose={onDemand && tab ? () => hidePanel(tab) : undefined}>
+          <C tab={tab} />
+        </PanelBoundary>
+      ))}
     </div>
   );
 }
@@ -35,9 +40,9 @@ export function Shell() {
         <>
           <RepoHeader key={tabKey(tab)} tab={tab} />
           <main className="flex min-h-0 flex-1">
-            <Slot slot="left" tab={tab} className="w-64 shrink-0 overflow-y-auto border-r hidden lg:block" />
+            <Slot slot="left" tab={tab} className="hidden w-64 shrink-0 overflow-y-auto border-r lg:block" />
             <Slot slot="center" tab={tab} className="min-w-0 flex-1 overflow-auto" />
-            <Slot slot="right" tab={tab} className="w-80 shrink-0 overflow-y-auto border-l hidden lg:block" />
+            <Slot slot="right" tab={tab} className="hidden w-80 shrink-0 overflow-y-auto border-l lg:block" />
           </main>
         </>
       ) : (

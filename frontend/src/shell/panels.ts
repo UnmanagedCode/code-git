@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import { ACTIVITY_PANEL } from '@/features/activity/panel';
 import { COMPARE_PANEL, DIFF_PANEL } from '@/features/diff/panel';
-import { GRAPH_PLACEHOLDER } from '@/features/repo/GraphPlaceholder';
+import { DETAILS_PANEL, GRAPH_PANEL, REFS_PANEL } from '@/features/graph/panel';
 import type { Tab } from '@/state/tabs';
 
 // The panel registry. A feature defines its panel in its own folder and adds one entry to PANELS.
@@ -19,6 +19,6 @@ export interface PanelDef {
   onDemand?: boolean;
 }
 
-const PANELS: PanelDef[] = [ACTIVITY_PANEL, GRAPH_PLACEHOLDER, COMPARE_PANEL, DIFF_PANEL];
+const PANELS: PanelDef[] = [ACTIVITY_PANEL, GRAPH_PANEL, REFS_PANEL, DETAILS_PANEL, COMPARE_PANEL, DIFF_PANEL];
 
 export const panelsFor = (slot: PanelSlot): PanelDef[] => PANELS.filter((p) => p.slot === slot).sort((a, b) => a.order - b.order);

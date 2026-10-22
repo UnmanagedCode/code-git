@@ -63,3 +63,12 @@ export function assertSubpath(s) {
   if (s.startsWith('-')) throw new Refusal('BAD_PATH', 'invalid subpath: starts with -');
   return s;
 }
+
+/** A full object id: 40 (SHA-1) or 64 (SHA-256) lowercase hex. The single definition: callers test with it or assertOid. */
+export const OID_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/** A full object id (OID_RE). Nothing shorter or symbolic. */
+export function assertOid(s) {
+  if (typeof s !== 'string' || !OID_RE.test(s)) throw new Refusal('BAD_REF', 'invalid object id: expected 40 or 64 lowercase hex characters');
+  return s;
+}
