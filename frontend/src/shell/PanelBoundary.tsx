@@ -1,8 +1,11 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 
-/** Contains a panel's render error to that panel: the others, and the app, keep running. A new `resetKey` (another tab) retries. */
-export class PanelBoundary extends Component<{ title: string; resetKey: string; children: ReactNode }, { error: Error | null }> {
+/**
+ * Contains a panel's render error to that panel: the others, and the app, keep running. A new `resetKey` (another tab)
+ * retries. `onClose` (an on-demand panel) adds a Close that gives the slot back to its default panels.
+ */
+export class PanelBoundary extends Component<{ title: string; resetKey: string; onClose?: () => void; children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
 
   static getDerivedStateFromError(error: unknown) {
@@ -23,7 +26,10 @@ export class PanelBoundary extends Component<{ title: string; resetKey: string; 
     return (
       <div role="alert" className="flex flex-col items-start gap-2 p-3 text-sm">
         <p className="text-destructive">The {this.props.title} panel failed: {error.message}</p>
-        <Button variant="outline" size="sm" onClick={() => this.setState({ error: null })}>Retry</Button>
+        <div className="flex gap-1">
+          <Button variant="outline" size="sm" onClick={() => this.setState({ error: null })}>Retry</Button>
+          {this.props.onClose && <Button variant="outline" size="sm" onClick={() => { this.setState({ error: null }); this.props.onClose!(); }}>Close {this.props.title}</Button>}
+        </div>
       </div>
     );
   }

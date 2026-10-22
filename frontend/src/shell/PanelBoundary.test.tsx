@@ -39,3 +39,17 @@ test('a new resetKey clears a failed panel', () => {
   expect(screen.getByText('recovered')).toBeTruthy();
   err.mockRestore();
 });
+
+test('an on-demand panel\'s fallback offers Close, which calls onClose; a default panel\'s offers none', () => {
+  const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+  explode = true;
+  const onClose = vi.fn();
+  const { unmount } = render(<PanelBoundary title="Diff" resetKey="a" onClose={onClose}><Bomb /></PanelBoundary>);
+  fireEvent.click(screen.getByRole('button', { name: 'Close Diff' }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  unmount();
+  render(<PanelBoundary title="Activity" resetKey="a"><Bomb /></PanelBoundary>);
+  expect(screen.queryByRole('button', { name: /^Close/ })).toBeNull();
+  explode = false;
+  err.mockRestore();
+});
