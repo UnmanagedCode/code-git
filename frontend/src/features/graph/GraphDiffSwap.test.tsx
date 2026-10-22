@@ -6,7 +6,9 @@ import { updatePrefs } from '@/state/graphPrefs';
 import { getSelection } from '@/state/graphSelection';
 import { dispatchTabs } from '@/state/tabs';
 import { commit, oid, ref } from '@/test/graphData';
+import { summary } from '@/test/fixtures';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
+import { requestJump } from './jump';
 import { ROW_H } from './windowFor';
 
 // The diff replaces the graph in the center slot (the graph panel unmounts) and closing it brings the graph back.
@@ -14,6 +16,8 @@ import { ROW_H } from './windowFor';
 const TAB = { project: 'app', worktree: null };
 const rowEl = (id: string) => document.querySelector<HTMLElement>(`[data-row-id="${id}"]`);
 const list = () => screen.getByRole('listbox', { name: 'Commits' });
+/** Lets any jump the graph would serve run to its end (it pages nothing here: the commit is loaded). */
+const settle = () => act(async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); });
 
 async function shell(world = linearWorld(5)) {
   stubGraph(world);
@@ -91,4 +95,53 @@ test('closing a diff keeps the search the user was in: its query, its mode and i
   } finally {
     vi.useRealTimers();
   }
+});
+
+test('a served jump is not served again when the graph remounts: the selection and scroll the user moved to stay', async () => {
+  const world = linearWorld(900);
+  world.refs.refs.push(ref('refs/heads/old', oid(200)));
+  await shell(world);
+  const refs = screen.getByRole('navigation', { name: 'Refs' });
+  fireEvent.click(within(within(refs).getByRole('list', { name: 'Local branches' })).getByRole('button', { name: 'old' }));
+  await waitFor(() => expect(getSelection(TAB).ids).toEqual([oid(200)]));
+  // Move away: select the top commit and scroll back to the top.
+  const el = list();
+  Object.defineProperty(el, 'clientHeight', { configurable: true, value: 800 });
+  el.scrollTop = 0;
+  fireEvent.scroll(el);
+  await act(() => new Promise((r) => requestAnimationFrame(() => r(null))));
+  fireEvent.click(rowEl(oid(900))!);
+  expect(getSelection(TAB).ids).toEqual([oid(900)]);
+  act(() => openDiff(TAB, { kind: 'commit', rev: oid(900) }));
+  await screen.findByRole('region', { name: 'Diff' });
+  act(() => closeDiff(TAB));
+  const back = await screen.findByRole('listbox', { name: 'Commits' });
+  await settle();
+  expect(getSelection(TAB).ids).toEqual([oid(900)]);
+  expect(back.scrollTop).toBe(0);
+});
+
+test("a jump is served only by its own tab's graph: not when another tab's mounts, still when its own does", async () => {
+  const WT = { project: 'app', worktree: 'wt' };
+  const world = linearWorld(900);
+  world.worktrees = [{ worktreeName: 'wt', branch: 'code-conductor/wt', baseBranch: 'main', locked: false }];
+  world.summaries.wt = summary({ head: { oid: oid(900), branch: 'main', unborn: false } });
+  stubGraph(world);
+  render(<Shell />);
+  act(() => dispatchTabs({ type: 'open', tab: TAB }));
+  act(() => dispatchTabs({ type: 'open', tab: WT }));
+  await waitFor(() => expect(rowEl(oid(900))).not.toBeNull());
+  // The jump is for the main checkout's tab while the worktree's tab is shown.
+  act(() => requestJump(TAB, oid(200)));
+  // Remount the worktree tab's graph (a diff in its place, closed again): it must not take the other tab's jump.
+  act(() => openDiff(WT, { kind: 'unstaged' }));
+  await screen.findByRole('region', { name: 'Diff' });
+  act(() => closeDiff(WT));
+  await screen.findByRole('region', { name: 'Commit graph' });
+  await settle();
+  expect(getSelection(WT).ids).toEqual([]);
+  expect(getSelection(TAB).ids).toEqual([]);
+  act(() => dispatchTabs({ type: 'activateIndex', index: 0 }));
+  await waitFor(() => expect(getSelection(TAB).ids).toEqual([oid(200)]));
+  expect(getSelection(WT).ids).toEqual([]);
 });
