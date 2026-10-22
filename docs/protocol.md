@@ -368,6 +368,7 @@ Behaviour, the checked-out and cc-owned rules and what each op destroys: [refs](
 - `ccOwned: true` acknowledges a `code-conductor/*` branch (the UI's confirmation). Without it: 409 `CC_OWNED_BRANCH` with `branches` (short names), plus `head: true` when the refusal is about moving this checkout's own cc-owned HEAD.
 - A branch checked out in a checkout the op may not touch: 409 `BRANCH_CHECKED_OUT` with `worktree` (that checkout's path).
 - Local changes git would overwrite: 409 `CHECKOUT_CONFLICT` with `files` and `stderr`.
+- The ops that write the working tree or the index first check for a bare repository (`assertWorktree`): 409 `BARE_REPO` from `branch.checkout`, `branch.create` with `checkout`, `head.reset` mixed and hard, `head.revert`, `head.cherryPick`, `head.abort`, and `branch.fastForward` of this checkout's own branch. Soft reset and the other ops change refs only.
 - A symbolic ref (`%(symref)` set) as the branch an op checks out, renames, fast-forwards, moves or sets the upstream of — local, or `refs/remotes/<r>/HEAD` and other remote aliases for checkout: 409 `SYMBOLIC_REF` with `target`. `branch.delete` deletes a symbolic ref itself, never its target. Every `update-ref` passes `--no-deref`.
 - Every ref-changing op returns `undo`: `UndoRecord` below.
 
@@ -473,7 +474,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `GITIGNORE_UNSUPPORTED` | 409 | The root `.gitignore` is a symlink, binary or over `STAGE_LIMITS.gitignoreMaxBytes` |
 | `PATH_NOT_IN_COMMIT` | 404 | The path is not a file in that commit |
 | `UNTRACKED_UNDER_PATH` | 409 | A tracked path to discard is now a directory holding untracked or ignored files; `paths` |
-| `BARE_REPO` | 409 | A bare repository (its git dir is the working tree, whatever `core.bare` says): `repo.summary` and every write refuse it |
+| `BARE_REPO` | 409 | A bare repository (its git dir is the working tree, whatever `core.bare` says): `repo.summary` and every write that touches the working tree or the index refuse it (a pure ref write — a tag, a branch delete or move, a push — does not) |
 | `REF_UNKNOWN` | 404 | A branch, tag or remote branch the op names does not exist |
 | `BRANCH_CHECKED_OUT` | 409 | The branch is checked out where the op may not touch it; `worktree` = that checkout's path |
 | `CC_OWNED_BRANCH` | 409 | A `code-conductor/*` branch without `ccOwned: true`; `branches`, and `head: true` for this checkout's own HEAD |

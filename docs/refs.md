@@ -64,6 +64,10 @@ Every op from these menus and dialogs shows a toast (bottom right): a running on
 
 This checkout is recognised by its HEAD (`symbolic-ref HEAD`), other checkouts by `for-each-ref`'s `%(worktreepath)`.
 
+### Bare repositories
+
+Under `--work-tree=.` (`BASE_ARGS`) a bare repository's own files would look like a working tree, so every op here that writes the working tree or the index refuses one first (`BARE_REPO`, `assertWorktree` in `src/git/worktree.js`): checkout (and create with checkout), mixed and hard reset, revert, cherry-pick, abort, and the fast-forward of this checkout's own branch. Ops that change refs only — create without checkout, rename, delete, force-move, a free branch's fast-forward, soft reset, upstream, tags, pushes — run.
+
 ### Symbolic refs
 
 A symbolic ref under `refs/heads` (`git symbolic-ref refs/heads/alias refs/heads/x`) reports its target's oid and no worktree, so writing through it would move or check out the target past both guards above. Checkout, rename, fast-forward, force-move and set-upstream refuse one with `SYMBOLIC_REF` (`target` = what it points at), as does checking out a remote alias such as `refs/remotes/origin/HEAD` (the graph does not list remote aliases). Delete removes the alias alone; its undo entry is `{ref, old: null, new: null, symref: <target>}`. `update-ref` always runs with `--no-deref`.

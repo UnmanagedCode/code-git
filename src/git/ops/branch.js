@@ -10,6 +10,7 @@ import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/
 import { undoRecord } from '../refs/undo.js';
 import { casUpdate, guardOverwrite } from '../refs/write.js';
 import { assertOid } from '../validate.js';
+import { assertWorktree } from '../worktree.js';
 
 // Branch ops (docs/refs.md, docs/protocol.md → Branch, tag and HEAD ops). Every name and oid is checked before any
 // exec; `--end-of-options` precedes every user-named argument. Each write returns `undo` (src/git/refs/undo.js).
@@ -122,6 +123,8 @@ export const ops = [
       };
     },
     async run(git, { name, from, checkout, ccOwned }) {
+      // A checkout writes the working tree and the index: never a bare repository's own files (src/git/worktree.js).
+      if (checkout) await assertWorktree(git);
       const ref = local(name);
       const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
       if (heads.has(ref)) throw new Refusal('REF_EXISTS', `branch ${name} already exists`);
@@ -145,6 +148,7 @@ export const ops = [
       return { ref: fullRef(p.ref, [HEADS, 'refs/remotes/']), ccOwned: optBool(p.ccOwned, 'ccOwned') };
     },
     async run(git, { ref, ccOwned }) {
+      await assertWorktree(git);
       const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
       if (!ref.startsWith(HEADS)) return checkoutRemote(git, ref, { heads, own, ccOwned });
       const result = { branch: ref, created: false, localExisted: true, fastForwarded: false, ffBlocked: null };
@@ -282,6 +286,8 @@ export const ops = [
       if (to === expect) return { upToDate: true, undo: undoRecord() };
       if (!(await isAncestor(git, expect, to))) throw new Refusal('NOT_FAST_FORWARD', `${name} cannot be fast-forwarded to ${to}`);
       const isOwn = own.branch === ref;
+      // This checkout's branch fast-forwards with `merge --ff-only`, which updates the working tree; a free one is a ref update.
+      if (isOwn) await assertWorktree(git);
       if (isOwn) await guardOverwrite(git, ['merge', '--ff-only', '--end-of-options', to]);
       else await casUpdate(git, ref, to, expect, 'code-git: fast-forward');
       return {

@@ -5,6 +5,7 @@ import { assertCcHeadAck, ownHead } from '../refs/heads.js';
 import { undoRecord } from '../refs/undo.js';
 import { guardOverwrite } from '../refs/write.js';
 import { assertOid } from '../validate.js';
+import { assertWorktree } from '../worktree.js';
 
 // Ops that move this checkout's HEAD (docs/refs.md): reset, revert, cherry-pick, and aborting a revert or
 // cherry-pick that stopped on conflicts.
@@ -41,6 +42,7 @@ const headUndo = (own, oid, extra = {}) => undoRecord({
  * progress (head.abort undoes it). A result that would commit nothing → the operation is aborted and PICK_EMPTY.
  */
 async function apply(git, which, { oid, mainline }) {
+  await assertWorktree(git);
   const own = await bornHead(git);
   const args = [which, ...(which === 'revert' ? ['--no-edit'] : []), ...(mainline ? ['-m', String(mainline)] : []), '--end-of-options', oid];
   const r = await guardOverwrite(git, args, { okExit: [0, 1] });
@@ -69,6 +71,8 @@ export const ops = [
       return { to: assertOid(p.to), mode: p.mode, expect: assertOid(p.expect), ccOwned: optBool(p.ccOwned, 'ccOwned') };
     },
     async run(git, { to, mode, expect, ccOwned }) {
+      // Mixed rewrites the index, hard the index and the working tree; soft moves only the branch ref.
+      if (mode !== 'soft') await assertWorktree(git);
       const own = await bornHead(git);
       if (own.oid !== expect) throw new Refusal('REF_MOVED', `HEAD is no longer at ${expect}`);
       assertCcHeadAck(own, ccOwned);
@@ -106,6 +110,7 @@ export const ops = [
       return { which: p.which };
     },
     async run(git, { which }) {
+      await assertWorktree(git);
       if (!(await exists(git, IN_PROGRESS[which]))) throw new Refusal('NOTHING_IN_PROGRESS', `no ${which} in progress`);
       const before = await ownHead(git);
       await git([which, '--abort']);
