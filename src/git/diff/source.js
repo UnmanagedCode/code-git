@@ -1,11 +1,9 @@
 import { Refusal } from '../../refusals.js';
-import { assertRev } from '../validate.js';
+import { assertRev, OID_RE } from '../validate.js';
 import { DIFF_LIMITS } from './limits.js';
 
 // The diff source descriptor (docs/protocol.md → Diff sources): validation, resolution to a pinned pair of sides,
 // and the argv fragments every diff command shares.
-
-export const OID_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /** Before the subcommand: a repo's `diff.suppressBlankEmpty=true` would emit blank context lines as empty lines. */
 export const DIFF_CONFIG = ['-c', 'diff.suppressBlankEmpty=false'];

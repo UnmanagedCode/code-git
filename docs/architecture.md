@@ -17,14 +17,14 @@
 | `src/conductor/fetch.js` | `ccFetch`: `CONDUCTOR_URL`, per-attempt deadline, caller abort → `CANCELLED`, connection-only retry |
 | `src/conductor/cc.js` | `projects()`, `worktrees(project)` |
 | `src/conductor/exec.js` | `exec(target, argv, opts)`: cc exec form A + the refusal map; `CC_EXEC_CAPS` |
-| `src/git/validate.js` | Pure input checks: `assertTarget`, `assertRefName`, `assertRev`, `assertOid`, `assertPath`, `assertSubpath` |
+| `src/git/validate.js` | Pure input checks: `assertTarget`, `assertRefName`, `assertRev`, `OID_RE` / `assertOid` (the one full-oid check, the diff sources use it too), `assertPath`, `assertSubpath` |
 | `src/git/limits.js` | `LIMITS`: per-kind timeout / output cap, stderr cap, activity ring size, cc read deadline |
 | `src/git/runner.js` | `runGit(ctx, args, opts)`: **the** choke point for git |
 | `src/git/locks.js` | `createLocks()`: keyed promise queue |
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
 | `src/git/ops/repo.js` | `repo.summary` |
 | `src/git/ops/diff.js` | `diff.files`, `diff.file`, `diff.patch`; `patchFilename` |
-| `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`, `OID_RE`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS` |
+| `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS` |
 | `src/git/diff/limits.js` | `DIFF_LIMITS`: the diff caps (list / file / patch bytes, oversize lines, max commits and paths) |
 | `src/git/parse/diff.js` | `parseRawNumstat`, `parseFilePatch`, `detectLfs`, `sideLines` — pure |
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |

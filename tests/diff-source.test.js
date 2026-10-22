@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DIFF_LIMITS } from '../src/git/diff/limits.js';
-import { assertCommitish, OID_RE, pairArgs, parseSource } from '../src/git/diff/source.js';
+import { assertCommitish, pairArgs, parseSource } from '../src/git/diff/source.js';
+import { OID_RE } from '../src/git/validate.js';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
