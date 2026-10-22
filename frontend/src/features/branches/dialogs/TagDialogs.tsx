@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { clip } from '@/lib/clip';
-import type { RefDialog } from '@/state/refDialog';
+import { closeRefDialog, type RefDialog } from '@/state/refDialog';
+import { rejectedLines } from '../run';
 import { createTag, deleteRemoteTags, deleteTags } from '../api';
-import { fieldClass, RefDialogFrame, useRefOp } from './Frame';
+import { fieldClass, NameList, RefDialogFrame, useRefOp } from './Frame';
 
 type Of<K extends RefDialog['kind']> = Extract<RefDialog, { kind: K }>;
 
@@ -35,16 +36,31 @@ export function CreateTagDialog({ d }: { d: Of<'createTag'> }) {
 
 export function DeleteTagsDialog({ d }: { d: Of<'deleteTags'> }) {
   const { busy, error, run } = useRefOp();
+  /** Refs the remote refused while it deleted others: the dialog stays open on them. */
+  const [rejected, setRejected] = useState<string[]>([]);
   const what = d.names.length === 1 ? d.names[0] : `${d.names.length} tags`;
   const where = d.remote === null ? 'locally' : `from ${d.remote}`;
   return (
     <RefDialogFrame
       title={`Delete ${what} ${where}?`} submit="Delete" busyLabel="Deleting…" destructive busy={busy} error={error}
       description={d.remote === null ? 'The tag is deleted in this repository only.' : `The tag is deleted on ${clip(d.remote)}; the local tag stays.`}
-      onSubmit={() => void run(d.tab, { running: 'Deleting…', done: () => `Deleted ${what} ${where}` },
-        () => (d.remote === null ? deleteTags(d.tab, d.names) : deleteRemoteTags(d.tab, d.remote, d.names)))}
+      onSubmit={() => void run(d.tab, {
+        running: 'Deleting…', done: (r) => (r.deleted.length ? `Deleted ${r.deleted.join(', ')} ${where}` : null),
+      }, async () => {
+        if (d.remote === null) return { ...(await deleteTags(d.tab, d.names)), rejected: [] };
+        return deleteRemoteTags(d.tab, d.remote, d.names);
+      }, (r) => {
+        if (r.rejected.length) setRejected(rejectedLines(r.rejected));
+        else closeRefDialog();
+      })}
     >
-      <ul aria-label="Tags to delete" className="grid gap-0.5 font-mono text-sm">{d.names.map((n) => <li key={n} className="break-all">{clip(n)}</li>)}</ul>
+      <NameList label="Tags to delete" names={d.names} />
+      {rejected.length > 0 && (
+        <div role="alert" className="grid gap-1 text-sm text-destructive">
+          <p>{clip(d.remote ?? '')} rejected:</p>
+          <NameList label="Rejected" names={rejected} />
+        </div>
+      )}
     </RefDialogFrame>
   );
 }

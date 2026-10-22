@@ -190,20 +190,22 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 - **Residual risks.** `commit.gpgSign=true` runs the configured signer; a signer that cannot sign (no key, or no pinentry: the exec has no tty) fails at once as `GIT_FAILED` — verified with gpg 2 + pinentry-curses (`RUN_REAL_GPG=1` test in `tests/ops-commit.test.js`). A signer that waits forever would run until the write timeout. Commit messages are assumed UTF-8 (`i18n.commitEncoding` is not read).
   - **`git apply --index` writes through an untracked symlink.** It checks a path's leading directories against the index only, so with an untracked `link → /outside` a patch creating `link/x` writes `/outside/x` (exit 0). Plain `git apply` (worktree) lstat-checks and refuses ("beyond a symbolic link"); `--cached` writes only the index. So no op passes `--index`: `patch.apply` offers worktree and index only. Any later op that would use `--index` (stash, cherry-pick by patch) must not, or must first refuse every path git's worktree check refuses.
-  - **Programs a hostile repo config or `.gitattributes` makes git run** (accepted: cc projects are the user's own; the same class as C1's `git status` running filters):
+  - **Programs a hostile repo config, `.gitattributes` or hooks make git run** during staging, committing and the ref writes ([refs](refs.md)) (accepted: cc projects are the user's own; the same class as C1's `git status` running filters):
 
 | Config | Runs on |
 |---|---|
-| `filter.<driver>.smudge` / `.process` | writing a worktree file: `patch.apply` (worktree), `stage.discardLines`, `stage.discardFiles` (tracked), `files.restore` |
-| `filter.<driver>.clean` / `.process` | reading a worktree file into git: `stage.files`, `stage.stageLines` and every diff of a worktree side (including the selection ops' re-reads) |
-| `core.hooksPath` (and `.git/hooks`) | `commit.create` (pre-commit, commit-msg, …), unless **Skip Git hooks** |
-| `commit.gpgSign` / `gpg.program` | `commit.create` |
+| `filter.<driver>.smudge` / `.process` | writing a worktree file: `patch.apply` (worktree), `stage.discardLines`, `stage.discardFiles` (tracked), `files.restore`; checkouts (`branch.checkout`, `branch.create` with checkout), `head.reset` hard, this checkout's `branch.fastForward`, `head.revert`, `head.cherryPick`, `head.abort` |
+| `filter.<driver>.clean` / `.process` | reading a worktree file into git: `stage.files`, `stage.stageLines` and every diff of a worktree side (including the selection ops' re-reads); `head.reset` hard's `stash create` |
+| `core.hooksPath` (and `.git/hooks`) | `commit.create` (pre-commit, commit-msg, …), unless **Skip Git hooks**; pre-push (every push: `branch.deleteRemote`, `tag.push`, `tag.deleteRemote`); post-checkout (checkouts); post-merge (fast-forwards by `merge --ff-only`); reference-transaction (every ref update); the commit hooks git runs for `head.revert` / `head.cherryPick` |
+| `commit.gpgSign` / `gpg.program` | `commit.create`; the commits `head.revert` and `head.cherryPick` make |
+| `tag.gpgSign` / `tag.forceSignAnnotated` / `gpg.program` | `tag.create`. A signer that cannot sign fails as `GIT_FAILED` and can leave `.git/TAG_EDITMSG` behind; one that waits runs until the write timeout |
+| `core.sshCommand`, `remote.<name>.receivepack` / `.uploadpack`, `url.<base>.insteadOf` with `protocol.<name>.allow` (e.g. an `ext::` transport) | every push: `branch.deleteRemote`, `tag.push`, `tag.deleteRemote` (the env cannot set them — `GIT_SSH*` and `GIT_CONFIG*` are protected names — but the repo's config can) |
 
   - **A project whose `.git` is a file pointing at another repository's git dir makes code-git act on that repository.** That is git's own model (cc worktrees use `.git` files legitimately) and cc projects are the user's own; the same class as the other hostile-repo residuals. `--work-tree=.` keeps the working tree the checkout's, not the git dir.
 
 ### What each destructive op destroys
 
-For the undo card: what an op overwrites or deletes, and whether git can give it back.
+For the undo card: what an op overwrites or deletes, and whether git can give it back. The branch, tag and HEAD ops: [refs → Undo record](refs.md#undo-record) (their `result.undo` and the table there).
 
 | Op | Destroys | Recoverable from git |
 |---|---|---|

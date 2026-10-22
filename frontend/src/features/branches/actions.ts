@@ -10,7 +10,7 @@ import {
   checkoutBranch, cherryPick, fastForward, pushTags, resetHead, revertCommit, type CheckoutResult, type ResetMode,
 } from './api';
 import { abbrev, ccHead, checkedOutAnywhere, checkedOutElsewhere, headLabel, headOf, isCcOwned, refNamed, remoteBranch, remotesOf, shortBranch } from './refInfo';
-import { applyToast, fileList, runRefOp } from './run';
+import { applyToast, fileList, rejectedLines, runRefOp } from './run';
 
 // The branch, tag and HEAD actions (docs/refs.md → Menus). Orders: 100 checkout, 200 create, 300 history-rewriting;
 // on the branch-drop menu 100–199 are left to the merge/rebase card.
@@ -132,7 +132,7 @@ function pushTag(tab: Tab, name: string, remote: string) {
   void runRefOp(tab, {
     running: `Pushing ${name} to ${remote}…`,
     done: (r) => (r.rejected.length
-      ? { tone: 'warning', title: `${remote} rejected ${name}`, description: r.rejected.map((x) => x.reason).join(', ') }
+      ? { tone: 'warning', title: `${remote} rejected ${name}`, description: rejectedLines(r.rejected).join('\n') }
       : r.upToDate.length ? `${name} is already on ${remote}` : `Pushed ${name} to ${remote}`),
   }, () => pushTags(tab, remote, [name]));
 }

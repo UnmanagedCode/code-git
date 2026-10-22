@@ -183,3 +183,67 @@ test('createTag: a message makes it annotated; it is sent as typed', async () =>
   await userEvent.click(within(dialog).getByRole('button', { name: 'Create annotated tag' }));
   await waitFor(() => expect(sent(f, 'tag.create')).toEqual([{ name: 'v1', oid: oid(3), message: '# keep' }]));
 });
+
+const REJECTED = [{ ref: 'refs/heads/b', reason: 'deletion of the current branch prohibited' }];
+
+test('a fully rejected remote delete keeps the dialog open with each ref and its reason; nothing is reported as deleted', async () => {
+  setHead(MAIN);
+  const f = backend({ 'branch.deleteRemote': json({ error: 'origin rejected the push: …', code: 'PUSH_REJECTED', rejected: REJECTED }, 409) });
+  const dialog = show({ kind: 'deleteBranches', tab: T, refs: [ref('refs/remotes/origin/b', oid(2))] });
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Delete branch' }));
+  const alert = await within(dialog).findByRole('alert');
+  expect(alert.textContent).toContain('Not deleted: b');
+  expect(within(alert).getByRole('list').textContent).toBe('refs/heads/b: deletion of the current branch prohibited');
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(within(dialog).getByRole('button', { name: 'Retry' })).toBeTruthy();
+  expect(sent(f, 'branch.deleteRemote')).toHaveLength(1);
+});
+
+test('a partly rejected remote delete names what was deleted and what was refused, and stays open', async () => {
+  setHead(MAIN);
+  backend({ 'branch.deleteRemote': { ok: true, result: { deleted: ['c'], rejected: REJECTED, unrequested: [], undo: {} } } });
+  const dialog = show({ kind: 'deleteBranches', tab: T, refs: [ref('refs/remotes/origin/b', oid(2)), ref('refs/remotes/origin/c', oid(3))] });
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Delete 2 branches' }));
+  const alert = await within(dialog).findByRole('alert');
+  expect(dialog.querySelector('[data-outcome="remote:origin"]')!.textContent).toContain('Deleted: origin/c');
+  expect(alert.textContent).toContain('refs/heads/b: deletion of the current branch prohibited');
+});
+
+test('after locals succeed and a remote fails, Retry re-sends only the failed remote step, then closes', async () => {
+  setHead(MAIN);
+  let remoteCalls = 0;
+  const f = backend({
+    'branch.delete': { ok: true, result: { deleted: ['a'], notMerged: [], undo: {} } },
+    'branch.deleteRemote': () => (++remoteCalls === 1
+      ? json({ error: 'git push exited with 1', code: 'GIT_FAILED', stderr: 'pre-push hook said no' }, 422)
+      : { ok: true, result: { deleted: ['b'], rejected: [], unrequested: [], undo: {} } }),
+  });
+  const dialog = show({ kind: 'deleteBranches', tab: T, refs: [ref('refs/heads/a', oid(1)), ref('refs/remotes/origin/b', oid(2))] });
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Delete 2 branches' }));
+  await within(dialog).findByRole('alert');
+  expect(dialog.querySelector('[data-outcome="local"]')!.textContent).toBe('Deleted: a');
+  expect(dialog.querySelector('[data-outcome="remote:origin"]')!.textContent).toContain('git push exited with 1');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(sent(f, 'branch.delete')).toEqual([{ names: ['a'] }]);
+  expect(sent(f, 'branch.deleteRemote')).toEqual([{ remote: 'origin', branches: ['b'] }, { remote: 'origin', branches: ['b'] }]);
+});
+
+test('remote tag delete: a full rejection lists the refused refs inline; a partial one keeps the dialog open on them', async () => {
+  setHead(MAIN);
+  const rej = [{ ref: 'refs/tags/v1', reason: 'hook declined' }];
+  let calls = 0;
+  backend({
+    'tag.deleteRemote': () => (++calls === 1
+      ? json({ error: 'origin rejected the push: refs/tags/v1: hook declined', code: 'PUSH_REJECTED', rejected: rej }, 409)
+      : { ok: true, result: { deleted: ['v2'], rejected: rej, unrequested: [], undo: {} } }),
+  });
+  const dialog = show({ kind: 'deleteTags', tab: T, names: ['v1', 'v2'], remote: 'origin' });
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+  const alert = await within(dialog).findByRole('alert');
+  expect(within(alert).getByRole('list', { name: 'Rejected' }).textContent).toBe('refs/tags/v1: hook declined');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('origin rejected:'));
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(within(within(dialog).getByRole('alert')).getByRole('list').textContent).toBe('refs/tags/v1: hook declined');
+});

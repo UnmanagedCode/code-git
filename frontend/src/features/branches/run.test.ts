@@ -6,7 +6,7 @@ import { afterEach, expect, test } from 'vitest';
 import { Toasts } from '@/shell/Toasts';
 import { json } from '@/test/fixtures';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
-import { checkoutBranch, cherryPick } from './api';
+import { checkoutBranch, cherryPick, pushTags } from './api';
 import { applyToast, CONFLICT_FILES_SHOWN, runRefOp } from './run';
 
 const T = { project: 'app', worktree: null };
@@ -53,4 +53,14 @@ test('a cherry-pick that stops on conflicts toasts a warning whose Abort runs he
   await waitFor(() => expect(fetch.count('POST api/ops/head.abort')).toBe(1));
   const body = fetch.calls.find((c) => c.url.pathname.endsWith('head.abort'))!.body as { params: unknown };
   expect(body.params).toEqual({ which: 'cherry-pick' });
+});
+
+test('a fully rejected push toasts each rejected ref with its reason', async () => {
+  render(createElement(Toasts));
+  stubGraph(linearWorld(2), {
+    'POST api/ops/tag.push': json({ error: 'origin rejected the push: …', code: 'PUSH_REJECTED', rejected: [{ ref: 'refs/tags/v1', reason: 'already exists' }] }, 409),
+  });
+  await runRefOp(T, { running: 'Pushing v1…', done: () => 'x' }, () => pushTags(T, 'origin', ['v1']));
+  await waitFor(() => expect(toastText()).toContain('The remote rejected the push'));
+  expect(toastText()).toContain('refs/tags/v1: already exists');
 });

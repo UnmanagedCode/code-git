@@ -32,9 +32,9 @@ One dialog at a time (`state/refDialog.ts`, rendered by `features/branches/RefDi
 |---|---|---|
 | Create branch | Create branch here…, Branch, Ctrl/⌘+B | Name; **Check out after creating** (on by default) |
 | Rename | Rename… | New name |
-| Delete branches | Delete…, Delete N branches…, Delete … from `<remote>`… | Local names, then remote names grouped "On `<remote>`"; **Delete branch** / **Delete N branches** (destructive). Runs `branch.delete` for the locals, then `branch.deleteRemote` per remote. Locals git refused as not fully merged turn the dialog into "Delete unmerged branches?" → **Delete anyway** (`force: true` for those only) |
+| Delete branches | Delete…, Delete N branches…, Delete … from `<remote>`… | Local names, then remote names grouped "On `<remote>`"; **Delete branch** / **Delete N branches** (destructive). Runs `branch.delete` for the locals, then `branch.deleteRemote` per remote, each a step. Each step shows its outcome: what it deleted, and what it did not with why (a remote's rejected refs with their reasons, or the refusal). While anything is left the dialog stays open and the button reads **Retry**, which re-runs only what is left. Locals git refused as not fully merged then turn the dialog into "Delete unmerged branches?" → **Delete anyway** (`force: true` for those only) |
 | Create tag | Create tag here… | Name; optional message — non-blank makes it annotated (**Create annotated tag**) |
-| Delete tags | Delete locally…, Delete from `<remote>`… | Destructive **Delete** |
+| Delete tags | Delete locally…, Delete from `<remote>`… | Destructive **Delete**. Refs the remote rejected are listed with their reasons, and the dialog stays open |
 | Set upstream | Set upstream… | A select of the remote branches (preselected: the current upstream, else the remote branch of the same name); **Unset** when one is set |
 | Reset (hard) | Reset … › Hard | "Discards N staged changes and M unstaged changes (untracked files stay)" from the checkout's summary; destructive **Reset hard**. Soft and mixed run straight from the menu |
 | Force-move | Reset `<target>` to `<source>`… (drop) | "`<name>` moves from `<old7>` to `<new7>`; commits only on `<name>` are no longer reachable from it"; destructive **Move branch** |
@@ -46,6 +46,7 @@ Every op from these menus and dialogs shows a toast (bottom right): a running on
 
 | Outcome | Toast |
 |---|---|
+| `PUSH_REJECTED` | "The remote rejected the push" + each `ref: reason` (the refusal's message names them too). A partly rejected tag push is a warning listing the same |
 | `CHECKOUT_CONFLICT` | "Local changes would be overwritten" + the first `CONFLICT_FILES_SHOWN` files ("and N more") + "Commit, stash or discard these changes first." |
 | Revert / cherry-pick conflicts | Warning "… stopped on conflicts", the conflicted files, **Abort** (`head.abort`). Continuing is a commit (the header's conflicted count shows the state) |
 | `CC_OWNED_BRANCH` with `head: true` (the UI's refs were stale) | **Review…** opens the cc HEAD confirmation, whose confirm retries with the acknowledgement |
@@ -104,7 +105,7 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 | `tag.delete` | the tag ref | `update-ref` with the tag object |
 | `tag.deleteRemote` | the tag on the remote | push the local tag (`old` = the local tag object, else null) |
 | `head.reset` soft / mixed | HEAD's position (mixed: the index too) | reset back to `undo.head.old` |
-| `head.reset` hard | HEAD's position, the index and tracked worktree changes | reset back; `git stash apply undo.worktreeSnapshot` (a `stash create` commit, until gc). Untracked files are never touched |
+| `head.reset` hard | HEAD's position, the index and tracked worktree changes | reset back to `undo.head.old`, then `git stash apply --index <undo.worktreeSnapshot>` (a `stash create` commit, until gc; `--index` restores the staged/unstaged split, without it everything comes back unstaged). Untracked files are never touched |
 | `head.revert`, `head.cherryPick` | nothing (a new commit) | reset to `undo.head.old` |
 | `head.abort` | the stopped revert / cherry-pick's partial result | — |
 

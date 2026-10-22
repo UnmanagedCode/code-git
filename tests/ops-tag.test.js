@@ -58,7 +58,11 @@ test('push lands the tag on the remote; a tag that differs there is rejected (PU
   assert.deepEqual((await w.op('tag.push', { remote: 'origin', names: ['v1'] })).upToDate, ['v1']);
   const next = w.repo.commit({ 'n.txt': 'n\n' }, 'n');
   w.repo.git('tag', '-f', 'v1', next);
-  await assert.rejects(w.op('tag.push', { remote: 'origin', names: ['v1'] }), refused('PUSH_REJECTED', { rejected: [{ ref: 'refs/tags/v1', reason: 'already exists' }] }));
+  await assert.rejects(w.op('tag.push', { remote: 'origin', names: ['v1'] }), (e) => {
+    refused('PUSH_REJECTED', { rejected: [{ ref: 'refs/tags/v1', reason: 'already exists' }] })(e);
+    assert.equal(e.message, 'origin rejected the push: refs/tags/v1: already exists');
+    return true;
+  });
   assert.notEqual(onOrigin(w, 'refs/tags/v1'), next);
   await assert.rejects(w.op('tag.push', { remote: 'origin', names: ['nope'] }), refused('REF_UNKNOWN'));
   const pushes = w.argvs().filter((a) => a[0] === 'push');

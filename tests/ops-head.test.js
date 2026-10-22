@@ -190,3 +190,23 @@ test('head.abort with nothing in progress → NOTHING_IN_PROGRESS; revert on an 
   w.repo.git('checkout', '-q', '--orphan', 'empty');
   await assert.rejects(w.op('head.revert', { oid: w.base }), refused('NO_HEAD'));
 });
+
+test('reset hard\'s snapshot, applied with --index after resetting back, restores the exact staged/unstaged split', async (t) => {
+  const w = await resetWorld(t);
+  w.repo.write('f.txt', 'staged\n');
+  w.repo.git('add', 'f.txt');
+  w.repo.write('new.txt', 'added\n');
+  w.repo.git('add', 'new.txt');
+  w.repo.write('g.txt', 'g\nunstaged\n');
+  const split = () => [w.repo.git('diff', '--cached', '--name-status'), w.repo.git('diff', '--name-status')];
+  const before = split();
+  assert.deepEqual(before, ['M\tf.txt\nA\tnew.txt', 'M\tg.txt']);
+  const r = await w.op('head.reset', { to: w.base, mode: 'hard', expect: w.two });
+  assert.deepEqual(split(), ['', '']);
+  w.repo.git('reset', '-q', '--hard', r.undo.head.old.oid);
+  w.repo.git('stash', 'apply', '-q', '--index', r.undo.worktreeSnapshot);
+  assert.deepEqual(split(), before);
+  assert.equal(read(w.repo.dir, 'f.txt'), 'staged\n');
+  assert.equal(read(w.repo.dir, 'g.txt'), 'g\nunstaged\n');
+  assert.equal(w.repo.git('show', ':new.txt'), 'added');
+});

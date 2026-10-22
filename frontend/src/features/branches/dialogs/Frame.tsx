@@ -6,7 +6,7 @@ import { clip } from '@/lib/clip';
 import { stderrOf } from '@/lib/opToast';
 import { closeRefDialog } from '@/state/refDialog';
 import type { Tab } from '@/state/tabs';
-import { runRefOp, type RefOpLabels } from '../run';
+import { rejectedLines, rejectedOf, runRefOp, type RefOpLabels } from '../run';
 
 // The frame every branch/tag dialog shares: a form whose submit runs one op, stays open (busy) until it answers,
 // closes with a success toast, or shows the refusal inline.
@@ -45,6 +45,7 @@ export function RefDialogFrame({ title, description, submit, busyLabel, busy, er
   children?: ReactNode;
 }) {
   const stderr = error ? stderrOf(error) : undefined;
+  const rejected = error ? rejectedLines(rejectedOf(error)) : [];
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !busy) closeRefDialog(); }}>
       <DialogContent onEscapeKeyDown={(e) => { if (busy) e.preventDefault(); }} onInteractOutside={(e) => { if (busy) e.preventDefault(); }}>
@@ -57,6 +58,7 @@ export function RefDialogFrame({ title, description, submit, busyLabel, busy, er
           {error && (
             <div role="alert" className="grid gap-1 text-sm text-destructive">
               <p className="break-words">{clip(error.message)}</p>
+              {rejected.length > 0 && <NameList label="Rejected" names={rejected} />}
               {stderr && <p className="font-mono text-xs break-words whitespace-pre-wrap text-muted-foreground">{clip(stderr, 600)}</p>}
             </div>
           )}
@@ -72,3 +74,16 @@ export function RefDialogFrame({ title, description, submit, busyLabel, busy, er
 }
 
 export const fieldClass = 'grid gap-1.5 text-sm';
+
+/** Names a dialog lists before "…and N more". */
+export const NAMES_SHOWN = 50;
+
+/** A monospace list of untrusted names (as text), cut at NAMES_SHOWN. */
+export function NameList({ label, names }: { label: string; names: string[] }) {
+  return (
+    <ul aria-label={label} className="grid gap-0.5 font-mono text-sm">
+      {names.slice(0, NAMES_SHOWN).map((n) => <li key={n} className="break-all">{clip(n)}</li>)}
+      {names.length > NAMES_SHOWN && <li className="font-sans text-muted-foreground">…and {names.length - NAMES_SHOWN} more</li>}
+    </ul>
+  );
+}

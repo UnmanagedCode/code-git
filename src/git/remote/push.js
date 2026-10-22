@@ -46,9 +46,14 @@ export async function push(git, remote, refspecs) {
   return splitRequested(parsed, refspecs.map((s) => s.slice(s.indexOf(':') + 1)));
 }
 
-/** PUSH_REJECTED with the rejected refs when a push changed nothing and refused something. */
+/** Rejected refs named in a PUSH_REJECTED message; the rest are counted (all are in `rejected`). */
+const REJECTED_NAMED = 5;
+
+/** PUSH_REJECTED with the rejected refs when a push changed nothing and refused something; the message names each ref and why. */
 export function assertSomethingPushed(result, remote) {
   if (!result.updated.length && !result.upToDate.length && result.rejected.length) {
-    throw new Refusal('PUSH_REJECTED', `${remote} rejected the push`, { rejected: result.rejected });
+    const named = result.rejected.slice(0, REJECTED_NAMED).map((r) => `${r.ref}: ${r.reason}`).join('; ');
+    const more = result.rejected.length > REJECTED_NAMED ? ` and ${result.rejected.length - REJECTED_NAMED} more` : '';
+    throw new Refusal('PUSH_REJECTED', `${remote} rejected the push: ${named}${more}`, { rejected: result.rejected });
   }
 }
