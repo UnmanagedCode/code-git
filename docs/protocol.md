@@ -310,6 +310,45 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 - Comment prefix: `core.commentString`, else `core.commentChar`; `auto` or unset → `#`. Lines starting with it are dropped, then `splitMessage`.
 - `result`: `{path, draft: {summary, description} | null, problem: string | null}`. A missing, binary, non-file, over-`STAGE_LIMITS.templateMaxBytes` template or a link chain past the hop limit is a `problem`, never a refusal.
 
+### `ignore.add` (write)
+
+- `params`: `{kind: 'path' | 'ext' | 'dir', value, stopTracking?}`.
+- Target: the **root `.gitignore`** (shared with the team). `.git/info/exclude` is not offered: `git apply` refuses `.git/` paths and code-git runs only git.
+- Pattern, built only by `ignorePattern` (`src/git/ignore/pattern.js`):
+
+| `kind` | Pattern | Matches |
+|---|---|---|
+| `path` | `/<path>` | that file |
+| `dir` | `/<dir>/` (a trailing `/` in `value` is dropped first) | that directory |
+| `ext` | `*.<ext>` (non-empty, no `/`, no leading `.`, else `BAD_PARAMS`) | such files at any depth |
+
+  `\`, `*`, `?`, `[` and each trailing space are escaped with `\`; the `/` or `*.` prefix means a pattern never starts with `#` or `!`. A control character → `BAD_PATH`; `path` / `dir` also pass `assertPath`.
+- Reads `.gitignore` with `readNoIndex`. A symlink, binary, directory, or a file over `STAGE_LIMITS.gitignoreMaxBytes` → 409 `GITIGNORE_UNSUPPORTED`.
+- A line already equal to the pattern (a trailing `\r` ignored) → nothing is written (`added: false`).
+- Else `git apply --whitespace=nowarn --no-ignore-whitespace -` (worktree, unstaged) of one hunk with the **whole file as context**: a concurrent edit makes the apply fail (422 `GIT_FAILED`) instead of being overwritten.
+  - Absent → `new file mode 100644`, `--- /dev/null`.
+  - Empty → `@@ -0,0 +1,1 @@` with `--unidiff-zero`.
+  - No final newline → the last line is re-emitted with one (`-last`, `\ No newline at end of file`, `+last`).
+  - A file whose first line ends in CR gets `\r\n` on the new lines.
+- `stopTracking: true` (the UI confirms it): `git ls-files -z -c -- <value>` (`path`, `dir`) or `git ls-files -z -c -i --exclude=<pattern>` (`ext`: this pattern only, never `--exclude-standard`), then `git rm --cached -q --pathspec-from-file=- --pathspec-file-nul` of that list. The files stay on disk. `.gitignore` is written first; a failing `rm` is 422 `GIT_FAILED` with `step: 'stopTracking'` and a message saying `.gitignore` was already changed.
+- `result`: `{pattern, added, untracked: paths removed from the index}`.
+
+### `files.restore` (write)
+
+- `params`: `{oid /* full commit id, OID_RE */, path}`.
+- `git cat-file -t <oid>` must print `commit` (else 404 `REV_UNKNOWN`); `git cat-file -t <oid>:<path>` must print `blob` (else 404 `PATH_NOT_IN_COMMIT`: absent, a directory, a gitlink).
+- Runs `git restore --source=<oid> --staged --worktree -- <path>` (GitKraken's "reset file to this commit"): index and worktree. Through an untracked symlinked directory git replaces the link with a real directory and writes inside the repo.
+- `result`: `{oid, path}`.
+
+### `patch.check` (read, cancellable) and `patch.apply` (write)
+
+- `params`: `{patchB64, apply?: 'worktree' | 'index'}` (default `worktree`). Strict base64, decoded 1…`STAGE_LIMITS.applyPatchMaxBytes` bytes. `apply: 'both'` (`git apply --index`) is refused `BAD_PARAMS`: see the residual risks in architecture.
+- `patch.check`: `git apply --check --numstat -z [--cached] --whitespace=nowarn --no-ignore-whitespace -`. `result`: `{files: [{path, oldPath, added, deleted}]}` (`oldPath` for a rename; counts `null` for binary).
+- `patch.apply`: `git apply [--cached] --whitespace=nowarn --no-ignore-whitespace -`. `result`: `{apply, bytes}`.
+- Atomic: no `--reject`, so all of it applies or none. Never `--unsafe-paths`, `--directory`, `-p`, `--include`/`--exclude`, `--3way`, `--index`.
+- Exit 1 (does not apply) or 128 (no valid patch in the input; an `..`, absolute or `.git/` path) → 409 `PATCH_DOES_NOT_APPLY` with `exitCode` and `stderr`. Worktree mode also refuses a path beyond a symlink; index mode never writes to disk.
+- A mailbox (`format-patch`) works: git skips the mail header.
+
 ### Paging convention (for ops that list)
 
 An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b`, blobs by `cat-file -s` before reading.

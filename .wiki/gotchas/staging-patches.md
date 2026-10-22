@@ -18,7 +18,15 @@ Code: `src/git/ops/stage.js`, `src/git/params.js`, `src/git/stage/`. Reference: 
 - **`--unidiff-zero` at context 0**, or `git apply` refuses hunks without context.
 - **"\ No newline at end of file" binds to the line before it** and that line must stay the last of every side it is on; otherwise the selection needs the newline change too (`SELECTION_UNSUPPORTED`). `git apply` itself accepts the marker after a `+` line that `-` lines follow.
 - **Neutralise `apply.whitespace` / `apply.ignoreWhitespace`** with `--whitespace=nowarn --no-ignore-whitespace` (`=error` refuses trailing spaces; `ignoreWhitespace=change` fuzzes the context match).
-- **`git apply --cached` does not check the worktree**, so a path beyond a symlink is accepted into the index (nothing is written on disk); `git apply` / `--index` refuse it ("beyond a symbolic link").
+- **Never `git apply --index`: it writes through an untracked symlink.** Its symlink check reads the index, so with an untracked `link → /outside`, a patch creating `link/x` exits 0 and writes `/outside/x`. Plain `git apply` lstat-checks the worktree and refuses ("affected file … is beyond a symbolic link"); `--cached` accepts the path into the index only and writes nothing on disk. That is why `patch.apply` has no "both" target; "apply then stage" is two steps.
+- **`git apply` refuses `..`, absolute and `.git/` paths with exit 128** ("invalid path"), the same exit as "No valid patches in input"; "does not apply" is exit 1.
+- **`git restore --source=<c> --worktree` through an untracked symlinked directory** replaces the link with a real directory (deleting the link) and writes inside the repo.
+
+## Ignore
+
+- **`.git/info/exclude` cannot be written with git commands** (`git apply` refuses `.git/`), so ignore targets the root `.gitignore`.
+- **Append with the whole file as context**, not with `--unidiff-zero` after the last line: a concurrent edit then fails the apply instead of being overwritten. An empty file has no context, so it alone uses `--unidiff-zero`.
+- **Stop tracking by this pattern only**: `ls-files -c -i --exclude=<pattern>` without `--exclude-standard`, or a file already ignored-but-tracked would be untracked too.
 
 ## Commit
 
