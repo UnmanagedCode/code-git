@@ -343,6 +343,25 @@ test('search: over SEARCH_MAX matches answers SEARCH_MAX and truncated; empty ti
   assert.equal(cc.state.execCalls.length, before);
 });
 
+test('search: the union of the message and author runs is capped at SEARCH_MAX and marked truncated, though neither run was', async (t) => {
+  const { repo } = await world(t);
+  const half = 600;
+  // Commits 0…599 match by message only, 600…1199 by author only: each run stays under SEARCH_MAX, their union does not.
+  buildGraphFixture(repo.dir, repo.home, {
+    commits: 2 * half, branches: 0, merged: 0, tags: 0,
+    subject: (n) => (n < half ? `zqx message ${n}` : `plain ${n}`),
+    author: (n) => (n < half ? 'Dev <dev@example.com>' : 'Zqx Person <zp@example.com>'),
+  });
+  assert.ok(2 * half > SEARCH_MAX && half < SEARCH_MAX);
+  const { result, entries } = await run('graph.search', { mode: 'commits', query: 'zqx', tips: tipsOf(repo, 'main') });
+  assert.equal(result.matches.length, SEARCH_MAX);
+  assert.equal(new Set(result.matches).size, SEARCH_MAX);
+  assert.equal(result.truncated, true);
+  assert.equal(entries.filter((e) => e.argv.some((a) => a.startsWith('--grep=') || a.startsWith('--author='))).length, 2);
+  const under = await run('graph.search', { mode: 'commits', query: 'zqx message', tips: tipsOf(repo, 'main') });
+  assert.deepEqual([under.result.matches.length, under.result.truncated], [half, false]);
+});
+
 // ---------- graph.stats ----------
 
 test('stats: counts for a normal and a root commit, zeros for an empty commit, null for a merge', async (t) => {

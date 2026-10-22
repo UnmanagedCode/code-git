@@ -21,10 +21,10 @@ export const FIXTURE_DEFAULTS = { seed: 42, commits: 5000, branches: 60, merged:
 
 /**
  * Builds the history into the existing empty repo `dir` (made by `git init -b main`) and checks out main.
- * `subject(n)` names commit n (default `commit <n>`). Returns {heads, remotes, tags, commits} as written.
+ * `subject(n)` names commit n (default `commit <n>`), `author(n)` its `Name <email>` (default one of seven devs). Returns {heads, remotes, tags, commits} as written.
  */
 export function buildGraphFixture(dir, home, opts = {}) {
-  const { seed, commits, branches, merged, tags, subject = (n) => `commit ${n}` } = { ...FIXTURE_DEFAULTS, ...opts };
+  const { seed, commits, branches, merged, tags, subject = (n) => `commit ${n}`, author = (n) => `Dev ${n % 7} <dev${n % 7}@example.com>` } = { ...FIXTURE_DEFAULTS, ...opts };
   const rand = mulberry32(seed);
   const pick = (n) => Math.floor(rand() * n);
   const out = [];
@@ -33,7 +33,7 @@ export function buildGraphFixture(dir, home, opts = {}) {
   const commit = (ref, parents, n) => {
     mark++;
     const msg = Buffer.from(`${subject(n)}\n`);
-    const who = `Dev ${n % 7} <dev${n % 7}@example.com> ${1_700_000_000 + n * 60} +0000`;
+    const who = `${author(n)} ${1_700_000_000 + n * 60} +0000`;
     const content = `${n}\n`;
     out.push(`commit ${ref}`, `mark :${mark}`, `author ${who}`, `committer ${who}`, `data ${msg.length}`, msg.toString().trimEnd());
     if (parents[0]) out.push(`from :${parents[0]}`);
