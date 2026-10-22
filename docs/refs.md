@@ -110,7 +110,7 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 
 ### Network ops
 
-`branch.deleteRemote`, `tag.push` and `tag.deleteRemote` run `git push --porcelain` through `src/git/remote/push.js` under `NETWORK_LIMITS`, and are **cancellable** (Cancel in the activity panel): each remote ref update is atomic on the remote, so an abort leaves at most unreferenced objects there and a stale remote-tracking ref here (the next fetch corrects it), never a half-changed index or worktree. Prompts are off: credentials must come from the System's credential helper or agent, else `REMOTE_AUTH_FAILED`. Pre-push hooks run; a refusing hook is `GIT_FAILED` with its output.
+`branch.deleteRemote`, `tag.push` and `tag.deleteRemote` run `git push --porcelain --no-follow-tags` (a configured `push.followTags` publishes nothing extra) through `src/git/remote/push.js` under `NETWORK_LIMITS`; their results and undo lists hold only the requested refs, anything else git reported is listed in `unrequested`. They are **cancellable** (Cancel in the activity panel): each remote ref update is atomic on the remote, so an abort leaves at most unreferenced objects there and a stale remote-tracking ref here (the next fetch corrects it), never a half-changed index or worktree. Prompts are off: credentials must come from the System's credential helper or agent, else `REMOTE_AUTH_FAILED`. Pre-push hooks run; a refusing hook is `GIT_FAILED` with its output.
 
 ### Drag-menu orders
 

@@ -19,7 +19,7 @@ test('deleteRemote removes the branch on the remote and its tracking ref here; u
   assert.equal(w.oid('feat'), f, 'the local branch stays');
   assert.deepEqual(r.undo.remoteRefs, [{ remote: 'origin', ref: 'refs/heads/feat', old: f, new: null }]);
   const pushArgv = w.argvs().find((a) => a[0] === 'push');
-  assert.deepEqual(pushArgv, ['push', '--porcelain', '--end-of-options', 'origin', ':refs/heads/feat']);
+  assert.deepEqual(pushArgv, ['push', '--porcelain', '--no-follow-tags', '--end-of-options', 'origin', ':refs/heads/feat']);
 });
 
 test('deleteRemote: an unknown remote → REMOTE_UNKNOWN; a cc-owned branch needs ccOwned', async (t) => {

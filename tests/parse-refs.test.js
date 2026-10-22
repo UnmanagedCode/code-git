@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { splitRemoteRef } from '../src/git/parse/graph.js';
-import { classifyRemoteFailure, parsePushPorcelain } from '../src/git/parse/push.js';
+import { classifyRemoteFailure, parsePushPorcelain, splitRequested } from '../src/git/parse/push.js';
 import { parseConflictFiles, parseTracking } from '../src/git/parse/refs.js';
 
 const rec = (...fields) => `${fields.join('\0')}\n`;
@@ -84,4 +84,18 @@ test('classifyRemoteFailure: each auth pattern → REMOTE_AUTH_FAILED, each unre
   ];
   for (const s of unreachable) assert.equal(classifyRemoteFailure(s), 'REMOTE_UNREACHABLE', s);
   assert.equal(classifyRemoteFailure('error: failed to push some refs\npre-push hook said no'), null);
+});
+
+test('splitRequested keeps only the requested refs in updated/rejected/upToDate and reports every other line as unrequested', () => {
+  const parsed = {
+    updated: [{ ref: 'refs/tags/v1', flag: '*', summary: '[new tag]' }, { ref: 'refs/tags/v2', flag: '*', summary: '[new tag]' }],
+    rejected: [{ ref: 'refs/tags/v3', reason: 'already exists' }, { ref: 'refs/tags/x', reason: 'stale info' }],
+    upToDate: ['refs/tags/v4', 'refs/heads/other'],
+  };
+  assert.deepEqual(splitRequested(parsed, ['refs/tags/v1', 'refs/tags/v3', 'refs/tags/v4']), {
+    updated: [{ ref: 'refs/tags/v1', flag: '*', summary: '[new tag]' }],
+    rejected: [{ ref: 'refs/tags/v3', reason: 'already exists' }],
+    upToDate: ['refs/tags/v4'],
+    unrequested: [{ ref: 'refs/tags/v2', flag: '*' }, { ref: 'refs/tags/x', flag: '!' }, { ref: 'refs/heads/other', flag: '=' }],
+  });
 });

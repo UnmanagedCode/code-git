@@ -62,7 +62,7 @@ test('push lands the tag on the remote; a tag that differs there is rejected (PU
   assert.notEqual(onOrigin(w, 'refs/tags/v1'), next);
   await assert.rejects(w.op('tag.push', { remote: 'origin', names: ['nope'] }), refused('REF_UNKNOWN'));
   const pushes = w.argvs().filter((a) => a[0] === 'push');
-  for (const a of pushes) assert.deepEqual(a.slice(0, 4), ['push', '--porcelain', '--end-of-options', 'origin']);
+  for (const a of pushes) assert.deepEqual(a.slice(0, 5), ['push', '--porcelain', '--no-follow-tags', '--end-of-options', 'origin']);
   assert.ok(pushes.every((a) => !a.some((x) => x.startsWith('+') || x === '--force' || x === '-f')));
 });
 
@@ -88,4 +88,22 @@ test('a failing pre-push hook runs and fails the push: GIT_FAILED with the hook\
   });
   assert.equal(onOrigin(w, 'refs/tags/v1'), null);
   assert.equal(w.argvs().find((a) => a[0] === 'push').includes('--no-verify'), false);
+});
+
+test('with push.followTags=true a remote branch delete and a one-tag push publish nothing else; results hold only what was requested', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('config', 'push.followTags', 'true');
+  w.repo.git('push', '-q', 'origin', 'main:doomed');
+  const next = w.repo.commit({ 'n.txt': 'n\n' }, 'next');
+  w.repo.git('tag', '-a', 'private', '-m', 'not for publishing', next);
+  w.repo.git('tag', '-a', 'v1', '-m', 'one', next);
+  w.repo.git('tag', '-a', 'v2', '-m', 'two', next);
+  const remoteTags = () => w.origin.git('for-each-ref', '--format=%(refname)', 'refs/tags').split('\n').filter(Boolean);
+  const del = await w.op('branch.deleteRemote', { remote: 'origin', branches: ['doomed'] });
+  assert.deepEqual([del.deleted, del.unrequested], [['doomed'], []]);
+  assert.deepEqual(remoteTags(), []);
+  const r = await w.op('tag.push', { remote: 'origin', names: ['v1'] });
+  assert.deepEqual([r.pushed, r.unrequested], [['v1'], []]);
+  assert.deepEqual(remoteTags(), ['refs/tags/v1']);
+  assert.deepEqual(r.undo.remoteRefs, [{ remote: 'origin', ref: 'refs/tags/v1', old: null, new: w.oid('refs/tags/v1') }]);
 });

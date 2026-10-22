@@ -21,6 +21,23 @@ export function parsePushPorcelain(stdout) {
   return out;
 }
 
+/**
+ * A parsed push split by what was asked for: `requested` are the destination refnames of the push's refspecs. Lines
+ * for other refs (a tag a config made git add) go to `unrequested: [{ref, flag}]` — reported, never dropped, never in
+ * the requested lists.
+ */
+export function splitRequested(result, requested) {
+  const want = new Set(requested);
+  const refOf = (x) => (typeof x === 'string' ? x : x.ref);
+  const mine = (list) => list.filter((x) => want.has(refOf(x)));
+  const unrequested = [
+    ...result.updated.filter((u) => !want.has(u.ref)).map((u) => ({ ref: u.ref, flag: u.flag })),
+    ...result.rejected.filter((r) => !want.has(r.ref)).map((r) => ({ ref: r.ref, flag: '!' })),
+    ...result.upToDate.filter((r) => !want.has(r)).map((ref) => ({ ref, flag: '=' })),
+  ];
+  return { updated: mine(result.updated), rejected: mine(result.rejected), upToDate: mine(result.upToDate), unrequested };
+}
+
 const AUTH = [
   'could not read Username', 'could not read Password', 'terminal prompts disabled', 'Authentication failed',
   'Permission denied (publickey', 'Host key verification failed', 'HTTP Basic: Access denied',

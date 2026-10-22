@@ -240,7 +240,7 @@ export const ops = [
       assertSomethingPushed(result, remote);
       const deleted = result.updated.filter((u) => u.flag === '-').map((u) => shortOf(u.ref));
       return {
-        deleted, rejected: result.rejected,
+        deleted, rejected: result.rejected, unrequested: result.unrequested,
         undo: undoRecord({ remoteRefs: deleted.map((b) => ({ remote, ref: local(b), old: tracking.get(`refs/remotes/${remote}/${b}`) ?? null, new: null })) }),
       };
     },

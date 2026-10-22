@@ -1,6 +1,6 @@
 import { Refusal } from '../../refusals.js';
 import { parseRemotes } from '../parse/graph.js';
-import { classifyRemoteFailure, parsePushPorcelain } from '../parse/push.js';
+import { classifyRemoteFailure, parsePushPorcelain, splitRequested } from '../parse/push.js';
 import { NETWORK_LIMITS } from './limits.js';
 
 // The commands that talk to a remote. Credentials come only from the System's helper or agent: BASE_ENV turns every
@@ -25,23 +25,25 @@ export async function knownRemote(git, name) {
 }
 
 /**
- * `git push --porcelain` of `refspecs` to `remote` → {updated, rejected, upToDate} (parsePushPorcelain). A push that
- * reports no ref at all failed as a whole: REMOTE_AUTH_FAILED / REMOTE_UNREACHABLE, or GIT_FAILED with git's stderr
- * (a pre-push hook that refused lands here). Rejected refs are the caller's to judge.
+ * `git push --porcelain --no-follow-tags` of `refspecs` (`src:dst`) to `remote` → {updated, rejected, upToDate,
+ * unrequested} (splitRequested over parsePushPorcelain): the first three hold only the refspecs' destinations.
+ * `--no-follow-tags` keeps a configured `push.followTags` from publishing tags nobody selected. A push that reports no
+ * ref at all failed as a whole: REMOTE_AUTH_FAILED / REMOTE_UNREACHABLE, or GIT_FAILED with git's stderr (a pre-push
+ * hook that refused lands here). Rejected refs are the caller's to judge.
  */
 export async function push(git, remote, refspecs) {
-  const r = await git(['push', '--porcelain', '--end-of-options', remote, ...refspecs], {
+  const r = await git(['push', '--porcelain', '--no-follow-tags', '--end-of-options', remote, ...refspecs], {
     timeoutMs: NETWORK_LIMITS.timeoutMs, maxOutputBytes: NETWORK_LIMITS.maxOutputBytes, okExit: [0, 1, 128],
   });
-  const result = parsePushPorcelain(decoder.decode(r.stdout));
-  const reported = result.updated.length + result.rejected.length + result.upToDate.length;
+  const parsed = parsePushPorcelain(decoder.decode(r.stdout));
+  const reported = parsed.updated.length + parsed.rejected.length + parsed.upToDate.length;
   if (r.exitCode !== 0 && !reported) {
     const stderr = decoder.decode(r.stderr);
     const code = classifyRemoteFailure(stderr);
     if (code) throw new Refusal(code, code === 'REMOTE_AUTH_FAILED' ? `${remote} refused the credentials (or would have prompted)` : `${remote} could not be reached`, { stderr });
     throw new Refusal('GIT_FAILED', `git push exited with ${r.exitCode}`, { exitCode: r.exitCode, stderr });
   }
-  return result;
+  return splitRequested(parsed, refspecs.map((s) => s.slice(s.indexOf(':') + 1)));
 }
 
 /** PUSH_REJECTED with the rejected refs when a push changed nothing and refused something. */

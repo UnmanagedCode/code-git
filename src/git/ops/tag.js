@@ -73,7 +73,7 @@ export const ops = [
       assertSomethingPushed(result, remote);
       const pushed = result.updated.map((u) => shortOf(u.ref));
       return {
-        pushed, upToDate: result.upToDate.map(shortOf), rejected: result.rejected,
+        pushed, upToDate: result.upToDate.map(shortOf), rejected: result.rejected, unrequested: result.unrequested,
         undo: undoRecord({ remoteRefs: pushed.map((n) => ({ remote, ref: tagRef(n), old: null, new: found.get(n) })) }),
       };
     },
@@ -94,7 +94,7 @@ export const ops = [
       assertSomethingPushed(result, remote);
       const deleted = result.updated.filter((u) => u.flag === '-').map((u) => shortOf(u.ref));
       return {
-        deleted, rejected: result.rejected,
+        deleted, rejected: result.rejected, unrequested: result.unrequested,
         undo: undoRecord({ remoteRefs: deleted.map((n) => ({ remote, ref: tagRef(n), old: local.get(n) ?? null, new: null })) }),
       };
     },
