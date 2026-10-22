@@ -7,14 +7,15 @@ import { dispatchTabs, tabKey } from '@/state/tabs';
 import { dfile } from '@/test/diffFixtures';
 import { summary } from '@/test/fixtures';
 import { workdirWorld } from '@/test/workdirWorld';
-import { openWorkingTree, WIDE_LG_QUERY } from './entry';
+import { LG_QUERY } from '@/lib/useMediaQuery';
+import { openWorkingTree } from './entry';
 
 const APP = { project: 'app', worktree: null };
 
 /** Pins the lg media query; other queries never match. */
 function screenWidth(wide: boolean) {
   vi.stubGlobal('matchMedia', (q: string) => ({
-    matches: q === WIDE_LG_QUERY ? wide : false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
+    matches: q === LG_QUERY ? wide : false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
   }));
 }
 
@@ -26,12 +27,14 @@ async function show(wide: boolean) {
   });
   render(<Shell />);
   act(() => dispatchTabs({ type: 'open', tab: APP }));
-  await screen.findByRole('button', { name: 'Changes (6)' });
+  // Narrow: the graph toolbar's button; wide: the right slot's panel.
+  if (wide) await screen.findByRole('region', { name: 'Commit message' });
+  else await screen.findByRole('button', { name: 'Changes (6)' });
   return w;
 }
 const dialog = () => screen.getByRole('dialog', { name: 'Changes' });
 
-test('the header Changes button (n = staged + unstaged + untracked) opens the Changes content in a dialog', async () => {
+test('the graph toolbar Changes button (n = staged + unstaged + untracked) opens the Changes content in a dialog', async () => {
   await show(false);
   await userEvent.click(screen.getByRole('button', { name: 'Changes (6)' }));
   const d = dialog();

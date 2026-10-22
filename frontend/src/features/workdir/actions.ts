@@ -1,13 +1,16 @@
 import type { DiffFile } from '@/features/diff/api';
 import type { DiffFileCtx } from '@/features/diff/actions';
+import { CONTEXT, type CommitCtx, type WipCtx } from '@/features/graph/contexts';
 import { patchPaths } from '@/features/diff/patch';
 import { confirm } from '@/lib/confirm';
 import type { Target } from '@/lib/endpoints';
 import type { MenuAction } from '@/shell/menus';
 import { diffStore, setNotice } from '@/state/diff';
+import { getGraph } from '@/state/graph';
 import { tabKey, type Tab } from '@/state/tabs';
 import { runWorkdirOp, workdirOf } from '@/state/workdir';
 import { discardFiles, ignoreAdd, restoreFileOp, stageFiles, unstageFiles, type IgnoreKind } from './api';
+import { openWip, openWorkingTree } from './entry';
 
 // What the Changes panel does to files. Every discard asks first and sends nothing until confirmed.
 
@@ -107,9 +110,34 @@ export const RESTORE_ACTION: MenuAction<DiffFileCtx> = {
   run: (c) => { const oid = newCommit(c.tab); if (oid) void restoreFile(c.tab, oid, c.files[0].path); },
 };
 
+/** "Ignore 'name'" (untracked) or "Ignore and stop tracking 'name'…" (tracked): its label names the file. */
+const ignoreAction = (kind: IgnoreKind, order: number): MenuAction<WorkdirFileCtx> => {
+  const target = (c: WorkdirFileCtx) => ignoreTargets(c.file.path).find((x) => x.kind === kind);
+  return {
+    id: `workdir.ignore.${kind}`, context: 'workdir-file', group: 'ignore', order,
+    label: (c) => (c.file.status === '?' ? `Ignore ${target(c)?.label}` : `Ignore and stop tracking ${target(c)?.label}…`),
+    when: (c) => !!target(c),
+    run: (c) => { const t = target(c); if (t) return ignore(c.tab, c.file, kind, t.value); },
+  };
+};
+
 export const WORKDIR_FILE_ACTIONS: MenuAction<WorkdirFileCtx>[] = [
   { id: 'workdir.stage', context: 'workdir-file', label: 'Stage', when: (c) => c.section === 'unstaged', run: (c) => void stageFile(c.tab, c.file) },
   { id: 'workdir.unstage', context: 'workdir-file', label: 'Unstage', when: (c) => c.section === 'staged', run: (c) => void unstageFile(c.tab, c.file) },
   { id: 'workdir.discard', context: 'workdir-file', label: 'Discard…', destructive: true, when: (c) => c.section === 'unstaged' && canDiscard(c.file), run: (c) => discardFile(c.tab, c.file) },
   { id: 'workdir.copyPath', context: 'workdir-file', label: 'Copy path', run: (c) => navigator.clipboard?.writeText(c.file.path) },
+  ignoreAction('path', 600), ignoreAction('ext', 601), ignoreAction('dir', 602),
+];
+
+/** C4's actions on the graph's menus: a WIP row's Changes panel, and the HEAD commit's message (order 300: history-rewriting). */
+export const WORKDIR_GRAPH_ACTIONS: MenuAction<never>[] = [
+  {
+    id: 'workdir.wip.changes', context: CONTEXT.wip, label: 'Show changes', group: 'view', order: 780,
+    run: (c: WipCtx) => openWip(c.tab, c.checkout),
+  },
+  {
+    id: 'workdir.commit.editHeadMessage', context: CONTEXT.commit, label: 'Edit HEAD message…', group: 'rewrite', order: 300,
+    when: (c: CommitCtx) => !!c.commit.oid && getGraph(c.tab).refs?.head.oid === c.commit.oid,
+    run: (c: CommitCtx) => openWorkingTree(c.tab, { amend: 'message' }),
+  },
 ];

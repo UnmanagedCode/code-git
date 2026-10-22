@@ -1,18 +1,17 @@
 import { useState, type KeyboardEvent } from 'react';
 import { EllipsisVerticalIcon, MinusIcon, PlusIcon, Undo2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import type { DiffFile } from '@/features/diff/api';
 import { fileLabel, STATUS_LABEL } from '@/features/diff/FileList';
 import { openDiff } from '@/features/diff/openDiff';
+import { clip } from '@/lib/clip';
 import { isTextEntry } from '@/lib/textEntry';
 import { cn } from '@/lib/utils';
 import { ActionMenuItems } from '@/shell/ActionMenu';
 import type { Tab } from '@/state/tabs';
 import { setDialogOpen } from '@/state/workdir';
-import {
-  canDiscard, discardAll, discardFile, ignore, ignoreTargets, stageAll, stageFile, unstageAll, unstageFile, type Section, type WorkdirFileCtx,
-} from './actions';
+import { canDiscard, discardAll, discardFile, stageAll, stageFile, unstageAll, unstageFile, type Section, type WorkdirFileCtx } from './actions';
 
 const STATUS_CLASS: Record<string, string | undefined> = { A: 'text-success', '?': 'text-success', D: 'text-destructive', U: 'text-destructive', R: 'text-info', C: 'text-info' };
 const TITLE: Record<Section, string> = { unstaged: 'Unstaged Files', staged: 'Staged Files' };
@@ -38,7 +37,7 @@ function Row({ tab, file, section, busy }: { tab: Tab; file: DiffFile; section: 
       <span className={cn('w-3 shrink-0 text-center font-mono font-semibold', STATUS_CLASS[file.status])} aria-label={STATUS_LABEL[file.status]} title={STATUS_LABEL[file.status]}>
         {file.status}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono" title={fileLabel(file)}>{fileLabel(file)}</span>
+      <span className="min-w-0 flex-1 truncate font-mono" title={clip(fileLabel(file))}>{clip(fileLabel(file))}</span>
       <span className="flex shrink-0 items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100 pointer-coarse:opacity-100">
         {section === 'unstaged' ? (
           <>
@@ -64,13 +63,6 @@ function Row({ tab, file, section, busy }: { tab: Tab; file: DiffFile; section: 
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
             <ActionMenuItems context="workdir-file" ctx={ctx} />
-            <DropdownMenuSeparator />
-            {/* Labels name the file, so these are not registry actions (a MenuAction label is fixed). */}
-            {ignoreTargets(file.path).map((t) => (
-              <DropdownMenuItem key={t.kind} variant={file.status === '?' ? 'default' : 'destructive'} onSelect={() => void ignore(tab, file, t.kind, t.value)}>
-                {file.status === '?' ? `Ignore ${t.label}` : `Ignore and stop tracking ${t.label}…`}
-              </DropdownMenuItem>
-            ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </span>

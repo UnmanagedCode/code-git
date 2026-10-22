@@ -62,9 +62,9 @@ export const GRAPH_ACTIONS: MenuAction<never>[] = [
   },
   {
     id: 'graph.commits.viewDiff', context: 'commits', label: 'View combined diff', group: 'view', order: 800,
-    when: (c: CommitsCtx) => !!selectionDiff(c.tab, c.rows.map(toSelected), getGraph(c.tab).checkouts),
+    when: (c: CommitsCtx) => !!selectionDiff(c.tab, c.rows.map(toSelected)),
     run: (c: CommitsCtx) => {
-      const d = selectionDiff(c.tab, c.rows.map(toSelected), getGraph(c.tab).checkouts);
+      const d = selectionDiff(c.tab, c.rows.map(toSelected));
       if (d) openIn(c.tab, d.target, d.source);
     },
   },

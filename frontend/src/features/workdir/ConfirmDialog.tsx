@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { clip } from '@/lib/clip';
 import { settleConfirm, usePendingConfirm } from '@/lib/confirm';
 
 /** Renders the pending confirm() (lib/confirm.ts), if any. Mounted once, by the Changes panel. Everything is text. */
@@ -11,17 +12,17 @@ export function ConfirmHost() {
       {o && (
         <DialogContent className="sm:max-w-lg" showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>{o.title}</DialogTitle>
-            <DialogDescription>{o.body}</DialogDescription>
+            <DialogTitle className="break-words">{clip(o.title)}</DialogTitle>
+            <DialogDescription>{clip(o.body)}</DialogDescription>
           </DialogHeader>
           {o.count !== undefined && <p className="text-sm">{o.count} {o.count === 1 ? 'file' : 'files'}</p>}
           {!!o.items?.length && (
             <ul aria-label="Affected files" className="max-h-48 overflow-y-auto rounded-md border bg-muted/40 p-2 font-mono text-xs">
-              {o.items.map((it) => <li key={it} className="truncate" title={it}>{it}</li>)}
+              {o.items.map((it) => <li key={it} className="truncate" title={clip(it)}>{clip(it)}</li>)}
             </ul>
           )}
           {!!o.preview?.length && (
-            <pre aria-label="Lines" className="max-h-48 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-xs whitespace-pre">{o.preview.join('\n')}</pre>
+            <pre aria-label="Lines" className="max-h-48 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-xs whitespace-pre">{o.preview.map((l) => clip(l)).join('\n')}</pre>
           )}
           {o.irreversible && <p className="text-sm font-medium text-destructive">This cannot be undone.</p>}
           <DialogFooter>

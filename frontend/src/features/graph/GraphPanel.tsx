@@ -21,6 +21,8 @@ import { CommitDetails } from './details/CommitDetails';
 import { DragGhost, startBranchDrag, toDragRef } from './drag';
 import { ColumnToggles, GraphHeader, shownColumns } from './GraphHeader';
 import { GraphRowView } from './GraphRowView';
+import { ChangesButton } from '@/features/workdir/ChangesButton';
+import { openWip } from '@/features/workdir/entry';
 import { openSelectionDiff } from './diffWiring';
 import { detailsRequestStore, jumpStore, requestDetails, takeJump } from './jump';
 import { labelsByOid, worktreeName, type Label } from './labels';
@@ -304,7 +306,10 @@ function GraphView({ tab }: { tab: Tab }) {
     const type = e.shiftKey ? 'range' : e.ctrlKey || e.metaKey ? 'toggle' : 'click';
     dispatchSelection(tab, { type, id: row.id, rows });
     body.current?.focus({ preventScroll: true });
-    if (type === 'click' && getSelection(tab).ids.length === 1) requestDetails(tab);
+    if (type !== 'click' || getSelection(tab).ids.length !== 1) return;
+    // A WIP row opens its Changes panel (the details for anything else); the graph keeps the keyboard focus.
+    if (row.kind === 'wip') openWip(tab, row.checkout.target, { focus: false });
+    else requestDetails(tab);
   }, [rows]);
   const onRowMenu = useCallback((e: MouseEvent, row: GraphRow) => {
     e.preventDefault();
@@ -380,6 +385,7 @@ function GraphView({ tab }: { tab: Tab }) {
               <Button variant="outline" size="sm" className="h-7 gap-1 px-2" onClick={() => setCompareOpen(true)}>
                 <GitCompareIcon /> Compare
               </Button>
+              <ChangesButton tab={tab} />
             </>
           )}
           <DropdownMenu>

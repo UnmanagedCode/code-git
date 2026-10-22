@@ -19,7 +19,7 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 | Paging | `PAGE` rows per request; the next page loads when the viewport bottom is within `PREFETCH_ROWS` of the loaded end. The footer counts the loaded commits |
 | Refresh | The toolbar's refresh button (also reloads every checkout's summary) |
 
-**Selection** (GitKraken's): a click selects one row and opens its details; clicking the only selected row again deselects it; Shift-click selects the range from the last clicked row; Ctrl/⌘-click adds or removes one row (WIP rows included). Right-click a row of a multi-selection for the selection's menu.
+**Selection** (GitKraken's): a click selects one row and opens its details — a WIP row opens its checkout's **Changes panel** instead (`openWip`, `features/workdir/entry.ts`; another checkout's in that checkout's tab), without taking the keyboard focus from the list; clicking the only selected row again deselects it; Shift-click selects the range from the last clicked row; Ctrl/⌘-click adds or removes one row (WIP rows included). Right-click a row of a multi-selection for the selection's menu.
 
 **Keyboard** (focus on the list; ignored while typing in a field):
 
@@ -50,12 +50,12 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 
 | Menu | Actions |
 |---|---|
-| Commit | Show details, View changes, Compare with working directory, Copy SHA, Copy message (the full message; the subject when it cannot be read) |
+| Commit | Show details, View changes, Compare with working directory, Copy SHA, Copy message (the full message; the subject when it cannot be read); on the HEAD commit also C4's **Edit HEAD message…** (order 300: the Changes panel with Amend ticked and HEAD's message loaded) |
 | Multi-selection | View combined diff (when the selection has one), Copy N SHAs (newline-separated) |
 | Branch / tag | Jump to commit, Copy name, Hide / Show (not offered for the checked-out branch), Solo / Unsolo; branches also Pin to left / Unpin |
 | Remote | Hide remote / Show remote, Solo remote / Unsolo remote, Show all (while something on that remote is hidden) |
 | Stash | Show details (not while the Stashes section is hidden: there is no stash row to select), View changes, Copy message, Hide stashes |
-| WIP | View unstaged changes, View staged changes; another checkout's also Open X in a tab |
+| WIP | C4's **Show changes** (its Changes panel), View unstaged changes, View staged changes; another checkout's also Open X in a tab |
 | Worktree | Open in a tab (a cc checkout), Copy path |
 | File | Copy path |
 
@@ -66,7 +66,7 @@ The graph opens diffs through the diff viewer's `openDiff` (`features/graph/diff
 | From | Opens |
 |---|---|
 | A file in the details panel | `{kind: 'commit', rev: <commit>}` at that file (a merge against its first parent, as listed; a stash against its base) |
-| **Enter** on the list, or **View changes** / **View combined diff** in the details panel | the selection: one commit or stash → that commit; one WIP row → its checkout's unstaged changes (staged when only staged changes are pending); two or more commits → `{kind: 'commits', oids, wip}` (`wip` when the own checkout's WIP row is selected too). A selection with a stash or another checkout's WIP row among several rows opens nothing |
+| **Enter** on the list, or **View changes** / **View combined diff** in the details panel | the selection: one commit or stash → that commit; one WIP row → its checkout's Changes panel, not a diff (its rows open the per-file unstaged / staged diffs); two or more commits → `{kind: 'commits', oids, wip}` (`wip` when the own checkout's WIP row is selected too). A selection with a stash or another checkout's WIP row among several rows opens nothing |
 | Commit menu | **View changes** (`commit`), **Compare with working directory** (`worktree`) |
 | Multi-selection menu | **View combined diff** (as Enter) |
 | WIP menu | **View unstaged changes**, **View staged changes** |
@@ -87,9 +87,9 @@ Another checkout's WIP opens in that checkout's tab (opened if needed).
 
 | Selection | Shows |
 |---|---|
-| Nothing | "Select a commit" |
+| Nothing | In the right slot: nothing — the slot shows the Changes panel (`changesInRightSlot`, `features/workdir/rightSlot.ts`); in the narrow dialog: "Select a commit" |
 | One commit or stash | Subject, body (as text), author, committer when different, co-authors (`Co-authored-by:` trailers), full SHA with copy, signature badge (below), parents as buttons that jump, "Changes against the first parent" for a merge, and the changed files |
-| One WIP row | Branch or detached, change counts, **Open worktree** for another checkout |
+| One WIP row | In the right slot: the Changes panel instead |
 | Several | "N selected" and each row's short SHA and subject |
 
 - **Files**: Path or Tree view (the choice persists under `code-git:graph:fileView`); status letter coloured A added, D deleted, M modified, R/C renamed/copied (with `old → new`); the first `FILE_RENDER_CAP` then **Show all N**. A click opens the commit's diff at that file (and publishes the file-open intent) and marks the row; right-click for the file menu.
