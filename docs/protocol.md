@@ -73,7 +73,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | `counts.conflicted` | Unmerged entries |
 
 - Refusal: 409 `NOT_A_REPO` with `detail` = git's stderr, when git exits 128 saying "not a git repository".
-- Then `git config --bool --get core.bare`: `true` → 409 `BARE_REPO`. Under `BASE_ARGS`' `--work-tree=.` a bare repository's status succeeds, listing its own files as untracked, so its `core.bare` decides.
+- First `git rev-parse --absolute-git-dir --show-toplevel`: the same path twice (the git dir is the working tree) → 409 `BARE_REPO`, before `status` runs. Under `BASE_ARGS`' `--work-tree=.` a bare repository's status would succeed, walking its own files as untracked. The repository's `core.bare` is never consulted: true, false (set directly or through an `[include]`) or unset, a bare repository is refused. A normal repo, a linked worktree and a `--separate-git-dir` clone have their git dir elsewhere. Outside a repository this command exits 128 → `NOT_A_REPO` as above.
 
 ### Diff sources
 
@@ -418,7 +418,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `PATCH_DOES_NOT_APPLY` | 409 | `git apply` refused the patch; `stderr` |
 | `GITIGNORE_UNSUPPORTED` | 409 | The root `.gitignore` is a symlink, binary or over `STAGE_LIMITS.gitignoreMaxBytes` |
 | `PATH_NOT_IN_COMMIT` | 404 | The path is not a file in that commit |
-| `BARE_REPO` | 409 | A bare repository (`core.bare=true`): `repo.summary` and every working-tree write refuse it |
+| `BARE_REPO` | 409 | A bare repository (its git dir is the working tree, whatever `core.bare` says): `repo.summary` and every write refuse it |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |

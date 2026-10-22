@@ -26,7 +26,7 @@
 | `src/git/ops/diff.js` | `diff.files`, `diff.file`, `diff.patch`; `patchFilename` |
 | `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`, `commitOid`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS`; `parseContext` / `contextArg` / `FULL_CONTEXT` |
 | `src/git/diff/noIndex.js` | `assertNoIndexReadsItself`, `readNoIndex`: reading one file's bytes through `diff --no-index /dev/null <path>` |
-| `src/git/worktree.js` | `isBare`, `assertWorktree`: the `core.bare` check that `--work-tree=.` makes necessary |
+| `src/git/worktree.js` | `isBare`, `assertWorktree`: the bare-repository check that `--work-tree=.` makes necessary (git dir = working tree) |
 | `src/git/params.js` | Shared op-param checks: `paramsObject`, `optBool`, `pathList`; `nulPaths` (stdin for `--pathspec-from-file`), `chunkPaths` (argv chunks) |
 | `src/git/stage/limits.js` | `STAGE_LIMITS`: staging, commit-template, `.gitignore` and patch caps |
 | `src/git/ops/stage.js` | `stage.files`, `stage.unstageFiles`, `stage.discardFiles`; `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` |
@@ -130,7 +130,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 ## Runner pipeline (`runGit`)
 
-1. argv = `['git', ...BASE_ARGS, ...args]`. `BASE_ARGS` disables the pager, colour, path quoting and fsmonitor, and pins `--work-tree=.`: the checkout cc runs the command in is the working tree, whatever the repo's `core.worktree` says (it resolves after any `-C <subpath>` an op adds). A bare repository then looks like a working tree of its own files, so `repo.summary` and the working-tree writes check `core.bare` first (`src/git/worktree.js`: `isBare`, `assertWorktree` → `BARE_REPO`).
+1. argv = `['git', ...BASE_ARGS, ...args]`. `BASE_ARGS` disables the pager, colour, path quoting and fsmonitor, and pins `--work-tree=.`: the checkout cc runs the command in is the working tree, whatever the repo's `core.worktree` says (it resolves after any `-C <subpath>` an op adds). A bare repository then looks like a working tree of its own files, so `repo.summary` (before `status`) and every write check first whether the git dir is the working tree itself — `rev-parse --absolute-git-dir --show-toplevel` printing the same path twice — and refuse `BARE_REPO` (`src/git/worktree.js`: `isBare`, `assertWorktree`). Never `core.bare`: the repository sets it (directly or through an `[include]`), so a bare repo saying `false` would pass.
 2. env = `BASE_ENV` + (`READ_ENV` for reads) + the op's env. An op's env naming a protected variable (`isProtectedEnv`: the names in `PROTECTED_ENV` — `GIT_TERMINAL_PROMPT`, `GCM_INTERACTIVE`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_LITERAL_PATHSPECS`, `GIT_DIR`, `GIT_WORK_TREE`, `GIT_EXEC_PATH` — and every name starting with a `PROTECTED_ENV_PREFIXES` entry: `GIT_SSH` (`GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT`, …) or `GIT_CONFIG`) throws before anything runs or is logged: a code-git bug, answered 500 `INTERNAL`. `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` stay overridable (an interactive-rebase todo editor, say).
 3. A write takes its **project's** lock (worktrees share refs and objects); reads and other projects never wait.
 4. The activity entry opens (`running`) with its own `AbortController`, combined with the op's signal.

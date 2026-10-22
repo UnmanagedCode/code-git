@@ -17,6 +17,8 @@ export const ops = [
     async run(git) {
       let r;
       try {
+        // First: under --work-tree=. a bare repository's status would succeed by walking its own objects/.
+        if (await isBare(git)) throw bareRefusal();
         r = await git(['status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal']);
       } catch (e) {
         // LC_ALL=C keeps git's wording stable.
@@ -25,8 +27,6 @@ export const ops = [
         }
         throw e;
       }
-      // Under --work-tree=. a bare repository's status succeeds, listing its own files: core.bare says what it is.
-      if (await isBare(git)) throw bareRefusal();
       return parseStatus(decoder.decode(r.stdout));
     },
   },

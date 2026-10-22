@@ -148,6 +148,7 @@ export const ops = [
     kind: 'write',
     params: (raw) => pathsOrAll(raw, 'stage.unstageFiles'),
     async run(git, p) {
+      await assertWorktree(git);
       // An unborn HEAD has nothing to reset to: unstaging removes the entries from the index.
       const born = (await commitOid(git, 'HEAD')) !== null;
       if (born) {

@@ -47,13 +47,23 @@ test('core.worktree pointing elsewhere: diff, stage, discard, restore and line s
   assert.ok(!JSON.stringify([list, fd]).includes('ELSEWHERE'));
 });
 
-/** A bare repository registered as a cc project. */
-async function bareWorld(t) {
+/** A bare repository registered as a cc project, its core.bare as `bare` says: 'true', 'false', 'unset' or 'include-false'. */
+async function bareWorld(t, bare = 'true') {
   const root = tempDir(t, 'cg-bare-');
   const home = path.join(root, 'home');
   fs.mkdirSync(home);
   const dir = path.join(root, 'bare.git');
-  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', dir], { env: hermeticEnv(home) });
+  const env = hermeticEnv(home);
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { env });
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', dir], { env });
+  fs.writeFileSync(path.join(dir, 'config'), `${fs.readFileSync(path.join(dir, 'config'), 'utf8')}[secret]\n\ttoken = TOKEN-7d1e\n`);
+  if (bare === 'false') git('config', 'core.bare', 'false');
+  if (bare === 'unset') git('config', '--unset', 'core.bare');
+  if (bare === 'include-false') {
+    const inc = path.join(root, 'inc.cfg');
+    fs.writeFileSync(inc, '[core]\n\tbare = false\n');
+    git('config', 'include.path', inc);
+  }
   const cc = await fakeCc({ projects: { bare: { dir } }, home });
   t.after(() => cc.close());
   const target = { project: 'bare', worktree: null };
@@ -61,26 +71,64 @@ async function bareWorld(t) {
     const def = getOp(OPS, name);
     return def.run(gitFor(ctxFor(target, def.kind, { op: name })), def.params(params), { target });
   };
-  return { dir, op };
+  const snapshot = () => ({
+    HEAD: fs.readFileSync(path.join(dir, 'HEAD'), 'utf8'), config: fs.readFileSync(path.join(dir, 'config'), 'utf8'),
+    entries: fs.readdirSync(dir).sort(), refs: execFileSync('git', ['-C', dir, 'for-each-ref'], { env }).toString(),
+  });
+  return { dir, op, snapshot };
 }
 
-test('a bare repository is refused BARE_REPO by repo.summary, never listed as a working tree of its own files', async (t) => {
-  const b = await bareWorld(t);
-  await assert.rejects(b.op('repo.summary'), refused('BARE_REPO'));
+const WRITES = [
+  ['stage.discardFiles', { untracked: ['HEAD', 'config'] }],
+  ['stage.files', { all: true }],
+  ['stage.unstageFiles', { all: true }],
+  ['commit.create', { summary: 'leak', amend: false }],
+  ['ignore.add', { kind: 'path', value: 'HEAD', stopTracking: true }],
+  ['files.restore', { oid: 'a'.repeat(40), path: 'HEAD' }],
+  ['patch.apply', { patchB64: Buffer.from('diff --git a/HEAD b/HEAD\n--- a/HEAD\n+++ b/HEAD\n@@ -1 +1 @@\n-x\n+y\n').toString('base64') }],
+  ['stage.stageLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
+  ['stage.unstageLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
+  ['stage.discardLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
+];
+
+for (const bare of ['true', 'false', 'unset', 'include-false']) {
+  test(`a bare repository (core.bare ${bare}) is refused BARE_REPO by repo.summary and by every working-tree write; HEAD, config and refs survive`, async (t) => {
+    const b = await bareWorld(t, bare);
+    const before = b.snapshot();
+    await assert.rejects(b.op('repo.summary'), refused('BARE_REPO'));
+    for (const [name, params] of WRITES) await assert.rejects(b.op(name, params), refused('BARE_REPO'), name);
+    assert.deepEqual(b.snapshot(), before);
+    assert.equal(fs.existsSync(path.join(b.dir, '.gitignore')), false);
+  });
+}
+
+test('repo.summary decides bareness before git status runs (no walk of a bare objects/)', async (t) => {
+  const root = tempDir(t, 'cg-bare-');
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  const dir = path.join(root, 'bare.git');
+  execFileSync('git', ['init', '-q', '--bare', dir], { env: hermeticEnv(home) });
+  const cc = await fakeCc({ projects: { bare: { dir } }, home });
+  t.after(() => cc.close());
+  const def = getOp(OPS, 'repo.summary');
+  await assert.rejects(def.run(gitFor(ctxFor({ project: 'bare' }, 'read')), {}, { target: { project: 'bare' } }), refused('BARE_REPO'));
+  assert.ok(!cc.state.execCalls.some((b) => b.argv.includes('status')));
 });
 
-test('working-tree writes refuse a bare repository before touching it: its HEAD and config survive', async (t) => {
-  const b = await bareWorld(t);
-  const head = fs.readFileSync(path.join(b.dir, 'HEAD'), 'utf8');
-  for (const [name, params] of [
-    ['stage.discardFiles', { untracked: ['HEAD', 'config'] }],
-    ['stage.files', { all: true }],
-    ['ignore.add', { kind: 'path', value: 'HEAD', stopTracking: true }],
-    ['files.restore', { oid: 'a'.repeat(40), path: 'HEAD' }],
-    ['patch.apply', { patchB64: Buffer.from('diff --git a/HEAD b/HEAD\n--- a/HEAD\n+++ b/HEAD\n@@ -1 +1 @@\n-x\n+y\n').toString('base64') }],
-    ['stage.stageLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
-  ]) await assert.rejects(b.op(name, params), refused('BARE_REPO'), name);
-  assert.equal(fs.readFileSync(path.join(b.dir, 'HEAD'), 'utf8'), head);
-  assert.ok(fs.existsSync(path.join(b.dir, 'config')));
-  assert.equal(fs.existsSync(path.join(b.dir, '.gitignore')), false);
+test('a normal repo, a linked worktree and a --separate-git-dir clone are not bare: summary and a write work', async (t) => {
+  const w = await opWorld(t);
+  w.repo.commit({ 'a.txt': 'a\n' });
+  const wt = w.repo.worktreeAdd(path.join(w.repo.root, 'wt'), 'feature');
+  const sepDir = path.join(w.repo.root, 'sep');
+  execFileSync('git', ['init', '-q', '-b', 'main', '--separate-git-dir', path.join(w.repo.root, 'sep-gitdir'), sepDir], { env: hermeticEnv(w.repo.home) });
+  w.cc.state.projects.wt = { dir: wt.dir };
+  w.cc.state.projects.sep = { dir: sepDir };
+  for (const project of ['repo', 'wt', 'sep']) {
+    const target = { project, worktree: null };
+    const run = (name, params) => { const def = getOp(OPS, name); return def.run(gitFor(ctxFor(target, def.kind, { op: name })), def.params(params), { target }); };
+    fs.writeFileSync(path.join(project === 'repo' ? w.repo.dir : project === 'wt' ? wt.dir : sepDir, 'n.txt'), 'n\n');
+    assert.equal((await run('repo.summary')).counts.untracked, 1, project);
+    await run('stage.files', { paths: ['n.txt'] });
+    assert.equal((await run('repo.summary')).counts.staged, 1, project);
+  }
 });

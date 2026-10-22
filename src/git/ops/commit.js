@@ -5,6 +5,7 @@ import { readNoIndex } from '../diff/noIndex.js';
 import { commitOid } from '../diff/source.js';
 import { bad, optBool, paramsObject } from '../params.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
+import { assertWorktree } from '../worktree.js';
 
 // Commit, amend, and the two reads the commit box needs: HEAD's message (for amend) and the commit.template draft.
 
@@ -81,6 +82,7 @@ export const ops = [
       return { summary: p.summary, description, amend, messageOnly, noVerify: optBool(p.noVerify, 'noVerify') };
     },
     async run(git, p) {
+      await assertWorktree(git);
       if (p.amend) await mustHead(git);
       else {
         // Nothing staged and no merge to conclude: git would refuse too, with less to go on.
