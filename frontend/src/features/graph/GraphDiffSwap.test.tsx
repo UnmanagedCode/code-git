@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { expect, test, vi } from 'vitest';
 import { closeDiff, openDiff } from '@/features/diff/openDiff';
 import { Shell } from '@/shell/Shell';
+import { getGraph } from '@/state/graph';
 import { updatePrefs } from '@/state/graphPrefs';
 import { getSelection } from '@/state/graphSelection';
 import { dispatchTabs } from '@/state/tabs';
@@ -16,7 +17,10 @@ import { ROW_H } from './windowFor';
 const TAB = { project: 'app', worktree: null };
 const rowEl = (id: string) => document.querySelector<HTMLElement>(`[data-row-id="${id}"]`);
 const list = () => screen.getByRole('listbox', { name: 'Commits' });
-/** Lets any jump the graph would serve run to its end (it pages nothing here: the commit is loaded). */
+/**
+ * Lets a jump the graph would serve run to its end when its commit is already loaded (found without a page request):
+ * macrotask ticks only, so a jump that must page is not waited for. Callers pick loaded targets.
+ */
 const settle = () => act(async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); });
 
 async function shell(world = linearWorld(5)) {
@@ -131,9 +135,15 @@ test("a jump is served only by its own tab's graph: not when another tab's mount
   act(() => dispatchTabs({ type: 'open', tab: TAB }));
   act(() => dispatchTabs({ type: 'open', tab: WT }));
   await waitFor(() => expect(rowEl(oid(900))).not.toBeNull());
-  // The jump is for the main checkout's tab while the worktree's tab is shown.
-  act(() => requestJump(TAB, oid(200)));
-  // Remount the worktree tab's graph (a diff in its place, closed again): it must not take the other tab's jump.
+  // A target in the first page of both graphs: a graph that took the jump would select it without paging,
+  // within settle().
+  const target = oid(600);
+  expect(getGraph(WT).commits.some((c) => c.oid === target)).toBe(true);
+  // The jump is for the main checkout's tab while the worktree's tab is shown, its graph mounted and subscribed.
+  act(() => requestJump(TAB, target));
+  await settle();
+  expect(getSelection(WT).ids).toEqual([]);
+  // Remounting the worktree tab's graph (a diff in its place, closed again) does not take it either.
   act(() => openDiff(WT, { kind: 'unstaged' }));
   await screen.findByRole('region', { name: 'Diff' });
   act(() => closeDiff(WT));
@@ -142,6 +152,12 @@ test("a jump is served only by its own tab's graph: not when another tab's mount
   expect(getSelection(WT).ids).toEqual([]);
   expect(getSelection(TAB).ids).toEqual([]);
   act(() => dispatchTabs({ type: 'activateIndex', index: 0 }));
-  await waitFor(() => expect(getSelection(TAB).ids).toEqual([oid(200)]));
+  await waitFor(() => expect(getSelection(TAB).ids).toEqual([target]));
   expect(getSelection(WT).ids).toEqual([]);
+  // Control: a jump the shown worktree graph does own, to the same loaded commit, completes within settle().
+  act(() => dispatchTabs({ type: 'activateIndex', index: 1 }));
+  await waitFor(() => expect(rowEl(oid(900))).not.toBeNull());
+  act(() => requestJump(WT, target));
+  await settle();
+  expect(getSelection(WT).ids).toEqual([target]);
 });
