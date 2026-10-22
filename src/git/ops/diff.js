@@ -37,8 +37,9 @@ async function untracked(git) {
 
 /**
  * `git diff --no-index /dev/null <path>` reads `<path>` itself only when it is not a directory to git's stat: a symlink to
- * a directory (listed by ls-files as the link) becomes `<path>/null`, a file outside the repo. This raw probe only stats
- * (it prints zero oids, no content); unless it names exactly one entry, `path` itself, the read is refused.
+ * a directory (listed by ls-files as the link) becomes `<path>/null`, a file outside the repo. This raw probe returns no
+ * content (zero oids) and is stat-only for regular files; a special file at `<path>/null` (a FIFO) is opened and can block
+ * until the read timeout. Unless it names exactly one entry, `path` itself, the read is refused.
  */
 async function assertNoIndexReadsItself(git, path) {
   const r = await git([...DIFF_CONFIG, 'diff', '--no-index', ...DIFF_FLAGS, '--raw', '-z', '--no-abbrev', '--', '/dev/null', path], { okExit: [0, 1] });

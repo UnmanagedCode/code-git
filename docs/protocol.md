@@ -128,7 +128,7 @@ Every diff op takes a `source` (`parseSource`, `resolveSource` and `pairArgs` in
 - Runs `git diff … -U<context> <pair> -- [oldPath] path`, capped at `DIFF_LIMITS.fileMaxOutputBytes`; over it: 422 `OUTPUT_TOO_LARGE` with `limitBytes`.
 - Untracked, three steps, each refusal 400 `BAD_PATH`:
   1. `git ls-files --others --exclude-standard -z -- path` must list exactly `path` (git lists no path through a symlinked directory).
-  2. A stat-only probe, `git diff --no-index --raw -z … -- /dev/null path`, must name exactly one entry, `path` itself. A symlink to a directory fails it: `--no-index` would diff `path/null`, a file outside the repo. The probe reads no content (its oids are zeros).
+  2. A raw probe, `git diff --no-index --raw -z … -- /dev/null path`, must name exactly one entry, `path` itself. A symlink to a directory fails it: `--no-index` would diff `path/null`, a file outside the repo. The probe is stat-only for regular files (its oids are zeros, no content is returned); a special file at `path/null` (a FIFO) is opened and can block until the read timeout, still returning no data.
   3. `git diff --no-index … -- /dev/null path` (exit 0 or 1).
 - An untracked symlink to a file shows as mode `120000` with one added line, its target path; the target's content is never read. A symlink to a directory is refused.
 - `result` = `FileDiff`, the model per-hunk/line staging builds on:
