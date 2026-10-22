@@ -35,9 +35,9 @@ export function Shell() {
         <>
           <RepoHeader key={tabKey(tab)} tab={tab} />
           <main className="flex min-h-0 flex-1">
-            <Slot slot="left" tab={tab} className="w-64 shrink-0 overflow-y-auto border-r" />
+            <Slot slot="left" tab={tab} className="w-64 shrink-0 overflow-y-auto border-r hidden lg:block" />
             <Slot slot="center" tab={tab} className="min-w-0 flex-1 overflow-auto" />
-            <Slot slot="right" tab={tab} className="w-80 shrink-0 overflow-y-auto border-l" />
+            <Slot slot="right" tab={tab} className="w-80 shrink-0 overflow-y-auto border-l hidden lg:block" />
           </main>
         </>
       ) : (

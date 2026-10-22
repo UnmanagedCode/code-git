@@ -58,7 +58,7 @@ function Compare({ tab }: { tab: Tab }) {
           <Input aria-label="Commit (sha or ref)" placeholder="Commit (sha or ref)" className="h-8 font-mono" value={rev} onChange={(e) => setRev(e.target.value)} />
           <div className="flex flex-wrap gap-1">
             <Button type="submit" size="sm" disabled={busy || !rev.trim()}>Show commit</Button>
-            <Button type="button" variant="outline" size="sm" disabled={busy || !rev.trim()} onClick={() => void open('commit', { kind: 'worktree', rev: rev.trim() })}>
+            <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 w-full py-1 whitespace-normal" disabled={busy || !rev.trim()} onClick={() => void open('commit', { kind: 'worktree', rev: rev.trim() })}>
               Compare with working directory
             </Button>
           </div>

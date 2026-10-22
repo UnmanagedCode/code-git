@@ -116,7 +116,7 @@ function DiffView({ tab }: { tab: Tab }) {
       ) : !files.length ? (
         <p className="p-4 text-sm text-muted-foreground">No changes.</p>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <div className="flex flex-1 flex-col md:min-h-0 md:flex-row">
           <FileList
             tab={tab}
             files={files}
@@ -124,7 +124,7 @@ function DiffView({ tab }: { tab: Tab }) {
             viewed={state.viewed}
             patchSource={psource}
             onSelect={(sel, viewed) => setSelection(tab, sel, viewed)}
-            className="max-h-40 shrink-0 overflow-y-auto border-b md:max-h-none md:w-64 md:border-r md:border-b-0"
+            className="max-h-28 shrink-0 overflow-y-auto border-b md:max-h-none md:w-64 md:border-r md:border-b-0"
           />
           {file && (
             <FileView

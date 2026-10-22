@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { setPrefs, type DiffMode, type DiffPrefs, type FileState } from '@/state/diff';
 import type { DiffFile, FileDiff, Whitespace } from './api';
 import type { Marks } from './CodeLine';
+import { fileLabel, STATUS_LABEL } from './FileList';
 import { FileContentView } from './FileContentView';
 import { SplitView } from './SplitView';
 import { UnifiedView } from './UnifiedView';
@@ -120,8 +121,15 @@ function Body({ file, state, forced, prefs, rows, marks, onForce }: FileViewProp
 export function FileView(props: FileViewProps) {
   const { prefs, changeCount, changeIndex, onChange, onFile, canPrevFile, canNextFile, search } = props;
   const inDiff = prefs.view === 'diff';
+  const { file } = props;
+  const modeChange = file.oldMode && file.newMode && file.oldMode !== file.newMode ? `mode ${file.oldMode} → ${file.newMode}` : null;
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="flex min-w-0 flex-1 flex-col md:min-h-0">
+      <div className="flex min-w-0 items-center gap-2 border-b px-3 py-1 text-xs" aria-label="Viewed file">
+        <span className="min-w-0 truncate font-mono font-medium" title={fileLabel(file)}>{fileLabel(file)}</span>
+        <span className="shrink-0 text-muted-foreground">{STATUS_LABEL[file.status]}{file.similarity !== null ? `, ${file.similarity}% similar` : ''}</span>
+        {modeChange && <span className="shrink-0 font-mono text-muted-foreground">{modeChange}</span>}
+      </div>
       <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1" role="toolbar" aria-label="Diff options">
         <Seg label="Diff mode" value={prefs.mode} options={MODES} onPick={(mode) => setPrefs({ mode })} disabled={!inDiff} />
         <Seg label="View" value={prefs.view} options={[{ value: 'diff', label: 'Diff' }, { value: 'file', label: 'File' }]} onPick={(view) => setPrefs({ view })} />
@@ -142,7 +150,7 @@ export function FileView(props: FileViewProps) {
         </div>
       </div>
       {search}
-      <div className="min-h-0 flex-1 overflow-auto" data-diff-body="">
+      <div className="min-h-72 flex-1 overflow-auto md:min-h-0" data-diff-body="">
         <Body key={props.file.path} {...props} />
       </div>
     </div>
