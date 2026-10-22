@@ -12,6 +12,8 @@ import { EMPTY, tabsStore } from '@/state/tabs';
 import { resetActivity } from '@/state/useActivity';
 import { resetSummaries } from '@/state/useRepoSummary';
 import { resetRepos } from '@/state/useRepos';
+import { resetWorkdir } from '@/state/workdir';
+import { resetConfirm } from '@/lib/confirm';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
@@ -31,6 +33,8 @@ afterEach(() => {
   resetDrag();
   resetJump();
   contextMenuStore.set(null);
+  resetWorkdir();
+  resetConfirm();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();

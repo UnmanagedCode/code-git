@@ -29,7 +29,7 @@
 | `src/git/params.js` | Shared op-param checks: `paramsObject`, `optBool`, `pathList`; `nulPaths` (stdin for `--pathspec-from-file`), `chunkPaths` (argv chunks) |
 | `src/git/stage/limits.js` | `STAGE_LIMITS`: staging, commit-template, `.gitignore` and patch caps |
 | `src/git/ops/stage.js` | `stage.files`, `stage.unstageFiles`, `stage.discardFiles`; `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` |
-| `src/git/ops/commit.js` | `commit.create`, `commit.headMessage`, `commit.template` |
+| `src/git/ops/commit.js` | `commit.create`, `commit.state`, `commit.headMessage`, `commit.template` |
 | `src/git/commit/message.js` | `joinMessage`, `splitMessage`, `templateDraft` (pure): the only place a message is split or joined |
 | `src/git/ops/ignore.js` | `ignore.add`: the root `.gitignore` by whole-file-context `git apply`, optional stop-tracking |
 | `src/git/ignore/pattern.js` | `ignorePattern`, `escapeGlob` (pure): the only builder of ignore patterns |
@@ -60,6 +60,9 @@
 | `state/shownPanel.ts` | Which on-demand panel each tab shows (`showPanel`, `hidePanel`, `useShownPanel`); `pruneClosedTabs` drops a closed tab's keys from a tab-keyed store |
 | `state/diff.ts` | `diffStore` (per tab: source, list, selection, viewed path, file diffs by `fileKey`), `prefsStore` (persisted `code-git:diff-prefs`), the list/file loaders |
 | `features/diff/` | `openDiff.ts` (the entry point), `api.ts` (wire types + op wrappers), `model.ts` / `viewRows.ts` / `wordDiff.ts` / `segments.ts` (pure row models), `highlight/` (Prism, lazily loaded), the panels and views |
+| `state/workdir.ts` | `workdirStore` (per tab: the unstaged/staged lists from `diff.files`, merge state, the commit draft, template draft, amend, skip-hooks, the last op error, focus request, narrow dialog); `runWorkdirOp` (busy → op → refresh lists + summary + an open unstaged/staged diff), `commitDraft`, `setAmend` |
+| `features/workdir/` | The Changes panel: `panel.ts`, `WorkdirPanel` (slot instance; mounts `ConfirmHost` and the global keys), `WorkdirContent`, `FileSection`, `CommitBox` (`commitRules`), `DetachedBanner`, `ChangesButton` (narrow dialog), `actions.ts` (file actions + `'workdir-file'` menu), `entry.ts` (`openWorkingTree`), `api.ts` (wire types + op wrappers) |
+| `lib/confirm.ts` | `confirm(opts)` → `Promise<boolean>`: the one pending confirmation, rendered by `ConfirmHost` (`features/workdir/ConfirmDialog.tsx`) |
 | `lib/download.ts` | `downloadBytes` (blob URL → `a.download`), `decodeBase64`: the only object-URL / download-link builder |
 | `shell/Shell.tsx` | Layout, panel slots, picker |
 | `shell/panels.ts`, `shell/menus.ts`, `shell/ActionMenu.tsx` | The panel and context-menu registries |
@@ -81,6 +84,9 @@ What a later card touches to add a feature — each is one file of its own plus 
 | A panel | a `PanelDef` (`{id, slot, title, component, order, onDemand?}`) in `frontend/src/features/<feature>/` | `PANELS` in `frontend/src/shell/panels.ts` |
 | A panel shown on demand (the diff) | a `PanelDef` with `onDemand: true`; show it with `showPanel(tab, id)` (`state/shownPanel.ts`) | `PANELS`; while shown it replaces its slot's other panels for that tab |
 | Opening a diff (graph, details panel) | call `openDiff(target, source, {path?})` from `features/diff/openDiff.ts`; `closeDiff(target)` | nothing |
+| Bringing up the commit box (the graph's work-in-progress row, "edit HEAD message") | call `openWorkingTree(target, {amend?: 'message'})` from `features/workdir/entry.ts`: wide → focuses the panel's summary; below `lg` → opens the Changes dialog; `amend: 'message'` ticks Amend with HEAD's message | nothing |
+| Refreshing the Changes lists after an op of another card | `refreshWorkdir(target)` (`features/workdir/entry.ts`) | nothing |
+| Asking before a destructive action | `await confirm({title, body, items?, count?, preview?, irreversible?, confirmLabel})` (`lib/confirm.ts`); send nothing unless it resolves true | nothing (the Changes panel mounts `ConfirmHost`) |
 | Context-menu actions | `MenuAction[]` in the feature folder (fields below) | `ACTIONS` in `frontend/src/shell/menus.ts`; render with `<ActionMenuItems context ctx>` inside a `DropdownMenuContent`, or open at the pointer with `openContextMenu({host, context, ctx, at})` and a mounted `<ContextMenuHost host>` |
 | Per-checkout UI state | `frontend/src/state/<feature>.ts`: a `createStore` map keyed by `tabKey` | nothing; add its reset to `frontend/src/test/setup.ts` |
 

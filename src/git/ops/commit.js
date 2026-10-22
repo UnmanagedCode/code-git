@@ -14,6 +14,11 @@ const noParams = (op) => (raw) => {
   return {};
 };
 
+/** Whether a merge is being concluded: a commit is then valid with nothing staged. */
+async function merging(git) {
+  return (await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { okExit: [0, 1] })).exitCode === 0;
+}
+
 async function mustHead(git) {
   const head = await commitOid(git, 'HEAD');
   if (!head) throw new Refusal('NO_HEAD', 'HEAD has no commit yet');
@@ -72,10 +77,7 @@ export const ops = [
       else {
         // Nothing staged and no merge to conclude: git would refuse too, with less to go on.
         const staged = await git(['diff', '--cached', '--quiet', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none'], { okExit: [0, 1] });
-        if (staged.exitCode === 0) {
-          const merging = await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { okExit: [0, 1] });
-          if (merging.exitCode === 1) throw new Refusal('NOTHING_TO_COMMIT', 'nothing is staged');
-        }
+        if (staged.exitCode === 0 && !await merging(git)) throw new Refusal('NOTHING_TO_COMMIT', 'nothing is staged');
       }
       // No --cleanup: the repo's commit.cleanup applies (git's default for -F is `whitespace`, which keeps `#` lines).
       // `--amend --only` without paths amends the message alone: what is staged stays staged.
@@ -83,6 +85,12 @@ export const ops = [
       await git(args, { stdin: joinMessage(p.summary, p.description) });
       return { oid: await mustHead(git) };
     },
+  },
+  {
+    name: 'commit.state',
+    kind: 'read',
+    params: noParams('commit.state'),
+    run: async (git) => ({ merging: await merging(git) }),
   },
   {
     name: 'commit.headMessage',

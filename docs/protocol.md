@@ -296,6 +296,11 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 - A hook or signing failure → 422 `GIT_FAILED` with git's `stderr` (the hook's output).
 - `result`: `{oid}`, HEAD after the commit (`rev-parse --verify --quiet HEAD^{commit}`).
 
+### `commit.state` (read, cancellable)
+
+- `params`: none. Runs `git rev-parse -q --verify MERGE_HEAD`.
+- `result`: `{merging}` — a merge is being concluded, so a commit is valid with nothing staged (the commit box enables its button on it).
+
 ### `commit.headMessage` (read, cancellable)
 
 - `params`: none. Unborn HEAD → 409 `NO_HEAD`.

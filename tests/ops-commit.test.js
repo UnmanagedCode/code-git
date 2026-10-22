@@ -50,7 +50,7 @@ test('the repo\'s commit.cleanup is honoured (strip drops `#` lines)', async (t)
   assert.equal(msg(w), 'S\n\nkept\n');
 });
 
-test('NOTHING_TO_COMMIT with nothing staged (unstaged changes do not count); a merge with nothing staged commits', async (t) => {
+test('NOTHING_TO_COMMIT with nothing staged (unstaged changes do not count); a merge with nothing staged commits; commit.state reports the merge', async (t) => {
   const w = await world(t);
   w.repo.write('a.txt', 'unstaged\n');
   const head = w.repo.git('rev-parse', 'HEAD');
@@ -60,9 +60,12 @@ test('NOTHING_TO_COMMIT with nothing staged (unstaged changes do not count); a m
   w.repo.branch('other');
   w.repo.commit({ 'b.txt': 'b\n' }, 'other');
   w.repo.checkout('main');
+  assert.deepEqual(await w.op('commit.state'), { merging: false });
   w.repo.git('merge', '-q', '--no-commit', '-s', 'ours', 'other');
+  assert.deepEqual(await w.op('commit.state'), { merging: true });
   await w.op('commit.create', { summary: 'Merge other' });
   assert.equal(parents(w).length, 2);
+  assert.deepEqual(await w.op('commit.state'), { merging: false });
 });
 
 test('amend takes in the staged changes and replaces HEAD (same parent)', async (t) => {

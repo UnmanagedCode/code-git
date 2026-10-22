@@ -7,8 +7,8 @@
 - Full-width page: the tab bar, the active checkout's header, the panel slots (`left`, `center`, `right`, `bottom`), and the repo picker dialog. It caps no content width, so it does not read `--cc-session-width`.
 - Follows cc's light/dark theme live when embedded; standalone, follows the OS (`frontend/public/theme-init.js`). No theme toggle of its own.
 - With no tab open the center shows "No repository open." and an **Open a repository** button.
-- The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel and the Compare panel, the right slot the commit details, the bottom slot the activity panel.
-- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the Compare picker as dialogs (**Refs**, **Compare**), and the commit details open as a dialog when a commit is clicked.
+- The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel and the Compare panel, the right slot the Changes panel and the commit details, the bottom slot the activity panel.
+- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the Compare picker as dialogs (**Refs**, **Compare**), the commit details open as a dialog when a commit is clicked, and **Changes (n)** in the repo header opens the Changes panel as a dialog.
 
 ## Repo picker
 
@@ -55,11 +55,52 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 | Upstream | `no upstream`, or the upstream name with ↑ahead ↓behind |
 | Changes | `N staged`, `N unstaged`, `N untracked`, `N conflicted` (non-zero counts emphasised; conflicted in the destructive colour) |
 | Refresh | Reloads the summary (spins while loading) |
+| Changes (n) | Below `lg` only: opens the Changes panel as a dialog; n = staged + unstaged + untracked |
 | Error | `NOT_A_REPO`: "Not a git repository" plus git's stderr in a block; any other refusal: its message. A refresh the user cancelled from the activity panel is not an error: the previous summary stays |
 
 ## Commit graph
 
 The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree). Full behaviour: [graph](graph.md).
+
+## Changes panel
+
+Right slot (below `lg`: the **Changes (n)** dialog from the repo header). Stage, unstage, discard and commit. Ops: [protocol → Staging ops](protocol.md#staging-ops-shared-rules).
+
+| Part | Behaviour |
+|---|---|
+| Header | **Changes**, **Refresh changes** (↻), ⋮ menu: **Refresh** |
+| Detached banner | On a detached HEAD: "Detached HEAD at `<oid10>`. A commit made here is on no branch." |
+| Error | The last failed op's message and git's stderr (hook output) as text; × dismisses it |
+| **Unstaged Files (n)** | Worktree changes and untracked files (`?`). Header: **Discard all…**, **Stage all**. Row hover: discard (↶, not on a conflicted file), stage (+), ⋮ |
+| **Staged Files (n)** | Index changes. Header: **Unstage all**. Row hover: unstage (−), ⋮ |
+| Row | Status letter, path (`old → new` for a rename). Click or Enter opens its unstaged / staged diff at that file. Right-click or ⋮: **Stage** / **Unstage**, **Discard…**, **Copy path** |
+| Commit box | **Summary** (one line), **Description**, ☐ **Amend previous commit**, ☐ **Skip Git hooks**, then the commit button(s) |
+
+**Discard** always asks first and sends nothing until confirmed: a file ("Discard changes to …?" / "Delete …?" for an untracked file), or **Discard all…**, which lists every untracked file it deletes with their count. Both say "This cannot be undone." Discard all throws away exactly the unstaged and untracked files shown (not conflicted ones); staged changes and ignored files stay.
+
+**Commit button**
+
+| Mode | Button(s) | Enabled when |
+|---|---|---|
+| Commit | **Commit changes to N files** (N = staged files; "(detached HEAD)" on a detached HEAD); **Commit** while nothing is staged | a summary, something staged or a merge in progress, and the draft is not the unedited commit template |
+| Amend (ticked) | **Amend commit** (staged changes + the message) and **Update message only** (the message alone; the staged changes stay staged) | a summary; Update message only also needs the message changed from HEAD's |
+
+- Ticking **Amend** loads HEAD's message into the fields and keeps the draft aside; unticking puts the draft back.
+- **Commit template** (`commit.template`): pre-fills the box once per tab while it is empty and Amend is off, and again after each commit; a template problem (missing, binary, …) shows under the button.
+- After a commit the box goes back to the template (or empty) and Amend is unticked; a failed commit keeps the draft.
+
+**Keys** (only while focus is inside the plugin frame)
+
+| Key | Action |
+|---|---|
+| ↑ / ↓ | Move between rows of a list |
+| S / U | Stage the focused unstaged row / unstage the focused staged row (not while typing) |
+| Ctrl/⌘+Shift+S / Ctrl/⌘+Shift+U | Stage all / unstage all |
+| Ctrl/⌘+Shift+M | Focus the summary (below `lg`, opens the Changes dialog) |
+| Ctrl/⌘+Enter (in the commit box) | Commit (Amend commit in amend mode) |
+| Ctrl/⌘+Shift+Enter (in the commit box) | Stage all, then commit |
+
+The lists load when the tab is first shown, on Refresh and after every op; there is no file watcher. Every op also reloads the repo header and an open unstaged/staged diff.
 
 ## Activity panel
 

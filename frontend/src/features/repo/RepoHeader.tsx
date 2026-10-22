@@ -2,6 +2,7 @@ import { ArrowDownIcon, ArrowUpIcon, GitBranchIcon, RefreshCwIcon } from 'lucide
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { tabLabel } from '@/features/tabs/actions';
+import { ChangesButton } from '@/features/workdir/ChangesButton'; // C4: narrow-screen Changes button
 import type { RepoSummary } from '@/lib/endpoints';
 import type { Tab } from '@/state/tabs';
 import { useRepoSummary } from '@/state/useRepoSummary';
@@ -70,6 +71,7 @@ export function RepoHeader({ tab }: { tab: Tab }) {
       <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="Refresh" disabled={loading} onClick={refresh}>
         <RefreshCwIcon className={loading ? 'animate-spin' : undefined} />
       </Button>
+      <ChangesButton tab={tab} />{/* C4: narrow-screen Changes button */}
       {error && (
         <div className="basis-full text-sm" role="alert">
           <p className="text-destructive">{error.code === 'NOT_A_REPO' ? 'Not a git repository' : error.message}</p>

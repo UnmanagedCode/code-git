@@ -58,7 +58,7 @@ test('the staging, commit, ignore, restore and patch writes are registered as no
 });
 
 test('the commit box reads and patch.check are cancellable reads', () => {
-  for (const name of ['commit.headMessage', 'commit.template', 'patch.check']) {
+  for (const name of ['commit.state', 'commit.headMessage', 'commit.template', 'patch.check']) {
     const d = OPS.get(name);
     assert.equal(d?.kind, 'read', name);
     assert.equal(d.cancellable, true, name);

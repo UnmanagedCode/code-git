@@ -13,6 +13,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Repo header | HEAD (branch, detached, or unborn), upstream with ahead/behind, staged/unstaged/untracked/conflicted counts, the System for non-local projects, Refresh |
 | Commit graph | The checkout's history as a lane graph with ref labels, WIP and stash rows, search, keyboard and multi-select; a refs panel (hide / solo / pin) and commit details. [docs/graph.md](docs/graph.md) |
 | Diff | A commit, unstaged or staged changes, two refs (`..` / `...`), a run of commits, or a commit vs the working directory. File list; Hunk, Inline and Split modes with word-level and syntax highlighting; File view; whitespace and context controls; wrap; change navigation and in-file search; binary, rename, LFS-pointer, submodule and oversized states; patch download/copy. Opened from the graph (a commit, a selection, a WIP row, a file in the details) or the Compare panel (left) |
+| Changes | Stage, unstage and discard files, hunks and lines; commit, amend, message-only amend, skip hooks, commit template; ignore; restore a file from a commit; apply a patch. Right slot, or the **Changes** dialog on narrow screens |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
 
 Details: [docs/features.md](docs/features.md).
