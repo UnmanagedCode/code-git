@@ -1,4 +1,5 @@
 import { CheckIcon, CloudIcon, GitBranchIcon, ArchiveIcon, FolderGit2Icon, TagIcon } from 'lucide-react';
+import { clip } from '@/lib/clip';
 import type { MouseEvent, PointerEvent } from 'react';
 import { cn } from '@/lib/utils';
 import type { Label } from './labels';
@@ -22,7 +23,7 @@ export function RefChip({ label, color, handlers }: { label: Label; color: numbe
   const drop = dropRefOf(label);
   const active = useDropActive(drop ?? '\0');
   const remotes = label.kind === 'local' || label.kind === 'head' ? label.remotes : [];
-  const title = remotes.length ? `${label.text} (also ${remotes.map((r) => r.short).join(', ')})` : label.text;
+  const title = clip(remotes.length ? `${label.text} (also ${remotes.map((r) => r.short).join(', ')})` : label.text);
   return (
     <span
       className={cn(
@@ -42,7 +43,7 @@ export function RefChip({ label, color, handlers }: { label: Label; color: numbe
       onClick={(e) => { if (handlers?.onClick) { e.stopPropagation(); handlers.onClick(label); } }}
     >
       <Icon className="size-3 shrink-0" />
-      <span className="truncate">{label.text}</span>
+      <span className="truncate">{clip(label.text)}</span>
       {remotes.length > 0 && <CloudIcon className="size-3 shrink-0" aria-label="also on a remote" />}
     </span>
   );

@@ -1,4 +1,5 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
+import { clip } from '@/lib/clip';
 import { FolderIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getItem, setItem } from '@/lib/storage';
@@ -37,19 +38,19 @@ export function FileList({ tab, commit, parent, files, host }: { tab: Tab; commi
         className={cn('flex w-full items-center gap-2 rounded py-0.5 pr-2 text-left hover:bg-muted', isActive(f) && 'bg-accent text-accent-foreground')}
         aria-current={isActive(f) ? 'true' : undefined}
         data-file={f.path}
-        title={f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}
+        title={clip(f.oldPath ? `${f.oldPath} → ${f.path}` : f.path)}
         onClick={() => open(f)}
         onContextMenu={(e) => menu(e, f)}
       >
         <span className={cn('w-3 shrink-0 text-center font-mono text-xs font-semibold', statusClass(f.status), depth === 0 ? 'ml-1' : depth === 1 ? 'ml-5' : depth === 2 ? 'ml-9' : 'ml-13')}>{f.status}</span>
-        <span className="truncate">{f.oldPath ? `${f.oldPath} → ${name}` : name}</span>
+        <span className="truncate">{clip(f.oldPath ? `${f.oldPath} → ${name}` : name)}</span>
       </button>
     </li>
   );
   const tree = (nodes: TreeNode[], depth: number): ReactNode => nodes.map((n) => (n.kind === 'file' ? row(n.file, n.name, depth) : (
     <li key={`d:${n.path}`}>
       <span className={cn('flex items-center gap-1 py-0.5 text-muted-foreground', depth === 0 ? 'ml-1' : depth === 1 ? 'ml-5' : depth === 2 ? 'ml-9' : 'ml-13')}>
-        <FolderIcon className="size-3.5" />{n.name}
+        <FolderIcon className="size-3.5" />{clip(n.name)}
       </span>
       <ul>{tree(n.children, depth + 1)}</ul>
     </li>

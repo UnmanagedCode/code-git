@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
 import { json } from '@/test/fixtures';
 import { commit, oid, stash } from '@/test/graphData';
@@ -9,7 +9,8 @@ import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
-import { CommitDetails, } from './CommitDetails';
+import { DISPLAY_MAX } from '@/lib/clip';
+import { BODY_SHOWN, CO_AUTHORS_SHOWN, CommitDetails } from './CommitDetails';
 import { FILE_RENDER_CAP } from './FileList';
 
 const TAB = { project: 'app', worktree: null };
@@ -152,4 +153,26 @@ test('Tree view renders a file whose path has 20,000 components', async () => {
   await screen.findByText('1 file');
   fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
   expect(document.querySelector(`[data-file="${deep}"]`)).not.toBeNull();
+});
+
+test('a 1 MB subject and body are cut for display; the whole body shows on request', async () => {
+  const huge = 'y'.repeat(1_000_000);
+  await show({ body: huge, coAuthors: Array.from({ length: CO_AUTHORS_SHOWN + 3 }, (_, i) => ({ name: `C${i}`, email: `c${i}@x` })) });
+  const body = await waitFor(() => { const b = document.querySelector('[data-commit-body]'); expect(b).not.toBeNull(); return b!; });
+  expect(body.textContent!.length).toBe(BODY_SHOWN + 1);
+  expect(within(screen.getByRole('region', { name: 'Co-authors' })).getAllByRole('listitem')).toHaveLength(CO_AUTHORS_SHOWN);
+  expect(screen.getByText('and 3 more')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /^Show the whole message/ }));
+  expect(document.querySelector('[data-commit-body]')!.textContent!.length).toBe(huge.length);
+});
+
+test('a 1 MB subject is cut to DISPLAY_MAX', async () => {
+  const world = linearWorld(2);
+  world.detail = () => detailOf(commit(A, [P], { subject: 'z'.repeat(1_000_000) }));
+  stubGraph(world);
+  await openGraph(TAB);
+  dispatchSelection(TAB, { type: 'click', id: A, rows: rowsOf(A, P) });
+  render(<CommitDetails tab={TAB} />);
+  const h = await screen.findByRole('heading', { level: 2 });
+  expect(h.textContent).toBe(`${'z'.repeat(DISPLAY_MAX)}…`);
 });

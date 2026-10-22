@@ -12,6 +12,7 @@ import { shownPanelStore } from '@/state/shownPanel';
 import { loadSummary } from '@/state/useRepoSummary';
 import { GraphPanel } from './GraphPanel';
 import { requestJump } from './jump';
+import { DISPLAY_MAX } from '@/lib/clip';
 import { LANE_CAP } from './layout';
 import { TIPS_MAX } from './visibility';
 import { ROW_H } from './windowFor';
@@ -301,4 +302,18 @@ test('more ref tips than one request takes: the graph pages the first TIPS_MAX a
   const fetch = await show(world);
   expect((paramsOf(fetch, 'POST api/ops/graph.page')[0] as { tips: string[] }).tips).toHaveLength(TIPS_MAX);
   expect(screen.getByRole('status').textContent).toContain(`of ${(TIPS_MAX + 8).toLocaleString()} ref tips`);
+});
+
+test('a 1 MB subject, author and ref name are shown cut to DISPLAY_MAX, in the text and the title', async () => {
+  const huge = 'x'.repeat(1_000_000);
+  const world = linearWorld(2);
+  world.commits[0].subject = huge;
+  world.commits[0].author = { name: `N${huge}`, email: `e${huge}` };
+  world.refs.refs.push(ref(`refs/heads/${huge}`, oid(2)));
+  updatePrefs('app', (p) => ({ ...p, columns: { ...p.columns, visible: ['author'] } }));
+  await show(world);
+  const row = rowEl(oid(2))!;
+  expect(row.textContent!.length).toBeLessThan(4 * DISPLAY_MAX);
+  for (const el of row.querySelectorAll('[title]')) expect(el.getAttribute('title')!.length).toBeLessThanOrEqual(DISPLAY_MAX + 1);
+  expect(row.querySelector('[data-cell=message] [title]')!.getAttribute('title')).toBe(`${'x'.repeat(DISPLAY_MAX)}…`);
 });

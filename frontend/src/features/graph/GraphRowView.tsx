@@ -1,4 +1,5 @@
 import { memo, type MouseEvent } from 'react';
+import { clip } from '@/lib/clip';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -83,7 +84,7 @@ function Message({ row }: { row: GraphRow }) {
     return (
       <span className="flex min-w-0 items-center gap-2">
         <span className="shrink-0 font-mono whitespace-nowrap text-muted-foreground">// WIP</span>
-        <span className="max-w-48 shrink-0 truncate font-medium">{c.name}</span>
+        <span className="max-w-48 shrink-0 truncate font-medium">{clip(c.name)}</span>
         {n && (
           <span className="flex min-w-0 gap-1 overflow-hidden">
             {n.staged > 0 && <Badge variant="success">{n.staged} staged</Badge>}
@@ -97,10 +98,10 @@ function Message({ row }: { row: GraphRow }) {
   }
   if (row.kind === 'stash') {
     return (
-      <span className="truncate italic" title={row.stash.subject}>{row.stash.subject}</span>
+      <span className="truncate italic" title={clip(row.stash.subject)}>{clip(row.stash.subject)}</span>
     );
   }
-  return <span className="truncate" title={row.item.subject}>{row.item.subject}</span>;
+  return <span className="truncate" title={clip(row.item.subject)}>{clip(row.item.subject)}</span>;
 }
 
 /** One row of the graph list. Every untrusted string is a React text child or a `title`. */
@@ -118,7 +119,7 @@ export const GraphRowView = memo(function GraphRowView(p: RowViewProps) {
             <span className={`lane-${layout.color} flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-(--lane) text-xs font-semibold`}>
               {initials(item.author.name, item.author.email)}
             </span>
-            <span className="truncate" title={item.author.email}>{item.author.name}</span>
+            <span className="truncate" title={clip(item.author.email)}>{clip(item.author.name)}</span>
           </span>
         );
       case 'date': return item && <span className="truncate text-muted-foreground">{formatTime(item.time)}</span>;

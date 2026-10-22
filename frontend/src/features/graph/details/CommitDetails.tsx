@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { clip } from '@/lib/clip';
 import { CopyIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
@@ -18,6 +19,24 @@ import { FileList } from './FileList';
 import { SignatureBadge } from './SignatureBadge';
 
 const HOST = 'details';
+/** Characters of a commit body shown until "Show the whole message". */
+export const BODY_SHOWN = 16_384;
+/** Co-authors listed; the rest are counted. */
+export const CO_AUTHORS_SHOWN = 50;
+
+/** A commit body as text, the first BODY_SHOWN characters until asked for the rest. */
+function Body({ text }: { text: string }) {
+  const [all, setAll] = useState(false);
+  const long = text.length > BODY_SHOWN;
+  return (
+    <>
+      <p className="text-sm break-words whitespace-pre-wrap text-muted-foreground" data-commit-body="">{all || !long ? text : clip(text, BODY_SHOWN)}</p>
+      {long && !all && (
+        <Button variant="ghost" size="sm" className="self-start" onClick={() => setAll(true)}>Show the whole message ({text.length.toLocaleString()} characters)</Button>
+      )}
+    </>
+  );
+}
 
 /** The details panel (right slot; a dialog on narrow screens) for the graph's selection. */
 export function CommitDetails({ tab, inDialog = false }: { tab: Tab | null; inDialog?: boolean }) {
@@ -63,10 +82,10 @@ function Multi({ tab, items, commits, stashes, checkouts }: {
       <ul className="flex flex-col gap-0.5 text-sm">
         {items.map((it, i) => (
           <li key={i} className="flex gap-2">
-            {it.kind === 'wip' ? <span className="text-muted-foreground">// WIP {it.checkout.worktree ?? it.checkout.project}</span> : (
+            {it.kind === 'wip' ? <span className="text-muted-foreground">// WIP {clip(it.checkout.worktree ?? it.checkout.project)}</span> : (
               <>
                 <span className="font-mono text-xs text-muted-foreground">{it.oid.slice(0, 7)}</span>
-                <span className="truncate">{subject(it)}</span>
+                <span className="truncate">{clip(subject(it))}</span>
               </>
             )}
           </li>
@@ -80,7 +99,7 @@ function Wip({ tab, c }: { tab: Tab; c: Checkout }) {
   const n = c.counts;
   return (
     <>
-      <h2 className="text-sm font-semibold">// WIP <span className="font-normal">{c.name}</span></h2>
+      <h2 className="text-sm font-semibold">// WIP <span className="font-normal">{clip(c.name)}</span></h2>
       <p className="text-sm">{c.branch ? <span className="font-mono">{c.branch.replace(/^refs\/heads\//, '')}</span> : <span className="text-muted-foreground">detached</span>}</p>
       {n && <p className="text-sm text-muted-foreground">{n.staged} staged · {n.unstaged} unstaged · {n.untracked} untracked · {n.conflicted} conflicted</p>}
       <div className="flex flex-wrap gap-1">
@@ -95,9 +114,9 @@ function Wip({ tab, c }: { tab: Tab; c: Checkout }) {
 function Person({ label, name, email, time }: { label: string; name: string; email: string; time: number }) {
   return (
     <div className="flex items-center gap-2 text-sm">
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border-2 border-primary text-xs font-semibold">{initials(name, email)}</span>
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border-2 border-primary text-xs font-semibold">{initials(clip(name), clip(email))}</span>
       <span className="min-w-0">
-        <span className="block truncate"><span className="text-muted-foreground">{label} </span>{name} <span className="text-muted-foreground">&lt;{email}&gt;</span></span>
+        <span className="block truncate"><span className="text-muted-foreground">{label} </span>{clip(name)} <span className="text-muted-foreground">&lt;{clip(email)}&gt;</span></span>
         <span className="block text-xs text-muted-foreground">{formatTime(time)}</span>
       </span>
     </div>
@@ -120,16 +139,17 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
   return (
     <>
       <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold break-words">{d.subject}</h2>
+        <h2 className="text-sm font-semibold break-words">{clip(d.subject)}</h2>
         <Button variant="outline" size="sm" className="self-start" onClick={() => openIn(tab, tab, { kind: 'commit', rev: d.oid })}>View changes</Button>
-        {d.body && <p className="text-sm break-words whitespace-pre-wrap text-muted-foreground">{d.body}</p>}
+        {d.body && <Body text={d.body} />}
       </div>
       <Person label="Author" name={d.author.name} email={d.author.email} time={d.author.time} />
       {!sameCommitter && <Person label="Committer" name={d.committer.name} email={d.committer.email} time={d.committer.time} />}
       {d.coAuthors.length > 0 && (
         <section aria-label="Co-authors" className="text-sm">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase">Co-authors</h3>
-          <ul>{d.coAuthors.map((c, i) => <li key={i}>{c.name} <span className="text-muted-foreground">&lt;{c.email}&gt;</span></li>)}</ul>
+          {d.coAuthors.length > CO_AUTHORS_SHOWN && <p className="text-xs text-muted-foreground">and {d.coAuthors.length - CO_AUTHORS_SHOWN} more</p>}
+          <ul>{d.coAuthors.slice(0, CO_AUTHORS_SHOWN).map((c, i) => <li key={i}>{clip(c.name)} <span className="text-muted-foreground">&lt;{clip(c.email)}&gt;</span></li>)}</ul>
         </section>
       )}
       <div className="flex flex-wrap items-center gap-2 text-sm">

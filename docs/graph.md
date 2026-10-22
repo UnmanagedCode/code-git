@@ -44,6 +44,8 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 
 **Drag** — drag a branch chip (graph or refs panel; local or remote) onto another branch chip: the target is highlighted (`data-drop-active`), Esc cancels, dropping on itself does nothing. A drop opens the `branch-drop` menu; with no action registered for it, nothing opens.
 
+**Untrusted text** (subjects, names, refnames, paths) is shown cut to `DISPLAY_MAX` characters (`lib/clip.ts`), in text and tooltips; a commit body to `BODY_SHOWN` until **Show the whole message**; at most `CO_AUTHORS_SHOWN` co-authors. Copy actions copy the whole value. The Tree view nests at most `MAX_TREE_DEPTH` directories.
+
 **Context menus** — commit, multi-selection, WIP, stash, branch, tag, remote, worktree and file menus. The graph's own actions:
 
 | Menu | Actions |

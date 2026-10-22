@@ -92,3 +92,12 @@ test('remote Show all appears when the remote itself is hidden though none of it
   expect(getPrefs('app').hiddenRemotes).toEqual([]);
   expect(menu('remote', { tab: TAB, remote: 'up' })).not.toContain('Show all');
 });
+
+test('Copy message copies the whole message, however long', async () => {
+  const body = 'w'.repeat(1_000_000);
+  const writeText = vi.fn(async () => {});
+  vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true, result: { subject: 'S', body } }), { status: 200 })));
+  await run('commit', { tab: TAB, commit: commit(oid(1)), refs: [], selection: [] }, 'Copy message');
+  expect((writeText.mock.calls[0] as unknown[])[0]).toBe(`S\n\n${body}`);
+});

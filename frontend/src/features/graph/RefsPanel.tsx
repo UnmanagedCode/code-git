@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import { clip } from '@/lib/clip';
 import { ArchiveIcon, ChevronDownIcon, ChevronRightIcon, CloudIcon, EyeIcon, EyeOffIcon, FolderGit2Icon, GitBranchIcon, PinIcon, TagIcon, TargetIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -151,17 +152,17 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
               <button type="button" className={cn('flex min-w-0 flex-1 items-center gap-1 text-left', hidden && 'opacity-50')} aria-expanded={!collapsed.has(id)} onClick={() => toggleCollapsed(id)}>
                 {collapsed.has(id) ? <ChevronRightIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
                 <CloudIcon className="size-3.5 text-muted-foreground" />
-                <span className="truncate">{name}</span>
+                <span className="truncate">{clip(name)}</span>
               </button>
-              <IconToggle label={`${hidden ? 'Show' : 'Hide'} remote ${name}`} on={hidden} onClick={() => set((p) => ({ ...p, hiddenRemotes: toggled(p.hiddenRemotes, name, !hidden) }))}>
+              <IconToggle label={`${hidden ? 'Show' : 'Hide'} remote ${clip(name)}`} on={hidden} onClick={() => set((p) => ({ ...p, hiddenRemotes: toggled(p.hiddenRemotes, name, !hidden) }))}>
                 {hidden ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
               </IconToggle>
-              <IconToggle label={`${soloed ? 'Unsolo' : 'Solo'} remote ${name}`} on={soloed} onClick={() => set((p) => ({ ...p, soloedRemotes: toggled(p.soloedRemotes, name, !soloed) }))}>
+              <IconToggle label={`${soloed ? 'Unsolo' : 'Solo'} remote ${clip(name)}`} on={soloed} onClick={() => set((p) => ({ ...p, soloedRemotes: toggled(p.soloedRemotes, name, !soloed) }))}>
                 <TargetIcon className="size-3.5" />
               </IconToggle>
             </div>
             {!collapsed.has(id) && (
-              <ul aria-label={`Branches on ${name}`}>
+              <ul aria-label={`Branches on ${clip(name)}`}>
                 {capped(id, list, (r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} indent onMenu={(e) => menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx)} />)}
               </ul>
             )}
@@ -228,20 +229,20 @@ function RefRow({ tab, r, vis, prefs, all, indent = false, onMenu }: {
       }}
     >
       {pinned ? (
-        <button type="button" aria-label={`Jump to pinned ${r.short}`} className="shrink-0 text-primary" onClick={jump}><PinIcon className="size-3.5" /></button>
+        <button type="button" aria-label={`Jump to pinned ${clip(r.short)}`} className="shrink-0 text-primary" onClick={jump}><PinIcon className="size-3.5" /></button>
       ) : <Icon className="size-3.5 shrink-0 text-muted-foreground" />}
-      <button type="button" className={cn('min-w-0 flex-1 truncate text-left hover:underline', r.isHead && 'font-semibold')} title={r.name} disabled={!r.oid} onClick={jump}>
-        {r.kind === 'remote' && r.remote ? r.short.slice(r.remote.length + 1) : r.short}
+      <button type="button" className={cn('min-w-0 flex-1 truncate text-left hover:underline', r.isHead && 'font-semibold')} title={clip(r.name)} disabled={!r.oid} onClick={jump}>
+        {clip(r.kind === 'remote' && r.remote ? r.short.slice(r.remote.length + 1) : r.short)}
       </button>
       {r.kind !== 'tag' && (
-        <IconToggle label={pinned ? `Unpin ${r.short}` : `Pin ${r.short} to left`} on={pinned} onClick={() => set((p) => ({ ...p, pinned: toggled(p.pinned, r.name, !pinned) }))}>
+        <IconToggle label={pinned ? `Unpin ${clip(r.short)}` : `Pin ${clip(r.short)} to left`} on={pinned} onClick={() => set((p) => ({ ...p, pinned: toggled(p.pinned, r.name, !pinned) }))}>
           <PinIcon className="size-3.5" />
         </IconToggle>
       )}
-      <IconToggle label={`${hidden ? 'Show' : 'Hide'} ${r.short}`} on={hidden} disabled={r.isHead} onClick={() => set((p) => ({ ...p, hidden: toggled(p.hidden, r.name, !hidden) }))}>
+      <IconToggle label={`${hidden ? 'Show' : 'Hide'} ${clip(r.short)}`} on={hidden} disabled={r.isHead} onClick={() => set((p) => ({ ...p, hidden: toggled(p.hidden, r.name, !hidden) }))}>
         {hidden ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
       </IconToggle>
-      <IconToggle label={`${soloed ? 'Unsolo' : 'Solo'} ${r.short}`} on={soloed} onClick={() => set((p) => ({ ...p, soloed: toggled(p.soloed, r.name, !soloed) }))}>
+      <IconToggle label={`${soloed ? 'Unsolo' : 'Solo'} ${clip(r.short)}`} on={soloed} onClick={() => set((p) => ({ ...p, soloed: toggled(p.soloed, r.name, !soloed) }))}>
         <TargetIcon className="size-3.5" />
       </IconToggle>
     </li>
@@ -252,9 +253,9 @@ function StashRow({ tab, s, hidden, onMenu }: { tab: Tab; s: Stash; hidden: bool
   return (
     <li className={cn('flex items-center gap-1 py-0.5 pr-2 pl-5', hidden && 'opacity-50')} onContextMenu={onMenu}>
       <ArchiveIcon className="size-3.5 shrink-0 text-muted-foreground" />
-      <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" title={s.subject}
+      <button type="button" className="min-w-0 flex-1 truncate text-left hover:underline" title={clip(s.subject)}
         onClick={() => { if (s.parents[0]) requestJump(tab, s.parents[0], `stash:${s.oid}`); }}>
-        <span className="font-mono text-xs text-muted-foreground">{s.selector}</span> {s.subject}
+        <span className="font-mono text-xs text-muted-foreground">{s.selector}</span> {clip(s.subject)}
       </button>
     </li>
   );
@@ -269,10 +270,10 @@ function WorktreeRow({ tab, w, isOwn, checkouts, onMenu }: {
   return (
     <li className="flex items-center gap-1.5 py-0.5 pr-2 pl-5" onContextMenu={(e) => onMenu(e, checkout?.target ?? null)} data-worktree={name}>
       <FolderGit2Icon className="size-3.5 shrink-0 text-muted-foreground" />
-      <button type="button" className={cn('min-w-0 flex-1 truncate text-left hover:underline', isOwn && 'font-semibold')} title={w.path}
+      <button type="button" className={cn('min-w-0 flex-1 truncate text-left hover:underline', isOwn && 'font-semibold')} title={clip(w.path)}
         disabled={!w.head} onClick={() => { if (w.head) requestJump(tab, w.head); }}>
-        {name}
-        <span className="ml-1.5 font-mono text-xs text-muted-foreground">{w.branch ? w.branch.replace(/^refs\/heads\//, '') : w.head?.slice(0, 7) ?? ''}</span>
+        {clip(name)}
+        <span className="ml-1.5 font-mono text-xs text-muted-foreground">{clip(w.branch ? w.branch.replace(/^refs\/heads\//, '') : w.head?.slice(0, 7) ?? '')}</span>
       </button>
       {dirty && <Badge variant="info">dirty</Badge>}
       {w.locked && <Badge variant="outline">locked</Badge>}
