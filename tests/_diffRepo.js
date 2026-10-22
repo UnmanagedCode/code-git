@@ -22,7 +22,7 @@ const appLines = (greet, tail) => [
 export const APP_OLD = appLines('foo(bar)', 1);
 export const APP_NEW = appLines('foo(baz)', 2);
 
-const HOSTILE_CONFIG = [
+export const HOSTILE_CONFIG = [
   ['diff.suppressBlankEmpty', 'true'], ['diff.noprefix', 'true'], ['diff.interHunkContext', '10'], ['diff.submodule', 'log'],
   ['color.diff', 'always'], ['color.ui', 'always'], ['diff.context', '10'], ['diff.relative', 'true'], ['diff.mnemonicPrefix', 'true'],
   ['format.signature', 'SIG'], ['format.headers', 'X-Hostile: yes'], ['format.to', 'to@example.com'], ['format.cc', 'cc@example.com'],

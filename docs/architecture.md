@@ -24,7 +24,11 @@
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
 | `src/git/ops/repo.js` | `repo.summary` |
 | `src/git/ops/diff.js` | `diff.files`, `diff.file`, `diff.patch`; `patchFilename` |
-| `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS` |
+| `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`, `commitOid`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS`; `parseContext` / `contextArg` / `FULL_CONTEXT` |
+| `src/git/diff/noIndex.js` | `assertNoIndexReadsItself`, `readNoIndex`: reading one file's bytes through `diff --no-index /dev/null <path>` |
+| `src/git/params.js` | Shared op-param checks: `paramsObject`, `optBool`, `pathList`; `nulPaths` (stdin for `--pathspec-from-file`), `chunkPaths` (argv chunks) |
+| `src/git/stage/limits.js` | `STAGE_LIMITS`: staging, commit-template, `.gitignore` and patch caps |
+| `src/git/ops/stage.js` | `stage.files`, `stage.unstageFiles`, `stage.discardFiles` |
 | `src/git/diff/limits.js` | `DIFF_LIMITS`: the diff caps (list / file / patch bytes, oversize lines, max commits and paths) |
 | `src/git/parse/diff.js` | `parseRawNumstat`, `parseFilePatch`, `detectLfs`, `sideLines` — pure |
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |
@@ -146,6 +150,18 @@ What a later card touches to add a feature — each is one file of its own plus 
 - Only `Prism.tokenize` is used. `highlightLines` flattens the token tree to `{text, cls}` segments; `cls` comes only from the fixed `TOKEN_CLASS` map; `CodeLine` renders them as React text. `guards.test.ts` refuses `Prism.highlight`, `highlightElement` and `highlightAll` anywhere.
 - Bounded per file side: past `HIGHLIGHT_MAX_LINE_CHARS`, `HIGHLIGHT_MAX_LINES` or `HIGHLIGHT_MAX_SIDE_CHARS` the side is plain and the tokenizer is not called. Word emphasis is bounded by `WORD_DIFF_MAX_CHARS` / `WORD_DIFF_MAX_TOKENS`.
 - A patch download is a local `blob:` URL of `text/x-diff` bytes, clicked and revoked, never rendered; its name is the backend's sanitized `filename`. Only `lib/download.ts` builds object URLs or download links (guard test).
+
+## Staging and committing
+
+### What each destructive op destroys
+
+For the undo card: what an op overwrites or deletes, and whether git can give it back.
+
+| Op | Destroys | Recoverable from git |
+|---|---|---|
+| `stage.files`, `stage.unstageFiles` | The previous index entries of those paths | Yes: HEAD and the worktree still hold both sides |
+| `stage.discardFiles` — tracked | The worktree content of those paths (returned in `result.tracked`) | No: it is in no object. An undo needs a `hash-object -w` snapshot taken before the discard |
+| `stage.discardFiles` — untracked | The files (returned in `result.untracked`) | No; the same snapshot would be needed |
 
 ## Long ops, cancel and paging
 

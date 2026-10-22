@@ -197,6 +197,44 @@ Every log-family command adds `--no-show-signature --no-ext-diff --no-textconv`.
   - `coAuthors` come from `Co-authored-by:` trailers; a value that is not `Name <email>` is dropped.
   - `files`: a merge against its first parent, a root commit against the empty tree; `status` is the first letter of git's (`A`, `M`, `D`, `R`, `C`, `T`, …); a rename/copy carries `oldPath`.
   - The two commands are separate: when the file list fails (e.g. 422 `OUTPUT_TOO_LARGE` on a huge commit), `files` is `null` and `filesError` says why, and the metadata is still returned. A cancel cancels the op; a failing metadata command fails it.
+### Staging ops: shared rules
+
+The ops below change the index or the worktree (`kind: 'write'`, not cancellable). Their caps are `STAGE_LIMITS` (`src/git/stage/limits.js`).
+
+- Every path passes `assertPath`. A list holds 1…`STAGE_LIMITS.maxPaths` paths; duplicates are dropped.
+- **Multi-path commands read their paths from stdin**: `--pathspec-from-file=- --pathspec-file-nul` (`add`, `reset`, `restore`, `rm`), so the argv never grows with the request.
+- **`ls-files` and `clean` have no `--pathspec-from-file`**: their paths go after `--`, in chunks of at most `STAGE_LIMITS.argvChunkBytes` argv bytes, one command per chunk.
+- `GIT_LITERAL_PATHSPECS=1` applies to both forms: a path named `*.txt` matches only itself.
+- A rename or copy is two paths: the UI sends both (`patchPaths`, `features/diff/patch.ts`).
+
+### `stage.files` (write)
+
+- `params`: `{paths}` or `{all: true}`, exactly one (else `BAD_PARAMS`).
+- Runs `git add -A --pathspec-from-file=- --pathspec-file-nul` (paths on stdin), or `git add -A`.
+- Accepts every unstaged status: `M`, `D`, `T`, `?`, `U`. Staging a `U` path marks it resolved.
+- `result`: `{paths}` (`null` for all).
+
+### `stage.unstageFiles` (write)
+
+- `params`: `{paths}` or `{all: true}`.
+- HEAD born (`rev-parse --verify --quiet HEAD^{commit}`): `git reset -q --pathspec-from-file=- --pathspec-file-nul`, or `git reset -q`.
+- HEAD unborn: `git rm --cached -r -q --ignore-unmatch --pathspec-from-file=- --pathspec-file-nul`, or `git rm --cached -r -q --ignore-unmatch -- .`. The files stay on disk, untracked.
+- `result`: `{paths}` (`null` for all).
+
+### `stage.discardFiles` (write)
+
+- `params`: `{tracked?: paths, untracked?: paths}`; at least one path in total, at most `STAGE_LIMITS.maxPaths`.
+- Both gates run before anything changes, so a refused request discards nothing:
+
+| Gate | Command (per chunk) | Refusal |
+|---|---|---|
+| No tracked path is unmerged | `git ls-files -u -z -- <tracked>` prints nothing | 409 `CONFLICTED` |
+| No untracked path ends in `/` (a nested repository) | — | 400 `BAD_PATH` |
+| git lists exactly the requested untracked set | `git ls-files --others --exclude-standard -z -- <untracked>` | 400 `BAD_PATH` (an ignored, tracked, missing path, a directory, a path through a symlinked directory) |
+
+- Then `git restore --worktree --pathspec-from-file=- --pathspec-file-nul` for the tracked paths (from the index: staged changes stay), and `git clean -f -q -- <untracked chunk>` per chunk. Never `-d`, never `-x`.
+- "Discard all" in the UI is this op called with the unstaged and untracked lists the panel showed: a file created after that is never touched.
+- `result`: `{tracked, untracked}` — what was discarded. Neither is recoverable from git (see architecture → What each destructive op destroys).
 
 ### Paging convention (for ops that list)
 
@@ -250,6 +288,15 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `CANCELLED` | 409 | The op was cancelled |
 | `NO_MERGE_BASE` | 409 | `A...B` has no common ancestor |
 | `DIFF_NOT_CONTIGUOUS` | 409 | A multi-selection the multi-select rule cannot diff |
+| `CONFLICTED` | 409 | A path to discard has a merge conflict |
+| `PARTIAL_UNSUPPORTED` | 409 | Hunk or line staging asked of a file that is not a plain modification |
+| `SELECTION_UNSUPPORTED` | 409 | A line selection git cannot apply as one patch (an end-of-file newline change left out) |
+| `STALE_DIFF` | 409 | The selected hunk or lines no longer match the file's diff |
+| `NOTHING_TO_COMMIT` | 409 | Nothing staged and no merge in progress |
+| `NO_HEAD` | 409 | The op needs a commit and HEAD is unborn |
+| `PATCH_DOES_NOT_APPLY` | 409 | `git apply` refused the patch; `stderr` |
+| `GITIGNORE_UNSUPPORTED` | 409 | The root `.gitignore` is a symlink, binary or over `STAGE_LIMITS.gitignoreMaxBytes` |
+| `PATH_NOT_IN_COMMIT` | 404 | The path is not a file in that commit |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |

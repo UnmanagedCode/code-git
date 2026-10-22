@@ -1,22 +1,14 @@
 import { Refusal } from '../../refusals.js';
 import { DIFF_LIMITS } from '../diff/limits.js';
+import { assertNoIndexReadsItself } from '../diff/noIndex.js';
 import {
-  DIFF_CONFIG, DIFF_FLAGS, emptyTree, FORMAT_PATCH_FLAGS, onlyKeys, pairArgs, parseSource, resolveSource, WHITESPACE_FLAGS,
+  contextArg, DIFF_CONFIG, DIFF_FLAGS, emptyTree, FORMAT_PATCH_FLAGS, pairArgs, parseContext, parseSource, resolveSource, WHITESPACE_FLAGS,
 } from '../diff/source.js';
+import { bad, paramsObject } from '../params.js';
 import { detectLfs, parseFilePatch, parseRawNumstat } from '../parse/diff.js';
 import { assertPath } from '../validate.js';
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
-const bad = (msg) => new Refusal('BAD_PARAMS', msg);
-/** git accepts any int for -U; this one is "the whole file". */
-const FULL_CONTEXT = 2147483647;
-const MAX_CONTEXT = 1000;
-
-function paramsObject(raw, allowed, op) {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw bad(`${op} params must be an object`);
-  onlyKeys(raw, allowed, op);
-  return raw;
-}
 
 function whitespace(v) {
   if (v === undefined) return 'none';
@@ -33,20 +25,6 @@ async function untracked(git) {
     path, oldPath: null, status: '?', similarity: null, added: null, deleted: null, binary: false, submodule: false,
     oldMode: null, newMode: null, oldOid: null, newOid: null,
   }));
-}
-
-/**
- * `git diff --no-index /dev/null <path>` reads `<path>` itself only when it is not a directory to git's stat: a symlink to
- * a directory (listed by ls-files as the link) becomes `<path>/null`, a file outside the repo. This raw probe returns no
- * content (zero oids) and is stat-only for regular files; a special file at `<path>/null` (a FIFO) is opened and can block
- * until the read timeout. Unless it names exactly one entry, `path` itself, the read is refused.
- */
-async function assertNoIndexReadsItself(git, path) {
-  const r = await git([...DIFF_CONFIG, 'diff', '--no-index', ...DIFF_FLAGS, '--raw', '-z', '--no-abbrev', '--', '/dev/null', path], { okExit: [0, 1] });
-  const f = decoder.decode(r.stdout).split('\0');
-  if (f.length !== 3 || !f[0].startsWith(':') || f[1] !== path || f[2] !== '') {
-    throw new Refusal('BAD_PATH', `${path} is a link to a directory: its content is not shown`);
-  }
 }
 
 /** The download name, built here only: `[A-Za-z0-9._-]`, the project name capped at 80 characters. */
@@ -88,8 +66,7 @@ export const ops = [
     kind: 'read',
     params(raw) {
       const p = paramsObject(raw, ['source', 'path', 'oldPath', 'untracked', 'context', 'whitespace'], 'diff.file');
-      const context = p.context ?? 3;
-      if (context !== 'full' && !(Number.isInteger(context) && context >= 0 && context <= MAX_CONTEXT)) throw bad(`context must be 0…${MAX_CONTEXT} or 'full'`);
+      const context = parseContext(p.context);
       if (p.untracked !== undefined && typeof p.untracked !== 'boolean') throw bad('untracked must be a boolean');
       const oldPath = p.oldPath === undefined || p.oldPath === null ? null : assertPath(p.oldPath);
       if (p.untracked && oldPath) throw bad('an untracked file has no oldPath');
@@ -100,7 +77,7 @@ export const ops = [
     },
     async run(git, p) {
       const { pair } = await resolveSource(git, p.source);
-      const flags = [...DIFF_FLAGS, ...WHITESPACE_FLAGS[p.whitespace], `-U${p.context === 'full' ? FULL_CONTEXT : p.context}`];
+      const flags = [...DIFF_FLAGS, ...WHITESPACE_FLAGS[p.whitespace], contextArg(p.context)];
       let r;
       if (p.untracked) {
         if (!isWip(pair)) throw bad('untracked is allowed only for an index → worktree diff');

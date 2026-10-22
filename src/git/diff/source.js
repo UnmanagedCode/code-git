@@ -22,11 +22,24 @@ export const FORMAT_PATCH_FLAGS = [
 
 export const WHITESPACE_FLAGS = { none: [], eol: ['--ignore-space-at-eol'], change: ['-b'], all: ['-w'] };
 
+/** git accepts any int for -U; this one is "the whole file". */
+export const FULL_CONTEXT = 2147483647;
+/** A diff's `-U` flag for a validated context: 0…1000, or 'full'. */
+export const contextArg = (context) => `-U${context === 'full' ? FULL_CONTEXT : context}`;
+const MAX_CONTEXT = 1000;
+
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const text = (r) => decoder.decode(r.stdout);
 const lines = (r) => text(r).split('\n').filter(Boolean);
 const bad = (msg) => new Refusal('BAD_PARAMS', msg);
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** A validated `context`: 0…1000 or 'full'; absent → 3. */
+export function parseContext(v) {
+  const context = v ?? 3;
+  if (context !== 'full' && !(Number.isInteger(context) && context >= 0 && context <= MAX_CONTEXT)) throw bad(`context must be 0…${MAX_CONTEXT} or 'full'`);
+  return context;
+}
 
 /** Refuses any key of `o` outside `allowed`. */
 export function onlyKeys(o, allowed, what) {
@@ -113,8 +126,8 @@ export async function emptyTree(git) {
   return lines(await git(['hash-object', '-t', 'tree', '--stdin'], { stdin: '' }))[0];
 }
 
-/** `rev`'s commit oid, or null when it does not resolve to a commit. */
-async function commitOid(git, rev) {
+/** `rev`'s commit oid, or null when it does not resolve to a commit (an unborn HEAD included). */
+export async function commitOid(git, rev) {
   const r = await git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${rev}^{commit}`], { okExit: [0, 1] });
   const m = r.exitCode === 0 && /^([0-9a-f]{40}|[0-9a-f]{64})\n$/.exec(text(r));
   return m ? m[1] : null;
