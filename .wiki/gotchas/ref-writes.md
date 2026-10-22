@@ -1,0 +1,15 @@
+# Gotcha: writing refs
+
+The branch / tag / HEAD ops (`src/git/ops/branch.js`, `tag.js`, `head.js`, shared helpers in `src/git/refs/`). Rules and tables: `docs/refs.md`.
+
+- **Where a branch is checked out: `for-each-ref --format=%(worktreepath)`** (git ≥ 2.23), one command for every branch (`readHeads`). `worktree list -z` needs 2.36 and parses per worktree; the graph uses it for labels, the write ops do not. A branch being rebased in another worktree has an empty `%(worktreepath)` there (that worktree is detached), so fast-forward and force-move do not see it; `branch -d/-m` still get git's own check.
+- **"This checkout" is `symbolic-ref -q HEAD`, never a path compare** (`ownHead`): paths differ between cc's record, git's and the System's view (symlinks, containers).
+- **`branch -d a b c` deletes what it can and exits 1** for the rest. Re-read the heads afterwards (`branch.delete`): gone = deleted; still there with `'<name>' is not fully merged` in stderr = `notMerged`; anything else is a real failure.
+- **Fast-forward and force-move of a branch that is not checked out use `update-ref <ref> <new> <old>`**: the compare-and-swap refuses ("but expected") if the ref moved since the UI read it → `REF_MOVED`. Never `branch -f`, which has no old value.
+- **`push --porcelain` exits 1 when any ref is rejected and 128 when nothing ran**, so `okExit: [0, 1, 128]` and the outcome comes from the `<flag>\t<from>:<to>\t<summary>` lines. No ref line + non-zero exit = the push failed as a whole (auth, unreachable, a pre-push hook) — classify stderr (`classifyRemoteFailure`), else `GIT_FAILED` with it.
+- **`git stash create` is the hard-reset snapshot**: it writes a dangling commit of the tracked changes without touching the stash list or the worktree; empty output = nothing to save. `git stash apply <oid>` restores it until gc. Untracked files are never in it — and `reset --hard` never touches them either.
+- **An empty cherry-pick leaves `CHERRY_PICK_HEAD` behind** (exit 1, "The previous cherry-pick is now empty"), which would block the next operation: `head.cherryPick` aborts it and refuses `PICK_EMPTY`. An empty revert exits 1 without `REVERT_HEAD`. Local changes in the way make both exit **128** ("would be overwritten by merge"), not 1.
+- **A tag's undo needs the unpeeled object**: `%(objectname)` of `refs/tags/x` is the tag object for an annotated tag; `update-ref refs/tags/x <that>` brings back the message. The commit (`^{}`) would restore a lightweight tag instead.
+- **`tag -a -F -` strips `#` lines by default**: `--cleanup=verbatim` keeps the message byte for byte (and adds no trailing newline).
+- **`switch -c <b> <start>` with conflicting local changes creates no branch**: git checks the tree first. `switch` without `--no-guess` would invent a tracking branch from a remote name: always pass it.
+- **`for-each-ref refs/tags/v1` also matches `refs/tags/v1/x`**: filter to exact names (`refObjects`).

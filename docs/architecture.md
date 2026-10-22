@@ -42,6 +42,10 @@
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |
 | `src/git/ops/graph.js` | `graph.refs`, `graph.page`, `graph.stats`, `graph.search`, `graph.commit` ([graph](graph.md)) |
 | `src/git/parse/graph.js` | The graph ops' parsers: NUL-field records, refs, stashes, worktrees, shortstats, commit metadata, name-status |
+| `src/git/ops/branch.js`, `tag.js`, `head.js` | The ref-writing ops `branch.*`, `tag.*`, `head.*` ([refs](refs.md)) |
+| `src/git/refs/` | What those ops share: `check.js` (param checks: `paramsOf`, `optBool`, `shortBranch`, `fullRef`, `nameList`), `heads.js` (`readHeads` with `%(worktreepath)`, `ownHead`, the checked-out and `code-conductor/*` asserts), `resolve.js` (`refObjects`, `tagObjects`: unpeeled ids), `write.js` (`guardOverwrite` → `CHECKOUT_CONFLICT`, `casUpdate` → `REF_MOVED`), `undo.js` (`undoRecord`), `limits.js` (`REF_LIMITS`) |
+| `src/git/remote/` | Commands that talk to a remote: `push.js` (`remoteName`, `knownRemote`, `push`, `assertSomethingPushed`), `limits.js` (`NETWORK_LIMITS`) |
+| `src/git/parse/refs.js`, `parse/push.js` | `parseTracking`, `parseConflictFiles`; `parsePushPorcelain`, `classifyRemoteFailure` — pure |
 | `src/activity/log.js` | `createActivityLog()`: the ring, its events, cancel |
 | `src/routes/*.js` | One file per feature, each `mount(router, deps)`; `index.js` mounts them |
 
@@ -73,6 +77,9 @@
 | `features/graph/` | The commit graph ([graph](graph.md)): pure `layout.ts` (lanes), `rows.ts` (row order), `visibility.ts` (hide/solo → tips), `labels.ts`, `ancestry.ts`, `columns.ts` (the column catalogue), `windowFor.ts` (virtual window); the panels `GraphPanel.tsx`, `RefsPanel.tsx`, `details/`; `actions.ts` (`GRAPH_ACTIONS`), `contexts.ts`, `drag.ts`, `jump.ts`; `panel.ts` (the three `PanelDef`s) |
 | `state/graph.ts`, `state/graphPrefs.ts`, `state/graphSelection.ts` | Graph data per checkout (snapshot, pages, stats, refresh triggers); per-project prefs; selection and the file-open intent |
 | `shell/ContextMenuHost.tsx` | A context menu at the pointer for any registered context (`openContextMenu`) |
+| `features/branches/` | Branches, tags and HEAD ([refs](refs.md)): `api.ts` (wire types + op wrappers), `run.ts` (`runRefOp`: toast + graph refresh), `actions.ts` (`BRANCH_ACTIONS`, the cc HEAD gate `withCcHeadAck`), `refInfo.ts` (checked-out / cc-owned reads of the graph's refs), `RefDialogHost.tsx` + `dialogs/`, `TrackingBadge.tsx`, `CreateBranchButton.tsx` |
+| `state/refDialog.ts`, `state/refSelection.ts`, `state/branchTracking.ts` | The pending branch/tag dialog; the refs panel's branch selection per tab (`refSelectionReducer`, `selectedRefs`); ahead/behind per project (`useTracking`) |
+| `lib/opToast.ts`, `shell/Toasts.tsx` | `trackOp` (an op's running → outcome toast); the one sonner `<Toaster>`, mounted beside `<App>` in `main.tsx` |
 | `lib/cssVars.ts`, `lib/limit.ts` | `setCssPx` (the only `.style` user); `mapLimit` (bounded concurrency) |
 | `components/ui/`, `lib/utils.ts`, `lib/modalFocus.ts`, `lib/textEntry.ts`, `lib/useMediaQuery.ts` | Copied from cc's `web/src` on first use; the plugin's own code from then on |
 
@@ -94,7 +101,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 | Context-menu actions | `MenuAction[]` in the feature folder (fields below) | `ACTIONS` in `frontend/src/shell/menus.ts`; render with `<ActionMenuItems context ctx>` inside a `DropdownMenuContent`, or open at the pointer with `openContextMenu({host, context, ctx, at})` and a mounted `<ContextMenuHost host>` |
 | Per-checkout UI state | `frontend/src/state/<feature>.ts`: a `createStore` map keyed by `tabKey` | nothing; add its reset to `frontend/src/test/setup.ts` |
 
-**`MenuAction<C>`**: `{id, context, label: string | (ctx) => string, when?, run?, children?, group?, order?, destructive?}`. `children` is a submenu (its children inherit the context; a submenu with no child left after `when` is not shown); `group` puts a separator between consecutive actions of different groups; `order` (default 500) sorts, ties keep registration order. A menu with no action does not open.
+**`MenuAction<C>`**: `{id, context, label: string | (ctx) => string, when?, run?, children?, group?, order?, destructive?, primary?}`. `children` is a submenu — a list, or `(ctx) => list` to build it from the ctx (one item per remote) — whose children inherit the context; a submenu with no child left after `when` is not shown. `group` puts a separator between consecutive actions of different groups; `order` (default 500) sorts, ties keep registration order. `primary` marks the action a double-click runs: `runPrimary(context, ctx)` (`shell/menus.ts`) runs the first primary action offered and returns whether one ran. A menu with no action does not open.
 
 **Order convention**: 100 checkout / navigation, 200 create, 300 history-rewriting, 400 stash, 800 view, 900 copy, 950 visibility.
 
@@ -111,13 +118,21 @@ What a later card touches to add a feature — each is one file of its own plus 
 | `remote` | `{remote: string}` |
 | `worktree` | `{worktree: GitWorktree, ccCheckout: Target \| null}` |
 | `file` | `{commit: oid, parent: oid \| null, file: {status, path, oldPath}}` |
-| `branch-drop` | `{source: DragRef, target: DragRef}` — a branch chip dropped on another; `DragRef = {name: full refname, kind: 'local' \| 'remote', short, remote, oid}` |
+| `branch-drop` | `{source: DragRef, target: DragRef}` — a branch chip dropped on another; `DragRef = {name: full refname, kind: 'local' \| 'remote', short, remote, oid}`. Orders 100–199 are reserved for merge / rebase; Fast-forward is 200, Reset 300 |
+| `branches` | `{refs: Ref[]}` — two or more branches selected in the refs panel (local and remote) |
 
 **Graph stores other cards read** (`frontend/src/state/graphSelection.ts`, `features/graph/drag.ts`):
 
 - `graphSelectionStore`: per `tabKey`, `{ids, anchor, focus, items}`; `items` (also `selectedRows(tab)`) are `{kind: 'commit' | 'stash', oid} | {kind: 'wip', checkout: Target}`, top to bottom.
 - `fileIntentStore`: `{seq, tab, commit, parent, path, oldPath, selection}` — the last file clicked in the details panel (`requestFileOpen`); `seq` increases per request. `features/graph/diffWiring.ts` subscribes and opens the diff (`openDiff`); every graph entry point to a diff goes through `selectionDiff` / `openIn` there.
 - `branchDropStore`: `{seq, tab, source, target, at}` — every drop, before its menu opens.
+
+**Ref writes other cards build on:**
+
+- **Toasts**: `trackOp(fn, {running, done, failed?, toastRunning?})` in `lib/opToast.ts` for any op the user should see progress of; `done` may return a warning with an action, or `null` for no toast.
+- **Remote commands**: `src/git/remote/push.js` (`remoteName` in `params`, `knownRemote`, `push` with `NETWORK_LIMITS` and the auth/unreachable classification); fetch and pull reuse `NETWORK_LIMITS` and `classifyRemoteFailure`.
+- **Undo**: every ref-changing op returns `result.undo` (`undoRecord`, [refs → Undo record](refs.md#undo-record)); a journal reads it in `runRefOp` (`features/branches/run.ts`).
+- **Branch actions**: `checkout(tab, ref)`, `reset(tab, point, mode)` and `withCcHeadAck` in `features/branches/actions.ts`; `openRefDialog` for a confirmation.
 
 **Dynamic geometry** (positions, sizes from data) is set only through `setCssPx(el, '--name', px)` (`lib/cssVars.ts`: a finite number, a `--[a-z][a-z0-9-]*` name) and read by Tailwind classes such as `h-(--graph-total)`; `guards.test.ts` fails on any other `.style` access outside `components/ui/`.
 
@@ -229,6 +244,7 @@ For the undo card: what an op overwrites or deletes, and whether git can give it
 - `_diffRepo.js`: `diffRepo(t)` — one repo with every diff source and file state (merge, root, orphan, side branch, rename, binary, LFS pointer, oversized file, gitlink, `-rf` and `:(glob)*`, staged/unstaged/untracked, symlinks) and a hostile `.git/config` set last; the Playwright seed's `diffs` project reuses it.
 - `_ops.js`: `opWorld(t)` — one repo behind the fake cc and `op(name, params)` running an op as the route does; `hostile(repo)` sets `STAGE_HOSTILE_CONFIG` (the diff fixture's keys, a failing `diff.external`, `apply.whitespace=error`, `apply.ignoreWhitespace=change`); `status()`, `indexBlob(path)`, `execArgv()`. The staging, commit, ignore and patch op tests build on it; `RUN_REAL_GPG=1` enables the one real-gpg test.
 - `_git.js`: `makeRepo(t)` (temp dir, `main`, pinned identity and dates, cleaned up after the test), `bareRemote`, `worktreeAdd`, `hook`. `_ctx.js` builds a runner context; `_app.js` boots the server on port 0 and reads SSE.
+- `_refsWorld.js`: `refsWorld(t)` — a repo with one commit pushed to a bare `origin`, the fake cc, `op(name, params, worktree?)`, `worktree(name, branch)` (a git worktree registered with the fake cc), `argvs()` / `writes()` (the exec log after `BASE_ARGS`), `refused(code, extra)`, `endOfOptionsBefore(argv, value)`.
 - **UI** (`frontend/src/**/*.test.{ts,tsx}`, Vitest + happy-dom): `test/stubFetch.ts` (route table; an unstubbed or root-relative request fails), `test/fakeEventSource.ts`, `test/fixtures.ts`, `test/diffFixtures.ts` (`dfile`, `filesResult`, `hunk`, `fdiff`), `test/workdirWorld.ts` (a stubbed backend for the Changes panel and line staging: lists by source kind, the commit reads, every write answered ok unless overridden; `posts(op)`); `test/setup.ts` resets every store, storage and the URL after each test.
-- **Graph tests**: `tests/_graphFixture.js` (`buildGraphFixture`: a seeded large history via `git fast-import`); UI side `test/graphData.ts` (row/ref builders) and `test/graphBackend.ts` (`stubGraph(world)`: the graph ops over a mutable in-memory world). Tests that mock `@/shell/menus` call `vi.resetModules()` and import the menu modules dynamically: `test/setup.ts` has already loaded the real registry.
+- **Graph tests**: `tests/_graphFixture.js` (`buildGraphFixture`: a seeded large history via `git fast-import`); UI side `test/graphData.ts` (row/ref builders) and `test/graphBackend.ts` (`stubGraph(world, extra?)`: the graph ops over a mutable in-memory world, plus `extra` routes for another feature's ops). Tests that mock `@/shell/menus` call `vi.resetModules()` and import the menu modules dynamically: `test/setup.ts` has already loaded the real registry.
 - **Harnesses**: `harness/playwright/` (seeded screenshots, golden path, the diff path, the staging path, the graph's visual and perf checks, read-only live checks) and `harness/mutation/` (code-mutant routes `server` and `ui`).

@@ -14,6 +14,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Commit graph | The checkout's history as a lane graph with ref labels, WIP and stash rows, search, keyboard and multi-select; a refs panel (hide / solo / pin) and commit details. [docs/graph.md](docs/graph.md) |
 | Diff | A commit, unstaged or staged changes, two refs (`..` / `...`), a run of commits, or a commit vs the working directory. File list; Hunk, Inline and Split modes with word-level and syntax highlighting; File view; whitespace and context controls; wrap; change navigation and in-file search; binary, rename, LFS-pointer, submodule and oversized states; patch download/copy. Opened from the graph (a commit, a selection, a file in the details), the Changes panel's rows, or the Compare panel (left) |
 | Changes | Stage, unstage and discard files, hunks and lines; commit, amend, message-only amend, skip hooks, commit template; ignore; restore a file from a commit; apply a patch. Right slot (it gives way to the commit details while a commit is selected), opened from the graph's WIP row; the **Changes (n)** dialog on narrow screens |
+| Branches & tags | Create, checkout (double-click; a remote branch becomes a tracking branch), rename, delete (several at once, or on a remote), upstream and ahead/behind, fast-forward; tags create (annotated or not), push, delete; reset soft/mixed/hard, revert, cherry-pick; Fast-forward and Reset on a branch dropped onto another. Destructive actions confirm first; `code-conductor/*` branches warn. [docs/refs.md](docs/refs.md) |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
 
 Details: [docs/features.md](docs/features.md).
@@ -36,7 +37,7 @@ docs/                   features, protocol, architecture, GitKraken reference
 .wiki/                  gotchas, decisions, glossary
 ```
 
-Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md).
+Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md).
 
 ## Run
 
@@ -80,4 +81,5 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **Hunk and line staging is for modified (`M`) text files only**, with whitespace shown; other files are staged whole.
 - **A patch applies to the working tree or the index, never both at once** (`git apply --index` writes through untracked symlinks); apply, then stage.
 - **Ignore writes the root `.gitignore`** only, never `.git/info/exclude`.
+- **Ref writes need git ≥ 2.24** on the project's System; remote branch delete assumes the default fetch refspec; a remote ref's undo value is the best one known locally ([docs/refs.md → Known limitations](docs/refs.md#known-limitations)).
 - **Writes are not cancellable by default**: an op opts in only where aborting mid-command is safe; a closed browser tab does not abort a write.

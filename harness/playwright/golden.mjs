@@ -28,8 +28,9 @@ try {
     await page.getByRole('button', { name: 'Open repository', exact: true }).click();
     await page.getByRole('button', { name: 'app', exact: true }).click();
     await page.getByRole('heading', { name: 'app', exact: true }).waitFor();
-    await page.getByLabel('2 ahead').waitFor();
-    check(await page.getByLabel('1 behind').isVisible(), 'app header shows ahead 2 / behind 1');
+    // exact: the refs panel's tracking badge reads "2 ahead, 1 behind".
+    await page.getByLabel('2 ahead', { exact: true }).waitFor();
+    check(await page.getByLabel('1 behind', { exact: true }).isVisible(), 'app header shows ahead 2 / behind 1');
     // Scoped to the header: the graph's WIP row shows the same counts.
     const changes = page.getByRole('list', { name: 'Changes' });
     for (const t of ['1 staged', '1 unstaged', '1 untracked', '0 conflicted']) check(await changes.getByText(t, { exact: true }).isVisible(), `app header shows ${t}`);

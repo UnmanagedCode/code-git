@@ -110,6 +110,14 @@ Right slot, while the graph has nothing or a single WIP row selected (below `lg`
 
 The lists load when the tab is first shown, on Refresh and after every op; there is no file watcher. Every op also reloads the repo header and an open unstaged/staged diff.
 
+## Branches and tags
+
+Write actions on the graph's branch, tag, commit and drop menus, a dialog for each destructive one, double-click to check out (a tag: jump), a toolbar **Branch** button (Ctrl/⌘+B), multi-select delete in the refs panel and ahead/behind badges on local branches. Full behaviour, the checked-out and `code-conductor/*` rules: [refs](refs.md).
+
+## Toasts
+
+Bottom right (sonner, following the theme). A one-click op shows its progress ("Pushing v1 to origin…") and is replaced in place by its outcome: success, a warning with an action (a conflicted cherry-pick offers **Abort**) or the refusal with git's stderr. Errors stay `ERROR_MS` (`lib/opToast.ts`). An op run from a dialog shows its progress and refusal in the dialog and toasts only its success.
+
 ## Activity panel
 
 Bottom slot, collapsible (the **Activity** toggle). Newest entry first.
