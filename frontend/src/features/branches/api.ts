@@ -16,14 +16,16 @@ export interface UndoRecord {
   worktreeSnapshot: string | null;
 }
 export interface Rejected { ref: string; reason: string }
+/** A ref the remote reported that the push did not ask for (`flag`: git's porcelain flag). */
+export interface Unrequested { ref: string; flag: string }
 
 export interface Tracking { upstream: string | null; ahead: number; behind: number; gone: boolean }
 export interface TrackingResult { remotes: string[]; branches: Record<string, Tracking> }
 export interface CreateResult { ref: string; oid: string; checkedOut: boolean; undo: UndoRecord }
 export interface CheckoutResult { branch: string; created: boolean; localExisted: boolean; fastForwarded: boolean; ffBlocked: string[] | null; undo: UndoRecord }
 export interface DeleteResult { deleted: string[]; notMerged: string[]; undo: UndoRecord }
-export interface RemoteDeleteResult { deleted: string[]; rejected: Rejected[]; undo: UndoRecord }
-export interface PushResult { pushed: string[]; upToDate: string[]; rejected: Rejected[]; undo: UndoRecord }
+export interface RemoteDeleteResult { deleted: string[]; rejected: Rejected[]; unrequested: Unrequested[]; undo: UndoRecord }
+export interface PushResult { pushed: string[]; upToDate: string[]; rejected: Rejected[]; unrequested: Unrequested[]; undo: UndoRecord }
 export interface ApplyResult { conflicts: boolean; files: string[]; oid: string | null; undo: UndoRecord }
 export type ResetMode = 'soft' | 'mixed' | 'hard';
 
