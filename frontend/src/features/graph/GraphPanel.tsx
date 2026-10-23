@@ -25,6 +25,7 @@ import { DragGhost, startBranchDrag, toDragRef } from './drag';
 import { ColumnToggles, GraphHeader, shownColumns } from './GraphHeader';
 import { GraphRowView } from './GraphRowView';
 import { ChangesButton } from '@/features/workdir/ChangesButton';
+import { SubmodulesButton } from '@/features/submodules/SubmodulesPanel';
 import { openWip } from '@/features/workdir/entry';
 import { openSelectionDiff } from './diffWiring';
 import { detailsRequestStore, jumpStore, requestDetails, takeJump } from './jump';
@@ -394,6 +395,7 @@ function GraphView({ tab }: { tab: Tab }) {
                 <GitCompareIcon /> Compare
               </Button>
               <ChangesButton tab={tab} />
+              <SubmodulesButton key={tabKey(tab)} tab={tab} />
             </>
           )}
           <DropdownMenu>

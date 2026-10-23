@@ -53,3 +53,17 @@ test('a warning outcome keeps its action; untrusted text renders as text', async
   expect(toastsEl().querySelector('img, b')).toBeNull();
   expect(within(toastsEl()).getByRole('button', { name: 'Abort' })).toBeTruthy();
 });
+
+test('elapsed: the running text gains the seconds elapsed, once a second, until the op ends', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+  render(<Toasts />);
+  let finish!: () => void;
+  const p = trackOp(() => new Promise<void>((r) => { finish = r; }), { running: 'Updating libs/a…', elapsed: true, done: () => 'Updated libs/a' });
+  await waitFor(() => expect(toastTexts()).toEqual(['Updating libs/a…']));
+  act(() => { vi.advanceTimersByTime(2000); });
+  await waitFor(() => expect(toastTexts()).toEqual(['Updating libs/a… 2 s']));
+  await act(async () => finish());
+  await p;
+  act(() => { vi.advanceTimersByTime(3000); });
+  await waitFor(() => expect(toastTexts()).toEqual(['Updated libs/a']));
+});

@@ -6,6 +6,7 @@ import { RemotesHost } from '@/features/remotes/RemotesHost';
 import { RepoPicker } from '@/features/repos/RepoPicker';
 import { StashDialogHost } from '@/features/stash/StashDialogHost';
 import { SequenceDialogHost } from '@/features/sequence/SequenceDialogHost';
+import { SubmoduleDialogHost } from '@/features/submodules/SubmoduleDialogHost';
 import { RepoHeader } from '@/features/repo/RepoHeader';
 import { TabBar } from '@/features/tabs/TabBar';
 import { useTabShortcuts } from '@/features/tabs/useTabShortcuts';
@@ -62,6 +63,7 @@ export function Shell() {
       <StashDialogHost />
       <RemotesHost />
       <SequenceDialogHost />
+      <SubmoduleDialogHost />
     </div>
   );
 }

@@ -80,6 +80,8 @@ export function stubGraph(world: GraphWorld, extra: Parameters<typeof stubFetch>
     'POST api/ops/remote.list': { ok: true, result: { remotes: [] } },
     // The diff the graph opens: its file list only.
     'POST api/ops/diff.files': { ok: true, result: filesResult([]) },
+    // The Submodules panel beside the graph.
+    'POST api/ops/submodule.list': { ok: true, result: { submodules: [], truncated: false } },
     ...extra,
   });
 }

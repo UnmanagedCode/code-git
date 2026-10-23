@@ -25,7 +25,8 @@ test('the guards see the sources they cover', () => {
     'src/features/diff/DiffPanel.tsx', 'src/features/diff/highlight/prism.ts', 'src/lib/download.ts',
     'src/features/graph/GraphPanel.tsx', 'src/features/graph/LaneSvg.tsx', 'src/features/graph/RefChip.tsx', 'src/features/graph/drag.ts',
     'src/features/graph/details/CommitDetails.tsx', 'src/shell/ContextMenuHost.tsx', 'src/lib/cssVars.ts',
-    'src/features/workdir/WorkdirPanel.tsx', 'src/features/workdir/CommitBox.tsx', 'src/features/staging/SelectionBar.tsx', 'src/lib/confirm.ts']) expect(seen).toContain(must);
+    'src/features/workdir/WorkdirPanel.tsx', 'src/features/workdir/CommitBox.tsx', 'src/features/staging/SelectionBar.tsx', 'src/lib/confirm.ts',
+    'src/features/submodules/SubmodulesPanel.tsx', 'src/features/submodules/dialogs/PointerCommitDialog.tsx']) expect(seen).toContain(must);
   expect(seen.some((f) => f.startsWith('dist') || f.includes('node_modules'))).toBe(false);
 });
 
