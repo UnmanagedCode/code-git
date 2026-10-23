@@ -73,7 +73,7 @@
 | `lib/api.ts` | `api()`: relative URLs only, JSON body + content type on non-GET, `ApiError` |
 | `lib/endpoints.ts` | Typed calls and the API's TypeScript shapes |
 | `lib/route.ts` | Query-string route read/write |
-| `lib/sse.ts` | One shared `EventSource` on `api/activity/events`; `setEventSourceFactory` is the test seam |
+| `lib/sse.ts` | One shared `EventSource` on `api/activity/events`; a handler gets the event's entry (nothing on a reconnect); `setEventSourceFactory` is the test seam |
 | `lib/storage.ts` | The only `localStorage` user; keys prefixed `code-git:` |
 | `state/store.ts` | `createStore` + `useStore` (`useSyncExternalStore`) |
 | `state/tabs.ts` | `tabsReducer` (pure), `tabsStore`, `tabKey`, `parentTab`, `refsKey`, `prefsKey`, `isSubChain`, persistence |
@@ -93,6 +93,7 @@
 | `lib/download.ts` | `downloadBytes` (blob URL → `a.download`), `decodeBase64`: the only object-URL / download-link builder |
 | `shell/Shell.tsx` | Layout, panel slots, picker |
 | `shell/panels.ts`, `shell/menus.ts`, `shell/ActionMenu.tsx` | The panel and context-menu registries |
+| `state/undo.ts`, `features/undo/` | The journal's slots per `tabKey` (`useUndo`, `refreshUndo`: refetched on mount, focus, and a finished write in that checkout on the activity stream — no op wrapper knows about undo); `api.ts`, `flows.ts` (`undoFlow` / `redoFlow`: the confirmation from the slot's `confirm`, then `runRefOp`; `blockedReason`; `UNDO_SHELL_KEYS`), `keys.ts`, `commands.ts`, `UndoButtons` (the repo header's) |
 | `shell/commands.ts`, `features/*/commands.ts`, `shell/CommandPalette.tsx`, `shell/ShortcutSheet.tsx`, `shell/overlays.ts`, `shell/keys.ts`, `shell/useShellKeys.ts` | The command palette (`COMMANDS`, `filterCommands`, `filterPicks`: each feature's `commands.ts` list) and the shortcut sheet, both mounted by `Shell` and opened from `overlayStore`; the shell's own keys (Ctrl/⌘+P, Ctrl/⌘+/) and `useShellKeys` (global keys, off in text fields and dialogs) |
 | `shell/shortcuts.ts`, `features/*/keys.ts` | The shortcut catalog: `Combo`, `Shortcut`, `matches` / `matchCombo` (the only reader of an event's key and modifier fields: `guards.test.ts`), `pointerMods` (click modifiers), `comboLabel` / `shortcutLabel`, `SHORTCUT_GROUPS` (each feature's `keys.ts` list, by scope) |
 | `features/<feature>/` | Feature components and their tests |
@@ -133,6 +134,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 | Opening the stash save dialog (all, selected files, staged, or a line selection) | `openStashSave(tab, preset)` (`features/stash/actions.ts`) | nothing (`Shell` mounts `StashDialogHost`) |
 | Opening a submodule as its own tab | `openSubmodule(tab, entry)` (`features/submodules/actions.ts`); a tab's way back is `backToParent(tab)` (`features/tabs/actions.ts`) | nothing (closing a submodule tab offers the pointer commit by itself) |
 | Context-menu actions | `MenuAction[]` in the feature folder (fields below) | `ACTIONS` in `frontend/src/shell/menus.ts`; render with `<ActionMenuItems context ctx>` inside a `DropdownMenuContent`, or open at the pointer with `openContextMenu({host, context, ctx, at})` and a mounted `<ContextMenuHost host>` |
+| Undo or redo from another surface | `undoFlow(tab, dir?)` / `redoFlow(tab)` (`features/undo/flows.ts`): the confirmation, toast, counter-action and cc review come with it | nothing |
 | A palette command | a `Command` (`{id, title, group, shortcut?, global?, when?(tab), run?(tab), pick?: {placeholder, items(tab), typed?(text), run(tab, item)}}`) in the feature's `commands.ts`, calling an entry point the feature already has | the feature's list in `COMMANDS` (`shell/commands.ts`), once per feature |
 | A keyboard shortcut | a `Shortcut` (`{id, label, scope, combos: [{key, mod?, shift?, alt?, exact?}]}`; a modifier is `true`, `false` (the default) or `'any'`) in the feature's `keys.ts`; its handler tests the event with `matches(e, SHORTCUT)` / `matchCombo` — never `e.key` or a modifier field | the feature's list in `SHORTCUT_GROUPS` (`shell/shortcuts.ts`), once per feature |
 | Per-checkout UI state | `frontend/src/state/<feature>.ts`: a `createStore` map keyed by `tabKey` | nothing; add its reset to `frontend/src/test/setup.ts` |

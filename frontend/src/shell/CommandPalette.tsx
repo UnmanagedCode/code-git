@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { activeTab, useTabs } from '@/state/tabs';
-import { COMMANDS, filterCommands, filterPicks, type Command, type PickItem } from './commands';
+import { COMMANDS, filterCommands, filterPicks, titleOf, type Command, type PickItem } from './commands';
 import { PALETTE_MOVE_KEY, PALETTE_RUN_KEY } from './keys';
 import { closeOverlay, useOverlay } from './overlays';
 import { matchCombo, matches, shortcutLabel } from './shortcuts';
@@ -53,7 +53,7 @@ export function CommandPalette() {
       }));
     }
     return filterCommands(COMMANDS, tab, query).map((c) => ({
-      key: c.id, label: c.title, detail: c.group, hint: c.shortcut ? shortcutLabel(c.shortcut) : undefined,
+      key: c.id, label: titleOf(c, tab), detail: c.group, hint: c.shortcut ? shortcutLabel(c.shortcut) : undefined,
       run: () => (c.pick ? startPick(c) : finish(() => c.run?.(tab!))),
     }));
   }, [stage, query, tab]);
@@ -83,12 +83,12 @@ export function CommandPalette() {
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) closeOverlay(); }}>
       <DialogContent className="top-[15%] translate-y-0 gap-2 p-2 sm:max-w-xl" showCloseButton={false} onEscapeKeyDown={onEscape}>
-        <DialogTitle className="sr-only">{stage ? stage.command.title : 'Commands'}</DialogTitle>
+        <DialogTitle className="sr-only">{stage ? titleOf(stage.command, tab) : 'Commands'}</DialogTitle>
         <DialogDescription className="sr-only">Type to filter, arrows to move, Enter to run.</DialogDescription>
         <Input
           autoFocus
           role="combobox"
-          aria-label={stage ? stage.command.title : 'Command'}
+          aria-label={stage ? titleOf(stage.command, tab) : 'Command'}
           aria-expanded
           aria-controls={listId}
           aria-activedescendant={rows.length ? optionId(current) : undefined}
@@ -98,7 +98,7 @@ export function CommandPalette() {
           onKeyDown={onKeyDown}
         />
         {stage?.error && <p role="alert" className="px-2 text-sm text-destructive">{stage.error}</p>}
-        <ul id={listId} role="listbox" aria-label={stage ? stage.command.title : 'Commands'} className="max-h-[60dvh] overflow-y-auto">
+        <ul id={listId} role="listbox" aria-label={stage ? titleOf(stage.command, tab) : 'Commands'} className="max-h-[60dvh] overflow-y-auto">
           {stage && !stage.items && <li className="px-2 py-1.5 text-sm text-muted-foreground">Loading…</li>}
           {rows.map((r, i) => (
             <li

@@ -10,6 +10,7 @@ import { SubmoduleDialogHost } from '@/features/submodules/SubmoduleDialogHost';
 import { RepoHeader } from '@/features/repo/RepoHeader';
 import { TabBar } from '@/features/tabs/TabBar';
 import { useTabShortcuts } from '@/features/tabs/useTabShortcuts';
+import { UNDO_SHELL_KEYS } from '@/features/undo/flows';
 import { hidePanel, useShownPanel } from '@/state/shownPanel';
 import { activeTab, dispatchTabs, tabKey, useTabs, type Tab } from '@/state/tabs';
 import { CommandPalette } from './CommandPalette';
@@ -41,7 +42,7 @@ export function Shell() {
   const tab = activeTab(tabs);
   const [pickerOpen, setPickerOpen] = useState(false);
   useTabShortcuts();
-  useShellKeys();
+  useShellKeys(UNDO_SHELL_KEYS);
   return (
     <div className="flex h-full flex-col">
       <TabBar onAdd={() => setPickerOpen(true)} />

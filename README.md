@@ -19,6 +19,8 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Merge & rebase | Merge a branch (fast-forward when possible, no fast-forward, squash) and rebase onto a branch or commit, from the drag menu, a branch's or commit's menu; rebase the newest N commits onto a branch; an interactive-rebase editor (pick, reword, edit, squash, fixup, drop; drag or keys to reorder) that also cherry-picks or squashes N selected commits; a three-pane merge tool for a conflicted file (pick lines, edit the result, save, mark resolved) or take one side. What is in progress (a merge, rebase, cherry-pick or revert, or conflicts left behind) shows as a banner in the Changes panel, after a reload too: Continue, Skip, Abort…. A pull that stops on conflicts stays in progress. [docs/merge.md](docs/merge.md) |
 | Remotes | Add, edit, rename, remove remotes; Fetch (all or one, prune behind a confirmation), auto-fetch (off by default); Pull (fast-forward if possible, fast-forward only, rebase; a per-project default); Push a branch (upstream, first push, a drop onto a remote branch, after a commit), force-with-lease behind a confirmation that checks the remote first. Credentials only from the System. [docs/remotes.md](docs/remotes.md) |
 | Submodules | Status of each submodule (uninitialised, not cloned, out of sync, modified, untracked, added, conflicted, blocked); add, initialize, update (recursive), sync, edit url, remove; open one as its own tab, with an offer to commit its new pointer in the parent on the way out. [docs/submodules.md](docs/submodules.md) |
+| Undo / redo | The checkout's last commit, checkout, branch / tag change, reset, cherry-pick, revert, merge, rebase or discard, undone and redone from the header, Ctrl/⌘+Z / Ctrl/⌘+Shift+Z or the palette; refused once a created commit is on a remote. [docs/undo.md](docs/undo.md) |
+| Command palette | Ctrl/⌘+P: every command by name, with a second step to pick a branch, a tab or a file; Ctrl/⌘+/ lists every shortcut |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
 
 Details: [docs/features.md](docs/features.md).
@@ -69,6 +71,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 
 ## Known limitations
 
+- **Undo is the last op only, in memory**: one undo and one redo per checkout, forgotten on a backend restart and cleared by any change it does not cover (staging, stash, remotes, …); stash and remote-config ops are not undoable yet ([docs/undo.md → Residuals](docs/undo.md#residuals)).
 - **No progress output for long ops.** cc's exec buffers output; a running op shows only an elapsed timer (and Cancel when the op allows it).
 - **Ctrl/⌘+digit works only while focus is inside the plugin frame.** With focus in cc's own UI, cc gets the key.
 - **The activity log is in memory**: capped (`LIMITS.activityRing` in `src/git/limits.js`) and cleared when the backend restarts.

@@ -2,6 +2,7 @@ import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, ChevronRightIcon, CommandIco
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { backToParent, tabLabel } from '@/features/tabs/actions';
+import { UndoButtons } from '@/features/undo/UndoButtons';
 import type { RepoSummary } from '@/lib/endpoints';
 import { PALETTE_KEY } from '@/shell/keys';
 import { openPalette } from '@/shell/overlays';
@@ -102,6 +103,7 @@ export function RepoHeader({ tab }: { tab: Tab }) {
       )}
       {!summary && loading && <span className="text-sm text-muted-foreground">Loading…</span>}
       <span className="ml-auto flex items-center gap-1" role="group" aria-label="Quick actions">
+        <UndoButtons tab={tab} />
         <Button variant="ghost" size="icon-sm" aria-label={`Commands (${shortcutLabel(PALETTE_KEY)})`} title={`Commands (${shortcutLabel(PALETTE_KEY)})`} onClick={openPalette}>
           <CommandIcon />
         </Button>

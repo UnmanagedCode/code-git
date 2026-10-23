@@ -54,16 +54,25 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 | HEAD | Branch name; **detached** badge + the first 10 characters of the commit id; or the unborn branch name + **no commits yet** badge |
 | Upstream | `no upstream`, or the upstream name with ↑ahead ↓behind |
 | Changes | `N staged`, `N unstaged`, `N untracked`, `N conflicted` (non-zero counts emphasised; conflicted in the destructive colour) |
+| Undo, Redo | Undo / redo the checkout's last registered op ([Undo and redo](#undo-and-redo)); the title names it, a disabled one says why |
 | Commands | Opens the command palette (below) |
 | Refresh | Reloads the summary (spins while loading) |
 | Error | `NOT_A_REPO`: "Not a git repository" plus git's stderr in a block; any other refusal: its message. A refresh the user cancelled from the activity panel is not an error: the previous summary stays |
 
+## Undo and redo
+
+- **Undo** (Ctrl/⌘+Z, the header's **Undo**, the palette's **Undo …**) takes back the checkout's last registered op; **Redo** (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y, **Redo**) runs it again. One step each way, per checkout; a backend restart forgets it.
+- **Undoable**: commit (amend and message-only amend too), checkout, branch create / rename / delete / move / fast-forward, tag create / delete, reset (soft, mixed, hard), cherry-pick, revert, merge (fast-forward or merge commit), rebase and interactive rebase, a merge / rebase / cherry-pick / revert finished with Continue or Skip, discarding files, discarding lines. Any other change (staging, stash, push, fetch, pull, remote config, …) clears both, so an undo never runs over it.
+- **Asks first** when the undo or redo deletes a branch or tag (listed), discards files again (listed), or runs a hard reset (always, even on a clean tree). Everything else runs at once; its toast ("Undid …") offers the opposite action.
+- **Refused, nothing changed**: a commit it would take back is already on a remote (any remote-tracking ref, as last fetched); something changed since (HEAD, a ref, a discarded file — then the entry is dropped); a merge / rebase / cherry-pick / revert or conflicts in progress (both buttons disabled with that reason); local changes in the way (stash them and retry); the branch is checked out in another worktree; a `code-conductor/*` branch, which asks first (**Review…**).
+- Keys are off while focus is in a text field (its own undo wins) or a dialog is open. Reference: [undo](undo.md).
+
 ## Command palette and shortcuts
 
 - **Command palette**: Ctrl/⌘+P, or the header's **Commands** button. Type to filter (the letters in order, case-insensitive), ↑/↓ to move, Enter or a click to run, Esc to close. A command that picks (**Checkout branch…**, **Go to tab…**) opens a second list: type to filter it, Enter runs it with the highlighted item, Esc goes back to the commands. Each row shows its group and, when it has one, its shortcut.
-- Commands are offered only where they apply (no tab open: only **Show keyboard shortcuts**). They run what the rest of the UI runs, with the same confirmations and toasts: **Show changes**, **Stage all**, **Unstage all**, **Stash changes…**, **Create branch…**, **Checkout branch…** (local branches but HEAD's, then remote branches), **Fetch all remotes**, **Pull** (the project's default mode) and one per pull mode, **Push**, **Go to tab…** (more than one tab), **Close tab**, **Refresh** (the header summary and the graph), **Show keyboard shortcuts**.
+- Commands are offered only where they apply (no tab open: only **Show keyboard shortcuts**). They run what the rest of the UI runs, with the same confirmations and toasts: **Undo …** / **Redo …** (named after the entry), **Show changes**, **Stage all**, **Unstage all**, **Stash changes…**, **Create branch…**, **Checkout branch…** (local branches but HEAD's, then remote branches), **Fetch all remotes**, **Pull** (the project's default mode) and one per pull mode, **Push**, **Go to tab…** (more than one tab), **Close tab**, **Refresh** (the header summary and the graph), **Show keyboard shortcuts**.
 - **Keyboard shortcuts sheet**: Ctrl/⌘+/ (or the palette) lists every shortcut by where it acts, generated from the one catalog the key handlers use, so it is always complete.
-- Ctrl/⌘+P and Ctrl/⌘+/ do nothing while focus is in a text field or a dialog is open. Ctrl/⌘+P never opens the browser's print dialog from the app.
+- Ctrl/⌘+P, Ctrl/⌘+/ and the undo keys do nothing while focus is in a text field or a dialog is open. Ctrl/⌘+P never opens the browser's print dialog from the app.
 
 ## Commit graph
 

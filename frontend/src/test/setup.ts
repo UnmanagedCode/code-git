@@ -6,6 +6,7 @@ import { resetDrag } from '@/features/graph/drag';
 import { resetJump } from '@/features/graph/jump';
 import { contextMenuStore } from '@/shell/ContextMenuHost';
 import { resetOverlays } from '@/shell/overlays';
+import { resetUndo } from '@/state/undo';
 import { resetGraph } from '@/state/graph';
 import { resetGraphPrefs } from '@/state/graphPrefs';
 import { resetGraphSelection } from '@/state/graphSelection';
@@ -50,6 +51,7 @@ afterEach(() => {
   resetJump();
   contextMenuStore.set(null);
   resetOverlays();
+  resetUndo();
   resetWorkdir();
   resetConfirm();
   resetLineSelection();
