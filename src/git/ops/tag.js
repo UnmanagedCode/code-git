@@ -3,7 +3,7 @@ import { commitOid } from '../diff/source.js';
 import { paramsObject } from '../params.js';
 import { nameList, shortBranch } from '../refs/check.js';
 import { REF_LIMITS } from '../refs/limits.js';
-import { tagObjects } from '../refs/resolve.js';
+import { assertNoSymref, tagObjects } from '../refs/resolve.js';
 import { undoRecord } from '../refs/undo.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
 import { assertOid } from '../validate.js';
@@ -37,6 +37,8 @@ export const ops = [
     },
     async run(git, { name, oid, message }) {
       if ((await tagObjects(git, [name])).has(name)) throw new Refusal('REF_EXISTS', `tag ${name} already exists`);
+      // A dangling symbolic ref is not listed above, and git would create its target under this name.
+      await assertNoSymref(git, tagRef(name));
       if (await commitOid(git, oid) !== oid) throw new Refusal('REV_UNKNOWN', `${oid} is not a commit`);
       // A message is annotated, byte for byte (verbatim: no comment stripping); the config's tag.gpgSign still applies.
       if (message) await git(['tag', '-a', '--cleanup=verbatim', '-F', '-', '--end-of-options', name, oid], { stdin: message });

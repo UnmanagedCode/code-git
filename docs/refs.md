@@ -70,7 +70,7 @@ Under `--work-tree=.` (`BASE_ARGS`) a bare repository's own files would look lik
 
 ### Symbolic refs
 
-A symbolic ref under `refs/heads` (`git symbolic-ref refs/heads/alias refs/heads/x`) reports its target's oid and no worktree, so writing through it would move or check out the target past both guards above. Checkout, rename, fast-forward, force-move and set-upstream refuse one with `SYMBOLIC_REF` (`target` = what it points at), as does checking out a remote alias such as `refs/remotes/origin/HEAD` (the graph does not list remote aliases). Delete removes the alias alone; its undo entry is `{ref, old: null, new: null, symref: <target>}`. `update-ref` always runs with `--no-deref`.
+A symbolic ref under `refs/heads` (`git symbolic-ref refs/heads/alias refs/heads/x`) reports its target's oid and no worktree, so writing through it would move or check out the target past both guards above. Checkout, rename, fast-forward, force-move and set-upstream refuse one with `SYMBOLIC_REF` (`target` = what it points at), as does checking out a remote alias such as `refs/remotes/origin/HEAD` (the graph does not list remote aliases). Delete removes the alias alone; its undo entry is `{ref, old: null, new: null, symref: <target>}`. A dangling symbolic ref (its target missing) is invisible to `for-each-ref`, so the exact name is also asked of `symbolic-ref -q`: creating a branch or tag of that name (git would create the target, possibly in another namespace), renaming from or to it, and deleting it refuse `SYMBOLIC_REF`. `update-ref` always runs with `--no-deref`.
 
 ### code-conductor/* branches
 

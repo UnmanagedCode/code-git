@@ -438,3 +438,30 @@ test('on a code-conductor/* HEAD, checking out its own remote twin only fast-for
   assert.equal(w.repo.git('-C', wt.dir, 'rev-parse', 'HEAD'), agent);
   assert.equal(r.undo.head.old.branch, 'refs/heads/code-conductor/wt');
 });
+
+test('a dangling symbolic ref (invisible to for-each-ref) refuses create, create+checkout, tag.create, rename and delete; no ref is written anywhere', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('branch', 'plain');
+  w.repo.git('symbolic-ref', 'refs/heads/a', 'refs/tags/t');
+  w.repo.git('symbolic-ref', 'refs/tags/ta', 'refs/heads/x');
+  const allRefs = () => w.repo.git('for-each-ref', '--format=%(refname) %(objectname)');
+  const before = allRefs();
+  const attempts = [
+    ['branch.create', { name: 'a' }, 'refs/tags/t'],
+    ['branch.create', { name: 'a', checkout: true }, 'refs/tags/t'],
+    ['tag.create', { name: 'ta', oid: w.base }, 'refs/heads/x'],
+    ['branch.rename', { name: 'plain', newName: 'a' }, 'refs/tags/t'],
+    ['branch.rename', { name: 'a', newName: 'renamed' }, 'refs/tags/t'],
+    ['branch.delete', { names: ['a'] }, 'refs/tags/t'],
+  ];
+  for (const [name, params, target] of attempts) {
+    await assert.rejects(w.op(name, params), refused('SYMBOLIC_REF', { target }), `${name} ${JSON.stringify(params)}`);
+  }
+  assert.equal(allRefs(), before, 'no ref created, renamed or deleted in any namespace');
+  assert.equal(w.exists('refs/tags/t'), false);
+  assert.equal(w.exists('refs/heads/x'), false);
+  assert.equal(w.repo.git('symbolic-ref', 'refs/heads/a'), 'refs/tags/t');
+  assert.equal(w.repo.git('symbolic-ref', 'refs/tags/ta'), 'refs/heads/x');
+  assert.equal(head(w), 'refs/heads/main');
+  assert.deepEqual(w.writes(), []);
+});

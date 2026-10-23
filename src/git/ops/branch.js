@@ -5,7 +5,7 @@ import { parseTracking } from '../parse/refs.js';
 import { optBool, paramsObject } from '../params.js';
 import { fullRef, nameList, shortBranch } from '../refs/check.js';
 import { assertCcAck, assertCcHeadAck, assertNotCheckedOut, assertNotSymbolic, isCcOwned, ownHead, readHeads } from '../refs/heads.js';
-import { refEntries, refObjects } from '../refs/resolve.js';
+import { assertNoSymref, refEntries, refObjects } from '../refs/resolve.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
 import { undoRecord } from '../refs/undo.js';
 import { casUpdate, guardOverwrite } from '../refs/write.js';
@@ -33,6 +33,13 @@ function headOf(heads, ref) {
   const h = heads.get(ref);
   if (!h) throw new Refusal('REF_UNKNOWN', `no branch ${shortOf(ref)}`);
   return h;
+}
+
+/** A name readHeads did not list: SYMBOLIC_REF when it is a dangling symbolic ref, else REF_UNKNOWN. */
+async function assertListed(git, heads, ref) {
+  if (heads.has(ref)) return;
+  await assertNoSymref(git, ref);
+  headOf(heads, ref);
 }
 
 /** headOf, refusing a symbolic ref (SYMBOLIC_REF): the subject of a ref write must be the branch itself. */
@@ -128,6 +135,8 @@ export const ops = [
       const ref = local(name);
       const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
       if (heads.has(ref)) throw new Refusal('REF_EXISTS', `branch ${name} already exists`);
+      // A dangling symbolic ref is not listed above, and git would create its target under this name.
+      await assertNoSymref(git, ref);
       const oid = from ?? own.oid;
       if (!oid) throw new Refusal('NO_HEAD', 'HEAD has no commit to branch from');
       if (checkout) assertCcHeadAck(own, ccOwned);
@@ -171,8 +180,10 @@ export const ops = [
       const [heads, own] = await Promise.all([readHeads(git), ownHead(git)]);
       const ref = local(name);
       const to = local(newName);
+      await assertListed(git, heads, ref);
       const h = plainHeadOf(heads, ref);
       if (heads.has(to)) throw new Refusal('REF_EXISTS', `branch ${newName} already exists`);
+      await assertNoSymref(git, to);
       // cc's worktree record names a checked-out cc branch: renaming it breaks cc even in its own checkout.
       assertNotCheckedOut(heads, ref, { allowOwn: !isCcOwned(name), own });
       assertCcAck([name, newName], ccOwned);
@@ -197,7 +208,8 @@ export const ops = [
       const heads = await readHeads(git);
       // Every name is checked first: one bad name refuses the request before anything is deleted.
       for (const n of names) {
-        headOf(heads, local(n));
+        // A live symbolic ref is deleted alone (below); a dangling one is refused, never reported unknown.
+        await assertListed(git, heads, local(n));
         assertNotCheckedOut(heads, local(n));
       }
       assertCcAck(names, ccOwned);

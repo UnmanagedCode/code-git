@@ -369,7 +369,7 @@ Behaviour, the checked-out and cc-owned rules and what each op destroys: [refs](
 - A branch checked out in a checkout the op may not touch: 409 `BRANCH_CHECKED_OUT` with `worktree` (that checkout's path).
 - Local changes git would overwrite: 409 `CHECKOUT_CONFLICT` with `files` and `stderr`.
 - The ops that write the working tree or the index first check for a bare repository (`assertWorktree`): 409 `BARE_REPO` from `branch.checkout`, `branch.create` with `checkout`, `head.reset` mixed and hard, `head.revert`, `head.cherryPick`, `head.abort`, and `branch.fastForward` of this checkout's own branch. Soft reset and the other ops change refs only.
-- A symbolic ref (`%(symref)` set) as the branch an op checks out, renames, fast-forwards, moves or sets the upstream of — local, or `refs/remotes/<r>/HEAD` and other remote aliases for checkout: 409 `SYMBOLIC_REF` with `target`. `branch.delete` deletes a symbolic ref itself, never its target. Every `update-ref` passes `--no-deref`.
+- A symbolic ref (`%(symref)` set) as the branch an op checks out, renames, fast-forwards, moves or sets the upstream of — local, or `refs/remotes/<r>/HEAD` and other remote aliases for checkout: 409 `SYMBOLIC_REF` with `target`. `branch.delete` deletes a symbolic ref itself, never its target. A *dangling* symbolic ref (its target missing: `for-each-ref` does not list it) is found by `symbolic-ref -q <ref>` on the exact name: `branch.create` and `tag.create` of that name, `branch.rename` from or to it and `branch.delete` of it refuse `SYMBOLIC_REF` (never `REF_UNKNOWN`), since git would create the target, in any namespace, under the alias's name. Every `update-ref` passes `--no-deref`.
 - Every ref-changing op returns `undo`: `UndoRecord` below.
 
 ```
