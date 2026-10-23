@@ -23,7 +23,8 @@ test('trackingRefsFor: wildcard and exact refspecs map, a negative refspec exclu
   assert.deepEqual(trackingRefsFor(specs('+refs/heads/x:refs/remotes/pinned/x'), 'refs/heads/y'), []);
   assert.deepEqual(trackingRefsFor(specs('+refs/heads/*:refs/remotes/origin/*', '+refs/heads/*:refs/remotes/mirror/*'), 'refs/heads/x'),
     ['refs/remotes/origin/x', 'refs/remotes/mirror/x']);
-  // Negative refspecs are parsed but exclude nothing: git's push-time tracking update ignores them.
+  // Negative refspecs are parsed but not applied: git ignores them against a wildcard mapping (it honours them only
+  // against an exact one), so the check maps as if they were absent and may over-refuse.
   assert.deepEqual(trackingRefsFor(specs('+refs/heads/*:refs/remotes/origin/*', '^refs/heads/x'), 'refs/heads/x'), ['refs/remotes/origin/x']);
   assert.deepEqual(trackingRefsFor(specs('+refs/heads/*:refs/remotes/origin/*', '^refs/heads/sec*'), 'refs/heads/secret'), ['refs/remotes/origin/secret']);
   assert.deepEqual(trackingRefsFor(specs('refs/heads/main'), 'refs/heads/main'), []);

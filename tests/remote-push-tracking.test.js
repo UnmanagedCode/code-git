@@ -80,3 +80,32 @@ test('a tag destination mapped into refs/remotes/ through a symbolic ref → SYM
   await assert.rejects(w.op('tag.push', { remote: 'origin', names: ['v1'] }), refused('SYMBOLIC_REF', { target: 'refs/heads/victim' }));
   assert.equal(pushed(w), false);
 });
+
+test('negative refspecs are not applied: an exact mapping git leaves alone (^refs/heads/main) is still refused — the documented over-refusal', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('branch', 'mirror');
+  const tip = w.repo.commit({ 'x.txt': 'x\n' }, 'x');
+  refspec(w, '+refs/heads/main:refs/heads/mirror', '^refs/heads/main');
+  // Control: git itself honours the negative refspec against this exact mapping and leaves `mirror` alone.
+  w.repo.git('push', '-q', 'origin', 'main');
+  assert.equal(w.oid('mirror'), w.base);
+  w.repo.commit({ 'y.txt': 'y\n' }, 'y');
+  await assert.rejects(w.op('remote.push', { branch: 'main', remote: 'origin' }), refused('REMOTE_CONFIG_UNSUPPORTED', { remote: 'origin', refspec: '+refs/heads/main:refs/heads/mirror' }));
+  assert.equal(pushed(w), false);
+  assert.equal(onOrigin(w, 'refs/heads/main'), tip, 'only the control push reached the remote');
+});
+
+test('why negatives cannot be applied: git ignores ^refs/heads/w against a wildcard mapping and moves mirror/w; the op refuses', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('branch', 'mirror/w');
+  w.repo.git('checkout', '-q', '-b', 'w');
+  const tip = w.repo.commit({ 'x.txt': 'x\n' }, 'x');
+  refspec(w, '+refs/heads/*:refs/heads/mirror/*', '^refs/heads/w');
+  // Control: plain git moves mirror/w despite the negative refspec.
+  w.repo.git('push', '-q', 'origin', 'w');
+  assert.equal(w.oid('mirror/w'), tip);
+  w.repo.git('update-ref', 'refs/heads/mirror/w', w.base);
+  await assert.rejects(w.op('remote.push', { branch: 'w', remote: 'origin' }), refused('REMOTE_CONFIG_UNSUPPORTED', { refspec: '+refs/heads/*:refs/heads/mirror/*' }));
+  assert.equal(pushed(w), false);
+  assert.equal(w.oid('mirror/w'), w.base);
+});

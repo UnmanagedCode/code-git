@@ -50,9 +50,11 @@ function matchPattern(pattern, ref) {
 
 /**
  * Every local ref the parsed refspecs map `ref` (a ref on the remote: a branch or a tag) to → [{refspec, dst}], in
- * refspec order, each dst once (git writes the first; all are checked). Negative refspecs exclude nothing here: git's push-time tracking update
- * ignores them (verified with git 2.55: `^refs/heads/b` does not stop `push :refs/heads/b` writing through a symbolic
- * tracking ref), so honouring them would hide the very ref git writes.
+ * refspec order, each dst once (git writes the first; all are checked). Negative refspecs are not applied here, so a
+ * push git would leave alone may be refused. git 2.55 honours one against an exact mapping (`^refs/heads/main` stops
+ * `+refs/heads/main:refs/heads/victim` moving `victim`) but not against a wildcard one (`^refs/heads/w` does not stop
+ * `+refs/heads/*:refs/heads/mirror/*` moving or deleting `mirror/w`, symbolic refs followed): applying them would hide
+ * refs git does write, ignoring them only over-refuses.
  */
 export function trackingMapFor(specs, ref) {
   const out = [];
