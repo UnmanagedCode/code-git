@@ -8,6 +8,7 @@ import { updatePrefs } from '@/state/graphPrefs';
 import { getSelection } from '@/state/graphSelection';
 import { activityStore } from '@/state/useActivity';
 import { diffStore } from '@/state/diff';
+import { closeDiff } from '@/features/diff/openDiff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { loadSummary } from '@/state/useRepoSummary';
 import { workdirOf } from '@/state/workdir';
@@ -251,11 +252,13 @@ test('Enter opens the selection diff: a commit, a multi-selection as the commits
   fireEvent.click(rowEl(oid(2))!, { shiftKey: true });
   fireEvent.keyDown(list(), { key: 'Enter' });
   expect(source()).toEqual({ kind: 'commits', oids: [oid(4), oid(3), oid(2)], wip: false });
+  // In the shell the diff replaces the graph: closed, the graph is back.
+  act(() => closeDiff(TAB));
   fireEvent.click(rowEl('wip:')!);
   // The click shows the Changes panel without taking the focus; Enter asks it to focus its summary. No diff opens.
   expect(workdirOf(TAB).focus).toBeNull();
   fireEvent.keyDown(list(), { key: 'Enter' });
-  expect(source()).toEqual({ kind: 'commits', oids: [oid(4), oid(3), oid(2)], wip: false });
+  expect(source()).toBeUndefined();
   expect(workdirOf(TAB).focus).toBe('slot');
 });
 

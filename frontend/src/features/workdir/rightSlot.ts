@@ -1,7 +1,31 @@
-import type { SelectedRow } from '@/state/graphSelection';
+import type { Stash } from '@/features/graph/types';
+import { diffOwnerCommit, useOpenDiff } from '@/features/diff/binding';
+import type { DiffTabState } from '@/state/diff';
+import { useGraphData } from '@/state/graph';
+import { useGraphSelection, type SelectedRow } from '@/state/graphSelection';
+import type { Tab } from '@/state/tabs';
+
+export type RightSlot = 'changes' | 'details' | 'diff-files';
 
 /**
- * The right slot holds the Changes panel and the commit details; it shows one of them, by the graph's selection: Changes
- * with nothing selected or a single WIP row selected, the details for a commit, a stash or several rows.
+ * What the right slot shows. While a diff is open, the list that drives it: Changes for an unstaged or staged diff, the
+ * commit details when the diff is the selected commit's or stash's, else the Changed files panel. With no diff open, by
+ * the graph's selection: Changes for nothing or a single WIP row, else the details.
  */
-export const changesInRightSlot = (items: readonly SelectedRow[]): boolean => items.length === 0 || (items.length === 1 && items[0].kind === 'wip');
+export function rightSlotFor(items: readonly SelectedRow[], diff: DiffTabState | null, stashes: readonly Stash[]): RightSlot {
+  if (diff) {
+    if (diff.source.kind === 'unstaged' || diff.source.kind === 'staged') return 'changes';
+    const only = items.length === 1 ? items[0] : null;
+    if (only && only.kind !== 'wip' && only.oid === diffOwnerCommit(diff, stashes)) return 'details';
+    return 'diff-files';
+  }
+  return items.length === 0 || (items.length === 1 && items[0].kind === 'wip') ? 'changes' : 'details';
+}
+
+/** rightSlotFor for the tab, as a hook. */
+export function useRightSlot(tab: Tab): RightSlot {
+  const sel = useGraphSelection(tab);
+  const diff = useOpenDiff(tab);
+  const stashes = useGraphData(tab).refs?.stashes ?? [];
+  return rightSlotFor(sel.items, diff, stashes);
+}

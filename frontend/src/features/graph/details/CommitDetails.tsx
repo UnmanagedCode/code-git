@@ -9,7 +9,7 @@ import { ContextMenuHost } from '@/shell/ContextMenuHost';
 import { useGraphData } from '@/state/graph';
 import { useGraphSelection, type SelectedRow } from '@/state/graphSelection';
 import { tabKey, type Tab } from '@/state/tabs';
-import { changesInRightSlot } from '@/features/workdir/rightSlot';
+import { useRightSlot } from '@/features/workdir/rightSlot';
 import { openIn, openSelectionDiff, selectionDiff } from '../diffWiring';
 import { formatTime } from '../time';
 import { initials } from '../initials';
@@ -40,8 +40,8 @@ function Body({ text }: { text: string }) {
 }
 
 /**
- * The details panel (right slot; a dialog on narrow screens) for the graph's selection. In the slot it gives way to the
- * Changes panel when nothing or a single WIP row is selected (features/workdir/rightSlot.ts).
+ * The details panel (right slot; a dialog on narrow screens) for the graph's selection. In the slot it shows only while
+ * the slot is the details' (features/workdir/rightSlot.ts).
  */
 export function CommitDetails({ tab, inDialog = false }: { tab: Tab | null; inDialog?: boolean }) {
   const wide = useMediaQuery(WIDE_GRAPH_QUERY);
@@ -52,7 +52,8 @@ export function CommitDetails({ tab, inDialog = false }: { tab: Tab | null; inDi
 function DetailsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const sel = useGraphSelection(tab);
   const data = useGraphData(tab);
-  if (data.status === 'idle' || (!inDialog && changesInRightSlot(sel.items))) return null;
+  const slot = useRightSlot(tab);
+  if (data.status === 'idle' || (!inDialog && slot !== 'details')) return null;
   const only = sel.items.length === 1 ? sel.items[0] : null;
   let body;
   if (sel.items.length > 1) body = <Multi tab={tab} items={sel.items} commits={data.commits} stashes={data.refs?.stashes ?? []} />;

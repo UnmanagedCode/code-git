@@ -2,8 +2,10 @@ import type { Target } from '@/lib/endpoints';
 import { LG_QUERY } from '@/lib/useMediaQuery';
 import { dispatchSelection, getSelection } from '@/state/graphSelection';
 import { dispatchTabs, tabKey, type Tab } from '@/state/tabs';
+import { openDiffOf } from '@/features/diff/binding';
+import { stashesOf } from '@/features/stash/views';
 import { refreshWorkdir, requestFocus, setAmend, setDialogOpen } from '@/state/workdir';
-import { changesInRightSlot } from './rightSlot';
+import { rightSlotFor } from './rightSlot';
 
 export { refreshWorkdir };
 export { restoreFile } from './actions';
@@ -11,14 +13,15 @@ export { restoreFile } from './actions';
 /**
  * Brings up the working tree's Changes panel for `target` — the graph's work-in-progress row and "Edit HEAD message" call
  * it. Wide: the right slot shows Changes (a commit selection, which would show the details there, is cleared) and, unless
- * `focus: false`, its summary takes the focus; narrow: the Changes dialog opens. `amend: 'message'` ticks Amend, which
- * loads HEAD's message.
+ * `focus: false`, its summary takes the focus; narrow, or while a diff other than an unstaged or staged one holds the
+ * slot for its file list: the Changes dialog opens. `amend: 'message'` ticks Amend, which loads HEAD's message.
  */
 export function openWorkingTree(target: Target, opts: { amend?: 'message'; focus?: boolean } = {}): void {
-  const wide = window.matchMedia(LG_QUERY).matches;
-  if (!wide) setDialogOpen(target, true);
-  else if (!changesInRightSlot(getSelection(target).items)) dispatchSelection(target, { type: 'clear' });
-  if (opts.focus !== false || !wide) requestFocus(target, wide ? 'slot' : 'dialog');
+  const diff = openDiffOf(target);
+  const inDialog = !window.matchMedia(LG_QUERY).matches || (!!diff && rightSlotFor([], diff, stashesOf(target)) !== 'changes');
+  if (inDialog) setDialogOpen(target, true);
+  else if (rightSlotFor(getSelection(target).items, diff, stashesOf(target)) !== 'changes') dispatchSelection(target, { type: 'clear' });
+  if (opts.focus !== false || inDialog) requestFocus(target, inDialog ? 'dialog' : 'slot');
   if (opts.amend === 'message') void setAmend(target, true);
 }
 

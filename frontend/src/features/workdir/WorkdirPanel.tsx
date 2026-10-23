@@ -1,14 +1,13 @@
-import { useGraphSelection } from '@/state/graphSelection';
 import { tabKey, type Tab } from '@/state/tabs';
 import { ChangesDialog } from './ChangesButton';
 import { ConfirmHost } from './ConfirmDialog';
-import { changesInRightSlot } from './rightSlot';
+import { useRightSlot } from './rightSlot';
 import { useWorkdirKeys } from './useWorkdirKeys';
 import { WorkdirContent } from './WorkdirContent';
 
 /**
- * The right slot's Changes panel, shown while the graph selection is empty or a single WIP row (else the slot shows the
- * commit details: rightSlot.ts). It also mounts, whatever is shown, the one ConfirmHost, the narrow Changes dialog
+ * The right slot's Changes panel, shown while the slot is Changes' (rightSlot.ts: no selection or a single WIP row, or
+ * an unstaged or staged diff open). It also mounts, whatever is shown, the one ConfirmHost, the narrow Changes dialog
  * (both portal to the body; the slot stays mounted when hidden below `lg`) and the panel's global keys.
  */
 export function WorkdirPanel({ tab }: { tab: Tab | null }) {
@@ -23,6 +22,5 @@ export function WorkdirPanel({ tab }: { tab: Tab | null }) {
 }
 
 function SlotContent({ tab }: { tab: Tab }) {
-  const sel = useGraphSelection(tab);
-  return changesInRightSlot(sel.items) ? <WorkdirContent tab={tab} instance="slot" /> : null;
+  return useRightSlot(tab) === 'changes' ? <WorkdirContent tab={tab} instance="slot" /> : null;
 }

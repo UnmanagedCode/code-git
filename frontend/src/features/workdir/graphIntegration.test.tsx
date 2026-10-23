@@ -111,6 +111,18 @@ test('narrow: the Changes dialog opens (Ctrl+Shift+M) even while a diff has repl
   await waitFor(() => expect(document.activeElement).toBe(within(d).getByRole('textbox', { name: 'Summary' })));
 });
 
+test('wide: Ctrl+Shift+M while a commit diff owns the right slot opens the Changes dialog and leaves the diff and selection alone', async () => {
+  await show(true);
+  fireEvent.click(row(oid(1))!);
+  fireEvent.keyDown(screen.getByRole('listbox', { name: 'Commits' }), { key: 'Enter' });
+  await waitFor(() => expect(shownPanelStore.get().get('app\0')).toBe('diff'));
+  fireEvent.keyDown(window, { key: 'M', ctrlKey: true, shiftKey: true });
+  const d = await screen.findByRole('dialog', { name: 'Changes' });
+  await waitFor(() => expect(document.activeElement).toBe(within(d).getByRole('textbox', { name: 'Summary' })));
+  expect(shownPanelStore.get().get('app\0')).toBe('diff');
+  expect(getSelection(APP).items).toEqual([{ kind: 'commit', oid: oid(1) }]);
+});
+
 test('"Edit HEAD message…" is on the HEAD commit\'s menu only; it shows Changes (clearing the commit selection) with HEAD\'s message under Amend', async () => {
   await show(true);
   fireEvent.click(row(HEAD)!);

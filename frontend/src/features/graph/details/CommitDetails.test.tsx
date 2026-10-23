@@ -7,6 +7,7 @@ import { dispatchSelection, fileIntentStore } from '@/state/graphSelection';
 import { openGraph } from '@/state/graph';
 import { loadSummary } from '@/state/useRepoSummary';
 import { diffStore } from '@/state/diff';
+import { closeDiff } from '@/features/diff/openDiff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
@@ -93,6 +94,8 @@ test('View changes opens the commit diff; a multi-selection offers the combined 
   await show({ files });
   fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
   expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commit', rev: A });
+  // The diff replaces the graph in the shell: closed, the graph takes a multi-selection again.
+  act(() => closeDiff(TAB));
   act(() => dispatchSelection(TAB, { type: 'toggle', id: P, rows: rowsOf(A, P) }));
   fireEvent.click(screen.getByRole('button', { name: 'View combined diff' }));
   expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commits', oids: [A, P], wip: false });
