@@ -49,6 +49,13 @@ export const isProtectedEnv = (name) => PROTECTED_ENV.includes(name) || PROTECTE
 
 const STATUS_OF = { CANCELLED: 'cancelled', GIT_TIMEOUT: 'timeout' };
 
+/** The subcommand of an op's `args`, past any leading `-c <key=value>` pairs (netRun's, a pull's config overrides). */
+export function subcommandOf(args) {
+  let i = 0;
+  while (args[i] === '-c') i += 2;
+  return args[i];
+}
+
 /**
  * Runs one git command for an op. `ctx` = {target, op, kind: 'read'|'write', cancellable, signal, opRunId, activity, locks}.
  * Resolves {exitCode, stdout: Buffer, stderr: Buffer, durationMs}; an exit code outside `okExit` throws GIT_FAILED.
@@ -84,7 +91,7 @@ export async function runGit(ctx, args, { stdin, env: opEnv = {}, timeoutMs, max
     const ok = okExit.includes(r.exitCode);
     const err = capStderr(r.stderr);
     activity.close(entry, { status: ok ? 'ok' : 'failed', code: ok ? null : 'GIT_FAILED', exitCode: r.exitCode, durationMs: r.durationMs, ...err });
-    if (!ok) throw new Refusal('GIT_FAILED', `git ${args[0]} exited with ${r.exitCode}`, { exitCode: r.exitCode, stderr: err.stderr });
+    if (!ok) throw new Refusal('GIT_FAILED', `git ${subcommandOf(args)} exited with ${r.exitCode}`, { exitCode: r.exitCode, stderr: err.stderr });
     return r;
   };
   return kind === 'write' ? ctx.locks.run(target.project, run) : run();

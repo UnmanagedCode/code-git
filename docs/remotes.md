@@ -2,7 +2,7 @@
 
 # Remotes
 
-Talking to other repositories: the remotes' config (add, edit, rename, remove), fetch, peek. Ops and their wire shapes: [protocol](protocol.md#remote-ops-srcgitopsremotejs).
+Talking to other repositories: the remotes' config (add, edit, rename, remove), fetch, peek, pull. Ops and their wire shapes: [protocol](protocol.md#remote-ops-srcgitopsremotejs).
 
 ## Rules
 
@@ -43,6 +43,21 @@ Talking to other repositories: the remotes' config (add, edit, rename, remove), 
 - **Partial**: git exiting non-zero after changing some refs → `partial` (its stderr); after changing none → the refusal.
 - **Cancellable**: objects are written before refs and each ref update is atomic, so an abort leaves a consistent subset of tracking refs updated and at most a temporary pack (gc removes it); the index and worktree are never touched, and gc/maintenance never run mid-fetch. `FETCH_HEAD` may be partial; nothing reads it.
 
+### Pull
+
+Never `git pull`: a fetch of the upstream's remote (`fetchRemote`, the same checks as `remote.fetch`, never pruning) and then one integration (`src/git/remote/integrate.js`), each with the config that would reshape it overridden on the command line, so `pull.*` is never read.
+
+| HEAD vs the fetched upstream | `ff` (fast-forward if possible) | `ffOnly` | `rebase` |
+|---|---|---|---|
+| same, or HEAD ahead | `upToDate` | `upToDate` | `upToDate` |
+| behind | `merge --ff-only` → `fastForward` | the same | the same |
+| diverged | a merge commit "Merge remote-tracking branch '`<remote>/<b>`'" → `merged`; conflicts → `conflicts` with `files`, **the merge stays in progress** | `NOT_FAST_FORWARD` (fetched, HEAD unchanged) | `rebase` → `rebased`; conflicts → **aborted**, `PULL_CONFLICTS` with `files` |
+
+- **Before anything runs**: `BARE_REPO`; `NO_UPSTREAM` for a detached HEAD, no upstream, a local upstream (`branch.<b>.remote = .`) or one naming no configured remote; `NO_HEAD` for an unborn HEAD. Rebase only: a `code-conductor/*` HEAD needs `ccOwned` (a rebase rewrites the branch; a fast-forward or merge only adds, as a commit does), and tracked changes refuse `DIRTY_WORKTREE` (untracked files do not count).
+- **Overrides**: `merge.autoStash=false` (no hidden stash; local changes in the way → `CHECKOUT_CONFLICT`), `rebase.autoStash=false`, `rebase.updateRefs=false` (a rebase would otherwise move every other branch pointing into the rebased range, `code-conductor/*` ones included), `rebase.autoSquash=false`.
+- **Conflicts policy**: a merge pull's conflicts stay for the user (resolve and commit, or **Abort merge** = `head.abort {which: 'merge'}`); a rebase pull that stops is aborted at once (`onRebaseStopped` in `integrate.js`: the single place that decides). Any other failed rebase is aborted too (`rebase --abort`, exit 128 when nothing was in progress), then `CHECKOUT_CONFLICT` (untracked files in the way) or `GIT_FAILED`.
+- **Not cancellable**: aborting mid-merge or mid-rebase would leave the checkout half-integrated. Its fetch still never prompts and stops at `NETWORK_LIMITS.timeoutMs`.
+
 ### Peek
 
 `remote.peek` asks the remote where one branch is (`ls-remote --refs --end-of-options <remote> refs/heads/<b>`, the exact name kept: ls-remote matches path tails) and compares the tracking ref here: `stale` = they differ. Read-only; the UI's force-with-lease flow uses it.
@@ -58,6 +73,8 @@ Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote
 | `remote.rename` | the old name | rename back |
 | `remote.remove` | the remote's config, its tracking refs, the upstream config naming it | locally: re-add from `undo.remotes[].old` (urls, push urls, fetch refspecs, each `branch.<b>.remote`/`.merge`), `update-ref` each `undo.refs[]` (a symbolic one with `symbolic-ref`) |
 | `remote.fetch` | the tracking refs' previous positions, pruned refs | `update-ref` each `undo.refs[]` back to `old` (until the next fetch) |
+| `remote.pull` | HEAD's position (rebase: the original commits stay in the reflog) | `reset --hard <undo.head.old.oid>` locally; the fetch's refs as `remote.fetch` |
+| `head.abort` `merge` | the conflicted merge's partial result | — |
 
 ## Known limitations
 

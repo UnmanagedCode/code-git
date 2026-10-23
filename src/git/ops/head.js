@@ -7,14 +7,14 @@ import { guardOverwrite } from '../refs/write.js';
 import { assertOid } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
 
-// Ops that move this checkout's HEAD (docs/refs.md): reset, revert, cherry-pick, and aborting a revert or
-// cherry-pick that stopped on conflicts.
+// Ops that move this checkout's HEAD (docs/refs.md): reset, revert, cherry-pick, and aborting a revert, cherry-pick or
+// merge that stopped on conflicts.
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const MODES = ['soft', 'mixed', 'hard'];
 const MAINLINE_MAX = 16;
-/** The pseudo-ref a stopped revert or cherry-pick leaves, per command. */
-const IN_PROGRESS = { revert: 'REVERT_HEAD', 'cherry-pick': 'CHERRY_PICK_HEAD' };
+/** The pseudo-ref a stopped revert, cherry-pick or (pull's) merge leaves, per command. */
+const IN_PROGRESS = { revert: 'REVERT_HEAD', 'cherry-pick': 'CHERRY_PICK_HEAD', merge: 'MERGE_HEAD' };
 
 const exists = async (git, ref) => (await git(['rev-parse', '--verify', '-q', ref], { okExit: [0, 1] })).exitCode === 0;
 
@@ -106,7 +106,7 @@ export const ops = [
     kind: 'write',
     params(raw) {
       const p = paramsObject(raw, ['which'], 'head.abort');
-      if (typeof p.which !== 'string' || !Object.hasOwn(IN_PROGRESS, p.which)) throw new Refusal('BAD_PARAMS', "which must be 'revert' or 'cherry-pick'");
+      if (typeof p.which !== 'string' || !Object.hasOwn(IN_PROGRESS, p.which)) throw new Refusal('BAD_PARAMS', "which must be 'revert', 'cherry-pick' or 'merge'");
       return { which: p.which };
     },
     async run(git, { which }) {

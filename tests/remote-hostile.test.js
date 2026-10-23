@@ -19,6 +19,10 @@ const NETWORK_OPS = {
     throw Object.assign(new Error('per remote'), { extra: { stderr: r.remotes.find((x) => x.remote === 'evil').error.stderr } });
   },
   'remote.peek': (w) => w.op('remote.peek', { remote: 'evil', branch: 'x' }),
+  'remote.pull': (w) => {
+    w.repo.git('config', 'branch.main.remote', 'evil');
+    return w.op('remote.pull', { mode: 'ff' });
+  },
 };
 
 /** refsWorld with remote `evil` whose url the repo's config rewrites to `ext::sh -c touch <marker>`; branch and tag `x`. */

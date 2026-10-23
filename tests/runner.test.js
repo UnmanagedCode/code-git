@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createActivityLog } from '../src/activity/log.js';
 import { LIMITS } from '../src/git/limits.js';
 import { createLocks } from '../src/git/locks.js';
-import { BASE_ARGS, runGit } from '../src/git/runner.js';
+import { BASE_ARGS, runGit, subcommandOf } from '../src/git/runner.js';
 import { ctxFor } from './_ctx.js';
 import { fakeCc } from './_fakeCc.js';
 import { makeRepo } from './_git.js';
@@ -91,6 +91,13 @@ test('an exit outside okExit throws GIT_FAILED with the exit code and stderr; ok
   await assert.rejects(runGit(ctxFor(APP), ['diff', '--quiet', 'HEAD']), (e) => e.code === 'GIT_FAILED' && e.extra.exitCode === 1);
   const r = await runGit(ctxFor(APP), ['diff', '--quiet', 'HEAD'], { okExit: [0, 1] });
   assert.equal(r.exitCode, 1);
+});
+
+test('a GIT_FAILED message names the subcommand, past leading -c pairs', async (t) => {
+  await world(t);
+  await assert.rejects(runGit(ctxFor(APP), ['rev-parse', '--verify', 'nope']), (e) => e.message === 'git rev-parse exited with 128');
+  await assert.rejects(runGit(ctxFor(APP), ['-c', 'a.b=1', '-c', 'c.d=2', 'rev-parse', '--verify', 'nope']), (e) => e.message === 'git rev-parse exited with 128');
+  assert.equal(subcommandOf(['-c', 'protocol.ext.allow=never', 'push', '-c']), 'push');
 });
 
 test('writes on one project are serialized; reads and other projects are not held behind them', async (t) => {

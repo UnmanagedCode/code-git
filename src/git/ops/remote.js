@@ -1,14 +1,19 @@
 import { Refusal } from '../../refusals.js';
 import { optBool, paramsObject } from '../params.js';
+import { parseRecords } from '../parse/graph.js';
+import { parseStatus } from '../parse/status.js';
 import { shortBranch } from '../refs/check.js';
+import { assertCcHeadAck, ownHead } from '../refs/heads.js';
 import { refEntries } from '../refs/resolve.js';
 import { undoRecord } from '../refs/undo.js';
 import { assertNotLegacy, listRemotes, remoteNames, remoteSnapshot } from '../remote/config.js';
 import { fetchRemote } from '../remote/fetch.js';
+import { fastForward, merge, rebase } from '../remote/integrate.js';
 import { netRun, remoteFailure } from '../remote/net.js';
 import { knownRemote, remoteName } from '../remote/push.js';
 import { assertNoTrackingSymrefs, fetchSpecs, trackedSnapshot, trackingRefsFor } from '../remote/tracking.js';
 import { newRemoteName, remoteUrl } from '../remote/url.js';
+import { assertWorktree } from '../worktree.js';
 
 // Remote ops (docs/remotes.md, docs/protocol.md → Remote ops): the remotes' config, fetch, pull and branch push. Every
 // name and url is checked before any exec; `--end-of-options` precedes every user-named argument.
@@ -19,6 +24,36 @@ const decoder = new TextDecoder('utf-8', { fatal: false });
 
 /** Refusals about one remote that a fetch of every remote reports per remote instead of stopping at. */
 const PER_REMOTE = new Set(['REMOTE_AUTH_FAILED', 'REMOTE_UNREACHABLE', 'REMOTE_CONFIG_UNSUPPORTED', 'SYMBOLIC_REF', 'GIT_FAILED', 'GIT_TIMEOUT', 'OUTPUT_TOO_LARGE']);
+const PULL_MODES = ['ff', 'ffOnly', 'rebase'];
+
+/** Exit 0 of `merge-base --is-ancestor` → true, 1 → false. */
+const isAncestor = async (git, a, b) => (await git(['merge-base', '--is-ancestor', a, b], { okExit: [0, 1] })).exitCode === 0;
+
+/**
+ * This checkout's branch and its upstream on a remote: {own, branch, upstream: tracking refname, remote}. NO_UPSTREAM
+ * when HEAD is detached, the branch has no upstream, its upstream is local (`branch.<b>.remote = .`) or names no
+ * configured remote, or its merge ref maps to no tracking ref; NO_HEAD when HEAD is unborn.
+ */
+async function headUpstream(git) {
+  const own = await ownHead(git);
+  if (!own.branch) throw new Refusal('NO_UPSTREAM', 'HEAD is detached: there is no branch to pull into');
+  if (!own.oid) throw new Refusal('NO_HEAD', 'HEAD has no commit');
+  const r = await git(['for-each-ref', '--format=%(upstream)%00%(upstream:remotename)', own.branch]);
+  const [upstream = '', remote = ''] = parseRecords(decoder.decode(r.stdout), 2)[0] ?? [];
+  const short = own.branch.slice(HEADS.length);
+  if (!remote || remote === '.') throw new Refusal('NO_UPSTREAM', `${short} has no upstream on a remote`);
+  if (!(await remoteNames(git)).includes(remote)) throw new Refusal('NO_UPSTREAM', `${short}'s upstream remote ${remote} is not a configured remote`);
+  if (!upstream.startsWith(REMOTES)) throw new Refusal('NO_UPSTREAM', `${short}'s upstream maps to no remote-tracking ref`);
+  return { own, branch: own.branch, upstream, remote };
+}
+
+/** DIRTY_WORKTREE when the index or a tracked file differs from HEAD (untracked files do not count). */
+async function assertClean(git) {
+  const r = await git(['status', '--porcelain=v2', '-z', '--untracked-files=no']);
+  const { counts } = parseStatus(decoder.decode(r.stdout));
+  if (counts.staged + counts.unstaged + counts.conflicted) throw new Refusal('DIRTY_WORKTREE', 'commit or stash the local changes first: a rebase needs a clean working tree');
+}
+
 const errorOf = (e) => ({ code: e.code, message: e.message, ...(e.extra.reason ? { reason: e.extra.reason } : {}), stderr: e.extra.stderr ?? null });
 
 function noParams(raw, op) {
@@ -193,6 +228,52 @@ export const ops = [
       const tracked = trackingRef ? (await refEntries(git, [trackingRef])).get(trackingRef) : undefined;
       const tracking = tracked ? { ref: trackingRef, oid: tracked.oid } : null;
       return { oid, tracking, stale: oid !== (tracking?.oid ?? null) };
+    },
+  },
+  {
+    name: 'remote.pull',
+    kind: 'write',
+    // Not cancellable: an abort mid-merge or mid-rebase would leave the checkout half-integrated. Its fetch still never
+    // prompts and stops at NETWORK_LIMITS.timeoutMs.
+    params(raw) {
+      const p = paramsObject(raw, ['mode', 'ccOwned'], 'remote.pull');
+      if (!PULL_MODES.includes(p.mode)) throw new Refusal('BAD_PARAMS', `mode must be one of ${PULL_MODES.join(', ')}`);
+      return { mode: p.mode, ccOwned: optBool(p.ccOwned, 'ccOwned') };
+    },
+    async run(git, { mode, ccOwned }) {
+      await assertWorktree(git);
+      const { own, branch, upstream, remote } = await headUpstream(git);
+      if (mode === 'rebase') {
+        // A rebase rewrites the branch's commits; a fast-forward or merge only adds (as a commit does).
+        assertCcHeadAck(own, ccOwned);
+        await assertClean(git);
+      }
+      const fetched = await fetchRemote(git, remote);
+      const oid = (await refEntries(git, [upstream])).get(upstream)?.oid;
+      if (!oid) throw new Refusal('NO_UPSTREAM', `${upstream.slice(REMOTES.length)} is gone from ${remote}`);
+      const result = (outcome, extra = {}) => ({ mode, upstream, outcome, files: [], oid: own.oid, fetch: fetched, undo: undoRecord({ refs: fetched.changes }), ...extra });
+      if (oid === own.oid || await isAncestor(git, oid, own.oid)) return result('upToDate');
+      const moved = async (outcome) => {
+        const now = (await ownHead(git)).oid;
+        return result(outcome, {
+          oid: now,
+          undo: undoRecord({
+            refs: [...fetched.changes, { ref: branch, old: own.oid, new: now }],
+            head: { old: { branch, oid: own.oid }, new: { branch, oid: now } },
+          }),
+        });
+      };
+      if (await isAncestor(git, own.oid, oid)) {
+        await fastForward(git, oid);
+        return moved('fastForward');
+      }
+      if (mode === 'ffOnly') throw new Refusal('NOT_FAST_FORWARD', `${branch.slice(HEADS.length)} and ${upstream.slice(REMOTES.length)} have diverged`);
+      if (mode === 'rebase') {
+        await rebase(git, oid);
+        return moved('rebased');
+      }
+      const merged = await merge(git, oid, `Merge remote-tracking branch '${upstream.slice(REMOTES.length)}'`);
+      return merged.conflicts ? result('conflicts', { files: merged.files }) : moved('merged');
     },
   },
 ];
