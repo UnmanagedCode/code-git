@@ -58,6 +58,7 @@ test('counts: +added −deleted for text; "binary" and "submodule" instead of nu
         lf('new.txt', { status: '?', added: null, deleted: null }),
         lf('c.txt', { status: 'U', added: 5, deleted: 5 }),
         lf('mv.txt', { status: 'R', oldPath: 'was.txt', added: 0, deleted: 0 }),
+        lf('unknown.txt', { added: null, deleted: null }),
       ]}
       onSelect={() => {}}
     />,
@@ -72,6 +73,8 @@ test('counts: +added −deleted for text; "binary" and "submodule" instead of nu
   expect(option('new.txt').textContent).not.toMatch(/[+−]\d|binary/);
   expect(option('c.txt').textContent).not.toMatch(/[+−]\d|binary/);
   expect(within(option('mv.txt')).getByLabelText('0 added, 0 deleted')).toBeTruthy();
+  // No numstat to show: nothing, never "+null".
+  expect(option('unknown.txt').textContent).not.toMatch(/[+−]|null|binary/);
 });
 
 test('multi: a click selects one (plain), Ctrl/⌘-click toggles, Shift-click extends over the displayed (Tree) order (not plain)', () => {
@@ -136,6 +139,39 @@ test('extra row keys reach onRowKeyDown with the focused file; the viewed row is
   expect(option('README.md').getAttribute('aria-current')).toBe('true');
   expect(option('src/b.ts').getAttribute('aria-current')).toBeNull();
   expect(FILES.map((f) => option(f.path).getAttribute('aria-selected'))).toEqual(['false', 'true', 'false', 'true']);
+});
+
+test('only the row itself takes Enter and host keys; a field in a row types; keys from an open row menu never reach the list', async () => {
+  const onSelect = vi.fn();
+  const onRowKeyDown = vi.fn();
+  const menu = (_f: ListFile, targets: ListFile[]) => ({ context: 'diff-file', ctx: { tab: TAB, files: targets, source: { kind: 'unstaged' } } });
+  render(
+    <FileList
+      label="L" files={FILES} followFocus onSelect={onSelect} onRowKeyDown={onRowKeyDown} menu={menu}
+      actions={(f) => (f.path === 'README.md' ? <><button type="button">Act</button><input aria-label="Note" /></> : null)}
+    />,
+  );
+  const act1 = within(option('README.md')).getByRole('button', { name: 'Act' });
+  act1.focus();
+  fireEvent.keyDown(act1, { key: 'Enter' });
+  fireEvent.keyDown(act1, { key: 's' });
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(onRowKeyDown).not.toHaveBeenCalled();
+  // ↑/↓ from a row's button still move between rows.
+  fireEvent.keyDown(act1, { key: 'ArrowDown' });
+  expect(document.activeElement).toBe(option('src/a/x.ts'));
+  onSelect.mockClear();
+  const note = within(option('README.md')).getByRole('textbox', { name: 'Note' });
+  note.focus();
+  fireEvent.keyDown(note, { key: 'ArrowDown' });
+  expect(document.activeElement).toBe(note);
+  expect(onSelect).not.toHaveBeenCalled();
+  await userEvent.click(within(option('src/b.ts')).getByRole('button', { name: 'Actions for src/b.ts' }));
+  const item = await screen.findByRole('menuitem', { name: 'Copy path' });
+  fireEvent.keyDown(item, { key: 'ArrowUp' });
+  fireEvent.keyDown(item, { key: 's' });
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(onRowKeyDown).not.toHaveBeenCalled();
 });
 
 test('row actions render per file, directory actions per directory with the files beneath it', () => {

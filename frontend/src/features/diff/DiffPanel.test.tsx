@@ -179,6 +179,18 @@ test('a file list over the cap is an alert saying it is too large, with no file 
   expect(screen.queryByRole('listbox')).toBeNull();
 });
 
+test('a list error shows in the diff; the right slot\'s Changed files panel stays empty', async () => {
+  world(json({ error: 'git output exceeded', code: 'OUTPUT_TOO_LARGE', limitBytes: 32 * 1024 * 1024 }, 422));
+  show();
+  act(() => openDiff(APP, { kind: 'commit', rev: 'HEAD' }));
+  await within(await screen.findByRole('region', { name: 'Diff' })).findByRole('alert');
+  const right = within(document.querySelector<HTMLElement>('[data-slot-name=right]')!);
+  expect(right.getByRole('complementary', { name: 'Changed files panel' })).toBeTruthy();
+  expect(right.queryByRole('listbox')).toBeNull();
+  expect(right.queryByText('Loading files…')).toBeNull();
+  expect(within(panel()).queryByRole('button', { name: /^Files \(/ })).toBeNull();
+});
+
 test('a file is loaded against the pinned pair diff.files returned, not the original source', async () => {
   const { posts } = await openA();
   await waitFor(() => expect(posts('diff.file')).toHaveLength(1));

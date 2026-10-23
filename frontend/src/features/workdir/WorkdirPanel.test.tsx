@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { Shell } from '@/shell/Shell';
 import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
@@ -85,6 +85,24 @@ test('Tree: Stage folder sends one stage.files with the section\'s files beneath
   await waitFor(() => expect(w.posts('stage.unstageFiles')).toEqual([{ paths: ['src/s.ts'] }]));
   expect(within(section('Staged Files')).queryByRole('button', { name: /^Stage folder/ })).toBeNull();
   expect(within(section('Unstaged Files')).queryByRole('button', { name: /^Unstage folder/ })).toBeNull();
+});
+
+test('Tree: folder buttons are disabled while an op runs', async () => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  await show({ unstaged: TREE_UNSTAGED, staged: TREE_STAGED });
+  // stage.files answers only once released.
+  const stubbed = globalThis.fetch;
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/ops/stage.files')) await held;
+    return stubbed(input, init);
+  });
+  await userEvent.click(within(screen.getByRole('group', { name: 'File view' })).getByRole('button', { name: 'Tree' }));
+  await userEvent.click(within(section('Unstaged Files')).getByRole('button', { name: 'Stage folder src/b' }));
+  await waitFor(() => expect((within(section('Unstaged Files')).getByRole('button', { name: 'Stage folder src' }) as HTMLButtonElement).disabled).toBe(true));
+  expect((within(section('Staged Files')).getByRole('button', { name: 'Unstage folder src' }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => { release(); await held; });
+  await waitFor(() => expect((within(section('Unstaged Files')).getByRole('button', { name: 'Stage folder src' }) as HTMLButtonElement).disabled).toBe(false));
 });
 
 test('with the unstaged diff open its section drives it: viewed row current, a click or ↓ views a file without a new list; a staged row opens the staged diff', async () => {
@@ -308,6 +326,8 @@ test('keys: ↓ moves between rows, S stages and U unstages the focused row; Ctr
   rows[0].focus();
   fireEvent.keyDown(rows[0], { key: 'ArrowDown' });
   expect(document.activeElement).toBe(rows[1]);
+  // No diff is open: ↓ moves the focus only.
+  expect(shownPanelStore.get().get(tabKey(APP))).toBeUndefined();
   fireEvent.keyDown(rows[1], { key: 's' });
   await waitFor(() => expect(w.posts('stage.files')).toEqual([{ paths: ['notes.txt'] }]));
   const staged = within(section('Staged Files')).getAllByRole('option')[0];

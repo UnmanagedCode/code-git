@@ -126,6 +126,25 @@ test('bound to the open diff: another file is viewed without a second diff.files
   expect(paramsOf(fetch, 'POST api/ops/diff.files')).toHaveLength(1);
 });
 
+test('while the bound diff list loads, the commit\'s own files stand in for the same diff; for another parent, "Loading files…"', async () => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  await show({ files, parents: [P, oid(9)] }, [A], {
+    'POST api/ops/diff.files': async () => { await held; return { ok: true, result: filesResult([dfile({ path: 'src/lib/a.ts' })], { commit: { oid: A, parents: [P, oid(9)] } }) }; },
+  });
+  await screen.findByText('4 files');
+  fireEvent.click(fileRow('gone.txt'));
+  expect(diffStore.get().get('app\0')?.list.loading).toBe(true);
+  expect(within(screen.getByRole('listbox', { name: 'Changed files' })).getAllByRole('option')).toHaveLength(4);
+  expect(fileRow('gone.txt').getAttribute('aria-current')).toBe('true');
+  expect(screen.getByText('4 files')).toBeTruthy();
+  act(() => openDiff(TAB, { kind: 'commit', rev: A, parent: 2 }));
+  expect(screen.queryByRole('listbox', { name: 'Changed files' })).toBeNull();
+  expect(screen.getByText('Loading files…')).toBeTruthy();
+  await act(async () => { release(); await held; });
+  await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Changed files' })).getAllByRole('option').map((o) => o.getAttribute('data-path'))).toEqual(['src/lib/a.ts']));
+});
+
 test('unbound: the row menu is the commit file menu; a merge diffed against parent 2 says so and lists that diff\'s files', async () => {
   const merge = [cf('M', 'from-side.txt')];
   await show({ files, parents: [P, oid(9)] }, [A], {
