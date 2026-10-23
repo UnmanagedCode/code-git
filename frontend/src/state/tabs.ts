@@ -37,8 +37,11 @@ export const parentTab = (t: Tab): Tab => {
 /** The key a repo's refs-derived state is shared under: the project (its worktrees share refs), a submodule's own tab. */
 export const refsKey = (t: Tab): string => (t.sub ? tabKey(t) : t.project);
 
-/** The key of a repo's persisted graph preferences: the project, or `project/sub/path` (a project name has no `/`). */
-export const prefsKey = (t: Tab): string => (t.sub ? `${t.project}/${t.sub.join('/')}` : t.project);
+/**
+ * The key of a repo's persisted graph preferences: the bare project name for a checkout (its worktrees share it), else
+ * the project then `\0` + path per chain entry — NUL is in no validated name or path, so `['a/b']` and `['a', 'b']` differ.
+ */
+export const prefsKey = (t: Tab): string => (t.sub ? `${t.project}${t.sub.map((s) => `\0${s}`).join('')}` : t.project);
 const same = (a: Tab, b: Tab) => tabKey(a) === tabKey(b);
 
 export const EMPTY: TabsState = { open: [], active: -1 };

@@ -139,7 +139,14 @@ describe('submodule tabs', () => {
     expect(refsKey(sub(['x'], 'wt'))).toBe(tabKey(sub(['x'], 'wt')));
     expect(refsKey(sub(['x']))).not.toBe(refsKey(sub(['x'], 'wt')));
     expect(prefsKey(t('a', 'wt'))).toBe('a');
-    expect(prefsKey(sub(['libs/a', 'b']))).toBe('a/libs/a/b');
+    expect(prefsKey(sub(['libs/a', 'b']))).toBe('a\0libs/a\0b');
+  });
+
+  test('prefsKey: chains that join to the same path differ; a checkout\'s key stays the bare project name', () => {
+    expect(prefsKey(sub(['a/b']))).not.toBe(prefsKey(sub(['a', 'b'])));
+    expect(prefsKey(t('app'))).toBe('app');
+    expect(prefsKey(t('app', 'wt'))).toBe('app');
+    expect(prefsKey(sub(['x']))).not.toBe(prefsKey(t('a')));
   });
 
   test('sub round-trips as repeated params', () => {

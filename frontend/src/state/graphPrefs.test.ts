@@ -42,10 +42,10 @@ test('toggled adds once at the end or removes', () => {
   expect(toggled(['a', 'b'], 'a', false)).toEqual(['b']);
 });
 
-test("sub prefs key: a submodule's prefs persist under code-git:graph:<project>/<chain>, apart from its project's", () => {
+test("sub prefs key: a submodule's prefs persist under code-git:graph:<project>\\0<chain…>, apart from its project's", () => {
   const SUB = { project: 'a', worktree: null, sub: ['libs/x', 'y'] };
   updatePrefs(prefsKey(SUB), (p) => ({ ...p, hidden: ['refs/heads/s'] }));
-  expect(JSON.parse(localStorage.getItem('code-git:graph:a/libs/x/y')!).hidden).toEqual(['refs/heads/s']);
+  expect(JSON.parse(localStorage.getItem('code-git:graph:a\0libs/x\0y')!).hidden).toEqual(['refs/heads/s']);
   expect(getPrefs(prefsKey({ project: 'a', worktree: null })).hidden).toEqual([]);
   expect(getPrefs(prefsKey({ ...SUB, worktree: 'wt' })).hidden).toEqual(['refs/heads/s']);
 });

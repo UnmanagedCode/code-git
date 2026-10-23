@@ -564,6 +564,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `SUBMODULE_DIRTY` | 409 | `submodule.remove` without `discard`: `{path, modified, untracked, orphaned, staged, gitmodules}`; or an update's checkout over local changes (`stderr`) |
 | `SUBMODULE_COMMITS_AT_RISK` | 409 | `submodule.update` without `discardCommits` would leave commits on no branch; `paths: [{path, count}]` |
 | `SUBMODULE_POINTER_MOVED` | 409 | `submodule.commitPointer`: the submodule's HEAD is not `expect`; `path`, `head` |
+| `SUBMODULE_NOT_RECORDED` | 409 | `.gitmodules` declares it but its gitlink is not in the index: `submodule.init` / `update` / `sync`, and `submodule.remove` of such an entry whose directory holds a clone; `paths` |
 | `SUBMODULE_TRANSPORT_BLOCKED` | 409 | git's protocol policy refused the url's transport; `transport`, `stderr` (for `file`: the System's `protocol.file.allow` does not allow it) |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |

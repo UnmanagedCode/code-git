@@ -347,7 +347,7 @@ test("sub tab checkouts = [tab], no listWorktrees call; the project's hides do n
   const g = getGraph(SUB);
   expect(g.checkouts.map((c) => [c.name, c.isOwn, c.target])).toEqual([['libs/a', true, SUB]]);
   expect(paramsOf(fetch, 'POST api/ops/graph.page')[0]).toMatchObject({ tips: [oid(2), oid(5)] });
-  updatePrefs('app/libs/a', (p) => ({ ...p, hidden: ['refs/heads/old'] }));
+  updatePrefs('app\0libs/a', (p) => ({ ...p, hidden: ['refs/heads/old'] }));
   await refreshGraph(SUB, 'prefs');
   expect(paramsOf(fetch, 'POST api/ops/graph.page').at(-1)).toMatchObject({ tips: [oid(5)] });
 });

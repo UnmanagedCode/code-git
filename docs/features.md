@@ -253,16 +253,16 @@ The repo's submodules, in the left slot (below `lg`: the graph toolbar's **Submo
 | Element | Behaviour |
 |---|---|
 | Header | **Submodules (n)**, **Add…**, and **Update all** (every unblocked submodule) when there is one |
-| Row | The path; status badges **Uninitialised**, **Not cloned**, **Out of sync** (checked out ≠ recorded), **Modified**, **Untracked**, **Added** (not committed yet), **Conflicted**, **Blocked** (an unsafe name or path, or a directory that resolves outside the checkout: no action is offered), **URL refused** (its url is not one code-git clones from; the reason as the badge's tooltip); the checked-out commit and, when it differs, `→` the recorded one. Right-click or ⋮ opens its menu; double-click opens it |
+| Row | The path; status badges **Not recorded** (`.gitmodules` declares it but its gitlink is not in the index: only Open, Edit URL… and Remove… are offered, and **Update all** skips it), **Uninitialised**, **Not cloned**, **Out of sync** (checked out ≠ recorded), **Modified**, **Untracked**, **Added** (not committed yet), **Conflicted**, **Blocked** (an unsafe name or path, or a directory that resolves outside the checkout: no action is offered), **URL refused** (its url is not one code-git clones from; the reason as the badge's tooltip); the checked-out commit and, when it differs, `→` the recorded one. Right-click or ⋮ opens its menu; double-click opens it |
 | Empty | "No submodules" |
-| **Add…** | Url (http(s), ssh, git, file, an absolute path, `user@host:path`, or relative `./…` / `../…` resolved against the default remote), path (defaults to the url's last segment), optional name and branch. git clones it; the submodule and `.gitmodules` are staged. A refusal stays in the dialog with git's message |
+| **Add…** | (the dialog shows "Cloning ‹path›…" while git clones) Url (http(s), ssh, git, file, an absolute path, `user@host:path`, or relative `./…` / `../…` resolved against the default remote), path (defaults to the url's last segment), optional name and branch. git clones it; the submodule and `.gitmodules` are staged. A refusal stays in the dialog with git's message |
 
 | Menu item | Behaviour |
 |---|---|
 | **Open** | (cloned) Opens the submodule as its own tab: graph, refs, Changes, diff, stash and its own submodules all act on it. Closing that tab by any way, or **Back to ‹parent›**, offers **Commit the new pointer for ‹path› in ‹parent›?** when its HEAD differs from what the parent committed: the message prefilled `Update submodule ‹path›`, **Commit pointer** commits only that pointer (anything else staged stays staged), **Not now** sends nothing |
-| **Initialize** | (not initialized) Registers its url, no network; the toast's **Update** clones it, or says the url is refused |
-| **Update** | Clones if needed and checks out the recorded commit, recursively; the toast counts seconds. Never overwrites local changes (refused with git's message). Commits on no branch the checkout would leave behind: the toast's **Review…** lists them and **Update anyway** retries |
-| **Sync** | (initialized) Copies `.gitmodules`' url into the config (and nested submodules') |
+| **Initialize** | (recorded, not initialized) Registers its url, no network; the toast's **Update** clones it, or says the url is refused |
+| **Update** | (recorded) Clones if needed and checks out the recorded commit, recursively; the toast counts seconds. Never overwrites local changes (refused with git's message). Commits on no branch the checkout would leave behind: the toast's **Review…** lists them and **Update anyway** retries |
+| **Sync** | (recorded, initialized) Copies `.gitmodules`' url into the config (and nested submodules') |
 | **Edit URL…** | Writes a new url to `.gitmodules` (left unstaged) and syncs an initialized submodule |
 | **Remove…** | Asks first (what is removed, and that `.git/modules/‹name›` is kept). Changed or untracked files, commits on no branch, a staged pointer, or unstaged `.gitmodules` changes: the toast's **Review…** lists them in an irreversible confirmation (**Discard and remove**; unstaged `.gitmodules` changes are staged with the removal) |
 

@@ -38,6 +38,10 @@ test('menu items by state: Open only when cloned, Initialize only when not, Sync
   expect(labels(subEntry({ initialized: false, populated: false, head: null }))).toEqual(['Initialize', 'Update', 'Edit URL…', 'Remove…']);
   expect(labels(subEntry({ populated: false, head: null }))).toEqual(['Update', 'Sync', 'Edit URL…', 'Remove…']);
   expect(labels(subEntry({ blocked: 'path' }))).toEqual([]);
+  // Not recorded (no gitlink in the index): git's submodule commands cannot address it; a conflicted gitlink still can.
+  expect(labels(subEntry({ recorded: null, committed: null }))).toEqual(['Open', 'Edit URL…', 'Remove…']);
+  expect(labels(subEntry({ recorded: null, committed: null, populated: false, initialized: false, head: null }))).toEqual(['Edit URL…', 'Remove…']);
+  expect(labels(subEntry({ recorded: null, conflicted: true }))).toEqual(['Open', 'Update', 'Sync', 'Edit URL…', 'Remove…']);
   const c: SubmoduleCtx = { tab: APP, entry: subEntry() };
   expect(actionsFor(SUBMODULE_CONTEXT, c).find((a) => a.primary)?.id).toBe('submodule.open');
   expect(actionsFor(SUBMODULE_CONTEXT, c).find((a) => labelOf(a, c) === 'Remove…')?.destructive).toBe(true);
@@ -138,4 +142,19 @@ test('Edit URL… sends {path, url}; Sync sends {paths}', async () => {
   await waitFor(() => expect(w.posts('submodule.setUrl')).toEqual([{ path: 'libs/a', url: 'git@h:a.git' }]));
   await pick(w.panel, 'libs/a', 'Sync');
   await waitFor(() => expect(w.posts('submodule.sync')).toEqual([{ paths: ['libs/a'] }]));
+});
+
+test('Cancel on the second, irreversible remove confirmation sends nothing more', async () => {
+  const w = await world({
+    answers: { 'submodule.remove': json({ error: 'libs/a has work removing it would throw away', code: 'SUBMODULE_DIRTY', path: 'libs/a', modified: true, untracked: false, orphaned: 0, staged: false, gitmodules: false }, 409) },
+  });
+  await pick(w.panel, 'libs/a', 'Remove…');
+  await userEvent.click(within(await screen.findByRole('dialog', { name: 'Remove the submodule libs/a?' })).getByRole('button', { name: 'Remove submodule' }));
+  await waitFor(() => expect(toastTexts().join('')).toContain('libs/a has work removing it would throw away'));
+  await userEvent.click(within(toastsEl()).getByRole('button', { name: 'Review…' }));
+  const second = await screen.findByRole('dialog', { name: 'Discard the work in libs/a?' });
+  await userEvent.click(within(second).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Discard the work in libs/a?' })).toBeNull());
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  expect(w.posts('submodule.remove')).toEqual([{ path: 'libs/a' }]);
 });

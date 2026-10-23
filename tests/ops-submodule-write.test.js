@@ -9,6 +9,7 @@ import { afterBase, subWorld } from './_submodules.js';
 
 // The submodule writes against real repos: what each changes, and what each refuses to change.
 
+const byPathOf = (list) => Object.fromEntries(list.submodules.map((e) => [e.path, e]));
 const gm = (w, key) => { const r = w.git('.', 'config', '-f', '.gitmodules', '--get', key); return r.status === 0 ? r.stdout.trim() : null; };
 const local = (w, key, dir = '.') => { const r = w.git(dir, 'config', '--get', key); return r.status === 0 ? r.stdout.trim() : null; };
 const headOf = (w, dir) => w.repo.git('-C', dir, 'rev-parse', 'HEAD');
@@ -225,6 +226,65 @@ test('remove refuses SUBMODULE_DIRTY {gitmodules} over unstaged .gitmodules chan
   assert.equal(w.repo.git('diff', '--name-only'), '');
   assert.equal(gm(w, 'submodule.libA.path'), null);
   assert.equal(w.repo.git('show', ':.gitmodules').includes('../edited.git'), true);
+});
+
+/** A `.gitmodules` section for `name` with no gitlink anywhere, committed. */
+function declareOnly(w, name) {
+  w.repo.git('config', '-f', '.gitmodules', `submodule.${name}.path`, name);
+  w.repo.git('config', '-f', '.gitmodules', `submodule.${name}.url`, w.urls.libA);
+  w.repo.git('commit', '-qam', `declare ${name}`);
+}
+
+test('an entry with no gitlink in the index: init, update and sync refuse SUBMODULE_NOT_RECORDED before any submodule command', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  declareOnly(w, 'ghost');
+  w.repo.git('rm', '-q', '--cached', 'libA');
+  for (const name of ['submodule.init', 'submodule.update', 'submodule.sync']) {
+    const b = await refusal(w, name, { paths: ['libA', 'ghost'] }, 'SUBMODULE_NOT_RECORDED');
+    assert.deepEqual(b.paths, ['libA', 'ghost'], name);
+  }
+  assert.equal(sub(w, ['submodule']).length, 0);
+  const list = byPathOf(await w.ok('submodule.list'));
+  assert.deepEqual([list.ghost.recorded, list.ghost.committed, list.libA.recorded, list.libA.committed !== null], [null, null, null, true]);
+});
+
+test('remove of a declared-only entry drops its .gitmodules section (and the config init wrote), stages .gitmodules, runs no deinit or rm', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  declareOnly(w, 'ghost');
+  w.repo.git('config', 'submodule.ghost.url', w.urls.libA);
+  assert.deepEqual(await w.ok('submodule.remove', { path: 'ghost' }), { path: 'ghost', name: 'ghost' });
+  assert.equal(gm(w, 'submodule.ghost.path'), null);
+  assert.equal(gm(w, 'submodule.libA.path'), 'libA');
+  assert.equal(local(w, 'submodule.ghost.url'), null);
+  assert.deepEqual(w.repo.git('diff', '--cached', '--name-only').split('\n'), ['.gitmodules']);
+  assert.equal(w.repo.git('diff', '--name-only'), '');
+  assert.equal(w.execArgv().map(afterBase).some((a) => a[0] === 'rm' || (a[0] === 'submodule' && a[1] === 'deinit')), false);
+});
+
+test('remove of a gitlink in HEAD but not in the index (git rm --cached): gated as any submodule, ends as a staged deletion, the directory removed; a refusal leaves the index as it was', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  w.repo.git('rm', '-q', '--cached', 'libA');
+  w.repo.write('libA/a.txt', 'changed\n');
+  const b = await refusal(w, 'submodule.remove', { path: 'libA' }, 'SUBMODULE_DIRTY');
+  assert.equal(b.modified, true);
+  assert.equal(w.repo.git('ls-files', '--', 'libA'), '', 'the entry put back for the gate is taken out again');
+  assert.equal(fs.readFileSync(w.file('libA/a.txt'), 'utf8'), 'changed\n');
+  w.fx('libA', 'checkout', '-q', '--', 'a.txt');
+  await w.ok('submodule.remove', { path: 'libA' });
+  assert.equal(fs.existsSync(w.file('libA/a.txt')), false);
+  assert.equal(w.repo.git('ls-files', '--', 'libA'), '');
+  assert.deepEqual(w.repo.git('diff', '--cached', '--name-status').split('\n'), ['M\t.gitmodules', 'D\tlibA']);
+  assert.ok(fs.existsSync(w.file('.git/modules/libA')));
+});
+
+test('remove of a declared-only entry whose directory holds a clone refuses SUBMODULE_NOT_RECORDED and leaves it', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  w.fx('.', 'clone', '-q', w.urls.libA, 'loose');
+  declareOnly(w, 'loose');
+  const b = await refusal(w, 'submodule.remove', { path: 'loose' }, 'SUBMODULE_NOT_RECORDED');
+  assert.deepEqual(b.paths, ['loose']);
+  assert.ok(fs.existsSync(w.file('loose/a.txt')));
+  assert.equal(gm(w, 'submodule.loose.path'), 'loose');
 });
 
 test('remove of a clean submodule needs no discard and passes no -f', async (t) => {

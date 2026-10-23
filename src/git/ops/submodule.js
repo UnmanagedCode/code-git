@@ -49,6 +49,20 @@ async function run(git, args) {
   return r;
 }
 
+/** SUBMODULE_DIRTY with the facts the UI lists: what removing the submodule would throw away or stage. */
+const dirtyRefusal = (path, e, orphaned, staged, gitmodules) => new Refusal('SUBMODULE_DIRTY', `${path} has work removing it would throw away`, {
+  path, modified: e.populated && e.modified, untracked: e.populated && e.untracked, orphaned, staged, gitmodules,
+});
+
+/** Refuses SUBMODULE_NOT_RECORDED for entries whose gitlink is not in the index (declared only): git's submodule commands
+ * address submodules through the index. A conflicted gitlink is not "not recorded". */
+function assertRecorded(entries) {
+  const missing = entries.filter((e) => e.recorded === null && !e.conflicted).map((e) => e.path);
+  if (missing.length) {
+    throw new Refusal('SUBMODULE_NOT_RECORDED', `${missing.join(', ')}: .gitmodules declares it but its gitlink is not in the index — add the submodule again, or remove the declaration`, { paths: missing });
+  }
+}
+
 /** Refuses SUBMODULE_COMMITS_AT_RISK `{paths: [{path, count}]}` when updating `entries` would leave commits behind. */
 async function assertNoCommitsAtRisk(git, entries) {
   const at = [];
@@ -115,6 +129,7 @@ export const ops = [
     async run(git, p) {
       await assertWorktree(git);
       const entries = await knownEntries(git, p.paths);
+      assertRecorded(entries);
       // Config only: no network.
       await run(git, ['submodule', 'init', '--', ...p.paths]);
       const urls = await resolvedUrls(git, entries);
@@ -131,6 +146,7 @@ export const ops = [
     async run(git, p) {
       await assertWorktree(git);
       const entries = await knownEntries(git, p.paths);
+      assertRecorded(entries);
       await assertNoRepoProtocolConfig(git);
       // init resolves relative urls into the local config; what git will clone is checked after it.
       await run(git, ['submodule', 'init', '--', ...p.paths]);
@@ -152,6 +168,7 @@ export const ops = [
     async run(git, p) {
       await assertWorktree(git);
       const entries = await knownEntries(git, p.paths);
+      assertRecorded(entries);
       assertDeclaredUrls(entries, isRelativeUrl);
       await run(git, ['submodule', 'sync', '--recursive', '--', ...p.paths]);
       return { paths: p.paths };
@@ -183,17 +200,37 @@ export const ops = [
     async run(git, p) {
       await assertWorktree(git);
       await assertGitmodulesWritable(git);
-      const [e] = await knownEntries(git, [p.path]);
+      let [e] = await knownEntries(git, [p.path]);
       // git rm refuses while .gitmodules has unstaged changes: it stages the whole file with the removal.
       const gitmodules = (await git(['diff', '--quiet', '--no-ext-diff', '--', '.gitmodules'], { okExit: [0, 1] })).exitCode === 1;
+      // No gitlink in the index (deinit and rm would not find the path):
+      let restored = false;
+      if (e.recorded === null && !e.conflicted) {
+        if (e.committed) {
+          // In HEAD, not in the index (`git rm --cached`): put the entry back from HEAD, so the removal below runs
+          // gated as for any submodule and ends with the same staged deletion.
+          await git(['update-index', '--add', '--cacheinfo', `160000,${e.committed},${e.path}`]);
+          restored = true;
+          [e] = await knownEntries(git, [p.path]);
+        } else if (e.populated) {
+          throw new Refusal('SUBMODULE_NOT_RECORDED', `${p.path} is cloned but its gitlink is in neither the index nor HEAD: add it back (git add ${p.path}) or delete its directory, then remove it`, { paths: [p.path] });
+        } else {
+          // Declared only: its .gitmodules section (and the config init wrote) is all there is.
+          if (gitmodules && !p.discard) throw dirtyRefusal(p.path, e, 0, false, gitmodules);
+          await git(['config', '-f', '.gitmodules', '--remove-section', `submodule.${e.name}`]);
+          if (e.initialized) await git(['config', '--remove-section', `submodule.${e.name}`], { okExit: [0, 128] });
+          await git(['add', '--', '.gitmodules']);
+          return { path: p.path, name: e.name };
+        }
+      }
       if (!p.discard) {
         const orphaned = e.populated ? await orphanCount(git, e.path, e.recorded) : 0;
         // A pointer staged but not committed (an added submodule, a moved one): `git rm` would need -f.
         const staged = e.recorded !== e.committed;
         if ((e.populated && (e.modified || e.untracked)) || orphaned > 0 || staged || gitmodules) {
-          throw new Refusal('SUBMODULE_DIRTY', `${p.path} has work removing it would throw away`, {
-            path: p.path, modified: e.populated && e.modified, untracked: e.populated && e.untracked, orphaned, staged, gitmodules,
-          });
+          // Refused: the index entry put back is taken out again, as it was.
+          if (restored) await git(['update-index', '--force-remove', '--', e.path]);
+          throw dirtyRefusal(p.path, e, orphaned, staged, gitmodules);
         }
       }
       const force = p.discard ? ['-f'] : [];

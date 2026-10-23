@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { Shell } from '@/shell/Shell';
 import { Toasts } from '@/shell/Toasts';
 import { activityStore } from '@/state/useActivity';
@@ -32,9 +32,10 @@ test('rows show status badges by accessible name, the count, and the checked-out
     subEntry({ path: 'e-new', added: true, committed: null }),
     subEntry({ path: 'f-conflict', conflicted: true, recorded: null }),
     subEntry({ path: 'g-bad', blocked: 'name', urlProblem: 'invalid remote url: a <transport>:: url runs a remote helper' }),
+    subEntry({ path: 'h-ghost', recorded: null, committed: null }),
   ]);
   await within(panel).findByText('a-clean');
-  expect(within(panel).getByRole('heading', { name: 'Submodules (7)' })).toBeTruthy();
+  expect(within(panel).getByRole('heading', { name: 'Submodules (8)' })).toBeTruthy();
   expect(within(panel).queryByRole('list', { name: 'Status of a-clean' })).toBeNull();
   expect(badgesOf(panel, 'b-uninit')).toEqual(['Uninitialised']);
   expect(badgesOf(panel, 'c-notcloned')).toEqual(['Not cloned']);
@@ -42,6 +43,7 @@ test('rows show status badges by accessible name, the count, and the checked-out
   expect(badgesOf(panel, 'e-new')).toEqual(['Added']);
   expect(badgesOf(panel, 'f-conflict')).toEqual(['Conflicted']);
   expect(badgesOf(panel, 'g-bad')).toEqual(['Blocked', 'URL refused']);
+  expect(badgesOf(panel, 'h-ghost')).toEqual(['Not recorded']);
   const moved = within(panel).getByText('d-moved').closest('li')!;
   expect(within(moved).getByLabelText('Checked out').textContent).toBe(HEAD.slice(0, 7));
   expect(within(moved).getByLabelText('Recorded').textContent).toContain(COMMITTED.slice(0, 7));
@@ -88,8 +90,8 @@ test('an Add refusal stays in the dialog with git\'s stderr as text', async () =
   expect(w.posts('submodule.add')).toHaveLength(1);
 });
 
-test('Update all sends every unblocked path', async () => {
-  const { w, panel } = await show([subEntry({ path: 'a' }), subEntry({ path: 'b', blocked: 'escapes' }), subEntry({ path: 'c' })]);
+test('Update all sends every unblocked, recorded path', async () => {
+  const { w, panel } = await show([subEntry({ path: 'a' }), subEntry({ path: 'b', blocked: 'escapes' }), subEntry({ path: 'c' }), subEntry({ path: 'd', recorded: null, committed: null })]);
   await userEvent.click(await within(panel).findByRole('button', { name: 'Update all' }));
   await waitFor(() => expect(w.posts('submodule.update')).toEqual([{ paths: ['a', 'c'] }]));
 });
@@ -105,4 +107,12 @@ test('the list is read again after a finished write on the project, not after a 
   act(() => activityStore.set({ entries: [entry({ id: 52, kind: 'write', status: 'ok' })], error: null }));
   await waitFor(() => expect(count()).toBe(before + 1));
   expect(n).toBeGreaterThan(0);
+});
+
+test('two .gitmodules sections declaring one path render two rows, keyed by name (no duplicate-key warning)', async () => {
+  const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const { panel } = await show([subEntry({ name: 'one', path: 'libs/a', blocked: 'path' }), subEntry({ name: 'two', path: 'libs/a', blocked: 'path' })]);
+  await waitFor(() => expect(within(panel).getAllByRole('button', { name: 'libs/a' })).toHaveLength(2));
+  expect(err.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false);
+  err.mockRestore();
 });

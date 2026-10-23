@@ -9,7 +9,7 @@ import { ContextMenuHost, openContextMenu } from '@/shell/ContextMenuHost';
 import { runPrimary } from '@/shell/menus';
 import { openSubmoduleDialog } from '@/state/submoduleDialog';
 import type { Tab } from '@/state/tabs';
-import { SUBMODULE_CONTEXT, update, type SubmoduleCtx } from './actions';
+import { recorded, SUBMODULE_CONTEXT, update, type SubmoduleCtx } from './actions';
 import type { SubmoduleEntry } from './api';
 import { useSubmodules } from './state';
 
@@ -21,6 +21,7 @@ type Variant = 'warning' | 'info' | 'destructive' | 'outline';
 export function statusBadges(e: SubmoduleEntry): { label: string; variant: Variant; title?: string }[] {
   const out: { label: string; variant: Variant; title?: string }[] = [];
   if (e.blocked) out.push({ label: 'Blocked', variant: 'destructive', title: { name: 'Its .gitmodules name is not a safe name', path: 'Its .gitmodules path is not safe, or another entry declares it', escapes: 'Its directory resolves outside the checkout' }[e.blocked] });
+  if (!recorded(e)) out.push({ label: 'Not recorded', variant: 'warning', title: '.gitmodules declares it, but its gitlink is not in the index: add it again, or remove the declaration' });
   if (!e.initialized) out.push({ label: 'Uninitialised', variant: 'outline' });
   else if (!e.populated) out.push({ label: 'Not cloned', variant: 'outline' });
   if (e.outOfSync) out.push({ label: 'Out of sync', variant: 'warning', title: `Checked out ${short(e.head)}, recorded ${short(e.recorded)}` });
@@ -67,7 +68,7 @@ function Row({ tab, entry }: { tab: Tab; entry: SubmoduleEntry }) {
 function SubmodulesView({ tab }: { tab: Tab }) {
   const s = useSubmodules(tab);
   const list = s.list?.submodules ?? [];
-  const usable = list.filter((e) => !e.blocked).map((e) => e.path);
+  const usable = list.filter((e) => !e.blocked && recorded(e)).map((e) => e.path);
   return (
     <section className="flex flex-col border-b pb-2 text-sm" aria-label="Submodules">
       <div className="flex flex-wrap items-center gap-x-1 px-2 pt-2 pb-0.5">
@@ -84,7 +85,7 @@ function SubmodulesView({ tab }: { tab: Tab }) {
       {!s.list && s.status !== 'error' && <p className="px-3 py-1 text-muted-foreground">Loading submodules…</p>}
       {s.error && <p className="px-3 py-1 text-destructive" role="alert">{s.error}</p>}
       {s.list && !list.length && <p className="px-3 py-1 text-muted-foreground">No submodules</p>}
-      {list.length > 0 && <ul aria-label="Submodule list">{list.map((e) => <Row key={e.path} tab={tab} entry={e} />)}</ul>}
+      {list.length > 0 && <ul aria-label="Submodule list">{list.map((e) => <Row key={e.name} tab={tab} entry={e} />)}</ul>}
       {s.list?.truncated && <p className="px-3 py-1 text-xs text-muted-foreground">Only the first {list.length} are listed.</p>}
       <ContextMenuHost host={HOST} />
     </section>
