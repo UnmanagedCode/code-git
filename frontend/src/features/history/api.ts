@@ -17,7 +17,8 @@ export interface HistoryItem {
 }
 export interface HistoryPage { items: HistoryItem[]; nextCursor: number | null; truncated: boolean }
 export interface BlameLine { n: number; oid: string; origLine: number; text: string }
-export interface BlameCommit { author: string; mail: string; time: number; summary: string; filename: string; previous: string | null }
+/** `previousPath`: the file's name in `previous` (another name when this commit renamed it). */
+export interface BlameCommit { author: string; mail: string; time: number; summary: string; filename: string; previous: string | null; previousPath: string | null }
 export interface BlamePage { total: number; lines: BlameLine[]; commits: Record<string, BlameCommit> }
 export interface ReflogItem { selector: string; oid: string; time: number | null; action: string; who: { name: string; email: string }; subject: string }
 export interface ReflogPage { items: ReflogItem[]; nextCursor: number | null }

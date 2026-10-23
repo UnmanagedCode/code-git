@@ -42,8 +42,8 @@ export function parseFileHistory(out, startPath) {
 
 /**
  * `blame --porcelain` → `{lines: [{n, oid, origLine, text}], commits: {[oid]: {author, mail, time, summary, filename,
- * previous}}}`. A group header `<oid> <orig> <final> [<count>]` is followed by that commit's headers the first time it
- * appears (and `filename` / `previous` per group), then each line as `\t<text>`.
+ * previous, previousPath}}}`. A group header `<oid> <orig> <final> [<count>]` is followed by that commit's headers the
+ * first time it appears (and `filename` / `previous` per group), then each line as `\t<text>`.
  */
 export function parseBlame(out) {
   const lines = [];
@@ -61,7 +61,7 @@ export function parseBlame(out) {
       cur = head[1];
       origLine = Number(head[2]);
       n = Number(head[3]);
-      commits[cur] ??= { author: '', mail: '', time: 0, summary: '', filename: '', previous: null };
+      commits[cur] ??= { author: '', mail: '', time: 0, summary: '', filename: '', previous: null, previousPath: null };
       continue;
     }
     if (!cur) continue;
@@ -74,7 +74,12 @@ export function parseBlame(out) {
     else if (key === 'author-time') c.time = Number(value);
     else if (key === 'summary') c.summary = value;
     else if (key === 'filename') c.filename = value;
-    else if (key === 'previous') c.previous = value.slice(0, value.indexOf(' ')) || null;
+    else if (key === 'previous') {
+      // "previous <oid> <path>": the commit before, and the file's name there (the old name after a rename).
+      const sp2 = value.indexOf(' ');
+      c.previous = (sp2 === -1 ? value : value.slice(0, sp2)) || null;
+      c.previousPath = sp2 === -1 ? null : value.slice(sp2 + 1);
+    }
   }
   return { lines, commits };
 }

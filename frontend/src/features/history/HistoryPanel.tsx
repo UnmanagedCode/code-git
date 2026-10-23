@@ -7,6 +7,7 @@ import { formatTime } from '@/features/graph/time';
 import '@/features/graph/graph.css';
 import { cn } from '@/lib/utils';
 import type { Tab } from '@/state/tabs';
+import type { BlameCommit } from './api';
 import { authorClasses } from './authorColors';
 import { CommitFileView } from './CommitFileView';
 import { closeHistoryPanel, showFileView } from './open';
@@ -16,6 +17,12 @@ import { loadMoreBlame, loadMoreHistory, pickCommit, useFileHistory, type FileHi
 // changed each line, the author's colour at each run's first line). Every value is rendered as text.
 
 const abbrev = (oid: string) => oid.slice(0, 7);
+
+/** A blamed commit as the viewer opens it: the file's name there, and its old name when the commit renamed it. */
+function pickedOf(oid: string, c: BlameCommit | undefined, fallback: string) {
+  const path = c?.filename || fallback;
+  return { oid, path, oldPath: c?.previousPath && c.previousPath !== path ? c.previousPath : null };
+}
 
 function HistoryList({ tab, s }: { tab: Tab; s: FileHistoryState }) {
   const h = s.history;
@@ -78,7 +85,7 @@ function BlameView({ tab, s }: { tab: Tab; s: FileHistoryState }) {
                 {first && (
                   <button type="button" className="flex min-w-0 gap-1.5 truncate text-left hover:underline" title={c?.summary}
                     aria-label={`${abbrev(line.oid)} ${author}: show in history`}
-                    onClick={() => { pickCommit(tab, { oid: line.oid, path: c?.filename || s.path, oldPath: null }); showFileView(tab, 'history'); }}>
+                    onClick={() => { pickCommit(tab, pickedOf(line.oid, c, s.path)); showFileView(tab, 'history'); }}>
                     <span className="text-muted-foreground">{abbrev(line.oid)}</span>
                     <span className="truncate font-sans">{author}</span>
                     <span className="shrink-0 font-sans text-muted-foreground">{c ? formatTime(c.time) : ''}</span>

@@ -92,7 +92,7 @@ test('history.blame: pages concatenate to the full blame, with each line\'s comm
   assert.deepEqual(full.lines.map((l) => l.n), lines.map((_, i) => i + 1));
   assert.equal(full.lines[4].oid, c2);
   assert.equal(full.lines[3].oid, c1);
-  assert.deepEqual(full.commits[c2], { author: 'T', mail: 't@example.com', time: full.commits[c2].time, summary: 'second', filename: 'f.txt', previous: c1 });
+  assert.deepEqual(full.commits[c2], { author: 'T', mail: 't@example.com', time: full.commits[c2].time, summary: 'second', filename: 'f.txt', previous: c1, previousPath: 'f.txt' });
   const pages = [];
   for (let start = 1; start <= 25; start += 7) pages.push(...(await w.op('history.blame', { rev: c2, path: 'f.txt', start, count: 7 })).lines);
   assert.deepEqual(pages, full.lines);
@@ -173,4 +173,16 @@ test('params: rev a full oid, limits bounded', async (t) => {
     ['history.blame', { rev: c, path: 'a.txt', start: 0 }], ['history.blame', { rev: c, path: 'a.txt', count: HISTORY_LIMITS.blameLinesMax + 1 }],
     ['history.paths', { rev: c, extra: 1 }],
   ]) await assert.rejects(w.op(name, params), (e) => ['BAD_PARAMS', 'BAD_REF', 'BAD_PATH'].includes(e.code), `${name} ${JSON.stringify(params)}`);
+});
+
+// Invariant: a blame commit carries `previous` and `previousPath` (porcelain's "previous <oid> <path>"): for a commit that
+// renamed the file the old name, for an edit in place the same name; none for the commit that added it.
+test('history.blame: previous and previousPath name the commit before and the file\'s name there', async (t) => {
+  const w = await opWorld(t);
+  const c1 = w.repo.commit({ 'old name.txt': 'a\nb\nc\nd\ne\n' }, 'add');
+  w.repo.git('mv', 'old name.txt', 'new name.txt');
+  const c2 = w.repo.commit({ 'new name.txt': 'a\nb\nc\nd\nE\n' }, 'rename and edit');
+  const b = await w.op('history.blame', { rev: c2, path: 'new name.txt' });
+  assert.deepEqual([b.commits[c2].filename, b.commits[c2].previous, b.commits[c2].previousPath], ['new name.txt', c1, 'old name.txt']);
+  assert.deepEqual([b.commits[c1].filename, b.commits[c1].previous, b.commits[c1].previousPath], ['old name.txt', null, null]);
 });

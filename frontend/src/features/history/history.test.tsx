@@ -75,8 +75,8 @@ const blame: BlamePage = {
     { n: 3, oid: oid(2), origLine: 1, text: 'c' }, { n: 4, oid: oid(1), origLine: 3, text: 'd' },
   ],
   commits: {
-    [oid(1)]: { author: 'Ann', mail: 'a@x', time: 1, summary: 'one', filename: 'f.txt', previous: null },
-    [oid(2)]: { author: 'Bob', mail: 'b@x', time: 2, summary: 'two', filename: 'f.txt', previous: oid(1) },
+    [oid(1)]: { author: 'Ann', mail: 'a@x', time: 1, summary: 'one', filename: 'f.txt', previous: null, previousPath: null },
+    [oid(2)]: { author: 'Bob', mail: 'b@x', time: 2, summary: 'two', filename: 'f.txt', previous: oid(1), previousPath: 'f.txt' },
   },
 };
 
@@ -196,4 +196,24 @@ test('palette: File history… picks a HEAD path or a typed one', async () => {
   expect(await cmd.pick!.items(TAB)).toEqual([]);
   act(() => { void cmd.pick!.run(TAB, { id: 'src/b.ts', label: 'src/b.ts' }); });
   expect(fileHistoryOf(TAB)).toMatchObject({ path: 'src/b.ts', rev: REV, view: 'history' });
+});
+
+// Invariant: the blame gutter of a commit that renamed the file picks it with its old path, so the viewer diffs the
+// rename against the old name (not the whole file as added).
+test('blame gutter of a rename-with-edit commit picks it with its oldPath', async () => {
+  open();
+  const f = stubFetch({
+    'POST api/ops/history.blame': { ok: true, result: {
+      total: 1, lines: [{ n: 1, oid: oid(2), origLine: 1, text: 'x' }],
+      commits: { [oid(2)]: { author: 'Bob', mail: 'b@x', time: 2, summary: 'rename and edit', filename: 'new.txt', previous: oid(1), previousPath: 'old.txt' } },
+    } },
+    'POST api/ops/history.file': { ok: true, result: { items: [], nextCursor: null, truncated: false } },
+    'POST api/ops/diff.file': { ok: true, result: fileDiff },
+  });
+  render(<HistoryPanel tab={TAB} />);
+  act(() => openBlame(TAB, { path: 'new.txt', rev: REV }));
+  const table = await screen.findByRole('table', { name: 'Blame' });
+  await userEvent.click(await within(table).findByRole('button'));
+  expect(fileHistoryOf(TAB)?.picked).toEqual({ oid: oid(2), path: 'new.txt', oldPath: 'old.txt' });
+  await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ source: { kind: 'commit', rev: oid(2) }, path: 'new.txt', oldPath: 'old.txt' }));
 });
