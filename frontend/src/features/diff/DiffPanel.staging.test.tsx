@@ -161,3 +161,16 @@ test('no Restore on an unstaged diff (its new side is the working tree)', async 
   expect(screen.getByRole('menuitem', { name: 'Copy path' })).toBeTruthy();
   expect(screen.queryByRole('menuitem', { name: 'Restore file to this version…' })).toBeNull();
 });
+
+test('a conflicted file in the unstaged diff offers Open in merge tool, which shows the merge tool for it', async () => {
+  const U = dfile({ path: 'c.txt', status: 'U' });
+  const w = workdirWorld({ unstaged: [U], answers: {
+    'conflict.read': { path: 'c.txt', kind: 'bothModified', content: 'binary', base: null, ours: null, theirs: null, worktree: null },
+  } });
+  render(<Shell />);
+  act(() => dispatchTabs({ type: 'open', tab: APP }));
+  act(() => openDiff(APP, { kind: 'unstaged' }, { path: 'c.txt' }));
+  await userEvent.click(await within(diff()).findByRole('button', { name: 'Open in merge tool' }));
+  await waitFor(() => expect(w.posts('conflict.read')).toEqual([{ path: 'c.txt' }]));
+  expect(await screen.findByRole('region', { name: 'Merge tool' })).toBeTruthy();
+});

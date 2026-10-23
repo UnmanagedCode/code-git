@@ -23,6 +23,7 @@ import { FileView } from './FileView';
 import { languageFor } from './highlight';
 import { useTokenizer } from './highlight/useTokenizer';
 import { changeBlocks } from './model';
+import { openConflict } from '@/features/conflicts/open';
 import { closeDiff, openDiff } from './openDiff';
 import { copyPatch, downloadPatch, patchPaths, patchSource } from './patch';
 import { SearchBar } from './SearchBar';
@@ -186,6 +187,7 @@ function DiffView({ tab }: { tab: Tab }) {
               canPrevFile={viewedIndex > 0}
               canNextFile={viewedIndex !== -1 && viewedIndex < files.length - 1}
               onForce={() => forceFile(tab, file.path)}
+              onOpenConflict={state.source.kind === 'unstaged' || state.source.kind === 'staged' ? () => void openConflict(tab, file.path) : undefined}
               staging={staging}
               selectionBar={staging && diff && (
                 <SelectionBar

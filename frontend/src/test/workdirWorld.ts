@@ -63,6 +63,7 @@ export function workdirWorld(w: WorkdirWorld = {}) {
     })),
     'POST api/ops/commit.template': op('commit.template', () => ({ path: w.template ? '/t' : null, draft: w.template ?? null, problem: null })),
     'POST api/ops/commit.headMessage': op('commit.headMessage', () => ({ oid: 'a'.repeat(40), ...(w.head ?? { summary: 'HEAD summary', description: 'HEAD body' }) })),
+    'POST api/ops/conflict.read': op('conflict.read', () => { throw new Error('no conflict.read stubbed'); }),
     // The remotes card's reads (push after commit): no remote unless answered.
     'POST api/ops/remote.list': op('remote.list', () => ({ remotes: [] })),
     'POST api/ops/branch.tracking': op('branch.tracking', () => ({ remotes: [], branches: {} })),

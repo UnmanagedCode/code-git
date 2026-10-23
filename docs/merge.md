@@ -38,6 +38,32 @@ Opened by the 120 / 332 / 313 / 320 / 321 items, it replaces the graph (`REBASE_
 
 Toasts: "Rebased `<branch>` onto `<onto>`", "Cherry-picked N commits onto `<branch>`", "Squashed into one commit on `<branch>`", "`<branch>`: nothing changed"; stops as a rebase's.
 
+### The conflict tool
+
+Opened by a click on a conflicted (`U`) row in Changes, its menu's **Open in merge tool**, or **Open in merge tool** on a working-tree diff's "Conflicted file" note. It replaces the graph (`CONFLICT_PANEL`, an on-demand center panel; `openConflict(tab, path)` in `frontend/src/features/conflicts/open.ts` reads the conflict first). Not persisted: a reload shows the graph; the conflicts stay in git.
+
+| Part | Behaviour |
+|---|---|
+| Toolbar | The path; **File i of n** with previous / next conflicted file (asks before discarding unsaved changes); **Conflict i of N · k unresolved** with ↑ / ↓; **Save** (also **Ctrl/⌘+S**; disabled until the Output changes); **Mark resolved**; ✕ (asks "Discard the unsaved resolution?" when unsaved) |
+| Panes | **Current · `<label>`** and **Incoming · `<label>`** side by side (stacked below `lg`): each side's whole file with line numbers; a conflict's lines are highlighted, each with a checkbox ("Take line N from current"), under a header with a checkbox for the whole conflict ("Take conflict i from current") |
+| Output | A textarea (`wrap="off"`) holding the whole result. A conflict starts as git-style markers (`<<<<<<< <current>`, `=======`, `>>>>>>> <incoming>`); picking lines replaces the block with the picked current lines, then the picked incoming lines, each in file order; unpicking every line brings the markers back. Typing anywhere edits it; a block typed into becomes the user's (`applyEdit`: the edit's common prefix and suffix are kept, the blocks after it shift) |
+| Keys | **Alt+↑ / Alt+↓** move between conflicts: the panes scroll to it and the Output's caret goes to its start |
+| Save | Sends the Output as UTF-8 with the worktree file's oid as read (`expect`); answers the new oid, the next save's `expect`. A worktree file read without any `<<<<<<< ` line was changed outside the tool: the first save asks "Overwrite `<path>`?" |
+| Mark resolved | Asks when the Output still has a marker line or an unpicked conflict; saves first when unsaved; then stages the file (`stage.files`) and opens the next conflicted file, or closes |
+
+**What the tool does for each case** (`content` from `conflict.read`; the text case also needs both sides UTF-8, decoded with `TextDecoder` `fatal: true`, and a merge `merge3` can do line by line):
+
+| Case | Shown | Actions |
+|---|---|---|
+| `text` | the three panes | as above |
+| `binary` (a NUL in a side's first 8000 bytes), `large` (a side over `CONFLICT_LIMITS.sideMaxBytes`), not UTF-8, too different to merge line by line | a notice | **Take current** / **Take incoming** / **Mark resolved** |
+| `symlink` (120000 on any side) | the link targets as text | the same |
+| `submodule` (160000 on any side) | both pointer oids | **Take current** / **Take incoming** (a stage-0 gitlink; the submodule's own checkout is not changed) / **Mark resolved** |
+| `oneSided` (deleted on one side: `deletedByUs`, `deletedByThem`, `addedByUs`, `addedByThem`) | "Modified on one side, deleted on the other" | take keeps that side's file, or deletes it |
+| `none` (`bothDeleted`) | "Deleted on both sides" | **Mark resolved** (stages the deletion) |
+
+**Take current / Take incoming** (the tool, or a `U` row's menu) asks first, listing the files and naming those the side deleted ("`<path>` (deleted)"); each file becomes that side's version and is staged.
+
 ### The operation banner
 
 The Changes panel (and the **Changes (n)** dialog below `lg`) shows a banner, under the detached-HEAD one, whenever `commit.state` reports something in progress. It is read from git's own state, so it shows after a reload or when the operation was started outside code-git.
@@ -101,6 +127,14 @@ Start refusals with a toast of their own: `OPERATION_IN_PROGRESS` "Something is 
 
 - **`BAD_PARAMS`** (`buildTodo` / `messageText` in `src/git/rebase/todo.js`, before anything runs): an unknown action; a squash or fixup with no kept row above it; a message on a row that takes none; a reword, or the head of a chain holding a squash, without one; a message with an empty or multi-line summary, a NUL, or over `REBASE_LIMITS.messageMaxBytes`; no rows; every row `drop`; a commit named twice. More than `REBASE_LIMITS.maxCommits` rows → `TOO_MANY_COMMITS`.
 - **Chains**: a kept row (pick, reword, edit) and the squash / fixup rows after it; a drop does not break a chain (git melds into the last kept commit). A chain takes a message when its head is a reword or it holds a squash.
+
+### Conflict files
+
+`conflict.read`, `conflict.save` and `conflict.take` (`src/git/ops/conflict.js`). Never `git apply --index`.
+
+- **read** `{path}`: `ls-files -u -z -- <path>` (`NOT_CONFLICTED` when none); `cat-file --batch-check` for the sides' sizes, then `cat-file --batch` for the ones within `CONFLICT_LIMITS.sideMaxBytes`; the worktree entry (`worktreeEntry`), its no-filter oid (`hash-object --no-filters`) and, in the text case, its bytes (`readNoIndex`). Bytes go out only for `text` and `symlink`.
+- **save** `{path, contentB64, expect}` writes the worktree only; the index keeps its stages until **Mark resolved** (`stage.files`). Gates, before any write: `BARE_REPO`; the path unmerged (`NOT_CONFLICTED`); every present stage a regular file and ours or theirs present (`NOT_TEXT_CONFLICT`); `assertNotBlocked` and `assertFileTarget` (`PATH_BLOCKED`: a leading directory that is an untracked symlink or file, or the path a directory); the worktree file's no-filter oid equal to `expect` (`FILE_CHANGED`; an absent file matches `null`). Then `hash-object -w --stdin --path=<p>` (the content becomes a blob with the clean filters and eol handling `git add` applies), a `mktree -z` chain (one level per path segment, at most `CONFLICT_LIMITS.pathDepthMax`) holding only that blob with ours' mode (else theirs'), and `restore --source=<tree> --worktree -- <p>`: it reads the tree into an in-core index only, so the index file's stages stay (pinned by `tests/sequence-git-probes.test.js`), and smudges on the way out. Over `CONFLICT_LIMITS.saveMaxBytes` or not strict base64 → `BAD_PARAMS`. Answers `{oid}`, the new worktree oid.
+- **take** `{paths (1…CONFLICT_LIMITS.takeMax), side: 'ours' | 'theirs'}`: every path unmerged, else `NOT_CONFLICTED {paths}` and nothing runs. Per path, by the chosen side: a gitlink (160000) → `update-index -z --index-info` with a stage-0 entry (it replaces every unmerged stage of the path); present otherwise → `checkout --ours|--theirs -- <paths>` (after `assertNotBlocked`), then `add -- <paths>`; absent (that side deleted it) → `rm -q -f -- <paths>`. Paths in argv chunks (`chunkPaths`). Answers `{resolved, deleted}`.
 
 ### The scripted editor and carriers
 
@@ -171,4 +205,6 @@ A merge or rebase that stops on conflicts stays in progress, whoever started it.
 - **`--empty=drop`**: a pick that became empty (its change is already in the new base) is dropped, not kept as an empty commit.
 - **Carriers are dangling commits until gc** when a rebase is aborted before reaching them.
 - **The rows are read from the loaded graph for the menus**: "Interactive rebase from here…", "Squash N commits…" and "Cherry-pick N commits…" decide ancestry among the loaded rows only; the backend checks the real range.
+- **The merge tool's three-way merge is its own** (`merge3` in `frontend/src/features/conflicts/diff3.ts`, a Myers line diff bounded at `DIFF3_MAX_LINES` lines a side and `DIFF_MAX_EDITS` edits): it can split or join conflicts differently from git's merge, and knows nothing of merge drivers, `-X` options or renames. The Output starts from it, not from the worktree file git wrote.
+- **Save is check-then-act**: a change to the file between its oid check and the restore is overwritten.
 - **Gates are check-then-act**: each command takes the project lock on its own, so another op can run between the state read and git's own run.

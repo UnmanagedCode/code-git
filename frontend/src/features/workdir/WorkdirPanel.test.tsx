@@ -308,3 +308,13 @@ test('a template draft shows the template file it was read from', async () => {
   const hint = await within(await screen.findByRole('region', { name: 'Commit message' })).findByText('/t');
   expect(hint.parentElement?.textContent).toBe('Template: /t');
 });
+
+test('a click on a conflicted (U) row opens the merge tool for it instead of a diff', async () => {
+  const w = await show({ unstaged: [M, dfile({ path: 'c.ts', status: 'U' })], answers: {
+    'conflict.read': { path: 'c.ts', kind: 'bothModified', content: 'binary', base: null, ours: null, theirs: null, worktree: null },
+  } });
+  await userEvent.click(within(section('Unstaged Files')).getByText('c.ts'));
+  await waitFor(() => expect(shownPanelStore.get().get(tabKey(APP))).toBe('conflicts'));
+  expect(w.posts('conflict.read')).toEqual([{ path: 'c.ts' }]);
+  expect(diffStore.get().get(tabKey(APP))).toBeUndefined();
+});

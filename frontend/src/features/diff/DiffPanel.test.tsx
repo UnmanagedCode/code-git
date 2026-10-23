@@ -216,6 +216,8 @@ test('file states: binary, LFS, conflicted, rename-only, submodule pointer', asy
   expect(panel().querySelector('[data-view]')).toBeTruthy();
   await pick(/c\.txt/);
   expect(await screen.findByText('Conflicted file — resolve it first')).toBeTruthy();
+  // A commit's diff: no working-tree conflict to open.
+  expect(screen.queryByRole('button', { name: 'Open in merge tool' })).toBeNull();
   await pick(/old\.js/);
   expect(await screen.findByText('No content changes')).toBeTruthy();
   expect(screen.getByText('renamed from old.js (100% similar)')).toBeTruthy();

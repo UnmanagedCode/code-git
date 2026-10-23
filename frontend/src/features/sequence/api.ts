@@ -51,3 +51,17 @@ export interface InteractiveRequest { mode: 'rebase' | 'pick'; base: string; ont
 export const rebasePlan = (t: Target, spec: PlanSpec) => runOp<{ commits: PlanCommit[] }>('rebase.plan', t, spec);
 export const rebaseInteractive = (t: Target, r: InteractiveRequest) =>
   runOp<RebaseResult>('rebase.interactive', t, { mode: r.mode, base: r.base, onto: r.onto, expect: r.expect, rows: r.rows, ...ack(r.ccOwned) });
+
+export type ConflictContent = 'text' | 'binary' | 'large' | 'symlink' | 'submodule' | 'oneSided' | 'none';
+/** A stage as conflict.read sends it: `b64` only for the text and symlink cases. */
+export interface ConflictSide { mode: string; oid: string; b64: string | null }
+export interface ConflictRead {
+  path: string; kind: ConflictKind; content: ConflictContent;
+  base: ConflictSide | null; ours: ConflictSide | null; theirs: ConflictSide | null;
+  /** The worktree file: `oid` its no-filter hash (what conflict.save's `expect` names), `b64` its bytes (text case). */
+  worktree: { oid: string | null; b64: string | null } | null;
+}
+
+export const conflictRead = (t: Target, path: string) => runOp<ConflictRead>('conflict.read', t, { path });
+export const conflictSave = (t: Target, p: { path: string; contentB64: string; expect: string | null }) => runOp<{ oid: string | null }>('conflict.save', t, p);
+export const conflictTake = (t: Target, paths: string[], side: 'ours' | 'theirs') => runOp<{ resolved: string[]; deleted: string[] }>('conflict.take', t, { paths, side });

@@ -25,6 +25,7 @@ import { resetRemoteDialog } from '@/state/remoteDialog';
 import { resetAutoFetch } from '@/features/remotes/autoFetch';
 import { resetSequenceDialog } from '@/state/sequenceDialog';
 import { resetRebaseEditor } from '@/features/rebase/state';
+import { resetConflictTool } from '@/features/conflicts/state';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
@@ -57,6 +58,7 @@ afterEach(() => {
   resetAutoFetch();
   resetSequenceDialog();
   resetRebaseEditor();
+  resetConflictTool();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();
