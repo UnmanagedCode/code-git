@@ -11,8 +11,8 @@ import { CELL_CLASS, clampWidth, COLUMNS, OPTIONAL_COLUMNS, type ColumnId, type 
 export const shownColumns = (p: GraphPrefs): ColumnId[] => p.columns.order.filter((id) => !COLUMNS[id].optional || p.columns.visible.includes(id as OptionalColumnId));
 
 /** Moves column `id` by `by` places among the shown columns (persisted). */
-export function moveColumn(project: string, id: ColumnId, by: number): void {
-  updatePrefs(project, (p) => {
+export function moveColumn(prefsKey: string, id: ColumnId, by: number): void {
+  updatePrefs(prefsKey, (p) => {
     const shown = shownColumns(p);
     const at = shown.indexOf(id);
     const to = at + by;
@@ -23,16 +23,16 @@ export function moveColumn(project: string, id: ColumnId, by: number): void {
     return { ...p, columns: { ...p.columns, order } };
   });
 }
-export const toggleColumn = (project: string, id: OptionalColumnId, on: boolean): void =>
-  updatePrefs(project, (p) => ({ ...p, columns: { ...p.columns, visible: toggled(p.columns.visible, id, on) } }));
+export const toggleColumn = (prefsKey: string, id: OptionalColumnId, on: boolean): void =>
+  updatePrefs(prefsKey, (p) => ({ ...p, columns: { ...p.columns, visible: toggled(p.columns.visible, id, on) } }));
 
 /** The column checkboxes, for the header menu and the toolbar gear. */
-export function ColumnToggles({ project, prefs }: { project: string; prefs: GraphPrefs }) {
+export function ColumnToggles({ prefsKey, prefs }: { prefsKey: string; prefs: GraphPrefs }) {
   return (
     <>
       {OPTIONAL_COLUMNS.map((id) => (
         <DropdownMenuCheckboxItem key={id} checked={prefs.columns.visible.includes(id)} onSelect={(e) => e.preventDefault()}
-          onCheckedChange={(on) => toggleColumn(project, id, on === true)}>
+          onCheckedChange={(on) => toggleColumn(prefsKey, id, on === true)}>
           {COLUMNS[id].label}
         </DropdownMenuCheckboxItem>
       ))}
@@ -44,7 +44,7 @@ export function ColumnToggles({ project, prefs }: { project: string; prefs: Grap
  * The column header: drag a cell onto another to reorder, drag its right edge to resize (live through `--col-<id>` on
  * `root`, persisted on release); right-click for Move left / Move right and the column toggles.
  */
-export function GraphHeader({ project, prefs, root }: { project: string; prefs: GraphPrefs; root: () => HTMLElement | null }) {
+export function GraphHeader({ prefsKey, prefs, root }: { prefsKey: string; prefs: GraphPrefs; root: () => HTMLElement | null }) {
   const shown = shownColumns(prefs);
   const [menu, setMenu] = useState<ColumnId | null>(null);
   const [dragging, setDragging] = useState<ColumnId | null>(null);
@@ -63,7 +63,7 @@ export function GraphHeader({ project, prefs, root }: { project: string; prefs: 
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      if (w !== start) updatePrefs(project, (p) => ({ ...p, columns: { ...p.columns, widths: { ...p.columns.widths, [id]: w } } }));
+      if (w !== start) updatePrefs(prefsKey, (p) => ({ ...p, columns: { ...p.columns, widths: { ...p.columns.widths, [id]: w } } }));
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -84,7 +84,7 @@ export function GraphHeader({ project, prefs, root }: { project: string; prefs: 
       const over = ev.target instanceof Element ? ev.target.closest('[data-header-col]')?.getAttribute('data-header-col') : null;
       const to = over ? shown.indexOf(over as ColumnId) : -1;
       const from = shown.indexOf(id);
-      if (to !== -1 && to !== from) moveColumn(project, id, to - from);
+      if (to !== -1 && to !== from) moveColumn(prefsKey, id, to - from);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -117,10 +117,10 @@ export function GraphHeader({ project, prefs, root }: { project: string; prefs: 
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem disabled={i === 0} onSelect={() => moveColumn(project, id, -1)}>Move left</DropdownMenuItem>
-            <DropdownMenuItem disabled={i === shown.length - 1} onSelect={() => moveColumn(project, id, 1)}>Move right</DropdownMenuItem>
+            <DropdownMenuItem disabled={i === 0} onSelect={() => moveColumn(prefsKey, id, -1)}>Move left</DropdownMenuItem>
+            <DropdownMenuItem disabled={i === shown.length - 1} onSelect={() => moveColumn(prefsKey, id, 1)}>Move right</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <ColumnToggles project={project} prefs={prefs} />
+            <ColumnToggles prefsKey={prefsKey} prefs={prefs} />
           </DropdownMenuContent>
         </DropdownMenu>
       ))}

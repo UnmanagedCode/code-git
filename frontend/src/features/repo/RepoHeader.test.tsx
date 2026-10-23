@@ -1,7 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 import type { RepoSummary } from '@/lib/endpoints';
+import { tabLabel } from '@/features/tabs/actions';
+import { activeTab, dispatchTabs, tabsStore } from '@/state/tabs';
 import { reposStore } from '@/state/useRepos';
 import { repo, summary } from '@/test/fixtures';
 import { stubFetch } from '@/test/stubFetch';
@@ -89,4 +91,26 @@ test('a failed refresh other than a cancel is shown as an error', async () => {
   stubFetch({ 'POST api/ops/repo.summary': new Response(JSON.stringify({ error: 'the System of app is unreachable', code: 'SYSTEM_UNREACHABLE' }), { status: 502 }) });
   render(<RepoHeader tab={TAB} />);
   expect((await screen.findByRole('alert')).textContent).toContain('the System of app is unreachable');
+});
+
+test('a submodule tab: summary asked with sub; breadcrumb of its chain, each ancestor opening its tab; Back to the parent closes it', async () => {
+  const SUB = { project: 'app', worktree: null, sub: ['libs/a', 'b'] };
+  const fetch = stubFetch({ 'POST api/ops/repo.summary': { ok: true, result: summary() } });
+  dispatchTabs({ type: 'open', tab: SUB });
+  render(<RepoHeader tab={SUB} />);
+  await screen.findByText('main');
+  expect(fetch.calls[0].body).toEqual({ target: { project: 'app', sub: ['libs/a', 'b'] } });
+  const trail = screen.getByRole('navigation', { name: 'Submodule path' });
+  expect(within(trail).getAllByRole('button').map((b) => b.textContent)).toEqual(['app', 'libs/a']);
+  expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('b');
+  await userEvent.click(within(trail).getByRole('button', { name: 'app' }));
+  expect(activeTab(tabsStore.get())).toEqual({ project: 'app', worktree: null });
+  await userEvent.click(screen.getByRole('button', { name: 'Back to libs/a' }));
+  expect(tabsStore.get().open).toEqual([{ project: 'app', worktree: null }, { project: 'app', worktree: null, sub: ['libs/a'] }]);
+  expect(activeTab(tabsStore.get())).toEqual({ project: 'app', worktree: null, sub: ['libs/a'] });
+});
+
+test('tabLabel: project, /worktree, then › per submodule path', () => {
+  expect(tabLabel({ project: 'app', worktree: null })).toBe('app');
+  expect(tabLabel({ project: 'app', worktree: 'wt', sub: ['libs/a', 'b'] })).toBe('app/wt › libs/a › b');
 });

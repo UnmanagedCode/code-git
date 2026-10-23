@@ -16,7 +16,7 @@ import { loadNextPage, loadStats, loadUntil, refreshGraph, useGraph, viewMemory,
 import { useGraphPrefs } from '@/state/graphPrefs';
 import { dispatchSelection, getSelection, useGraphSelection } from '@/state/graphSelection';
 import { useStore } from '@/state/store';
-import { tabKey, type Tab } from '@/state/tabs';
+import { prefsKey, tabKey, type Tab } from '@/state/tabs';
 import { ancestorsWithin } from './ancestry';
 import { clampWidth, COLUMNS } from './columns';
 import { CONTEXT, type CommitCtx, type CommitsCtx, type RefCtx, type StashCtx, type WipCtx, type WorktreeCtx } from './contexts';
@@ -63,7 +63,7 @@ interface Seek { oid: string; rowId: string; status: 'loading' | Exclude<SeekRes
 function GraphView({ tab }: { tab: Tab }) {
   const key = tabKey(tab);
   const data = useGraph(tab);
-  const prefs = useGraphPrefs(tab.project);
+  const prefs = useGraphPrefs(prefsKey(tab));
   const wide = useMediaQuery(WIDE_GRAPH_QUERY);
   const vis = useMemo(() => (data.refs ? resolveVisibility(data.refs, prefs) : null), [data.refs, prefs]);
   const labels = useMemo(() => (data.refs && vis ? labelsByOid(data.refs, vis, data.checkouts) : new Map<string, Label[]>()), [data.refs, vis, data.checkouts]);
@@ -402,7 +402,7 @@ function GraphView({ tab }: { tab: Tab }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Columns</DropdownMenuLabel>
-              <ColumnToggles project={tab.project} prefs={prefs} />
+              <ColumnToggles prefsKey={prefsKey(tab)} prefs={prefs} />
             </DropdownMenuContent>
           </DropdownMenu>
           <RemoteToolbar tab={tab} />
@@ -450,7 +450,7 @@ function GraphView({ tab }: { tab: Tab }) {
         <>
           <div ref={head} className="shrink-0 overflow-hidden" onScroll={() => syncX(head.current, body.current)}>
             <div className="min-w-(--graph-min-w)">
-              <GraphHeader project={tab.project} prefs={prefs} root={() => root.current} />
+              <GraphHeader prefsKey={prefsKey(tab)} prefs={prefs} root={() => root.current} />
             </div>
           </div>
           <div

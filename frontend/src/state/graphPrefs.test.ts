@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { COLUMN_IDS, COLUMNS } from '@/features/graph/columns';
 import { DEFAULT_PREFS, getPrefs, loadPrefs, resetGraphPrefs, toggled, updatePrefs, validatePrefs } from './graphPrefs';
+import { prefsKey } from './tabs';
 
 test('prefs persist per project under code-git:graph:<project>; two projects are independent', () => {
   updatePrefs('a', (p) => ({ ...p, hidden: ['refs/heads/x'] }));
@@ -39,4 +40,12 @@ test('toggled adds once at the end or removes', () => {
   expect(toggled(['a'], 'b', true)).toEqual(['a', 'b']);
   expect(toggled(['a', 'b'], 'a', true)).toEqual(['a', 'b']);
   expect(toggled(['a', 'b'], 'a', false)).toEqual(['b']);
+});
+
+test("sub prefs key: a submodule's prefs persist under code-git:graph:<project>/<chain>, apart from its project's", () => {
+  const SUB = { project: 'a', worktree: null, sub: ['libs/x', 'y'] };
+  updatePrefs(prefsKey(SUB), (p) => ({ ...p, hidden: ['refs/heads/s'] }));
+  expect(JSON.parse(localStorage.getItem('code-git:graph:a/libs/x/y')!).hidden).toEqual(['refs/heads/s']);
+  expect(getPrefs(prefsKey({ project: 'a', worktree: null })).hidden).toEqual([]);
+  expect(getPrefs(prefsKey({ ...SUB, worktree: 'wt' })).hidden).toEqual(['refs/heads/s']);
 });

@@ -3,7 +3,7 @@ import type { MenuAction } from '@/shell/menus';
 import { getPrefs, toggled, updatePrefs, type GraphPrefs } from '@/state/graphPrefs';
 import { dispatchSelection, toSelected } from '@/state/graphSelection';
 import { getGraph } from '@/state/graph';
-import { dispatchTabs } from '@/state/tabs';
+import { dispatchTabs, prefsKey, type Tab } from '@/state/tabs';
 import type { CommitCtx, CommitsCtx, FileCtx, RefCtx, RemoteCtx, StashCtx, WipCtx, WorktreeCtx } from './contexts';
 import { openIn, selectionDiff } from './diffWiring';
 import { requestDetails, requestJump } from './jump';
@@ -23,8 +23,8 @@ async function copyMessage(tab: CommitCtx['tab'], oid: string, subject: string) 
     await copy(subject);
   }
 }
-const prefs = (c: { tab: { project: string } }) => getPrefs(c.tab.project);
-const set = (c: { tab: { project: string } }, f: (p: GraphPrefs) => GraphPrefs) => updatePrefs(c.tab.project, f);
+const prefs = (c: { tab: Tab }) => getPrefs(prefsKey(c.tab));
+const set = (c: { tab: Tab }, f: (p: GraphPrefs) => GraphPrefs) => updatePrefs(prefsKey(c.tab), f);
 const select = (c: CommitCtx, id: string) => {
   const g = getGraph(c.tab);
   const { rows } = buildInputs(g.commits, [], g.refs?.stashes ?? []);

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { Tab } from '@/state/tabs';
+import { tabKey, type Tab } from '@/state/tabs';
 import { stageAll, unstageAll } from './actions';
 import { openWorkingTree } from './entry';
 
@@ -19,5 +19,5 @@ export function useWorkdirKeys(tab: Tab | null): void {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tab?.project, tab?.worktree]);
+  }, [tab && tabKey(tab)]);
 }

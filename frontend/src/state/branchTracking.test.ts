@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
 import { ref } from '@/test/graphData';
 import { stubFetch } from '@/test/stubFetch';
-import { refreshTracking, trackingStore, useTracking } from './branchTracking';
+import { getTracking, refreshTracking, trackingStore, useTracking } from './branchTracking';
 import { refreshGraph } from './graph';
 
 const T = { project: 'app', worktree: null };
@@ -44,4 +44,19 @@ test('refreshTracking coalesces: calls while one request is in flight send no re
   expect(fetch.count('POST api/ops/branch.tracking')).toBe(2);
   expect(trackingStore.get().get('app')?.data?.branches['refs/heads/main'].behind).toBe(4);
   expect(trackingStore.get().get('app')?.loading).toBe(false);
+});
+
+test('sub tab tracks its own refs: its own request (target with sub) and store entry, apart from the project\'s', async () => {
+  const SUB = { project: 'app', worktree: null, sub: ['libs/a'] };
+  const fetch = stubFetch({
+    'POST api/ops/branch.tracking': (_u: URL, init?: RequestInit) => tracking(JSON.parse(String(init?.body)).target.sub ? 7 : 1),
+  });
+  await refreshTracking(T);
+  await refreshTracking(SUB);
+  expect(fetch.calls.map((c) => c.body)).toEqual([{ target: { project: 'app' } }, { target: { project: 'app', sub: ['libs/a'] } }]);
+  expect(getTracking(T).data?.branches['refs/heads/main'].behind).toBe(1);
+  expect(getTracking(SUB).data?.branches['refs/heads/main'].behind).toBe(7);
+  // A worktree tab shares the project's; a submodule tab of a worktree has its own.
+  expect(getTracking({ project: 'app', worktree: 'wt' }).data?.branches['refs/heads/main'].behind).toBe(1);
+  expect(getTracking({ ...SUB, worktree: 'wt' }).data).toBeNull();
 });

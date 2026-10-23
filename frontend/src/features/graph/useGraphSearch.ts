@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { runOp } from '@/lib/endpoints';
-import type { Tab } from '@/state/tabs';
+import { tabKey, type Tab } from '@/state/tabs';
 import type { SearchResult } from './types';
 
 export type SearchMode = 'commits' | 'path';
@@ -56,6 +56,6 @@ export function useGraphSearch(tab: Tab, tips: string[], tipsKey: string, initia
       clearTimeout(timer);
       ac.abort();
     };
-  }, [query, mode, tipsKey, tab.project, tab.worktree]);
+  }, [query, mode, tipsKey, tabKey(tab)]);
   return { query, setQuery, mode, setMode, matches: result?.matches ?? null, truncated: result?.truncated ?? false, searching, error };
 }

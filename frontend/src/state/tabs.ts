@@ -2,7 +2,7 @@ import type { Target } from '@/lib/endpoints';
 import { getItem, setItem } from '@/lib/storage';
 import { createStore, useStore } from './store';
 
-/** An open tab: one checkout of a cc project (worktree null = the main checkout). */
+/** An open tab: one checkout of a cc project (worktree null = the main checkout), or a submodule inside one (`sub`). */
 export type Tab = Target;
 
 export interface TabsState {
@@ -18,8 +18,27 @@ export type TabsAction =
   | { type: 'activateIndex'; index: number }
   | { type: 'move'; from: number; to: number };
 
-/** The key a checkout's per-repo state is stored under. */
-export const tabKey = (t: Tab): string => `${t.project}\0${t.worktree ?? ''}`;
+/** The most entries a tab's `sub` chain holds (the backend's SUBMODULE_LIMITS.maxDepth refuses more). */
+export const MAX_SUB_DEPTH = 8;
+
+/** Whether `v` is a `sub` chain a tab may hold: 1…MAX_SUB_DEPTH non-empty strings (the backend checks each path). */
+export const isSubChain = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.length >= 1 && v.length <= MAX_SUB_DEPTH && v.every((s) => typeof s === 'string' && s !== '');
+
+/** The key a checkout's per-repo state is stored under; a submodule's appends each path of its chain. */
+export const tabKey = (t: Tab): string => `${t.project}\0${t.worktree ?? ''}${(t.sub ?? []).map((s) => `\0${s}`).join('')}`;
+
+/** The repo a submodule tab's repo is a submodule of: one chain entry fewer (the checkout's tab for a top-level one). */
+export const parentTab = (t: Tab): Tab => {
+  const sub = t.sub?.slice(0, -1) ?? [];
+  return { project: t.project, worktree: t.worktree, ...(sub.length ? { sub } : {}) };
+};
+
+/** The key a repo's refs-derived state is shared under: the project (its worktrees share refs), a submodule's own tab. */
+export const refsKey = (t: Tab): string => (t.sub ? tabKey(t) : t.project);
+
+/** The key of a repo's persisted graph preferences: the project, or `project/sub/path` (a project name has no `/`). */
+export const prefsKey = (t: Tab): string => (t.sub ? `${t.project}/${t.sub.join('/')}` : t.project);
 const same = (a: Tab, b: Tab) => tabKey(a) === tabKey(b);
 
 export const EMPTY: TabsState = { open: [], active: -1 };
@@ -27,7 +46,7 @@ export const EMPTY: TabsState = { open: [], active: -1 };
 export function tabsReducer(s: TabsState, a: TabsAction): TabsState {
   switch (a.type) {
     case 'open': {
-      const tab = { project: a.tab.project, worktree: a.tab.worktree ?? null };
+      const tab: Tab = { project: a.tab.project, worktree: a.tab.worktree ?? null, ...(isSubChain(a.tab.sub) ? { sub: [...a.tab.sub] } : {}) };
       const at = s.open.findIndex((t) => same(t, tab));
       if (at !== -1) return at === s.active ? s : { ...s, active: at };
       return { open: [...s.open, tab], active: s.open.length };
@@ -63,7 +82,8 @@ export function loadTabs(): TabsState {
   try {
     const v = JSON.parse(getItem(STORAGE_KEY) ?? 'null') as TabsState | null;
     if (!v || !Array.isArray(v.open)) return EMPTY;
-    const open = v.open.filter((t) => t && typeof t.project === 'string' && t.project && (t.worktree === null || typeof t.worktree === 'string'));
+    const open = v.open.filter((t) => t && typeof t.project === 'string' && t.project && (t.worktree === null || typeof t.worktree === 'string')
+      && (t.sub === undefined || isSubChain(t.sub)));
     if (!open.length) return EMPTY;
     const active = Number.isInteger(v.active) && v.active >= 0 && v.active < open.length ? v.active : 0;
     return { open, active };

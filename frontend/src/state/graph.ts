@@ -6,7 +6,7 @@ import { listWorktrees, runOp, type Target } from '@/lib/endpoints';
 import { mapLimit } from '@/lib/limit';
 import { getPrefs, graphPrefsStore, loadPrefs } from './graphPrefs';
 import { createStore, useStore } from './store';
-import { tabKey, tabsStore, type Tab } from './tabs';
+import { prefsKey, tabKey, tabsStore, type Tab } from './tabs';
 import { activityStore } from './useActivity';
 import { loadSummary, summaryStore } from './useRepoSummary';
 
@@ -160,7 +160,7 @@ async function refreshOnce(tab: Tab, reason: RefreshReason, at: number): Promise
     return put(tab, (g) => ({ ...g, status: g.refs ? 'ready' : 'error', error: errInfo(e) }), at);
   }
   const { refs, checkouts } = read;
-  const { tips } = resolveVisibility(refs, getPrefs(tab.project));
+  const { tips } = resolveVisibility(refs, getPrefs(prefsKey(tab)));
   const tipsKey = tips.join(',');
   const cur = getGraph(tab);
   if (cur.status === 'ready' && tipsKey === cur.tipsKey) {
@@ -187,14 +187,17 @@ async function refreshOnce(tab: Tab, reason: RefreshReason, at: number): Promise
   }
 }
 
-/** graph.refs plus every cc checkout's summary (the header's own one is reused on first show). */
+/**
+ * graph.refs plus every cc checkout's summary (the header's own one is reused on first show). A submodule tab's only
+ * checkout is itself: cc's worktrees are the project's, not the submodule's.
+ */
 async function readRefs(tab: Tab, reason: RefreshReason, at: number): Promise<{ refs: RefsResult; checkouts: Checkout[] }> {
   const [refs, wts] = await Promise.all([
     runOp<RefsResult>('graph.refs', tab),
     // Without cc's worktree list the graph still shows the own checkout.
-    listWorktrees(tab.project).catch(() => []),
+    tab.sub ? Promise.resolve([]) : listWorktrees(tab.project).catch(() => []),
   ]);
-  const targets: Target[] = [{ project: tab.project, worktree: null }, ...wts.map((w) => ({ project: tab.project, worktree: w.worktreeName }))];
+  const targets: Target[] = tab.sub ? [tab] : [{ project: tab.project, worktree: null }, ...wts.map((w) => ({ project: tab.project, worktree: w.worktreeName }))];
   if (at !== epoch) throw new ResetError();
   await mapLimit(targets.filter((t) => reason !== 'open' || tabKey(t) !== tabKey(tab)), SUMMARY_CONCURRENCY, (t) => (at === epoch ? loadSummary(t) : Promise.resolve()));
   return { refs, checkouts: targets.map((t) => toCheckout(t, tab)) };
@@ -203,7 +206,7 @@ async function readRefs(tab: Tab, reason: RefreshReason, at: number): Promise<{ 
 function toCheckout(t: Target, own: Tab): Checkout {
   const s = summaryStore.get().get(tabKey(t))?.summary ?? null;
   return {
-    target: t, name: t.worktree ?? t.project, isOwn: tabKey(t) === tabKey(own),
+    target: t, name: t.sub?.at(-1) ?? t.worktree ?? t.project, isOwn: tabKey(t) === tabKey(own),
     branch: s?.head.branch ? `refs/heads/${s.head.branch}` : null,
     headOid: s?.head.oid ?? null, counts: s?.counts ?? null,
   };
@@ -335,7 +338,7 @@ function watchGraph(tab: Tab): () => void {
   // A visibility pref change can move the tips: re-resolve them.
   const visKey = () => {
     // Read without storing: this runs inside the prefs store's own notification.
-    const p = graphPrefsStore.get().get(tab.project) ?? loadPrefs(tab.project);
+    const p = graphPrefsStore.get().get(prefsKey(tab)) ?? loadPrefs(prefsKey(tab));
     return JSON.stringify([p.hidden, p.hiddenRemotes, p.hiddenSections, p.soloed, p.soloedRemotes, p.soloedSections]);
   };
   let lastVis = visKey();

@@ -332,3 +332,22 @@ test('a prefetch page already loading does not use up the seek\'s maxPages', asy
   // Without a prefetch the budget binds: oid(1) is two pages away.
   expect(await loadUntil(TAB, oid(1), { maxPages: 1 })).toBe('limit');
 });
+
+test("sub tab checkouts = [tab], no listWorktrees call; the project's hides do not apply, its own do", async () => {
+  const SUB = { project: 'app', worktree: null, sub: ['libs/a'] };
+  const world = linearWorld(5);
+  world.refs.refs.push(ref('refs/heads/old', oid(2)));
+  world.summaries[''] = summary();
+  updatePrefs('app', (p) => ({ ...p, hidden: ['refs/heads/old'] }));
+  const fetch = stubGraph(world);
+  await openGraph(SUB);
+  expect(fetch.count('GET api/repos/app/worktrees')).toBe(0);
+  expect(fetch.calls.filter((c) => c.url.pathname.startsWith('/api/ops/')).every((c) => (c.body as { target: unknown }).target
+    && JSON.stringify((c.body as { target: unknown }).target) === JSON.stringify({ project: 'app', sub: ['libs/a'] }))).toBe(true);
+  const g = getGraph(SUB);
+  expect(g.checkouts.map((c) => [c.name, c.isOwn, c.target])).toEqual([['libs/a', true, SUB]]);
+  expect(paramsOf(fetch, 'POST api/ops/graph.page')[0]).toMatchObject({ tips: [oid(2), oid(5)] });
+  updatePrefs('app/libs/a', (p) => ({ ...p, hidden: ['refs/heads/old'] }));
+  await refreshGraph(SUB, 'prefs');
+  expect(paramsOf(fetch, 'POST api/ops/graph.page').at(-1)).toMatchObject({ tips: [oid(5)] });
+});
