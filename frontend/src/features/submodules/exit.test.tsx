@@ -106,3 +106,14 @@ test('Close others closing two moved submodule tabs offers both, one after the o
   expect(await screen.findByRole('dialog', { name: 'Commit the new pointer for libs/b in app?' })).toBeTruthy();
   expect(w.posts('submodule.commitPointer')).toEqual([]);
 });
+
+test('OPERATION_IN_PROGRESS stays in the pointer prompt as its message; nothing is retried', async () => {
+  const w = await world(undefined, {
+    'submodule.commitPointer': json({ error: 'a merge is in progress in this repository: finish or abort it first', code: 'OPERATION_IN_PROGRESS', operation: 'merge' }, 409),
+  });
+  closeSub();
+  const dialog = await screen.findByRole('dialog', { name: PROMPT });
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Commit pointer' }));
+  expect(await within(dialog).findByText('a merge is in progress in this repository: finish or abort it first')).toBeTruthy();
+  expect(w.posts('submodule.commitPointer')).toHaveLength(1);
+});

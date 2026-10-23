@@ -7,7 +7,7 @@ import { bad, optBool, paramsObject } from '../params.js';
 import { netRun } from '../remote/net.js';
 import { submoduleFailure } from '../submodule/failure.js';
 import {
-  assertDeclaredUrls, assertDefaultRemoteUrl, assertGitmodulesWritable, assertNoRepoProtocolConfig, assertResolvedUrls,
+  assertDeclaredUrls, assertDefaultRemoteUrl, assertGitmodulesWritable, assertNoOperationInProgress, assertNoRepoProtocolConfig, assertResolvedUrls,
   knownEntries, orphanCount, resolvedUrls,
 } from '../submodule/gates.js';
 import { SUBMODULE_LIMITS } from '../submodule/limits.js';
@@ -254,6 +254,8 @@ export const ops = [
       if (!e.populated) throw new Refusal('SUBMODULE_NOT_POPULATED', `${p.path} is not cloned`, { path: p.path });
       if (e.head !== p.expect) throw new Refusal('SUBMODULE_POINTER_MOVED', `${p.path} is no longer at the commit shown: check again`, { path: p.path, head: e.head });
       if (p.expect === e.committed) throw new Refusal('NOTHING_TO_COMMIT', `${p.path} already points at its commit`);
+      // A temporary-index commit would conclude a stopped merge (or commit in a pick's or rebase's middle) with HEAD's tree.
+      await assertNoOperationInProgress(git);
       // The commit holds exactly `expect`, whatever the submodule's HEAD is by now (`commit --only -- <path>` would re-read
       // it): a temporary index of HEAD's tree with only that gitlink changed, committed (hooks run); then the real
       // index's entry set to it, as --only leaves it. Whatever else is staged stays staged.

@@ -357,6 +357,40 @@ test('commitPointer runs the commit hooks, and works on a parent with no commit 
   assert.equal(gitlink(w, 'HEAD', 'libA'), head);
 });
 
+/** A conflicting `side` branch: `conflict.txt` differs from main's. */
+function conflictingBranch(w) {
+  w.repo.commit({ 'conflict.txt': 'base\n' }, 'base for conflict');
+  w.repo.branch('side');
+  w.repo.commit({ 'conflict.txt': 'side\n' }, 'side');
+  w.repo.checkout('main');
+  w.repo.commit({ 'conflict.txt': 'main\n' }, 'main');
+  return w.repo.git('rev-parse', 'side');
+}
+
+test('commitPointer refuses OPERATION_IN_PROGRESS during a stopped merge, cherry-pick or revert, or a rebase: nothing changes', async (t) => {
+  for (const [operation, start] of [
+    ['merge', (w) => w.git('.', 'merge', '-q', 'side')],
+    ['cherry-pick', (w, side) => w.git('.', 'cherry-pick', side)],
+    ['revert', (w) => { w.repo.commit({ 'conflict.txt': 'later\n' }, 'later'); return w.git('.', 'revert', '--no-edit', 'HEAD~1'); }],
+    ['rebase', (w) => w.git('.', 'rebase', '-q', 'side')],
+  ]) {
+    const w = await subWorld(t, { nested: false });
+    const side = conflictingBranch(w);
+    assert.notEqual(start(w, side).status, 0, `${operation} stops on its conflict`);
+    w.fx('libA', 'commit', '-q', '--allow-empty', '-m', 'moved');
+    const index = fs.readFileSync(w.file('.git/index'));
+    const head = w.repo.git('rev-parse', 'HEAD');
+    const b = await refusal(w, 'submodule.commitPointer', { path: 'libA', expect: headOf(w, 'libA'), summary: 's' }, 'OPERATION_IN_PROGRESS');
+    assert.equal(b.operation, operation);
+    assert.match(b.error, /finish or abort it first/);
+    assert.deepEqual(fs.readFileSync(w.file('.git/index')), index, operation);
+    assert.equal(w.repo.git('rev-parse', 'HEAD'), head, operation);
+    assert.equal(w.execArgv().map(afterBase).some((a) => a[0] === 'read-tree' || a[0] === 'commit'), false, operation);
+    if (operation !== 'rebase') assert.equal(w.git('.', 'rev-parse', '-q', '--verify', { merge: 'MERGE_HEAD', 'cherry-pick': 'CHERRY_PICK_HEAD', revert: 'REVERT_HEAD' }[operation]).status, 0);
+    else assert.ok(fs.existsSync(w.file('.git/rebase-merge')) || fs.existsSync(w.file('.git/rebase-apply')));
+  }
+});
+
 test('long ops use cloneTimeoutMs; the others the write default', async (t) => {
   const w = await subWorld(t, { nested: false });
   await w.ok('submodule.add', { url: w.urls.libA, path: 'two' });

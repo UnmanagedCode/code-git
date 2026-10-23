@@ -107,3 +107,23 @@ export async function assertGitmodulesWritable(git) {
     throw new Refusal('SUBMODULE_UNSAFE', '.gitmodules is a symbolic link: git would write through it', { reason: 'gitmodules' });
   }
 }
+
+/** The pseudo-ref each stopped operation leaves. */
+const STOPPED = [['merge', 'MERGE_HEAD'], ['cherry-pick', 'CHERRY_PICK_HEAD'], ['revert', 'REVERT_HEAD']];
+
+/**
+ * Refuses OPERATION_IN_PROGRESS `{operation}` while the repo has a merge, cherry-pick or revert stopped (its pseudo-ref)
+ * or a rebase going (`rebase-merge` / `rebase-apply` under the git dir, resolved with `rev-parse --git-path`): a commit
+ * made now would conclude it, or be made in its middle.
+ */
+export async function assertNoOperationInProgress(git) {
+  for (const [operation, ref] of STOPPED) {
+    if ((await git(['rev-parse', '-q', '--verify', ref], { okExit: [0, 1] })).exitCode === 0) throw inProgress(operation);
+  }
+  for (const dir of ['rebase-merge', 'rebase-apply']) {
+    const at = text(await git(['rev-parse', '--git-path', dir])).replace(/\n$/, '');
+    if ((await worktreeEntry(git, at)).kind !== 'absent') throw inProgress('rebase');
+  }
+}
+
+const inProgress = (operation) => new Refusal('OPERATION_IN_PROGRESS', `a ${operation} is in progress in this repository: finish or abort it first`, { operation });
