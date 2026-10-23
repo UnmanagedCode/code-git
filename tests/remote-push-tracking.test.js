@@ -69,6 +69,27 @@ test('tag.push and tag.deleteRemote: a tag mapped onto a local branch → refuse
   refspec(w, '+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*');
   assert.deepEqual((await w.op('tag.push', { remote: 'origin', names: ['v1'] })).pushed, ['v1']);
   assert.equal(onOrigin(w, 'refs/tags/v1'), w.base);
+  // A delete is not a push onto itself: git would delete the local tag through that mapping, so it stays refused.
+  await assert.rejects(w.op('tag.deleteRemote', { remote: 'origin', names: ['v1'] }),
+    refused('REMOTE_CONFIG_UNSUPPORTED', { refspec: '+refs/tags/*:refs/tags/*' }));
+  assert.equal(onOrigin(w, 'refs/tags/v1'), w.base, 'the remote tag stays');
+  assert.equal(w.oid('refs/tags/v1'), w.base, 'the local tag stays');
+});
+
+test('the control for that refusal: plain git deleting a remote tag under +refs/tags/*:refs/tags/* deletes the local tag too', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('tag', 'v1');
+  w.repo.git('push', '-q', 'origin', 'v1');
+  refspec(w, '+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*');
+  w.repo.git('push', '-q', 'origin', ':refs/tags/v1');
+  assert.equal(w.exists('refs/tags/v1'), false);
+});
+
+test('the refusal reason names both what a push does to the mapped ref: update or delete', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('branch', 'victim');
+  refspec(w, '+refs/heads/main:refs/heads/victim');
+  await assert.rejects(w.op('remote.push', { branch: 'main', remote: 'origin' }), (e) => /would update or delete a local ref outside refs\/remotes\//.test(e.message));
 });
 
 test('a tag destination mapped into refs/remotes/ through a symbolic ref → SYMBOLIC_REF before any push', async (t) => {

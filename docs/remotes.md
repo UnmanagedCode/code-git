@@ -129,6 +129,7 @@ Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote
 ## Known limitations
 
 - **Fetch destinations are restricted** to `refs/remotes/` and `refs/tags/`: a mirror-style refspec refuses the fetch.
+- **A remote tag cannot be deleted while a fetch refspec maps tags onto themselves** (`+refs/tags/*:refs/tags/*`): git would delete the local tag through that mapping too, so `tag.deleteRemote` refuses `REMOTE_CONFIG_UNSUPPORTED`. Pushing a tag under it works (git writes the tag the value it was pushed from).
 - **Rename needs the default refspec**; anything else is renamed with git.
 - **Edit refuses a url list with several values.**
 - **Remove's undo restores url, push url, fetch refspecs and upstreams only**; other `remote.<name>.*` keys (`prune`, `tagOpt`, `receivepack`, …) and `branch.<b>.pushRemote` are gone.

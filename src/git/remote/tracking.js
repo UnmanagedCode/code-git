@@ -151,7 +151,7 @@ export function assertFetchDestinations(remote, specs) {
  * would move a cc branch, or one checked out elsewhere, with no acknowledgement.
  */
 export function assertPushTracking(remote, mapped) {
-  assertUnder(remote, mapped, PUSH_TRACKING_ROOTS, 'a push would update a local ref outside refs/remotes/ through it');
+  assertUnder(remote, mapped, PUSH_TRACKING_ROOTS, 'a push would update or delete a local ref outside refs/remotes/ through it');
 }
 
 const storing = (specs) => specs.filter((s) => !s.negative && s.dst !== null);
