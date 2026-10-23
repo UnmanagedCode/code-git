@@ -1,0 +1,146 @@
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
+import { afterEach, expect, test } from 'vitest';
+import { confirmStore, settleConfirm } from '@/lib/confirm';
+import { ConfirmHost } from '@/features/workdir/ConfirmDialog';
+import { useShellKeys } from '@/shell/useShellKeys';
+import { Toasts } from '@/shell/Toasts';
+import { dispatchTabs, tabKey } from '@/state/tabs';
+import { undoOf } from '@/state/undo';
+import { workdirStore, workdirOf } from '@/state/workdir';
+import { json } from '@/test/fixtures';
+import { FakeEventSource } from '@/test/fakeEventSource';
+import { entry } from '@/test/fixtures';
+import { linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
+import type { UndoSlot, UndoState } from './api';
+import { UNDO_SHELL_KEYS } from './flows';
+import { UndoButtons } from './UndoButtons';
+
+const TAB = { project: 'app', worktree: null };
+afterEach(() => { toast.dismiss(); });
+const toastText = () => [...document.querySelectorAll('[data-sonner-toast]')].map((t) => t.textContent).join('|');
+const slot = (over: Partial<UndoSlot> = {}): UndoSlot => ({ id: 7, op: 'commit.create', label: 'Commit “x”', confirm: null, ...over });
+
+function Harness() {
+  useShellKeys(UNDO_SHELL_KEYS);
+  return <><input aria-label="Field" /><div role="group" aria-label="Header"><UndoButtons tab={TAB} /></div><ConfirmHost /><Toasts /></>;
+}
+
+/** The graph backend, undo.state answering `states` in turn (the last repeats), and undo.undo / undo.redo answering `run`. */
+function world(states: UndoState[], run: (dir: 'undo' | 'redo') => Response | unknown = (dir) => ({ ok: true, result: { entry: states[0][dir], warnings: [] } })) {
+  let n = 0;
+  const fetch = stubGraph(linearWorld(2), {
+    'POST api/ops/undo.state': () => ({ ok: true, result: states[Math.min(n++, states.length - 1)] }),
+    'POST api/ops/undo.undo': () => run('undo'),
+    'POST api/ops/undo.redo': () => run('redo'),
+    'POST api/ops/commit.state': { ok: true, result: { merging: false, operation: null, conflicts: [] } },
+  });
+  act(() => dispatchTabs({ type: 'open', tab: TAB }));
+  render(<Harness />);
+  return { fetch, posts: (op: string) => paramsOf(fetch, `POST api/ops/${op}`) };
+}
+const button = (name: string) => within(screen.getByRole('group', { name: 'Header' })).getByRole('button', { name });
+
+// Invariant: the header buttons follow undo.state: enabled with the entry's label, disabled with "Nothing to …" as the reason.
+test('Undo / Redo follow undo.state', async () => {
+  world([{ undo: slot(), redo: null }]);
+  await waitFor(() => expect(button('Undo').hasAttribute('disabled')).toBe(false));
+  expect(button('Undo').getAttribute('title')).toBe('Undo Commit “x” (Ctrl/⌘+Z)');
+  expect(button('Redo').hasAttribute('disabled')).toBe(true);
+  expect(screen.getByText('Nothing to redo').id).toBe(button('Redo').getAttribute('aria-describedby'));
+});
+
+// Invariant: Ctrl/⌘+Z posts undo.undo with the slot's id; Ctrl/⌘+Shift+Z and Ctrl/⌘+Y post undo.redo; nothing from a text field.
+test('the keys post the slot id; ignored in a text field', async () => {
+  const w = world([{ undo: slot({ id: 3 }), redo: slot({ id: 4, label: 'Commit “y”' }) }]);
+  await waitFor(() => expect(undoOf(TAB).data).not.toBe(null));
+  screen.getByRole('textbox', { name: 'Field' }).focus();
+  fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+  expect(w.posts('undo.undo')).toEqual([]);
+  (document.activeElement as HTMLElement).blur();
+  fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+  await waitFor(() => expect(w.posts('undo.undo')).toEqual([{ id: 3 }]));
+  fireEvent.keyDown(window, { key: 'Z', metaKey: true, shiftKey: true });
+  fireEvent.keyDown(window, { key: 'y', ctrlKey: true });
+  await waitFor(() => expect(w.posts('undo.redo')).toEqual([{ id: 4 }, { id: 4 }]));
+});
+
+// Invariant: an entry with a confirmation asks first, listing what it deletes; Cancel sends nothing, Confirm sends it.
+test('a deletesRefs entry asks first; cancel sends nothing', async () => {
+  const w = world([{ undo: slot({ label: 'Create branch side', confirm: { kind: 'deletesRefs', refs: ['refs/heads/side'] } }), redo: null }]);
+  await waitFor(() => expect(button('Undo').hasAttribute('disabled')).toBe(false));
+  await userEvent.click(button('Undo'));
+  await waitFor(() => expect(confirmStore.get()?.opts).toMatchObject({ title: 'Undo Create branch side?', items: ['side'], confirmLabel: 'Undo' }));
+  act(() => settleConfirm(false));
+  await act(async () => {});
+  expect(w.posts('undo.undo')).toEqual([]);
+  await userEvent.click(button('Undo'));
+  await waitFor(() => expect(confirmStore.get()).not.toBe(null));
+  act(() => settleConfirm(true));
+  await waitFor(() => expect(w.posts('undo.undo')).toEqual([{ id: 7 }]));
+});
+
+// Invariant: a hard-reset entry always confirms, in both directions (D4), naming the hard reset.
+test('a resetHard entry always confirms', async () => {
+  world([{ undo: slot({ confirm: { kind: 'resetHard' } }), redo: slot({ id: 8, confirm: { kind: 'resetHard' } }) }]);
+  await waitFor(() => expect(button('Redo').hasAttribute('disabled')).toBe(false));
+  await userEvent.click(button('Redo'));
+  await waitFor(() => expect(confirmStore.get()?.opts.body).toMatch(/hard reset/));
+  act(() => settleConfirm(false));
+  await userEvent.click(button('Undo'));
+  await waitFor(() => expect(confirmStore.get()?.opts.title).toBe('Undo Commit “x”?'));
+  act(() => settleConfirm(false));
+});
+
+// Invariant: done toasts "Undid <label>" with a Redo action that runs the redo; the slots are refetched after.
+test('the done toast offers the counter-action', async () => {
+  const w = world([{ undo: slot(), redo: null }, { undo: null, redo: slot() }]);
+  await waitFor(() => expect(button('Undo').hasAttribute('disabled')).toBe(false));
+  await userEvent.click(button('Undo'));
+  await waitFor(() => expect(toastText()).toContain('Undid Commit “x”'));
+  await waitFor(() => expect(button('Redo').hasAttribute('disabled')).toBe(false));
+  const region = screen.getByRole('region', { name: /Notifications/ });
+  await userEvent.click(within(region).getByRole('button', { name: 'Redo' }));
+  await waitFor(() => expect(w.posts('undo.redo')).toEqual([{ id: 7 }]));
+});
+
+// Invariant: a CC_OWNED_BRANCH refusal offers Review…, which asks and retries with ccOwned: true.
+test('a code-conductor refusal: Review… confirms and retries with ccOwned', async () => {
+  let n = 0;
+  const w = world([{ undo: slot(), redo: null }], () => (n++ === 0
+    ? json({ error: 'owned', code: 'CC_OWNED_BRANCH', branches: ['code-conductor/x'], head: true }, 409)
+    : { ok: true, result: { entry: slot(), warnings: [] } }));
+  await waitFor(() => expect(button('Undo').hasAttribute('disabled')).toBe(false));
+  await userEvent.click(button('Undo'));
+  const region = screen.getByRole('region', { name: /Notifications/ });
+  await userEvent.click(await within(region).findByRole('button', { name: 'Review…' }));
+  await waitFor(() => expect(confirmStore.get()?.opts.confirmLabel).toBe('Undo anyway'));
+  act(() => settleConfirm(true));
+  await waitFor(() => expect(w.posts('undo.undo')).toEqual([{ id: 7 }, { id: 7, ccOwned: true }]));
+});
+
+// Invariant: a finished write in this checkout (an activity event) refetches the slots; a read or another checkout's write does not.
+test('an activity event for a finished write here refetches undo.state', async () => {
+  const w = world([{ undo: null, redo: null }, { undo: slot(), redo: null }]);
+  await waitFor(() => expect(w.fetch.count('POST api/ops/undo.state')).toBe(1));
+  act(() => FakeEventSource.last!.emit(entry({ kind: 'read', status: 'ok', target: TAB })));
+  act(() => FakeEventSource.last!.emit(entry({ kind: 'write', status: 'ok', target: { project: 'other', worktree: null } })));
+  act(() => FakeEventSource.last!.emit(entry({ kind: 'write', status: 'running', target: TAB })));
+  await act(async () => {});
+  expect(w.fetch.count('POST api/ops/undo.state')).toBe(1);
+  act(() => FakeEventSource.last!.emit(entry({ kind: 'write', status: 'ok', target: TAB })));
+  await waitFor(() => expect(button('Undo').hasAttribute('disabled')).toBe(false));
+});
+
+// Invariant: while an operation is in progress Undo and Redo are disabled with that reason, and the keys send nothing.
+test('disabled during an operation in progress', async () => {
+  const w = world([{ undo: slot(), redo: slot({ id: 9 }) }]);
+  await waitFor(() => expect(button('Undo').hasAttribute('disabled')).toBe(false));
+  act(() => workdirStore.set(new Map([[tabKey(TAB), { ...workdirOf(TAB), operation: { kind: 'cherry-pick', incoming: null, rebase: null } }]])));
+  expect(button('Undo').hasAttribute('disabled')).toBe(true);
+  expect(button('Undo').getAttribute('title')).toMatch(/cherry-pick is in progress/);
+  fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+  await act(async () => {});
+  expect(w.posts('undo.undo')).toEqual([]);
+});

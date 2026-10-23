@@ -116,7 +116,7 @@ test('checkout of a remote branch creates a local tracking branch; an existing t
   assert.equal(w.repo.git('config', 'branch.feat.merge'), 'refs/heads/feat');
   assert.equal(w.repo.git('config', 'branch.feat.remote'), 'origin');
   assert.equal(r.created, true);
-  assert.deepEqual(r.undo.refs, [{ ref: 'refs/heads/feat', old: null, new: f1 }]);
+  assert.deepEqual(r.undo.refs, [{ ref: 'refs/heads/feat', old: null, new: f1, upstream: 'refs/remotes/origin/feat' }]);
   // feat moves on at origin; the local twin (tracking it) is behind → switch + fast-forward.
   const f2 = w.repo.commit({ 'feat.txt': '2\n' }, 'feat2');
   w.repo.git('push', '-q', 'origin', 'feat');

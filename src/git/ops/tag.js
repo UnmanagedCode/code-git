@@ -6,6 +6,7 @@ import { REF_LIMITS } from '../refs/limits.js';
 import { assertNoSymref, tagObjects } from '../refs/resolve.js';
 import { undoRecord } from '../refs/undo.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
+import { plans } from '../undo/plans.js';
 import { assertOid } from '../validate.js';
 
 // Tag ops (docs/refs.md). A tag's recorded oid is its tag object (unpeeled), so a deleted annotated tag can be
@@ -46,6 +47,7 @@ export const ops = [
       const object = (await tagObjects(git, [name])).get(name);
       return { ref: tagRef(name), oid: object, undo: undoRecord({ refs: [{ ref: tagRef(name), old: null, new: object }] }) };
     },
+    undo: plans.createTag,
   },
   {
     name: 'tag.delete',
@@ -59,6 +61,7 @@ export const ops = [
       await git(['tag', '-d', '--end-of-options', ...names]);
       return { deleted: names, undo: undoRecord({ refs: names.map((n) => ({ ref: tagRef(n), old: found.get(n), new: null })) }) };
     },
+    undo: plans.deleteTags,
   },
   {
     name: 'tag.push',

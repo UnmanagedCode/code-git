@@ -10,6 +10,7 @@ import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/
 import { fetchSpecs, trackingRefsFor } from '../remote/tracking.js';
 import { undoRecord } from '../refs/undo.js';
 import { casUpdate, guardOverwrite } from '../refs/write.js';
+import { plans } from '../undo/plans.js';
 import { assertOid } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
 
@@ -82,7 +83,7 @@ async function checkoutRemote(git, ref, { heads, own, ccOwned }) {
   if (!existing) {
     assertCcHeadAck(own, ccOwned);
     await guardOverwrite(git, ['switch', '--no-guess', '--track', '-c', branch, '--end-of-options', ref]);
-    return { ...result, created: true, undo: undoRecord({ refs: [{ ref: localRef, old: null, new: remoteOid }], head: headMove(own, localRef, remoteOid) }) };
+    return { ...result, created: true, undo: undoRecord({ refs: [{ ref: localRef, old: null, new: remoteOid, upstream: ref }], head: headMove(own, localRef, remoteOid) }) };
   }
   // Already on it: nothing switches, so only a fast-forward can move HEAD — additive, no cc acknowledgement.
   const switching = own.branch !== localRef;
@@ -149,6 +150,7 @@ export const ops = [
         undo: undoRecord({ refs: [{ ref, old: null, new: oid }], head: checkout ? headMove(own, ref, oid) : null }),
       };
     },
+    undo: plans.create,
   },
   {
     name: 'branch.checkout',
@@ -169,6 +171,7 @@ export const ops = [
       await switchTo(git, shortOf(ref));
       return { ...result, undo: undoRecord({ head: headMove(own, ref, h.oid) }) };
     },
+    undo: plans.checkout,
   },
   {
     name: 'branch.rename',
@@ -197,6 +200,7 @@ export const ops = [
         }),
       };
     },
+    undo: plans.rename,
   },
   {
     name: 'branch.delete',
@@ -238,6 +242,7 @@ export const ops = [
         }),
       };
     },
+    undo: plans.deleteBranches,
   },
   {
     name: 'branch.deleteRemote',
@@ -315,6 +320,7 @@ export const ops = [
         undo: undoRecord({ refs: [{ ref, old: expect, new: to }], head: isOwn ? headMove(own, ref, to) : null }),
       };
     },
+    undo: plans.fastForward,
   },
   {
     name: 'branch.move',
@@ -334,5 +340,6 @@ export const ops = [
       await casUpdate(git, ref, to, expect, 'code-git: reset');
       return { undo: undoRecord({ refs: [{ ref, old: expect, new: to }] }) };
     },
+    undo: plans.move,
   },
 ];

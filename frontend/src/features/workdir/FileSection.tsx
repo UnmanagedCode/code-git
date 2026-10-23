@@ -13,6 +13,8 @@ import { ActionMenuItems } from '@/shell/ActionMenu';
 import type { Tab } from '@/state/tabs';
 import { setDialogOpen } from '@/state/workdir';
 import { canDiscard, discardAll, discardFile, stageAll, stageFile, unstageAll, unstageFile, type Section, type WorkdirFileCtx } from './actions';
+import { matchCombo, matches } from '@/shell/shortcuts';
+import { ROW_MOVE_KEY, ROW_OPEN_KEY, ROW_STAGE_KEY, ROW_UNSTAGE_KEY } from './keys';
 
 const STATUS_CLASS: Record<string, string | undefined> = { A: 'text-success', '?': 'text-success', D: 'text-destructive', U: 'text-destructive', R: 'text-info', C: 'text-info' };
 const TITLE: Record<Section, string> = { unstaged: 'Unstaged Files', staged: 'Staged Files' };
@@ -34,7 +36,7 @@ function Row({ tab, file, section, busy }: { tab: Tab; file: DiffFile; section: 
       data-path={file.path}
       className="group flex cursor-default items-center gap-2 px-2 py-0.5 text-xs outline-none hover:bg-accent/50 focus-visible:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
       onClick={open}
-      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); open(); } }}
+      onKeyDown={(e) => { if (matches(e, ROW_OPEN_KEY)) { e.preventDefault(); open(); } }}
       onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}
     >
       <span className={cn('w-3 shrink-0 text-center font-mono font-semibold', STATUS_CLASS[file.status])} aria-label={STATUS_LABEL[file.status]} title={STATUS_LABEL[file.status]}>
@@ -82,19 +84,20 @@ export function FileSection({ tab, section, files, busy }: { tab: Tab; section: 
   const [all, setAll] = useState(false);
   const shown = all ? files : files.slice(0, FILE_RENDER_CAP);
   const onKeyDown = (e: KeyboardEvent<HTMLUListElement>) => {
-    if (e.altKey || e.ctrlKey || e.metaKey || isTextEntry(e.target as Element)) return;
+    if (isTextEntry(e.target as Element)) return;
     const row = (e.target as Element).closest('li[role="option"]');
     const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('li[role="option"]')];
     const i = row ? rows.indexOf(row as HTMLElement) : -1;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const moveBy = matchCombo(e, ROW_MOVE_KEY);
+    if (moveBy) {
       e.preventDefault();
-      rows[Math.max(0, Math.min(rows.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]?.focus();
+      rows[Math.max(0, Math.min(rows.length - 1, i + (moveBy.key === 'ArrowDown' ? 1 : -1)))]?.focus();
       return;
     }
     const file = i === -1 ? undefined : shown[i];
     if (!file || busy) return;
-    if (e.key.toLowerCase() === 's' && section === 'unstaged') { e.preventDefault(); void stageFile(tab, file); }
-    if (e.key.toLowerCase() === 'u' && section === 'staged') { e.preventDefault(); void unstageFile(tab, file); }
+    if (matches(e, ROW_STAGE_KEY) && section === 'unstaged') { e.preventDefault(); void stageFile(tab, file); }
+    if (matches(e, ROW_UNSTAGE_KEY) && section === 'staged') { e.preventDefault(); void unstageFile(tab, file); }
   };
   const label = `${TITLE[section]} (${files.length})`;
   return (

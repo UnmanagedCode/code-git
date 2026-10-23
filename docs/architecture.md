@@ -9,7 +9,7 @@
 | Module | Responsibility |
 |---|---|
 | `server.js` | `start({port, distDir, …})`: builds the app, listens on `127.0.0.1`, answers parser-rejected requests (`clientError`) with the CSP. Exports `start`, `createApp`, `CSP`, `DEFAULT_PORT`; autostarts only when run directly |
-| `src/app.js` | `createApp({distDir, ops?, activity?})`: wiring only — headers → `/health` → `/api` (JSON check, body parser, feature routes, API 404) → UI → 404 → error handler. `ops`/`activity` are injectable for tests |
+| `src/app.js` | `createApp({distDir, ops?, activity?, journal?})`: wiring only — headers → `/health` → `/api` (JSON check, body parser, feature routes, API 404) → UI → 404 → error handler. `ops`/`activity`/`journal` are injectable for tests |
 | `src/http/security.js` | `CSP`, the headers middleware, `requireJson` |
 | `src/http/static.js` | `serveDist(distDir)`: the `ASSET_RE` allowlist, `inside()` realpath check, 503 while unbuilt |
 | `src/http/route.js` | `route(fn)`: a throw becomes a refusal response; `sendError` |
@@ -23,14 +23,18 @@
 | `src/git/runner.js` | `runGit(ctx, args, opts)`: **the** choke point for git; `subArgs(target)` (a submodule target's `-C <path> --git-dir=.git`) |
 | `src/git/locks.js` | `createLocks()`: keyed promise queue |
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
+| `src/git/undo/` | Undo and redo ([undo](undo.md)): `journal.js` (`createJournal`, `targetKey`: the per-checkout undo and redo slots), `record.js` (`journalAround`: what the ops route does around every op), `plans.js` (`plans`: the registered ops' builders), `engine.js` (`runPlan`: preflight every step over a projection, then apply), `pushed.js` (`assertNotPushed`), `steps/` (`head`, `refs`, `rename`, `discard`, `patch`; `STEPS`) |
+| `src/git/ops/undo.js` | `undo.state`, `undo.undo`, `undo.redo` |
+| `src/git/ops/history.js`, `src/git/parse/history.js`, `src/git/history/limits.js` | `history.file`, `history.blame`, `history.reflog`, `history.paths` ([history](history.md)); their pure parsers (`parseFileHistory`, `parseBlame`, `parseReflog`); `HISTORY_LIMITS` |
 | `src/git/ops/repo.js` | `repo.summary` |
 | `src/git/ops/diff.js` | `diff.files`, `diff.file`, `diff.patch`; `patchFilename` |
 | `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`, `commitOid`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS`; `parseContext` / `contextArg` / `FULL_CONTEXT` |
 | `src/git/diff/noIndex.js` | `assertNoIndexReadsItself`, `readNoIndex`: reading one file's bytes through `diff --no-index /dev/null <path>` |
 | `src/git/worktree.js` | `isBare`, `assertWorktree`: the bare-repository check that `--work-tree=.` makes necessary (git dir = working tree) |
-| `src/git/params.js` | Shared op-param checks: `paramsObject`, `optBool`, `pathList`; `nulPaths` (stdin for `--pathspec-from-file`), `chunkPaths` (argv chunks) |
+| `src/git/params.js` | Shared op-param checks: `paramsObject`, `optBool`, `pathList`; `FROM_STDIN` + `nulPaths` (paths on stdin for `--pathspec-from-file`), `chunkPaths` (argv chunks) |
 | `src/git/stage/limits.js` | `STAGE_LIMITS`: staging, commit-template, `.gitignore` and patch caps |
 | `src/git/ops/stage.js` | `stage.files`, `stage.unstageFiles`, `stage.discardFiles`; `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` |
+| `src/git/stage/discard.js` | Whole-file discard, shared with its redo: `discardGates`, `discardWrites`, `discardPaths`; `worktreeTree` / `discardSnapshot` (the temporary-index snapshot its undo restores from) |
 | `src/git/ops/commit.js` | `commit.create`, `commit.state`, `commit.headMessage`, `commit.template` |
 | `src/git/commit/message.js` | `messageParams` (a commit message's params check, shared by `commit.create` and `submodule.commitPointer`), `joinMessage`, `splitMessage`, `templateDraft` (pure): the only place a message is checked, split or joined |
 | `src/git/ops/ignore.js` | `ignore.add`: the root `.gitignore` by whole-file-context `git apply`, optional stop-tracking |
@@ -69,7 +73,7 @@
 | `lib/api.ts` | `api()`: relative URLs only, JSON body + content type on non-GET, `ApiError` |
 | `lib/endpoints.ts` | Typed calls and the API's TypeScript shapes |
 | `lib/route.ts` | Query-string route read/write |
-| `lib/sse.ts` | One shared `EventSource` on `api/activity/events`; `setEventSourceFactory` is the test seam |
+| `lib/sse.ts` | One shared `EventSource` on `api/activity/events`; a handler gets the event's entry (nothing on a reconnect); `setEventSourceFactory` is the test seam |
 | `lib/storage.ts` | The only `localStorage` user; keys prefixed `code-git:` |
 | `state/store.ts` | `createStore` + `useStore` (`useSyncExternalStore`) |
 | `state/tabs.ts` | `tabsReducer` (pure), `tabsStore`, `tabKey`, `parentTab`, `refsKey`, `prefsKey`, `isSubChain`, persistence |
@@ -89,6 +93,10 @@
 | `lib/download.ts` | `downloadBytes` (blob URL → `a.download`), `decodeBase64`: the only object-URL / download-link builder |
 | `shell/Shell.tsx` | Layout, panel slots, picker |
 | `shell/panels.ts`, `shell/menus.ts`, `shell/ActionMenu.tsx` | The panel and context-menu registries |
+| `features/history/` | File history, blame and the reflog ([history](history.md#ui-frontendsrcfeatureshistory)): `api.ts`, `state.ts` (per `tabKey`), `open.ts` (`openFileHistory`, `openBlame`, `openReflog`), `panel.ts` (`HISTORY_PANEL`, `REFLOG_PANEL`), `HistoryPanel` (history list + `CommitFileView` through the diff's views; the blame view), `ReflogPanel`, `authorColors.ts`, `actions.ts` (`HISTORY_ACTIONS`; context `'reflog-entry'`), `commands.ts` |
+| `state/undo.ts`, `features/undo/` | The journal's slots per `tabKey` (`useUndo`, `refreshUndo`: refetched on mount, focus, and a finished write in that checkout on the activity stream — no op wrapper knows about undo); `api.ts`, `flows.ts` (`undoFlow` / `redoFlow`: the confirmation from the slot's `confirm`, then `runRefOp`; `blockedReason`; `UNDO_SHELL_KEYS`), `keys.ts`, `commands.ts`, `UndoButtons` (the repo header's) |
+| `shell/commands.ts`, `features/*/commands.ts`, `shell/CommandPalette.tsx`, `shell/ShortcutSheet.tsx`, `shell/overlays.ts`, `shell/keys.ts`, `shell/useShellKeys.ts` | The command palette (`COMMANDS`, `filterCommands`, `filterPicks`: each feature's `commands.ts` list) and the shortcut sheet, both mounted by `Shell` and opened from `overlayStore`; the shell's own keys (Ctrl/⌘+P, Ctrl/⌘+/) and `useShellKeys` (global keys, off in text fields and dialogs) |
+| `shell/shortcuts.ts`, `features/*/keys.ts` | The shortcut catalog: `Combo`, `Shortcut`, `matches` / `matchCombo` (the only reader of an event's key and modifier fields: `guards.test.ts`), `pointerMods` (click modifiers), `comboLabel` / `shortcutLabel`, `SHORTCUT_GROUPS` (each feature's `keys.ts` list, by scope) |
 | `features/<feature>/` | Feature components and their tests |
 | `features/graph/` | The commit graph ([graph](graph.md)): pure `layout.ts` (lanes), `rows.ts` (row order), `visibility.ts` (hide/solo → tips), `labels.ts`, `ancestry.ts`, `columns.ts` (the column catalogue), `windowFor.ts` (virtual window); the panels `GraphPanel.tsx`, `RefsPanel.tsx`, `details/`; `actions.ts` (`GRAPH_ACTIONS`), `contexts.ts`, `drag.ts`, `jump.ts`; `panel.ts` (the three `PanelDef`s) |
 | `state/graph.ts`, `state/graphPrefs.ts`, `state/graphSelection.ts` | Graph data per checkout (snapshot, pages, stats, refresh triggers); per-project prefs; selection and the file-open intent |
@@ -111,7 +119,8 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 | To add | Create | Register in |
 |---|---|---|
-| A backend op | `src/git/ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run}]` | the list passed to `buildRegistry` in `src/git/ops/index.js` |
+| A backend op | `src/git/ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run, undo?}]` | the list passed to `buildRegistry` in `src/git/ops/index.js` |
+| Register an op's undo | an `undo(params, result) → UndoPlan \| null` field on the write's own definition ([undo → Registering an op](undo.md#registering-an-op)) | nothing |
 | Backend routes (rarely: ops go through `api/ops/:name`) | `src/routes/<feature>.js` exporting `mount(router, deps)` | `mountRoutes` in `src/routes/index.js` |
 | A panel | a `PanelDef` (`{id, slot, title, component, order, onDemand?}`) in `frontend/src/features/<feature>/` | `PANELS` in `frontend/src/shell/panels.ts` |
 | A panel shown on demand (the diff) | a `PanelDef` with `onDemand: true`; show it with `showPanel(tab, id)` (`state/shownPanel.ts`) | `PANELS`; while shown it replaces its slot's other panels for that tab |
@@ -126,6 +135,10 @@ What a later card touches to add a feature — each is one file of its own plus 
 | Opening the stash save dialog (all, selected files, staged, or a line selection) | `openStashSave(tab, preset)` (`features/stash/actions.ts`) | nothing (`Shell` mounts `StashDialogHost`) |
 | Opening a submodule as its own tab | `openSubmodule(tab, entry)` (`features/submodules/actions.ts`); a tab's way back is `backToParent(tab)` (`features/tabs/actions.ts`) | nothing (closing a submodule tab offers the pointer commit by itself) |
 | Context-menu actions | `MenuAction[]` in the feature folder (fields below) | `ACTIONS` in `frontend/src/shell/menus.ts`; render with `<ActionMenuItems context ctx>` inside a `DropdownMenuContent`, or open at the pointer with `openContextMenu({host, context, ctx, at})` and a mounted `<ContextMenuHost host>` |
+| Opening a file's history, its blame or a reflog | `openFileHistory(tab, {path, rev})`, `openBlame(tab, {path, rev})` (`rev`: a full commit oid), `openReflog(tab, ref?)` (`features/history/open.ts`) | nothing (`HISTORY_PANEL`, `REFLOG_PANEL` are in `PANELS`) |
+| Undo or redo from another surface | `undoFlow(tab, dir?)` / `redoFlow(tab)` (`features/undo/flows.ts`): the confirmation, toast, counter-action and cc review come with it | nothing |
+| A palette command | a `Command` (`{id, title, group, shortcut?, global?, when?(tab), run?(tab), pick?: {placeholder, items(tab), typed?(text), run(tab, item)}}`) in the feature's `commands.ts`, calling an entry point the feature already has | the feature's list in `COMMANDS` (`shell/commands.ts`), once per feature |
+| A keyboard shortcut | a `Shortcut` (`{id, label, scope, combos: [{key, mod?, shift?, alt?, exact?}]}`; a modifier is `true`, `false` (the default) or `'any'`) in the feature's `keys.ts`; its handler tests the event with `matches(e, SHORTCUT)` / `matchCombo` — never `e.key` or a modifier field | the feature's list in `SHORTCUT_GROUPS` (`shell/shortcuts.ts`), once per feature |
 | Per-checkout UI state | `frontend/src/state/<feature>.ts`: a `createStore` map keyed by `tabKey` | nothing; add its reset to `frontend/src/test/setup.ts` |
 
 **`MenuAction<C>`**: `{id, context, label: string | (ctx) => string, when?, run?, children?, group?, order?, destructive?, primary?}`. `children` is a submenu — a list, or `(ctx) => list` to build it from the ctx (one item per remote) — whose children inherit the context; a submenu with no child left after `when` is not shown. `group` puts a separator between consecutive actions of different groups; `order` (default 500) sorts, ties keep registration order. `primary` marks the action a double-click runs: `runPrimary(context, ctx)` (`shell/menus.ts`) runs the first primary action offered and returns whether one ran. A menu with no action does not open.
@@ -145,6 +158,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 | `remote` | `{remote: string}` |
 | `worktree` | `{worktree: GitWorktree, ccCheckout: Target \| null}` |
 | `file` | `{commit: oid, parent: oid \| null, file: {status, path, oldPath}}` |
+| `reflog-entry` (`features/history/actions.ts`) | `{entry: ReflogItem}` — a row of the Reflog panel |
 | `branch-drop` | `{source: DragRef, target: DragRef}` — a branch chip dropped on another; `DragRef = {name: full refname, kind: 'local' \| 'remote', short, remote, oid}`. Orders 100–199 are merge and rebase's (`SEQUENCE_ACTIONS`, [merge](merge.md#where-the-actions-are)); Fast-forward is 200, Reset 300 |
 | `branches` | `{refs: Ref[]}` — two or more branches selected in the refs panel (local and remote) |
 
@@ -162,7 +176,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 - **Remote commands**: every command that talks to a remote runs through `netRun` (`src/git/remote/net.js`: `NET_CONFIG` + `NETWORK_LIMITS`) and turns a whole-command failure into `remoteFailure`; `src/git/remote/push.js` (`remoteName` in `params`, `knownRemote`, `push`).
 - **A rebase that stops on conflicts**: `onRebaseStopped(git, files)` in `src/git/remote/integrate.js` is the single policy point: it stays in progress and the caller answers `{outcome: 'conflicts', files}` ([merge → The stop rule](merge.md#the-stop-rule)). `rebase(git, args, opts)` there runs every rebase.
 - **What is in progress**: `operationState(git)` (`src/git/sequence/state.js`) for an op; `workdirOf(tab).operation` / `.conflicts` in the UI. A start refuses with `assertNoOperation` (`src/git/sequence/guard.js`).
-- **Undo**: every ref-changing op returns `result.undo` (`undoRecord`, [refs → Undo record](refs.md#undo-record)); a journal reads it in `runRefOp` (`features/branches/run.ts`).
+- **Undo**: every ref-changing op returns `result.undo` (`undoRecord`, [refs → Undo record](refs.md#undo-record)); a registered op's `undo` builder turns it into the plan the backend journal keeps ([undo](undo.md)).
 - **Pushing from another surface**: `pushFlow(tab, {branch, remote?, to?, setUpstream?})` or `pushHead(tab)` (`features/remotes/pushFlow.ts`): the cc warning and the rejected → force-with-lease flow come with it.
 - **Branch actions**: `checkout(tab, ref)`, `reset(tab, point, mode)` and `withCcHeadAck` in `features/branches/actions.ts`; `openRefDialog` for a confirmation.
 
@@ -173,7 +187,8 @@ What a later card touches to add a feature — each is one file of its own plus 
 - `name` matches `^[a-z]+\.[a-zA-Z]+$` and is unique.
 - `kind` is `'read'` or `'write'`.
 - `cancellable`, when given, is a boolean; it defaults to `kind === 'read'`. A write sets `cancellable: true` only where aborting mid-command cannot leave the repo half-changed, and its card states why: `remote.fetch` (atomic ref updates, gc off, no index or worktree), `remote.push`, `tag.push`, `tag.deleteRemote`, `branch.deleteRemote` (atomic remote ref updates). `remote.pull`, `merge.start`, `rebase.start`, `rebase.interactive`, `conflict.save`, `conflict.take`, `head.continue`, `head.skip` and `head.abort` are not: an abort mid-merge or mid-rebase would.
-- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target})` returns JSON. `target` is the call's validated `{project, worktree, sub?}` (worktree `null` = main checkout; `sub` a submodule chain), for an op that names its output after the checkout (`diff.patch`); git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`.
+- `undo`, when given, is a function, and only on a write ([undo → Registering an op](undo.md#registering-an-op)).
+- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target, journal})` returns JSON. `target` is the call's validated `{project, worktree, sub?}` (worktree `null` = main checkout; `sub` a submodule chain), for an op that names its output after the checkout (`diff.patch`); `journal` is the undo journal, read only by the `undo.*` ops; git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`.
 
 ## Runner pipeline (`runGit`)
 
@@ -277,13 +292,13 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 ### What each destructive op destroys
 
-For the undo card: what an op overwrites or deletes, and whether git can give it back. The branch, tag and HEAD ops: [refs → Undo record](refs.md#undo-record) (their `result.undo` and the table there).
+What an op overwrites or deletes, and whether git can give it back. The branch, tag and HEAD ops: [refs → Undo record](refs.md#undo-record) (their `result.undo` and the table there). Which ops undo and redo actually run: [undo → Per-op plans](undo.md#per-op-plans).
 
 | Op | Destroys | Recoverable from git |
 |---|---|---|
 | `stage.files`, `stage.unstageFiles` | The previous index entries of those paths | Yes: HEAD and the worktree still hold both sides |
-| `stage.discardFiles` — tracked | The worktree content of those paths (returned in `result.tracked`) | No: it is in no object. An undo needs a `hash-object -w` snapshot taken before the discard |
-| `stage.discardFiles` — untracked | The files (returned in `result.untracked`) | No; the same snapshot would be needed |
+| `stage.discardFiles` — tracked | The worktree content of those paths (returned in `result.tracked`) | Until gc: `undo.discard.snapshot`, a commit of their worktree content taken before the discard |
+| `stage.discardFiles` — untracked | The files (returned in `result.untracked`) | Until gc: the same snapshot |
 | `stage.stageLines`, `stage.unstageLines` | Nothing outside the index | Yes |
 | `ignore.add` | With `stopTracking`, the index entries of the matching files (returned in `result.untracked`); the files stay | Yes: `git add` re-tracks them; `.gitignore` gains one line |
 | `files.restore` | That path's index entry and worktree content (an untracked symlink in the way is replaced by a directory) | The index entry yes (HEAD); uncommitted worktree content no |

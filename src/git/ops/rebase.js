@@ -11,6 +11,7 @@ import { assertClean, assertNoOperation } from '../sequence/guard.js';
 import { REBASE_LIMITS, SEQUENCE_LIMITS } from '../sequence/limits.js';
 import { assertGitAtLeast } from '../stash/version.js';
 import { assertOid } from '../validate.js';
+import { plans } from '../undo/plans.js';
 import { assertWorktree } from '../worktree.js';
 
 // Rebasing this checkout's branch (docs/merge.md → Rebase, Interactive rebase): rebase.start replays `upstream..HEAD`
@@ -87,8 +88,11 @@ async function rebaseGates(git, { expect, upstream, ccOwned, ack = true }) {
   return own;
 }
 
-/** A finished rebase's answer: upToDate when HEAD did not move, else done with the branch's move as its undo. */
-async function rebaseResult(git, own, r) {
+/**
+ * A finished rebase's answer: upToDate when HEAD did not move, else done with the branch's move as its undo. `base`:
+ * what the replayed commits are built on (the onto commit), so `created` names only the commits this rebase made.
+ */
+async function rebaseResult(git, own, r, base) {
   if (r.outcome !== 'done') return { outcome: r.outcome, files: r.files, oid: (await ownHead(git)).oid, undo: undoRecord() };
   const now = await ownHead(git);
   if (now.oid === own.oid) return { outcome: 'upToDate', files: [], oid: now.oid, undo: undoRecord() };
@@ -97,6 +101,7 @@ async function rebaseResult(git, own, r) {
     undo: undoRecord({
       refs: own.branch ? [{ ref: own.branch, old: own.oid, new: now.oid }] : [],
       head: { old: { branch: own.branch, oid: own.oid }, new: { branch: now.branch, oid: now.oid } },
+      created: { tip: now.oid, not: [base] },
     }),
   };
 }
@@ -113,8 +118,9 @@ export const ops = [
       const own = await rebaseGates(git, { expect, upstream, ccOwned });
       if (await commitOid(git, onto) !== onto) throw new Refusal('REV_UNKNOWN', `${onto} is not a commit`);
       const r = await rebase(git, [`--onto=${onto}`, '--end-of-options', upstream], { timeoutMs: SEQUENCE_LIMITS.timeoutMs });
-      return rebaseResult(git, own, r);
+      return rebaseResult(git, own, r, onto);
     },
+    undo: plans.rebase,
   },
   {
     name: 'rebase.plan',
@@ -172,7 +178,9 @@ export const ops = [
       const r = await rebase(git, ['-i', '--empty=drop', `--onto=${onto}`, '--end-of-options', base], {
         env: { GIT_SEQUENCE_EDITOR: SEQUENCE_EDITOR }, stdin: renderTodo(todo.lines, made), timeoutMs: SEQUENCE_LIMITS.timeoutMs,
       });
-      return rebaseResult(git, own, r);
+      // Pick mode replays onto HEAD: its commits are the ones on top of the HEAD before.
+      return rebaseResult(git, own, r, mode === 'pick' ? own.oid : onto);
     },
+    undo: plans.interactive,
   },
 ];

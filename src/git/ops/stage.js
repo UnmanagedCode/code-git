@@ -1,17 +1,17 @@
 import { Refusal } from '../../refusals.js';
 import { commitOid } from '../diff/source.js';
-import { bad, chunkPaths, filePath, nulPaths, paramsObject, pathList } from '../params.js';
+import { bad, filePath, FROM_STDIN, nulPaths, paramsObject, pathList } from '../params.js';
+import { undoRecord } from '../refs/undo.js';
+import { discardGates, discardSnapshot, discardWrites } from '../stage/discard.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
-import { assertNothingUntrackedUnder, perChunk } from '../stage/paths.js';
 import { readSelectionPatch, selectionParams } from '../stage/readSelection.js';
+import { plans } from '../undo/plans.js';
 import { assertWorktree } from '../worktree.js';
 
 // Stage, unstage and discard whole files. Multi-path commands read their paths from stdin
 // (`--pathspec-from-file=- --pathspec-file-nul`); `ls-files` and `clean` have no such option, so their paths go after
 // `--` in chunks of STAGE_LIMITS.argvChunkBytes. GIT_LITERAL_PATHSPECS=1 (BASE_ENV) applies to both.
 
-const decoder = new TextDecoder('utf-8', { fatal: false });
-const FROM_STDIN = ['--pathspec-from-file=-', '--pathspec-file-nul'];
 
 /** `{paths}` or `{all: true}`, exactly one. */
 function pathsOrAll(raw, op) {
@@ -22,35 +22,6 @@ function pathsOrAll(raw, op) {
     return { all: true, paths: null };
   }
   return { all: false, paths: pathList(p.paths, 'paths', { max: STAGE_LIMITS.maxPaths }) };
-}
-
-/** Every path must be a file in the index (a directory or `.` would restore everything under it): BAD_PATH otherwise. */
-async function assertIndexFiles(git, paths) {
-  const listed = new Set(await perChunk(git, ['ls-files', '-c', '-z'], paths));
-  const missing = paths.find((p) => !listed.has(p));
-  if (missing !== undefined) throw new Refusal('BAD_PATH', `${missing} is not a file in the index`);
-}
-
-/** Refuses CONFLICTED when any of `paths` is unmerged: restoring it would throw away the merge state. */
-async function assertNotConflicted(git, paths) {
-  const unmerged = await perChunk(git, ['ls-files', '-u', '-z'], paths);
-  if (unmerged.length) {
-    const path = unmerged[0].slice(unmerged[0].indexOf('\t') + 1);
-    throw new Refusal('CONFLICTED', `${path} has a merge conflict: resolve it first`);
-  }
-}
-
-/**
- * Every path must be one git itself lists as untracked and not ignored — so `clean` can never delete an ignored or tracked
- * file, or reach through a symlinked directory. A nested repository (`dir/`) is refused before asking.
- */
-async function assertUntracked(git, paths) {
-  const dir = paths.find((p) => p.endsWith('/'));
-  if (dir) throw new Refusal('BAD_PATH', `${dir} is a directory (a nested repository?): it is never discarded`);
-  const listed = new Set(await perChunk(git, ['ls-files', '--others', '--exclude-standard', '-z'], paths));
-  const wanted = new Set(paths);
-  const stray = paths.find((p) => !listed.has(p)) ?? [...listed].find((p) => !wanted.has(p));
-  if (stray !== undefined) throw new Refusal('BAD_PATH', `${stray} is not an untracked file`);
 }
 
 /**
@@ -122,16 +93,13 @@ export const ops = [
     },
     async run(git, p) {
       await assertWorktree(git);
-      // Both gates run before anything is changed, so a refused request discards nothing.
-      if (p.tracked.length) await assertIndexFiles(git, p.tracked);
-      if (p.tracked.length) await assertNotConflicted(git, p.tracked);
-      if (p.tracked.length) await assertNothingUntrackedUnder(git, p.tracked);
-      if (p.untracked.length) await assertUntracked(git, p.untracked);
-      if (p.tracked.length) await git(['restore', '--worktree', ...FROM_STDIN], { stdin: nulPaths(p.tracked) });
-      // No -d (directories) and no -x (ignored files).
-      for (const chunk of chunkPaths(p.untracked, STAGE_LIMITS.argvChunkBytes)) await git(['clean', '-f', '-q', '--', ...chunk]);
-      return { tracked: p.tracked, untracked: p.untracked };
+      await discardGates(git, p);
+      // What the paths hold now, before anything is removed: the undo restores from it.
+      const snapshot = await discardSnapshot(git, [...p.tracked, ...p.untracked]);
+      await discardWrites(git, p);
+      return { tracked: p.tracked, untracked: p.untracked, undo: undoRecord({ discard: { snapshot, tracked: p.tracked, untracked: p.untracked } }) };
     },
+    undo: plans.discardFiles,
   },
   {
     name: 'stage.stageLines',
@@ -150,5 +118,6 @@ export const ops = [
     kind: 'write',
     params: (raw) => selectionParams(raw, 'stage.discardLines'),
     run: (git, p) => applySelection(git, p, 'discard'),
+    undo: plans.discardLines,
   },
 ];

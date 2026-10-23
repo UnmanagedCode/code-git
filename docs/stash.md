@@ -95,7 +95,7 @@ Selected hunks or lines of one file. Same request as the line staging ops (`sele
 
 ## Undo record
 
-Every op returns `result.undo`: the ref ops' record (`undoRecord`, `src/git/refs/undo.js`; [refs → Undo record](refs.md#undo-record)) — `refs`, `remoteRefs`, `head`, `worktreeSnapshot` — whose two stash keys the stash ops fill (empty for every ref op).
+Every op returns `result.undo`: the ref ops' record (`undoRecord`, `src/git/refs/undo.js`; [refs → Undo record](refs.md#undo-record)) — `refs`, `remoteRefs`, `head`, `worktreeSnapshot` — whose two stash keys the stash ops fill (empty for every ref op). The stash ops are not registered for undo yet ([undo](undo.md)): the tables below are what an undo would need, and each stash write clears the checkout's undo and redo slots.
 
 | Key | Shape | Undo |
 |---|---|---|

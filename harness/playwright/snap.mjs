@@ -19,12 +19,14 @@ const world = await seed();
 try {
   await withPage(async (page) => {
     const errors = [];
-    let expected409 = false; // the not-a-repo tab's summary answers 409 NOT_A_REPO by design
+    // The not-a-repo tab's summary answers 409 NOT_A_REPO by design, and its Submodules panel's submodule.list 422 GIT_FAILED.
+    let expected409 = false;
+    const expectedOnNotes = (r) => expected409 && (r.status() === 409 || (r.status() === 422 && /api\/ops\/submodule\.list$/.test(r.url())));
     page.on('console', (m) => {
       if (m.type() === 'error' && !HOST_URLS.test(m.text()) && !/^Failed to load resource/.test(m.text())) errors.push(m.text());
     });
     page.on('response', (r) => {
-      if (r.status() >= 400 && !HOST_URLS.test(r.url()) && !(expected409 && r.status() === 409)) errors.push(`${r.status()} ${r.url()}`);
+      if (r.status() >= 400 && !HOST_URLS.test(r.url()) && !expectedOnNotes(r)) errors.push(`${r.status()} ${r.url()}`);
     });
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 

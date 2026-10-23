@@ -32,6 +32,9 @@ export function pathList(v, what, { min = 1, max }) {
   return [...new Set(v.map(assertPath))];
 }
 
+/** The options that make a subcommand read its paths from stdin, NUL-separated (only some have them: add, reset, restore, rm, commit, checkout, stash push). */
+export const FROM_STDIN = ['--pathspec-from-file=-', '--pathspec-file-nul'];
+
 /** Paths as `--pathspec-from-file=- --pathspec-file-nul` stdin. */
 export const nulPaths = (paths) => paths.map((p) => `${p}\0`).join('');
 

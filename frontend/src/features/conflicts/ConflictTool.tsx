@@ -14,6 +14,8 @@ import { closeTool, markResolved, saveConflict, takeSide } from './flows';
 import { labelsFor, openConflict } from './open';
 import { applyEdit, conflictsOf, nextBlock, prevBlock, setPick, unresolved, type Picks, type SideLabels } from './output';
 import { updateFile, useTool, type NotText, type ToolFile } from './state';
+import { matchCombo, matches } from '@/shell/shortcuts';
+import { CONFLICT_BLOCK_KEY, CONFLICT_SAVE_KEY } from './keys';
 
 type Side = 'ours' | 'theirs';
 const SIDE_NAME: Record<Side, 'current' | 'incoming'> = { ours: 'current', theirs: 'incoming' };
@@ -171,10 +173,11 @@ export function ConflictTool({ tab }: { tab: Tab | null }) {
     updateFile(tab, (x) => ({ ...x, out: { text, blocks: applyEdit(x.out.blocks, x.out.text, text) }, dirty: true }));
   };
   const onKey = (e: KeyboardEvent) => {
-    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && conflicts.length) {
+    const block = matchCombo(e, CONFLICT_BLOCK_KEY);
+    if (block && conflicts.length) {
       e.preventDefault();
-      go(e.key === 'ArrowUp' ? prevBlock(f.out.blocks, f.current) : nextBlock(f.out.blocks, f.current));
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !f.notText) {
+      go(block.key === 'ArrowUp' ? prevBlock(f.out.blocks, f.current) : nextBlock(f.out.blocks, f.current));
+    } else if (matches(e, CONFLICT_SAVE_KEY) && !f.notText) {
       e.preventDefault();
       if (!f.busy) void saveConflict(tab);
     }

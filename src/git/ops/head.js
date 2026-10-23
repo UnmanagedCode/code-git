@@ -9,6 +9,7 @@ import { assertNoOperation } from '../sequence/guard.js';
 import { SEQUENCE_LIMITS } from '../sequence/limits.js';
 import { operationState, readRebase } from '../sequence/state.js';
 import { assertOid } from '../validate.js';
+import { plans } from '../undo/plans.js';
 import { assertWorktree } from '../worktree.js';
 
 // Ops that move this checkout's HEAD (docs/refs.md, docs/merge.md): reset, revert, cherry-pick, and continuing, skipping
@@ -28,6 +29,12 @@ const NOTHING_RE = /nothing to commit|is now empty/;
 const UNSTAGED_RE = /unstaged changes|You must edit all merge conflicts/;
 
 const exists = async (git, ref) => (await git(['rev-parse', '--verify', '-q', ref], { okExit: [0, 1] })).exitCode === 0;
+
+/** `write-tree` of the index, or null when it cannot be written (unmerged entries). */
+async function indexTreeOrNull(git) {
+  const r = await git(['write-tree'], { okExit: [0, 128] });
+  return r.exitCode === 0 ? decoder.decode(r.stdout).trim() : null;
+}
 
 function mainlineOf(v) {
   if (v === undefined) return null;
@@ -60,7 +67,7 @@ async function apply(git, which, { oid, mainline }) {
   const r = await guardOverwrite(git, args, { okExit: [0, 1] });
   if (r.exitCode === 0) {
     const now = (await ownHead(git)).oid;
-    return { conflicts: false, files: [], oid: now, undo: headUndo(own, now) };
+    return { conflicts: false, files: [], oid: now, undo: headUndo(own, now, { created: { tip: now, not: [own.oid] } }) };
   }
   const stopped = await exists(git, PICK_HEAD[which]);
   const unmerged = stopped
@@ -102,6 +109,8 @@ async function resume(git, which, step) {
   }
   const before = await ownHead(git);
   const started = which === 'rebase' ? await readRebase(git) : null;
+  // What the finished operation's own commits are not (the pushed rule, docs/undo.md): a rebase's onto, a merge's other side.
+  const base = started ? [started.onto] : which === 'merge' ? [before.oid, s.operation.incoming?.oid] : [before.oid];
   const args = which === 'rebase' ? [...REBASE, step] : [which, step];
   const r = await git(args, { env: { GIT_EDITOR: ':' }, okExit: [0, 1], timeoutMs: SEQUENCE_LIMITS.timeoutMs });
   const after = await operationState(git);
@@ -115,7 +124,8 @@ async function resume(git, which, step) {
     throw new Refusal('GIT_FAILED', `git ${which} ${step} exited with ${r.exitCode}`, { exitCode: r.exitCode, stderr });
   }
   if (after.operation?.kind === which) return { outcome: 'stopped', files: [], oid: now.oid, undo: undoRecord() };
-  if (!started) return { outcome: 'done', files: [], oid: now.oid, undo: headUndo(before, now.oid) };
+  const created = { tip: now.oid, not: base.filter(Boolean) };
+  if (!started) return { outcome: 'done', files: [], oid: now.oid, undo: headUndo(before, now.oid, { created }) };
   // The whole rebase, from the branch's tip before it began.
   const { branch, orig } = started;
   return {
@@ -123,6 +133,7 @@ async function resume(git, which, step) {
     undo: undoRecord({
       refs: branch && orig ? [{ ref: branch, old: orig, new: now.oid }] : [],
       head: { old: { branch, oid: orig }, new: { branch: now.branch, oid: now.oid } },
+      created,
     }),
   };
 }
@@ -145,9 +156,12 @@ export const ops = [
       if (await commitOid(git, to) !== to) throw new Refusal('REV_UNKNOWN', `${to} is not a commit`);
       // A dangling commit of the tracked changes a hard reset discards: undoable until gc. Untracked files survive the reset.
       const snapshot = mode === 'hard' ? decoder.decode((await git(['stash', 'create'])).stdout).trim() || null : null;
+      // The index a mixed reset rewrites, as a tree its undo reads back; unmerged entries keep write-tree from writing one.
+      const indexTree = mode === 'mixed' ? await indexTreeOrNull(git) : undefined;
       await git(['reset', `--${mode}`, '--end-of-options', to]);
-      return { undo: headUndo(own, to, { worktreeSnapshot: snapshot }) };
+      return { undo: headUndo(own, to, { worktreeSnapshot: snapshot, indexTree }) };
     },
+    undo: plans.reset,
   },
   {
     name: 'head.revert',
@@ -157,6 +171,7 @@ export const ops = [
       return { oid: assertOid(p.oid), mainline: mainlineOf(p.mainline) };
     },
     run: (git, params) => apply(git, 'revert', params),
+    undo: plans.revert,
   },
   {
     name: 'head.cherryPick',
@@ -166,6 +181,7 @@ export const ops = [
       return { oid: assertOid(p.oid), mainline: mainlineOf(p.mainline) };
     },
     run: (git, params) => apply(git, 'cherry-pick', params),
+    undo: plans.cherryPick,
   },
   {
     name: 'head.abort',
@@ -185,11 +201,13 @@ export const ops = [
     kind: 'write',
     params: (raw) => whichOf(raw, 'head.continue', WHICH),
     run: (git, { which }) => resume(git, which, '--continue'),
+    undo: plans.continue,
   },
   {
     name: 'head.skip',
     kind: 'write',
     params: (raw) => whichOf(raw, 'head.skip', SKIPPABLE),
     run: (git, { which }) => resume(git, which, '--skip'),
+    undo: plans.skip,
   },
 ];

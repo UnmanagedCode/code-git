@@ -2,11 +2,12 @@ import { getOp } from '../git/ops/index.js';
 import { runGit } from '../git/runner.js';
 import { assertInsideCheckout } from '../git/submodule/target.js';
 import { assertTarget } from '../git/validate.js';
+import { journalAround } from '../git/undo/record.js';
 import { route } from '../http/route.js';
 import { Refusal } from '../refusals.js';
 
 // POST api/ops/:name — the one way the UI runs git: an op name plus typed params, never argv or git options.
-export function mount(router, { ops, activity, locks }) {
+export function mount(router, { ops, activity, locks, journal }) {
   router.post('/ops/:name', route(async (req, res) => {
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Refusal('BAD_PARAMS', 'the body must be {target, params?}');
@@ -24,7 +25,9 @@ export function mount(router, { ops, activity, locks }) {
       opRunId: activity.newRunId(), activity, locks,
     };
     if (target.sub) await assertInsideCheckout(ctx);
-    const result = await op.run((args, opts) => runGit(ctx, args, opts), params, { target });
+    const git = (args, opts) => runGit(ctx, args, opts);
+    // Every write clears this checkout's undo journal first and may record its own undo (src/git/undo/record.js).
+    const result = await journalAround(journal, op, target, params, () => op.run(git, params, { target, journal }));
     res.json({ ok: true, result });
   }));
 }

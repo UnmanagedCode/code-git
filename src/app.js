@@ -3,14 +3,15 @@ import http from 'node:http';
 import { createActivityLog } from './activity/log.js';
 import { OPS } from './git/ops/index.js';
 import { createLocks } from './git/locks.js';
+import { createJournal } from './git/undo/journal.js';
 import { route, sendError } from './http/route.js';
 import { requireJson, securityHeaders } from './http/security.js';
 import { serveDist } from './http/static.js';
 import { Refusal } from './refusals.js';
 import { mountRoutes } from './routes/index.js';
 
-/** The app: headers → health → /api → UI → 404 → errors. `ops` and `activity` are injectable for tests. */
-export function createApp({ distDir, ops = OPS, activity = createActivityLog() }) {
+/** The app: headers → health → /api → UI → 404 → errors. `ops`, `activity` and `journal` are injectable for tests. */
+export function createApp({ distDir, ops = OPS, activity = createActivityLog(), journal = createJournal() }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(securityHeaders);
@@ -19,7 +20,7 @@ export function createApp({ distDir, ops = OPS, activity = createActivityLog() }
   const api = express.Router();
   api.use(requireJson);
   api.use(express.json({ limit: '1mb' }));
-  mountRoutes(api, { ops, activity, locks: createLocks() });
+  mountRoutes(api, { ops, activity, locks: createLocks(), journal });
   api.use(route(async () => { throw new Refusal('NOT_FOUND', 'no such API route'); }));
   app.use('/api', api);
 

@@ -2,6 +2,8 @@ import type { RefObject } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { matchCombo, matches } from '@/shell/shortcuts';
+import { DIFF_SEARCH_CLOSE_KEY, DIFF_SEARCH_NEXT_KEY } from './keys';
 
 export interface SearchBarProps {
   query: string;
@@ -26,8 +28,9 @@ export function SearchBar({ query, onQuery, index, count, onNext, onPrev, onClos
         value={query}
         onChange={(e) => onQuery(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) onPrev(); else onNext(); }
-          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
+          const next = matchCombo(e, DIFF_SEARCH_NEXT_KEY);
+          if (next) { e.preventDefault(); if (next.shift === true) onPrev(); else onNext(); }
+          if (matches(e, DIFF_SEARCH_CLOSE_KEY)) { e.preventDefault(); e.stopPropagation(); onClose(); }
         }}
       />
       <span className="min-w-12 text-xs text-muted-foreground" aria-live="polite" aria-label="Match">{query ? `${count ? index + 1 : 0}/${count}` : ''}</span>

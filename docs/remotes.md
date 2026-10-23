@@ -114,7 +114,7 @@ Never `git pull`: a fetch of the upstream's remote (`fetchRemote`, the same chec
 
 ## Undo
 
-Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote-ops-srcgitopsremotejs)). Nothing in the UI reads it yet.
+Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote-ops-srcgitopsremotejs)). The remote ops are not registered for undo yet ([undo](undo.md)): the table below is what an undo would need, and each of these writes clears the checkout's undo and redo slots.
 
 | Op | Destroys | Recoverable |
 |---|---|---|

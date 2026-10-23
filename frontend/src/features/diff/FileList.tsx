@@ -7,6 +7,8 @@ import { ActionMenuItems } from '@/shell/ActionMenu';
 import type { Tab } from '@/state/tabs';
 import type { DiffFile, DiffSource, FileStatus } from './api';
 import type { DiffFileCtx } from './actions';
+import { matchCombo, pointerMods } from '@/shell/shortcuts';
+import { DIFF_FILE_MOVE_KEY } from './keys';
 
 export const STATUS_LABEL: Record<FileStatus, string> = {
   A: 'added', M: 'modified', D: 'deleted', R: 'renamed', C: 'copied', T: 'type changed', U: 'conflicted', '?': 'untracked',
@@ -69,7 +71,8 @@ function Row({ tab, file, files, selected, viewed, patchSource, onClick }: {
 export function FileList({ tab, files, selected, viewed, patchSource, onSelect, className }: Props) {
   const [anchor, setAnchor] = useState<string | null>(null);
   const click = (f: DiffFile) => (e: MouseEvent) => {
-    if (e.shiftKey) {
+    const mods = pointerMods(e);
+    if (mods.shift) {
       const from = files.findIndex((x) => x.path === (anchor ?? viewed));
       const to = files.indexOf(f);
       const [a, b] = from === -1 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
@@ -77,7 +80,7 @@ export function FileList({ tab, files, selected, viewed, patchSource, onSelect, 
       return;
     }
     setAnchor(f.path);
-    if (e.ctrlKey || e.metaKey) {
+    if (mods.mod) {
       const next = selected.includes(f.path) ? selected.filter((p) => p !== f.path) : [...selected, f.path];
       onSelect(next.length ? next : [f.path], f.path);
       return;
@@ -92,9 +95,10 @@ export function FileList({ tab, files, selected, viewed, patchSource, onSelect, 
       tabIndex={0}
       className={cn('py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring', className)}
       onKeyDown={(e) => {
-        if (e.altKey || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+        const c = matchCombo(e, DIFF_FILE_MOVE_KEY);
+        if (!c) return;
         e.preventDefault();
-        const i = files.findIndex((f) => f.path === viewed) + (e.key === 'ArrowDown' ? 1 : -1);
+        const i = files.findIndex((f) => f.path === viewed) + (c.key === 'ArrowDown' ? 1 : -1);
         const f = files[Math.max(0, Math.min(files.length - 1, i))];
         if (f) onSelect([f.path], f.path);
       }}

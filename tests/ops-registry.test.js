@@ -116,3 +116,23 @@ test('write ops are non-cancellable: every submodule write', () => {
     assert.equal(d.cancellable, false, name);
   }
 });
+
+// Invariant: undo.state is a cancellable read; undo.undo and undo.redo are writes that cannot be cancelled mid-plan.
+test('the undo ops: state is a cancellable read, undo and redo non-cancellable writes', () => {
+  assert.equal(OPS.get('undo.state')?.kind, 'read');
+  assert.equal(OPS.get('undo.state').cancellable, true);
+  for (const name of ['undo.undo', 'undo.redo']) {
+    assert.equal(OPS.get(name)?.kind, 'write', name);
+    assert.equal(OPS.get(name).cancellable, false, name);
+  }
+});
+
+// Invariant (D2): exactly these ops are registered for undo; every other write clears the slots.
+test('the ops registered for undo are exactly the decided list', () => {
+  const registered = [...OPS.values()].filter((o) => o.undo).map((o) => o.name).sort();
+  assert.deepEqual(registered, [
+    'branch.checkout', 'branch.create', 'branch.delete', 'branch.fastForward', 'branch.move', 'branch.rename',
+    'commit.create', 'head.cherryPick', 'head.continue', 'head.reset', 'head.revert', 'head.skip',
+    'merge.start', 'rebase.interactive', 'rebase.start', 'stage.discardFiles', 'stage.discardLines', 'tag.create', 'tag.delete',
+  ]);
+});

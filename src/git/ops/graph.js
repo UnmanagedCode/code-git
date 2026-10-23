@@ -18,7 +18,7 @@ export const QUERY_MAX = 200;
  * On every log-family command: a configured log.showSignature would run gpg per commit and pollute the output;
  * diff.external and textconv drivers are programs.
  */
-const LOG_SAFE = ['--no-show-signature', '--no-ext-diff', '--no-textconv'];
+export const LOG_SAFE = ['--no-show-signature', '--no-ext-diff', '--no-textconv'];
 const COMMIT_FORMAT = '--format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%s';
 // %G? runs the repo's configured signing program (gpg.program / gpg.ssh.program) for this one commit.
 const META_FORMAT = '--format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%cN%x00%cE%x00%ct%x00%G?%x00%GS%x00%GK%x00'

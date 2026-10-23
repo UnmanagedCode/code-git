@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
+import { matches } from '@/shell/shortcuts';
 import { tabKey, type Tab } from '@/state/tabs';
 import { stageAll, unstageAll } from './actions';
 import { openWorkingTree } from './entry';
+import { FOCUS_COMMIT_KEY, STAGE_ALL_KEY, UNSTAGE_ALL_KEY } from './keys';
 
 /**
  * The Changes panel's global keys, while focus is inside the plugin frame: Ctrl/⌘+Shift+S stage all, Ctrl/⌘+Shift+U
@@ -11,11 +13,10 @@ export function useWorkdirKeys(tab: Tab | null): void {
   useEffect(() => {
     if (!tab) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
-      const k = e.key.toLowerCase();
-      if (k === 's') { e.preventDefault(); void stageAll(tab); }
-      else if (k === 'u') { e.preventDefault(); void unstageAll(tab); }
-      else if (k === 'm') { e.preventDefault(); openWorkingTree(tab); }
+      if (e.defaultPrevented) return;
+      if (matches(e, STAGE_ALL_KEY)) { e.preventDefault(); void stageAll(tab); }
+      else if (matches(e, UNSTAGE_ALL_KEY)) { e.preventDefault(); void unstageAll(tab); }
+      else if (matches(e, FOCUS_COMMIT_KEY)) { e.preventDefault(); openWorkingTree(tab); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

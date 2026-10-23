@@ -1,8 +1,12 @@
-import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, ChevronRightIcon, GitBranchIcon, RefreshCwIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, ChevronRightIcon, CommandIcon, GitBranchIcon, RefreshCwIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { backToParent, tabLabel } from '@/features/tabs/actions';
+import { UndoButtons } from '@/features/undo/UndoButtons';
 import type { RepoSummary } from '@/lib/endpoints';
+import { PALETTE_KEY } from '@/shell/keys';
+import { openPalette } from '@/shell/overlays';
+import { shortcutLabel } from '@/shell/shortcuts';
 import { dispatchTabs, parentTab, type Tab } from '@/state/tabs';
 import { useRepoSummary } from '@/state/useRepoSummary';
 import { reposStore, systemLabel } from '@/state/useRepos';
@@ -98,7 +102,13 @@ export function RepoHeader({ tab }: { tab: Tab }) {
         </>
       )}
       {!summary && loading && <span className="text-sm text-muted-foreground">Loading…</span>}
-      <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="Refresh" disabled={loading} onClick={refresh}>
+      <span className="ml-auto flex items-center gap-1" role="group" aria-label="Quick actions">
+        <UndoButtons tab={tab} />
+        <Button variant="ghost" size="icon-sm" aria-label={`Commands (${shortcutLabel(PALETTE_KEY)})`} title={`Commands (${shortcutLabel(PALETTE_KEY)})`} onClick={openPalette}>
+          <CommandIcon />
+        </Button>
+      </span>
+      <Button variant="ghost" size="icon-sm" aria-label="Refresh" disabled={loading} onClick={refresh}>
         <RefreshCwIcon className={loading ? 'animate-spin' : undefined} />
       </Button>
       {error && (

@@ -10,10 +10,14 @@ import { SubmoduleDialogHost } from '@/features/submodules/SubmoduleDialogHost';
 import { RepoHeader } from '@/features/repo/RepoHeader';
 import { TabBar } from '@/features/tabs/TabBar';
 import { useTabShortcuts } from '@/features/tabs/useTabShortcuts';
+import { UNDO_SHELL_KEYS } from '@/features/undo/flows';
 import { hidePanel, useShownPanel } from '@/state/shownPanel';
 import { activeTab, dispatchTabs, tabKey, useTabs, type Tab } from '@/state/tabs';
+import { CommandPalette } from './CommandPalette';
 import { PanelBoundary } from './PanelBoundary';
 import { panelsFor, type PanelSlot } from './panels';
+import { ShortcutSheet } from './ShortcutSheet';
+import { useShellKeys } from './useShellKeys';
 
 function Slot({ slot, tab, className }: { slot: PanelSlot; tab: Tab | null; className?: string }) {
   const shown = useShownPanel(tab);
@@ -38,6 +42,7 @@ export function Shell() {
   const tab = activeTab(tabs);
   const [pickerOpen, setPickerOpen] = useState(false);
   useTabShortcuts();
+  useShellKeys(UNDO_SHELL_KEYS);
   return (
     <div className="flex h-full flex-col">
       <TabBar onAdd={() => setPickerOpen(true)} />
@@ -64,6 +69,8 @@ export function Shell() {
       <RemotesHost />
       <SequenceDialogHost />
       <SubmoduleDialogHost />
+      <CommandPalette />
+      <ShortcutSheet />
     </div>
   );
 }

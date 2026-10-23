@@ -1,7 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { DIFF_LIMITS } from '../diff/limits.js';
 import { commitOid, DIFF_CONFIG, DIFF_FLAGS, emptyTree } from '../diff/source.js';
-import { bad, filePath, nulPaths, optBool, paramsObject, pathList } from '../params.js';
+import { bad, filePath, FROM_STDIN, nulPaths, optBool, paramsObject, pathList } from '../params.js';
 import { parseRecords } from '../parse/graph.js';
 import { parseConflictFiles } from '../parse/refs.js';
 import { shortBranch } from '../refs/check.js';
@@ -27,7 +27,6 @@ import { assertWorktree } from '../worktree.js';
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const text = (r) => decoder.decode(r.stdout);
-const FROM_STDIN = ['--pathspec-from-file=-', '--pathspec-file-nul'];
 
 /** refs/stash's oid, or null when there is no stash. */
 async function stashTip(git) {

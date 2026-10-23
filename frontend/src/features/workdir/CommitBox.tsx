@@ -10,6 +10,8 @@ import type { Tab } from '@/state/tabs';
 import {
   commitDraft, consumeFocus, sameDraft, setAmend, setDraft, setNoVerify, type CommitMode, type WorkdirState,
 } from '@/state/workdir';
+import { matches } from '@/shell/shortcuts';
+import { COMMIT_KEY, COMMIT_STAGE_ALL_KEY } from './keys';
 
 /** Which commit buttons are enabled, from the draft and the lists: the one rule the box and its keys share. */
 export function commitRules(s: WorkdirState) {
@@ -50,13 +52,14 @@ export function CommitBox({ tab, state, summary, instance }: { tab: Tab; state: 
     if (ok && pushAfter && canPushAfter) pushHead(tab);
   });
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const stageAll = matches(e, COMMIT_STAGE_ALL_KEY);
+    if (!stageAll && !matches(e, COMMIT_KEY)) return;
     e.preventDefault();
-    if (state.amend.on) { if (rules.amend) run('amend', e.shiftKey); return; }
+    if (state.amend.on) { if (rules.amend) run('amend', stageAll); return; }
     // Stage-all-then-commit only needs something to stage; the summary rules still apply.
-    const stageAllOk = e.shiftKey && !state.busy && !!state.draft.summary.trim() && !sameDraft(state.draft, state.templateDraft)
+    const stageAllOk = stageAll && !state.busy && !!state.draft.summary.trim() && !sameDraft(state.draft, state.templateDraft)
       && ((state.unstaged?.files.length ?? 0) > 0 || rules.stagedCount > 0 || state.merging);
-    if (e.shiftKey ? stageAllOk : rules.commit) run('commit', e.shiftKey);
+    if (stageAll ? stageAllOk : rules.commit) run('commit', stageAll);
   };
 
   return (

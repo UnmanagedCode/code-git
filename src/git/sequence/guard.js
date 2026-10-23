@@ -23,8 +23,8 @@ export async function assertNoOperation(git) {
 }
 
 /** DIRTY_WORKTREE when the index or a tracked file differs from HEAD (untracked files do not count). */
-export async function assertClean(git) {
+export async function assertClean(git, message = 'commit or stash the local changes first: a rebase needs a clean working tree') {
   const r = await git(['status', '--porcelain=v2', '-z', '--untracked-files=no']);
   const { counts } = parseStatus(decoder.decode(r.stdout));
-  if (counts.staged + counts.unstaged + counts.conflicted) throw new Refusal('DIRTY_WORKTREE', 'commit or stash the local changes first: a rebase needs a clean working tree');
+  if (counts.staged + counts.unstaged + counts.conflicted) throw new Refusal('DIRTY_WORKTREE', message);
 }

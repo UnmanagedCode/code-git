@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { mergeSegments, type MarkedSeg } from './segments';
 import type { Cell } from './viewRows';
 import type { Range } from './wordDiff';
+import { pointerMods } from '@/shell/shortcuts';
 
 /** A line's segments as spans; the text is only ever React text. */
 export function CodeLine({ segs, emphasisClass }: { segs: MarkedSeg[]; emphasisClass?: string }) {
@@ -91,7 +92,7 @@ export function LineToggle({ cell, staging }: { cell: Cell; staging: StagingView
       aria-pressed={on}
       data-selected={on ? '' : undefined}
       className={cn('w-4 shrink-0 rounded-sm text-center outline-none focus-visible:ring-1 focus-visible:ring-ring', on ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent')}
-      onClick={(e) => staging.onToggle(cell.hunk, cell.index, e.shiftKey)}
+      onClick={(e) => staging.onToggle(cell.hunk, cell.index, pointerMods(e).shift)}
     >
       {on ? '✓' : ''}
     </button>
