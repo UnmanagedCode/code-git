@@ -9,6 +9,6 @@
   },
   "frontend": {
     "path": "/",
-    "navLabel": "Git"
+    "navLabel": "Code Git"
   }
 }
