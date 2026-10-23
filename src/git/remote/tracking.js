@@ -64,14 +64,56 @@ export function trackingRefsFor(specs, ref) {
   return out;
 }
 
+/** `--get-all` output → its values, empty ones kept (each value ends with a newline). */
+const values = (r) => {
+  const out = decoder.decode(r.stdout).split('\n');
+  out.pop();
+  return out;
+};
+
 /**
- * `remote`'s fetch refspecs, parsed (`git config --get-all remote.<name>.fetch`, includes resolved). A remote with no
- * `url` in config makes git read its refspecs from `.git/remotes/` or `.git/branches/` files instead: refused, as is
- * any refspec parseFetchRefspec does not accept. No refspec maps nothing.
+ * Whether the remote has a url as git counts it: an empty `remote.<name>.url` value clears the list, so only the values
+ * after the last empty one count, and at least one must be non-empty. A `pushurl` does not count.
+ */
+export function hasUrl(urlValues) {
+  const last = urlValues.lastIndexOf('');
+  return urlValues.slice(last + 1).some((v) => v !== '');
+}
+
+/** git's valid_remote_nick: only such a name can have a legacy file (and only such a name is safe to splice into a path). */
+const validNick = (name) => name !== '' && name !== '.' && name !== '..' && !name.includes('/');
+
+/**
+ * Whether git would read `remote`'s config from a legacy `.git/remotes/<name>` or `.git/branches/<name>` file (it does so
+ * when the remote has no url). Through git alone: `rev-parse --git-path` names the file (in the common dir, from any
+ * worktree), and `hash-object --no-filters` (no -w: nothing is written) succeeds only for a readable file — the same
+ * files git's own reader can open.
+ */
+export async function legacyRemoteFile(git, remote) {
+  if (!validNick(remote)) return null;
+  for (const dir of ['remotes', 'branches']) {
+    const where = decoder.decode((await git(['rev-parse', '--git-path', `${dir}/${remote}`])).stdout).trim();
+    if (!where) continue;
+    const r = await git(['hash-object', '--no-filters', '--', where], { okExit: [0, 128] });
+    if (r.exitCode === 0) return `${dir}/${remote}`;
+  }
+  return null;
+}
+
+/**
+ * `remote`'s fetch refspecs, parsed (`git config --get-all remote.<name>.fetch`, includes resolved). Without a url
+ * (hasUrl) git also reads a legacy `.git/remotes/<name>` or `.git/branches/<name>` file, whose refspecs are not
+ * mapped here: when one exists, REMOTE_CONFIG_UNSUPPORTED. A push-only remote (pushurl, no url, no legacy file) maps
+ * through its config. Any refspec parseFetchRefspec does not accept is refused too; no refspec maps nothing.
  */
 export async function fetchSpecs(git, remote) {
   const get = (key) => git(['config', '--get-all', key], { okExit: [0, 1] });
   const [url, fetch] = await Promise.all([get(`remote.${remote}.url`), get(`remote.${remote}.fetch`)]);
-  if (url.exitCode !== 0) throw new Refusal('REMOTE_CONFIG_UNSUPPORTED', `${remote} has no url in git config: its refspecs would come from legacy remote files`, { remote, refspec: null });
-  return decoder.decode(fetch.stdout).split('\n').filter(Boolean).map((s) => parseFetchRefspec(remote, s));
+  if (!hasUrl(values(url))) {
+    const legacy = await legacyRemoteFile(git, remote);
+    if (legacy) {
+      throw new Refusal('REMOTE_CONFIG_UNSUPPORTED', `${remote} has no url in git config, so git reads its refspecs from the legacy file ${legacy}`, { remote, refspec: null });
+    }
+  }
+  return values(fetch).filter(Boolean).map((s) => parseFetchRefspec(remote, s));
 }
