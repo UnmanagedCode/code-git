@@ -1,5 +1,6 @@
 import { cleanup } from '@testing-library/react';
-import { afterEach, beforeEach, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, vi } from 'vitest';
+import { toast } from 'sonner';
 import { resetDiff } from '@/state/diff';
 import { resetFileView } from '@/state/fileView';
 import { resetShownPanels } from '@/state/shownPanel';
@@ -36,6 +37,13 @@ import { resetSubmoduleDialog } from '@/state/submoduleDialog';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
+
+// A dismissed toast removes itself TIME_BEFORE_UNMOUNT (200 ms in sonner) later, through a timer the Toaster's unmount
+// does not clear: in a file that showed a toast, let it run before the environment's window goes away (it would throw
+// "window is not defined" outside any test).
+afterAll(async () => {
+  if (toast.getHistory().length) await new Promise((r) => setTimeout(r, 250));
+});
 
 afterEach(() => {
   cleanup();

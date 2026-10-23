@@ -24,5 +24,6 @@
 - **Playwright names match by substring**: the panel's reload button is "Reload changes" so the header's `getByRole('button', {name: 'Refresh'})` stays unique.
 - **Two op worlds in one test talk to the last fake cc**: each `fakeCc` takes over `process.env.CONDUCTOR_URL`, which every op reads per request. A differential test (stash vs stage the same selection) creates and uses one world at a time.
 - **The diff ignores Esc while focus is in a form field** (its key handler skips typing targets, radios included), and a dialog that closes after its trigger unmounted (a selection bar's button) leaves focus on `body`: harness steps close the diff with **Close diff**.
+- **A sonner toast's removal timer outlives its test file**: a dismissed toast unmounts itself 200 ms later (`TIME_BEFORE_UNMOUNT`) through a `setTimeout` the Toaster's unmount does not clear; fired after the file's environment is gone, it is an unhandled "window is not defined" (seen only under full-suite load). `test/setup.ts` waits it out in `afterAll` for files that showed a toast.
 - **sonner toasts stay on screen across steps**: a harness waiting for "Stashed as stash@{0}" twice must wait for a *new* one (`stash.mjs` counts matches before the action and waits for the next index).
 
