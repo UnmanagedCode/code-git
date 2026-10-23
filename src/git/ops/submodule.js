@@ -4,9 +4,10 @@ import { worktreeEntry } from '../diff/noIndex.js';
 import { commitOid } from '../diff/source.js';
 import { bad, optBool, paramsObject } from '../params.js';
 import { netRun } from '../remote/net.js';
+import { operationState } from '../sequence/state.js';
 import { submoduleFailure } from '../submodule/failure.js';
 import {
-  assertDeclaredUrls, assertDefaultRemoteUrl, assertGitmodulesWritable, assertNoOperationInProgress, assertNoRepoProtocolConfig, assertResolvedUrls,
+  assertDeclaredUrls, assertDefaultRemoteUrl, assertGitmodulesWritable, assertNoRepoProtocolConfig, assertResolvedUrls,
   knownEntries, orphanCount, resolvedUrls,
 } from '../submodule/gates.js';
 import { SUBMODULE_LIMITS } from '../submodule/limits.js';
@@ -278,8 +279,13 @@ export const ops = [
       if (!e.populated) throw new Refusal('SUBMODULE_NOT_POPULATED', `${p.path} is not cloned`, { path: p.path });
       if (e.head !== p.expect) throw new Refusal('SUBMODULE_POINTER_MOVED', `${p.path} is no longer at the commit shown: check again`, { path: p.path, head: e.head });
       if (p.expect === e.committed) throw new Refusal('NOTHING_TO_COMMIT', `${p.path} already points at its commit`);
-      // A temporary-index commit would conclude a stopped merge (or commit in a pick's or rebase's middle) with HEAD's tree.
-      await assertNoOperationInProgress(git);
+      // A temporary-index commit would conclude a stopped merge (or commit in a pick's or rebase's middle) with HEAD's
+      // tree: refused while operationState (the one reader of what is in progress) names one. Unmerged entries elsewhere
+      // with no operation (a squash merge, a stash apply) are left alone, as git's own `commit --only -- <path>` allows;
+      // the pointer's own gitlink in conflict is refused, since setting its index entry would resolve that conflict.
+      const { operation } = await operationState(git);
+      if (operation) throw new Refusal('OPERATION_IN_PROGRESS', `a ${operation.kind} is in progress: continue or abort it first`, { operation: operation.kind });
+      if (e.conflicted) throw new Refusal('SUBMODULE_CONFLICTED', `${p.path}: the pointer is in conflict — resolve it (pick a commit and stage it) first`, { paths: [p.path] });
       // The commit holds exactly `expect`, whatever the submodule's HEAD is by now (`commit --only -- <path>` would re-read
       // it): a temporary index of HEAD's tree with only that gitlink changed, committed (hooks run); then the real
       // index's entry set to it, as --only leaves it. Whatever else is staged stays staged.

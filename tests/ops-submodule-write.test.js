@@ -470,7 +470,7 @@ test('commitPointer refuses OPERATION_IN_PROGRESS during a stopped merge, cherry
     const head = w.repo.git('rev-parse', 'HEAD');
     const b = await refusal(w, 'submodule.commitPointer', { path: 'libA', expect: headOf(w, 'libA'), summary: 's' }, 'OPERATION_IN_PROGRESS');
     assert.equal(b.operation, operation === 'rebase-apply' ? 'rebase' : operation);
-    assert.match(b.error, /finish or abort it first/);
+    assert.match(b.error, /continue or abort it first/);
     assert.deepEqual(fs.readFileSync(w.file('.git/index')), index, operation);
     assert.equal(w.repo.git('rev-parse', 'HEAD'), head, operation);
     assert.equal(w.execArgv().map(afterBase).some((a) => a[0] === 'read-tree' || a[0] === 'commit'), false, operation);

@@ -33,6 +33,8 @@ Code: `src/git/ops/submodule.js`, `src/git/submodule/`, `subArgs` in `src/git/ru
 - **`prefsKey` must not join paths with `/`**: chains `['a/b']` and `['a', 'b']` would share prefs. NUL, as `tabKey` uses.
 - **`submodule deinit` drops the whole `submodule.<name>` config section**, `update` included: a probe re-arming `update=!cmd` must set it after each `init`.
 - **Removal keeps `.git/modules/<name>`**; adding the same name again fails "A git directory for '…' is found locally" (→ `SUBMODULE_EXISTS {reason: 'gitdir'}`).
+- **commitPointer's in-progress guard is `operationState`** (the merge/rebase card's reader), in the op's own repo: a merge stopped in the checkout does not block a submodule tab's pointer, one stopped in the submodule does. Not `assertNoOperation`: its `CONFLICTED` refusal of unrelated unmerged entries is stricter than git's own `commit --only -- <path>`, which allows them; only the pointer's own conflict refuses (`SUBMODULE_CONFLICTED`). A stopped `git am` is not an operation there, so it does not refuse either.
+- **The merge/rebase card's ops work in a submodule tab unchanged**: they run through the bound `git` (the `-C` prefix and the preflight), and its UI stores (conflict tool, rebase editor, workdir's operation) are keyed by `tabKey`.
 - **`commit --only -- <gitlink>` re-reads the submodule's HEAD at commit time**, so a move after the check commits a pointer the user never saw. commitPointer commits a temporary index (HEAD's tree + `update-index --cacheinfo 160000,<expect>,<path>`, `GIT_INDEX_FILE` is not a protected name) and then sets the real index's entry the same way: exactly `expect`, other staged changes untouched, hooks still run.
 
 ## UI
