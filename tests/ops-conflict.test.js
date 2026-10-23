@@ -18,7 +18,7 @@ const LARGE = 'x'.repeat(CONFLICT_LIMITS.sideMaxBytes + 1);
  * base → ours (main) and theirs (branch `theirs`), merged so every path below conflicts:
  * text.txt bothModified · run.sh bothModified, 100755 · bin.dat binary · big.txt one side over the cap · link symlink ·
  * sub gitlink added on both · new.txt bothAdded · gone.txt deletedByThem · kept.txt deletedByUs · r.txt bothDeleted
- * (renamed apart) · d/x.txt bothModified under a directory.
+ * (renamed apart) · d/x.txt bothModified under a directory · d/y.txt deletedByUs under it.
  */
 async function world(t) {
   const w = await refsWorld(t);
@@ -33,6 +33,7 @@ async function world(t) {
   r.write('kept.txt', 'kept\n');
   r.write('r.txt', 'renamed apart\n');
   r.write('d/x.txt', 'dx base\n');
+  r.write('d/y.txt', 'dy base\n');
   fs.symlinkSync('base-target', path.join(r.dir, 'link'));
   const base = r.commit({}, 'conflict base');
   const sides = { ours: 'main', theirs: 'theirs' };
@@ -47,8 +48,8 @@ async function world(t) {
     r.write('d/x.txt', `dx ${side}\n`);
     fs.rmSync(path.join(r.dir, 'link'));
     fs.symlinkSync(`${side}-target`, path.join(r.dir, 'link'));
-    if (side === 'ours') { r.write('gone.txt', 'gone, edited\n'); fs.rmSync(path.join(r.dir, 'kept.txt')); }
-    else { fs.rmSync(path.join(r.dir, 'gone.txt')); r.write('kept.txt', 'kept, edited\n'); }
+    if (side === 'ours') { r.write('gone.txt', 'gone, edited\n'); fs.rmSync(path.join(r.dir, 'kept.txt')); fs.rmSync(path.join(r.dir, 'd/y.txt')); }
+    else { fs.rmSync(path.join(r.dir, 'gone.txt')); r.write('kept.txt', 'kept, edited\n'); r.write('d/y.txt', 'dy theirs\n'); }
     gitIn('mv', 'r.txt', `r-${side}.txt`);
     gitIn('add', '-A');
     gitIn('update-index', '--add', '--cacheinfo', `160000,${side === 'ours' ? base : w.base},sub`);
@@ -202,4 +203,46 @@ test('take params: side ours/theirs, 1…takeMax paths', () => {
   assert.throws(() => p({ paths: ['a'], side: 'base' }), refused('BAD_PARAMS'));
   assert.throws(() => p({ paths: [], side: 'ours' }), refused('BAD_PARAMS'));
   assert.throws(() => p({ paths: Array.from({ length: CONFLICT_LIMITS.takeMax + 1 }, (_, i) => `f${i}`), side: 'ours' }), refused('BAD_PARAMS'));
+});
+
+/** d replaced by an untracked symlink to a directory outside holding y.txt and x.txt. → that directory. */
+function linkDOutside(w) {
+  const outside = path.join(w.repo.root, 'outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'y.txt'), 'outside y\n');
+  fs.writeFileSync(path.join(outside, 'x.txt'), 'outside x\n');
+  fs.rmSync(path.join(w.repo.dir, 'd'), { recursive: true });
+  fs.symlinkSync(outside, path.join(w.repo.dir, 'd'));
+  return outside;
+}
+const snapshot = (w) => [w.repo.git('ls-files', '-s'), w.repo.git('status', '--porcelain', '-z', '--untracked-files=all')];
+
+test('take refuses PATH_BLOCKED when the side that deleted the path would rm it through an untracked symlinked leading directory: the outside file stays', async (t) => {
+  const w = await world(t);
+  assert.equal((await w.read('d/y.txt')).kind, 'deletedByUs');
+  const outside = linkDOutside(w);
+  const before = snapshot(w);
+  await assert.rejects(w.op('conflict.take', { paths: ['d/y.txt'], side: 'ours' }), refused('PATH_BLOCKED'));
+  assert.equal(fs.readFileSync(path.join(outside, 'y.txt'), 'utf8'), 'outside y\n');
+  assert.deepEqual(snapshot(w), before, 'index and worktree unchanged');
+  assert.ok(!w.argvs().some((a) => a[0] === 'rm' || a[0] === 'checkout' || a[0] === 'update-index'), 'no write ran');
+});
+
+test('a mixed take (a gitlink and a blocked path) refuses before anything: the gitlink keeps its stages', async (t) => {
+  const w = await world(t);
+  const outside = linkDOutside(w);
+  const before = snapshot(w);
+  await assert.rejects(w.op('conflict.take', { paths: ['sub', 'd/x.txt'], side: 'ours' }), refused('PATH_BLOCKED'));
+  assert.equal(w.repo.git('ls-files', '-u', '--', 'sub').split('\n').length, 2, 'the gitlink is still unmerged');
+  assert.deepEqual(snapshot(w), before);
+  assert.equal(fs.readFileSync(path.join(outside, 'x.txt'), 'utf8'), 'outside x\n');
+});
+
+test('take refuses PATH_BLOCKED when the path itself is now a directory (a file target only)', async (t) => {
+  const w = await world(t);
+  fs.rmSync(path.join(w.repo.dir, 'gone.txt'), { force: true });
+  fs.mkdirSync(path.join(w.repo.dir, 'gone.txt'));
+  fs.writeFileSync(path.join(w.repo.dir, 'gone.txt', 'inner'), 'keep\n');
+  await assert.rejects(w.op('conflict.take', { paths: ['gone.txt'], side: 'theirs' }), refused('PATH_BLOCKED'));
+  assert.equal(fs.readFileSync(path.join(w.repo.dir, 'gone.txt', 'inner'), 'utf8'), 'keep\n');
 });

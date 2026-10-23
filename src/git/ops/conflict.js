@@ -176,6 +176,10 @@ export const ops = [
       const conflicts = await unmergedOf(git, paths);
       const missing = paths.filter((p) => !conflicts.has(p));
       if (missing.length) throw new Refusal('NOT_CONFLICTED', `${missing[0]} has no conflict`, { paths: missing });
+      // Every path, before any write: checkout, add and rm all follow an untracked symlinked leading directory (rm
+      // unlinks the file outside), and a half-applied take would leave some paths resolved behind a refusal.
+      await assertNotBlocked(git, paths);
+      for (const p of paths) if (conflicts.get(p)[side]?.mode !== GITLINK) await assertFileTarget(git, p);
       const gitlinks = [];
       const files = [];
       const deleted = [];
@@ -188,7 +192,6 @@ export const ops = [
       // A stage-0 entry replaces every unmerged stage of its path; the submodule's own worktree is not touched.
       if (gitlinks.length) await git(['update-index', '-z', '--index-info'], { stdin: gitlinks.map((g) => `${GITLINK} ${g.oid} 0\t${g.path}\0`).join('') });
       if (files.length) {
-        await assertNotBlocked(git, files);
         for (const chunk of chunkPaths(files, STAGE_LIMITS.argvChunkBytes)) {
           await git(['checkout', `--${side}`, '--', ...chunk]);
           await git(['add', '--', ...chunk]);
