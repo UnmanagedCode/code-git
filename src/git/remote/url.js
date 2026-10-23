@@ -8,8 +8,11 @@ import { remoteName } from './push.js';
 const hasSpaceOrControl = (s) => /[\s\x00-\x1f\x7f]/.test(s);
 export const URL_MAX = 2048;
 
-/** `<transport>::<address>`: git hands the address to a remote helper (`ext::` runs a command). Never accepted. */
-const HELPER_RE = /^[A-Za-z][A-Za-z0-9+.-]*::/;
+/**
+ * `<transport>::<address>`: git hands the address to a remote helper (`ext::` runs a command). Never accepted. A helper
+ * name may start with a digit (`1foo::x` runs git-remote-1foo, git 2.55); `_x::y` is scp-like, not a helper.
+ */
+const HELPER_RE = /^[A-Za-z0-9][A-Za-z0-9+.-]*::/;
 const SCHEME_RE = /^(?:https?|ssh|git\+ssh|ssh\+git|git|file):\/\/(.+)$/i;
 /** scp-like `[user@]host:path`: git reads it so when a `:` comes before any `/`. A bracketed host may hold `:`. */
 const SCP_RE = /^(?:([^@/:]+)@)?(\[[^\]/]+\]|[^@/:[\]]+):(.+)$/;

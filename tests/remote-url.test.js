@@ -9,12 +9,16 @@ test('remoteUrl accepts every allowlisted shape unchanged', () => {
     'ssh://git@h:2222/o/r.git', 'git+ssh://h/r.git', 'ssh+git://h/r.git', 'git://h/r.git', 'file:///srv/r.git',
     '/srv/git/r.git', 'git@github.com:o/r.git', 'h:r.git', 'host.example:path/to/r', '[::1]:r.git', 'u@[fe80::1]:r',
     'x'.repeat(URL_MAX - 5) + ':r.gi',
+    // A leading `_` is not a helper name: git reads `_x::y` as scp-like host `_x`, path `:y`.
+    '_x::y',
   ]) assert.equal(remoteUrl(url), url, url);
 });
 
 test('remoteUrl refuses (BAD_URL) every <transport>:: helper url, a leading -, whitespace, control characters, over-length and every other shape', () => {
   for (const url of [
     'ext::sh -c touch% /tmp/x', 'ext::sh', 'fd::3', 'file::/srv/r', 'foo::x', 'git+custom::h/r', 'Codecommit::us-east-1://r',
+    // git 2.55 runs git-remote-<name> for a digit-led name too (`1foo::x` → git-remote-1foo).
+    '1foo::x', '1::x', '12ab::x', '9.git::h',
     '-uhelper', '--upload-pack=touch /tmp/x', 'https://h/r .git', 'https://h/r\tx', 'https://h/r\nx', 'https://h/\x7f', 'a\x00b',
     '', ' ', 'relative/path.git', './r.git', '../r.git', 'r.git', 'h:', 'h://r', 'ftp://h/r', 'https://', 'ssh://-oProxyCommand=x/r',
     'ssh://u@-oProxyCommand=x/r', '-h:r', 'u@-oProxy:r', 'h://evil', 'x'.repeat(URL_MAX - 4) + ':r.git', 42, null, undefined, ['https://h/r'],
