@@ -27,7 +27,7 @@ Details: [docs/features.md](docs/features.md).
 - Tests: `node --test` (backend, against a fake cc that runs real git) and Vitest + happy-dom (UI).
 
 ```
-conductor.plugin.json   manifest: backend (npm start, /health) + frontend (/, "Git")
+conductor.plugin.json   manifest: backend (npm start, /health) + frontend (/, "Code Git")
 server.js               start(): loopback listener, clientError handler
 src/                    backend — app wiring, cc client, git runner/ops, activity log, routes
 frontend/               UI — shell, state, features, copied cc components
