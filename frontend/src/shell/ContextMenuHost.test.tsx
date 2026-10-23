@@ -100,3 +100,32 @@ for (const [what, lose] of [
     await waitFor(() => expect(ran).toEqual(['hide']));
   });
 }
+
+test('a second pointer\'s press does not disarm the first: the opening finger\'s later release over an item still runs nothing', async () => {
+  render(<ContextMenuHost host="h" />);
+  // Finger 1 long-presses a row; the menu opens under it.
+  fireEvent.pointerDown(document.body, { pointerId: 11, button: 0, pointerType: 'touch' });
+  open();
+  const item = await screen.findByRole('menuitem', { name: 'Hide' });
+  // Finger 2 taps the menu itself (outside it, Radix would rightly dismiss the menu).
+  const menuEl = screen.getByRole('menu');
+  fireEvent.pointerDown(menuEl, { pointerId: 12, button: 0, pointerType: 'touch' });
+  fireEvent.pointerUp(menuEl, { pointerId: 12, button: 0, pointerType: 'touch' });
+  // Finger 1 lifts over the item placed under it.
+  fireEvent.pointerUp(item, { pointerId: 11, button: 0, pointerType: 'touch' });
+  fireEvent.click(item);
+  expect(ran).toEqual([]);
+  expect(screen.getByRole('menu')).toBeTruthy();
+});
+
+test('the click a swallowed release produces is the only one swallowed: a later bare click (no pointerdown) runs the item', async () => {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+  open();
+  const item = await screen.findByRole('menuitem', { name: 'Hide' });
+  fireEvent.pointerUp(item, { pointerId: 1, button: 2 });
+  fireEvent.click(item);
+  expect(ran).toEqual([]);
+  fireEvent.click(item);
+  await waitFor(() => expect(ran).toEqual(['hide']));
+});

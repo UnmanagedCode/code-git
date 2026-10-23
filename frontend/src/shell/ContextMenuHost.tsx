@@ -20,8 +20,8 @@ let seq = 0;
  * the menu. A menu opened with no press held (keyboard, after a drop) keeps every later click.
  *
  * Disarming never waits on a timer: a release lost outside the window, a release that produces no click, or a
- * compatibility click queued late (touch) must not eat a later, real click. A new press, a key, the window losing
- * focus or the page being hidden ends whatever is armed.
+ * compatibility click queued late (touch) must not eat a later, real click. A new press of the same pointer ends its
+ * armed release; any new press or key ends an armed click; the window losing focus or the page being hidden ends all.
  */
 /** Pointers pressed and not yet released. */
 const pressed = new Set<number>();
@@ -37,8 +37,10 @@ function disarm(): void {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('pointerdown', (e) => {
-    // A new press: any release still armed was lost, and its click will not come.
-    disarm();
+    // A new press of this pointer: its armed release was lost (a mouse reuses its id). Another pointer's press (a second
+    // finger) leaves the first one's release armed. Either way a pending click from an earlier release will not come.
+    armedReleases.delete(e.pointerId);
+    armedClick = false;
     pressed.add(e.pointerId);
   }, true);
   window.addEventListener('pointerup', (e) => {
