@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -7,6 +6,7 @@ import type { DiffFile } from '@/features/diff/api';
 import { patchPaths } from '@/features/diff/patch';
 import type { ApiError } from '@/lib/api';
 import { clip, FILE_RENDER_CAP } from '@/lib/clip';
+import { trackOp } from '@/lib/opToast';
 import { clearLineSelection } from '@/state/lineSelection';
 import { closeStashDialog, type SaveMode, type StashDialog } from '@/state/stashDialog';
 import { useStore } from '@/state/store';
@@ -20,11 +20,17 @@ type SaveDialog = Extract<StashDialog, { kind: 'save' }>;
 
 const savedText = (r: PushResult) => (r.selector ? `Stashed as ${r.selector}` : 'Stashed (another stash was saved at the same moment: check the stash list)');
 
-/** A failed save git had already stored as a stash (the refusal names it): said in a toast, beside the dialog's error. */
+/**
+ * A failed save git had already stored as a stash (the refusal names it): said in a warning toast, beside the dialog's
+ * error. Through trackOp, as every toast is (lib/opToast.ts): the "op" is the notice itself.
+ */
 function warnIfStored(e: ApiError): void {
   const selector = (e.body as { oid?: unknown; selector?: unknown } | undefined)?.selector;
   if (typeof selector !== 'string') return;
-  toast.warning('A stash was created despite the error', { description: `Your changes are in ${selector}; check it before saving again.` });
+  void trackOp(async () => undefined, {
+    running: '', toastRunning: false,
+    done: () => ({ tone: 'warning', title: 'A stash was created despite the error', description: `Your changes are in ${selector}; check it before saving again.` }),
+  });
 }
 
 const MODES: { mode: SaveMode; label: string }[] = [

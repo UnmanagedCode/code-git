@@ -36,6 +36,12 @@ test('parseConflictFiles collects the tab-indented files after each "would be ov
   assert.deepEqual(parseConflictFiles('error: the branch \'x\' is not fully merged\n\tnot-a-file\n'), []);
 });
 
+test('parseConflictFiles also reads the two-space list of stash apply --index, indent removed; indented lines without a header are not files', () => {
+  assert.deepEqual(parseConflictFiles('error: Your local changes to the following files would be overwritten by merge:\n  dir/c.txt\n  b c.txt\nIndex was not unstashed.\n'), ['dir/c.txt', 'b c.txt']);
+  assert.deepEqual(parseConflictFiles('error: Your local changes to the following files would be overwritten by checkout:\n\t  two-leading.txt\n'), ['  two-leading.txt']);
+  assert.deepEqual(parseConflictFiles('  indented but no list header\n'), []);
+});
+
 test('splitRemoteRef takes the longest remote name prefixing the path, the rest is the branch', () => {
   assert.deepEqual(splitRemoteRef('refs/remotes/origin/feature/a', ['origin']), { remote: 'origin', branch: 'feature/a' });
   assert.deepEqual(splitRemoteRef('refs/remotes/a/b/feat', ['a', 'a/b']), { remote: 'a/b', branch: 'feat' });

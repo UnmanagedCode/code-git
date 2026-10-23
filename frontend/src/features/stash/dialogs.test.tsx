@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, expect, test } from 'vitest';
 import { Shell } from '@/shell/Shell';
+import { Toasts } from '@/shell/Toasts';
 import { getGraph } from '@/state/graph';
 import { openStashDialog, stashDialogStore } from '@/state/stashDialog';
 import { dispatchTabs } from '@/state/tabs';
@@ -10,7 +11,6 @@ import { dfile } from '@/test/diffFixtures';
 import { json } from '@/test/fixtures';
 import { stashFx, stashWorld, W } from '@/test/stashWorld';
 import { openStashSave } from './actions';
-import { StashToaster } from './StashToaster';
 
 afterEach(() => { toast.dismiss(); });
 
@@ -24,7 +24,7 @@ async function world(w: Parameters<typeof stashWorld>[0] = {}) {
     ...w,
     answers: { 'stash.push': PUSHED, 'stash.pushLines': PUSHED, ...w.answers },
   });
-  render(<><Shell /><StashToaster /></>);
+  render(<><Shell /><Toasts /></>);
   act(() => dispatchTabs({ type: 'open', tab: APP }));
   await waitFor(() => expect(getGraph(APP).refs).not.toBeNull());
   await screen.findByRole('button', { name: 'Stash changes…' });

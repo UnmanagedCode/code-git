@@ -88,14 +88,14 @@ Selected hunks or lines of one file. Same request as the line staging ops (`sele
 ### `stash.branch`
 
 - `params`: `{oid, name, ccOwned?}`; `name` is a short branch name (`shortBranch`: `assertRefName`, not `HEAD`, not `refs/…` → 400 `BAD_REF`).
-- `refs/heads/<name>` exists → 409 `REF_EXISTS`. This checkout's HEAD is a `code-conductor/*` branch and `ccOwned` is not true → 409 `CC_OWNED_BRANCH` `{branches, head: true}` (the UI confirms and resends).
+- `refs/heads/<name>` resolves (a branch, or a symbolic ref to one) → 409 `REF_EXISTS`; a dangling symbolic ref of that exact name (`assertNoSymref`, as `branch.create`) → 409 `SYMBOLIC_REF` `{target}`: `switch -c` would create its target under this name. This checkout's HEAD is a `code-conductor/*` branch and `ccOwned` is not true → 409 `CC_OWNED_BRANCH` `{branches, head: true}` (the UI confirms and resends).
 - Gates, then `git switch --no-guess --no-track -c <name> --end-of-options <base>` ("… would be overwritten" → 409 `CHECKOUT_CONFLICT`, no branch), then `git stash apply -q --index <oid>` classified as in apply, then `dropVerified` when clean.
 - A refusal from the apply step (the branch exists and is checked out, the stash untouched) carries `step: 'apply'`, `ref` and `undo`.
 - `result`: `{ref, base, conflicts, dropped, dropError?, undo}`.
 
 ## Undo record
 
-Every op returns `result.undo` (`stashUndo`, `src/git/stash/undo.js`): C5's ref-op record (`refs`, `remoteRefs`, `head`, `worktreeSnapshot`, same defaults) plus two keys.
+Every op returns `result.undo`: the ref ops' record (`undoRecord`, `src/git/refs/undo.js`; [refs → Undo record](refs.md#undo-record)) — `refs`, `remoteRefs`, `head`, `worktreeSnapshot` — whose two stash keys the stash ops fill (empty for every ref op).
 
 | Key | Shape | Undo |
 |---|---|---|
@@ -122,7 +122,6 @@ Every op returns `result.undo` (`stashUndo`, `src/git/stash/undo.js`): C5's ref-
 | `actions.ts` | `STASH_ACTIONS` (group `stash`, orders 400–405), `openStashSave`, `applyStash`, `popStash`, `dropStash`, `applyStashFile` |
 | `dialogs/` | Save, Rename, Create branch; each shows a refusal inline and toasts only success |
 | `StashDialogHost.tsx` | Renders the open dialog from `state/stashDialog.ts`; mounted by `Shell` |
-| `toast.ts`, `StashToaster.tsx` | Copies of C5's `lib/opToast.ts` and `shell/Toasts.tsx`; the Toaster is mounted beside `<App/>` in `main.tsx`, never inside `Shell` (there it re-renders with the Shell and delays a tab switch's panels by ~200 ms, measured with `golden.mjs`). Whichever card lands second deletes them and keeps C5's (two Toasters show every toast twice) |
 
 | Diff view | Source |
 |---|---|

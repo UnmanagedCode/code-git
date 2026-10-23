@@ -1,5 +1,5 @@
 import type { ApiError } from '@/lib/api';
-import { stderrOf } from '../toast';
+import { stderrOf } from '@/lib/opToast';
 
 export interface DialogError { message: string; stderr: string | null }
 export const dialogError = (e: ApiError): DialogError => ({ message: e.message, stderr: stderrOf(e) ?? null });

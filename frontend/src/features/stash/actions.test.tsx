@@ -7,7 +7,7 @@ import type { FileCtx, StashCtx, WipCtx } from '@/features/graph/contexts';
 import { json } from '@/test/fixtures';
 import { actionsFor, labelOf } from '@/shell/menus';
 import { Shell } from '@/shell/Shell';
-import { StashToaster } from './StashToaster';
+import { Toasts } from '@/shell/Toasts';
 import { getGraph } from '@/state/graph';
 import { stashDialogStore } from '@/state/stashDialog';
 import { dispatchTabs } from '@/state/tabs';
@@ -23,7 +23,7 @@ const toastTexts = () => [...screen.getByRole('region', { name: /Notifications/ 
 
 async function world(w: Parameters<typeof stashWorld>[0] = {}) {
   const x = stashWorld(w);
-  render(<><Shell /><StashToaster /></>);
+  render(<><Shell /><Toasts /></>);
   act(() => dispatchTabs({ type: 'open', tab: APP }));
   await waitFor(() => expect(getGraph(APP).refs?.stashes).toHaveLength(1));
   // The Changes panel (and its ConfirmHost) is up.

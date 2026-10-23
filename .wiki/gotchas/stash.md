@@ -17,7 +17,7 @@ Code: `src/git/ops/stash.js`, `src/git/stash/`. Reference: `docs/stash.md`. Raw 
 
 ## `stash apply --index`
 
-- **Its overwrite list is indented with two spaces** and ends with "Index was not unstashed." — not the tab list of checkout and merge. `parseConflictFiles` reads both (C5's copy only read tabs).
+- **Its overwrite list is indented with two spaces** and ends with "Index was not unstashed." — not the tab list of checkout and merge. `parseConflictFiles` (`src/git/parse/refs.js`, shared with the branch and head ops) reads both.
 - **git resets the index to HEAD before the merge**; when the merge refuses, every staged change — even one the stash never touches, and a staged file the stash doesn't touch is itself enough to make it refuse — is left unstaged. `applyStash` saves the index tree first and reads it back in that case.
 - **"Index was not unstashed." also ends a conflicted merge** — and there git kept the index: the unmerged entries and the other staging. Restoring there would wipe the conflict and leave markers in a file shown as an ordinary change. So unmerged entries are checked first; the index is read back only when there are none.
 
@@ -45,5 +45,5 @@ Code: `src/git/ops/stash.js`, `src/git/stash/`. Reference: `docs/stash.md`. Raw 
 
 ## UI
 
-- **One sonner Toaster, beside `<App/>` in `main.tsx`.** Inside `Shell` it re-renders with every Shell render and delayed a tab switch's panels by ~200 ms (`golden.mjs`'s instant activity count failed). C5 mounts its own at the same spot; two Toasters show every toast twice — the second card to land deletes `features/stash/StashToaster.tsx` and `toast.ts`.
-- **The branch dialog closes before the code-conductor confirmation opens**: two Radix modals at once fight over focus and outside clicks.
+- **The one sonner Toaster stays beside `<App/>` in `main.tsx`** (`shell/Toasts.tsx`). Mounted inside `Shell` it re-rendered with every Shell render and delayed a tab switch's panels by ~200 ms (`golden.mjs`'s instant activity count failed). Never a second one: every toast would show twice.
+- **The branch dialog closes before the code-conductor confirmation opens** (the branch ops' `confirmCcHeadMove`): two Radix modals at once fight over focus and outside clicks.

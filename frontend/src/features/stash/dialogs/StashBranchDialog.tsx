@@ -3,21 +3,17 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import type { Stash } from '@/features/graph/types';
+import { confirmCcHeadMove } from '@/features/branches/actions';
 import type { ApiError } from '@/lib/api';
 import { clip } from '@/lib/clip';
-import { confirm } from '@/lib/confirm';
+import type { ToastText } from '@/lib/opToast';
 import { closeStashDialog, type StashDialog } from '@/state/stashDialog';
 import type { Tab } from '@/state/tabs';
 import { stashBranch, type BranchResult } from '../api';
 import { appliedToast, runStashOp } from '../run';
-import type { ToastText } from '../toast';
 import { dialogError, ErrorBlock, type DialogError } from './shared';
 
 type BranchDialog = Extract<StashDialog, { kind: 'branch' }>;
-
-/** C5's warning before moving a code-conductor/* HEAD (features/branches/refInfo.ts → ccHeadWarning, same words). */
-const ccHeadWarning = (branch: string): string =>
-  `This checkout is code-conductor's worktree on ${branch}. Switching away leaves cc's worktree record, and its sync and merge, on a branch or commit the agent did not make.`;
 
 /** The HEAD branch a CC_OWNED_BRANCH refusal about this checkout names, or null for any other error. */
 function ccHeadOf(e: ApiError): string | null {
@@ -32,12 +28,11 @@ const branchDone = (stash: Stash, name: string) => (r: BranchResult): string | T
   return `Created ${name} from ${stash.selector}`;
 };
 
-/** Sends the request again with the acknowledgement once the user confirms moving the code-conductor/* HEAD. */
-async function confirmAndRetry(tab: Tab, stash: Stash, name: string, branch: string): Promise<void> {
-  const ok = await confirm({ title: `Switching to ${name}?`, body: ccHeadWarning(branch), confirmLabel: 'Switch anyway' });
-  if (!ok) return;
-  await runStashOp(tab, { running: `Creating ${name}…`, done: branchDone(stash, name) }, () => stashBranch(tab, stash.oid, name, true));
-}
+/** Sends the request again with the acknowledgement once the user confirms moving the code-conductor/* HEAD (the branch ops' confirmation). */
+const confirmAndRetry = (tab: Tab, stash: Stash, name: string, branch: string): Promise<void> => confirmCcHeadMove(
+  branch, 'checkout', `Switching to ${name}`,
+  (ccOwned) => runStashOp(tab, { running: `Creating ${name}…`, done: branchDone(stash, name) }, () => stashBranch(tab, stash.oid, name, ccOwned)),
+);
 
 function BranchContent({ dialog: { tab, stash } }: { dialog: BranchDialog }) {
   const [name, setName] = useState('');

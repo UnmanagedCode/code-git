@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { hermeticEnv } from './_git.js';
-import { parseConflictFiles } from '../src/git/stash/branch.js';
 import { noViolations, refused } from './_ops.js';
 import { blob, exists, outsideLink, read, runs, stashList, stashWorld } from './_stash.js';
 
@@ -260,12 +259,6 @@ test('apply / pop / applyFile / branch of an unknown oid → STASH_UNKNOWN', asy
   }
 });
 
-test('parseConflictFiles reads both of git\'s lists: tab-indented, and the two-space one of stash apply --index', () => {
-  assert.deepEqual(parseConflictFiles('error: Your local changes to the following files would be overwritten by checkout:\n\ta.txt\n\tb c.txt\nPlease commit\n'), ['a.txt', 'b c.txt']);
-  assert.deepEqual(parseConflictFiles('error: Your local changes to the following files would be overwritten by merge:\n  dir/c.txt\nIndex was not unstashed.\n'), ['dir/c.txt']);
-  assert.deepEqual(parseConflictFiles('  indented but no list header\n'), []);
-});
-
 /** The round-1 repro: a stash of a staged b.txt and a changed a.txt, then dir/c.txt changed and staged. */
 async function stagedElsewhere(t) {
   const w = await stashWorld(t);
@@ -449,4 +442,19 @@ test('a refused apply --index without "Index was not unstashed." (no unmerged en
   assert.equal(runs(w, 'write-tree').length, 1);
   assert.deepEqual(runs(w, 'read-tree'), []);
   assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
+});
+
+test('branch onto a dangling symbolic ref name → SYMBOLIC_REF before any switch; a live alias is REF_EXISTS; the target is never created', async (t) => {
+  const w = await stashWorld(t);
+  const oid = await saved(w, { 'a.txt': 'a2\n' });
+  w.repo.git('symbolic-ref', 'refs/heads/alias', 'refs/heads/nowhere');
+  w.cc.state.execCalls.length = 0;
+  await assert.rejects(w.op('stash.branch', { oid, name: 'alias' }), (e) => e.code === 'SYMBOLIC_REF' && e.extra.target === 'refs/heads/nowhere');
+  assert.equal(w.repo.git('for-each-ref', 'refs/heads/nowhere'), '');
+  assert.equal(w.repo.git('symbolic-ref', 'HEAD'), 'refs/heads/main');
+  w.repo.git('symbolic-ref', 'refs/heads/live', 'refs/heads/main');
+  await assert.rejects(w.op('stash.branch', { oid, name: 'live' }), refused('REF_EXISTS'));
+  noGitApply(w);
+  assert.deepEqual(stashList(w).map((s) => s.oid), [oid]);
+  assert.equal(read(w, 'a.txt'), 'a\n');
 });

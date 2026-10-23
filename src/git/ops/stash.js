@@ -3,16 +3,20 @@ import { DIFF_LIMITS } from '../diff/limits.js';
 import { commitOid, DIFF_CONFIG, DIFF_FLAGS, emptyTree } from '../diff/source.js';
 import { bad, filePath, nulPaths, optBool, paramsObject, pathList } from '../params.js';
 import { parseRecords } from '../parse/graph.js';
+import { parseConflictFiles } from '../parse/refs.js';
+import { shortBranch } from '../refs/check.js';
+import { assertCcHeadAck, ownHead } from '../refs/heads.js';
+import { assertNoSymref } from '../refs/resolve.js';
+import { undoRecord } from '../refs/undo.js';
+import { guardOverwrite } from '../refs/write.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
 import { perChunk } from '../stage/paths.js';
 import { readSelectionPatch, selectionParams } from '../stage/readSelection.js';
-import { assertCcHeadAck, guardOverwrite, ownHead, parseConflictFiles, shortBranch } from '../stash/branch.js';
 import { assertFileTarget, assertNoUnmerged, assertNotBlocked, assertNoUntrackedCollision } from '../stash/guard.js';
 import { identEnv } from '../stash/ident.js';
 import { STASH_LIMITS } from '../stash/limits.js';
 import { branchLabel, checkMessage, reMessage, wMessage } from '../stash/message.js';
 import { dropVerified, listStashes, namesOf, resolveStash, stashPaths } from '../stash/resolve.js';
-import { stashUndo } from '../stash/undo.js';
 import { assertGitAtLeast } from '../stash/version.js';
 import { assertOid } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
@@ -74,7 +78,7 @@ async function ownNewStash(git, { before, head, branch, message }) {
   return ours.length === 1 ? ours[0] : null;
 }
 
-const pushUndo = (s) => stashUndo({ stashes: [{ oid: s.oid, old: null, new: { message: s.message }, restore: 'pop' }] });
+const pushUndo = (s) => undoRecord({ stashes: [{ oid: s.oid, old: null, new: { message: s.message }, restore: 'pop' }] });
 const NO_CHANGES_RE = /^No local changes to save$/m;
 
 /**
@@ -196,7 +200,7 @@ export const ops = [
       const s = await ownNewStash(git, mine);
       // Saved, but another session's stash at the same base with the same subject arrived at the same moment: which
       // entry is this save's cannot be told, so no undo claims one.
-      if (!s) return { oid: null, selector: null, unverified: true, undo: stashUndo() };
+      if (!s) return { oid: null, selector: null, unverified: true, undo: undoRecord() };
       return { oid: s.oid, selector: s.selector, undo: pushUndo(s) };
     },
   },
@@ -235,7 +239,7 @@ export const ops = [
       const message = wMessage(branch, p.message, `${short} ${subject}`);
       const w = await commit(['-p', head, '-p', i, tree], message);
       await git(['stash', 'store', `--message=${message}`, w]);
-      const undo = stashUndo({ stashes: [{ oid: w, old: null, new: { message }, restore: 'pop' }] });
+      const undo = undoRecord({ stashes: [{ oid: w, old: null, new: { message }, restore: 'pop' }] });
       try {
         await git(['apply', '-R', '--whitespace=nowarn', '--no-ignore-whitespace', '-'], { stdin: removal });
       } catch (e) {
@@ -252,7 +256,7 @@ export const ops = [
     params: (raw) => oidParams(raw, 'stash.drop'),
     async run(git, p) {
       const s = await dropVerified(git, p.oid);
-      return { oid: p.oid, undo: stashUndo({ stashes: [{ oid: p.oid, old: { message: s.message }, new: null, restore: 'store' }] }) };
+      return { oid: p.oid, undo: undoRecord({ stashes: [{ oid: p.oid, old: { message: s.message }, new: null, restore: 'store' }] }) };
     },
   },
   {
@@ -288,7 +292,7 @@ export const ops = [
       return {
         oid: created,
         previous: p.oid,
-        undo: stashUndo({ stashes: [
+        undo: undoRecord({ stashes: [
           { oid: created, old: null, new: { message: subject }, restore: 'drop' },
           { oid: p.oid, old: { message: s.message }, new: null, restore: 'store' },
         ] }),
@@ -305,7 +309,7 @@ export const ops = [
       await assertCanApply(git, s);
       // No confirmation is needed: git refuses (CHECKOUT_CONFLICT) rather than overwrite a local change, and a conflict
       // only adds markers to files that were clean. The worktree merge has no undo.
-      return { ...await applyStash(git, s.oid, p.index), undo: stashUndo() };
+      return { ...await applyStash(git, s.oid, p.index), undo: undoRecord() };
     },
   },
   {
@@ -318,9 +322,9 @@ export const ops = [
       await assertCanApply(git, s);
       const { conflicts } = await applyStash(git, s.oid, p.index);
       // As git does: a stash that applied with conflicts is kept.
-      if (conflicts.length) return { conflicts, dropped: false, undo: stashUndo() };
+      if (conflicts.length) return { conflicts, dropped: false, undo: undoRecord() };
       const { stashes, ...drop } = await dropApplied(git, s);
-      return { conflicts, ...drop, undo: stashUndo({ stashes }) };
+      return { conflicts, ...drop, undo: undoRecord({ stashes }) };
     },
   },
   {
@@ -346,7 +350,7 @@ export const ops = [
         const stderr = decoder.decode(r.stderr);
         throw new Refusal('PATCH_DOES_NOT_APPLY', `${p.path} does not apply: ${stderr.trim().split('\n').at(-1) ?? ''}`, { exitCode: r.exitCode, stderr });
       }
-      return { oid: s.oid, path: p.path, part, undo: stashUndo({ worktreePatch: diff.stdout.toString('base64') }) };
+      return { oid: s.oid, path: p.path, part, undo: undoRecord({ worktreePatch: diff.stdout.toString('base64') }) };
     },
   },
   {
@@ -363,6 +367,8 @@ export const ops = [
       const s = await resolveStash(git, p.oid);
       const ref = `refs/heads/${p.name}`;
       if ((await git(['rev-parse', '-q', '--verify', ref], { okExit: [0, 1] })).exitCode === 0) throw new Refusal('REF_EXISTS', `branch ${p.name} already exists`);
+      // A dangling symbolic ref resolves to nothing above, and `switch -c` would create its target under this name.
+      await assertNoSymref(git, ref);
       const own = await ownHead(git);
       assertCcHeadAck(own, p.ccOwned);
       await assertCanApply(git, s);
@@ -375,11 +381,11 @@ export const ops = [
       } catch (e) {
         if (!(e instanceof Refusal)) throw e;
         // The branch exists and is checked out; the stash is untouched.
-        throw new Refusal(e.code, `${p.name} was created, but the stash did not apply: ${e.message}`, { ...e.extra, step: 'apply', ref, undo: stashUndo(created) });
+        throw new Refusal(e.code, `${p.name} was created, but the stash did not apply: ${e.message}`, { ...e.extra, step: 'apply', ref, undo: undoRecord(created) });
       }
-      if (conflicts.length) return { ref, base, conflicts, dropped: false, undo: stashUndo(created) };
+      if (conflicts.length) return { ref, base, conflicts, dropped: false, undo: undoRecord(created) };
       const { stashes, ...drop } = await dropApplied(git, s);
-      return { ref, base, conflicts, ...drop, undo: stashUndo({ ...created, stashes }) };
+      return { ref, base, conflicts, ...drop, undo: undoRecord({ ...created, stashes }) };
     },
   },
 ];

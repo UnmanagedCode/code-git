@@ -375,12 +375,15 @@ Behaviour, the checked-out and cc-owned rules and what each op destroys: [refs](
 ```
 UndoRecord      { refs: RefChange[], remoteRefs: RemoteRefChange[],
                   head: {old: {branch: refname|null, oid: oid|null}, new: {branch, oid}} | null,
-                  worktreeSnapshot: oid | null }
+                  worktreeSnapshot: oid | null,
+                  stashes: StashChange[] /* the stash ops' ([stash](stash.md#undo-record)); [] here */,
+                  worktreePatch: base64 | null /* stash.applyFile's; null here */ }
 RefChange       { ref /* refs/heads/… | refs/tags/… */, old: oid|null /* null = created */, new: oid|null /* null = deleted */,
                   upstream?: refname|null /* a deleted branch's upstream */,
                   symref?: refname /* a deleted symbolic ref's target: restore with symbolic-ref; old and new are null */ }
 RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */, old: oid|null /* best known */, new: oid|null,
                   tracking?: refname|null /* branch.deleteRemote: the tracking ref here git deleted with it (old is its value) */ }
+StashChange     { oid, old: {message}|null, new: {message}|null, restore: 'store' | 'pop' | 'drop' }
 ```
 
 | Op | kind | `params` | Runs (after the reads `for-each-ref refs/heads` with `%(worktreepath)`, `symbolic-ref -q HEAD`, `rev-parse --verify -q HEAD`) | `result` | Refusals |

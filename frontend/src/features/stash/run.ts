@@ -1,8 +1,8 @@
 import type { ApiError } from '@/lib/api';
+import { trackOp, type ToastText, type Tracked } from '@/lib/opToast';
 import { refreshGraph } from '@/state/graph';
 import type { Tab } from '@/state/tabs';
 import { refreshAfterWrite } from '@/state/workdir';
-import { trackOp, type ToastText, type Tracked } from './toast';
 
 // Every stash op from the UI runs through runStashOp: its toast, then the Changes lists, the header summary, an open
 // unstaged/staged diff and the graph refreshed whatever the outcome.

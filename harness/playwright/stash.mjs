@@ -195,7 +195,7 @@ for (const scheme of ['light', 'dark']) {
       check(!stashes().some((s) => s.oid === earlier.oid) && stashes().length === 1, `${scheme}: the stash was dropped`);
       await shot('after-branch');
 
-      // 9. Phone: the save and rename dialogs.
+      // 9. Phone: the save dialog from the Changes dialog.
       await page.setViewportSize(PHONE);
       await page.goto(`${world.url}/?project=stash`);
       await page.getByRole('button', { name: /^Changes \(\d+\)$/ }).click();
@@ -206,6 +206,25 @@ for (const scheme of ['light', 'dark']) {
       await shot('phone-save');
       await saveDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
       await saveDialog.waitFor({ state: 'detached' });
+      await page.keyboard.press('Escape');
+      await changes.waitFor({ state: 'detached' });
+
+      // 10. Phone: a stash row's menu in the Refs dialog (the press that opens it is not taken as an item's click).
+      await page.getByRole('button', { name: 'Refs', exact: true }).click();
+      const refsDialog = page.getByRole('dialog', { name: 'Refs', exact: true });
+      await refsDialog.getByRole('list', { name: 'Stashes', exact: true }).getByRole('button', { name: 'stash@{0} On main: guide draft', exact: true }).click({ button: 'right' });
+      await menu.waitFor();
+      const items = (await menu.getByRole('menuitem').allTextContents()).slice(0, 6);
+      check(JSON.stringify(items) === JSON.stringify(['Apply', 'Apply with staged changes', 'Pop', 'Create branch…', 'Rename…', 'Drop…']), `${scheme}: the phone stash menu lists the stash actions first`);
+      check(stashes().length === 1, `${scheme}: opening the menu ran nothing`);
+      await shot('phone-menu');
+      await menu.getByRole('menuitem', { name: 'Rename…', exact: true }).click();
+      const phoneRename = page.getByRole('dialog', { name: 'Rename stash@{0}', exact: true });
+      await phoneRename.waitFor();
+      await shot('phone-rename');
+      await phoneRename.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await phoneRename.waitFor({ state: 'detached' });
+      check(stashes()[0].subject === 'On main: guide draft', `${scheme}: Cancel renamed nothing`);
       check(errors.length === 0, `${scheme}: no console errors or ≥400 responses${errors.length ? `:\n${errors.join('\n')}` : ''}`);
     });
   } finally {

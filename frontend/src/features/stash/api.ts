@@ -1,17 +1,11 @@
+import type { UndoRecord } from '@/features/branches/api';
 import type { SelectionRequest } from '@/features/workdir/api';
 import { runOp, type Target } from '@/lib/endpoints';
 
 // The stash ops' wire shapes (docs/protocol.md → Stash ops) and runOp wrappers. A stash is always sent as its full oid.
+// Every result's `undo` is the ref ops' UndoRecord, whose `stashes` and `worktreePatch` the stash ops fill.
 
-export interface StashUndoEntry { oid: string; old: { message: string } | null; new: { message: string } | null; restore: 'store' | 'pop' | 'drop' }
-export interface StashUndo {
-  refs: { ref: string; old: string | null; new: string | null }[];
-  remoteRefs: unknown[];
-  head: { old: { branch: string | null; oid: string | null }; new: { branch: string | null; oid: string | null } } | null;
-  worktreeSnapshot: string | null;
-  stashes: StashUndoEntry[];
-  worktreePatch: string | null;
-}
+type StashUndo = UndoRecord;
 export interface PushParams { message?: string; paths?: string[]; includeUntracked?: boolean; keepIndex?: boolean; staged?: boolean }
 /** `oid`/`selector` null (`unverified`): saved, but another session stored an indistinguishable stash at the same moment. */
 export interface PushResult { oid: string | null; selector: string | null; unverified?: true; undo: StashUndo }
