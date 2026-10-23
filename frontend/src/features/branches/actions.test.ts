@@ -105,11 +105,11 @@ test('the branches context deletes only branches not checked out, counting them;
 test('the branch-drop menu: Fast-forward and Reset (a submenu onto HEAD, a force-move onto a free branch) after the merge/rebase card\'s items; onto a remote the remotes card\'s Push', () => {
   setRefs(refsOn());
   expect(menu('branch-drop', drop(FREE, MAIN))).toEqual([
-    'Merge free into main', 'Merge free into main (no fast-forward)', 'Squash free into main', 'Rebase main onto free',
+    'Merge free into main', 'Merge free into main (no fast-forward)', 'Squash free into main', 'Rebase main onto free', 'Interactive rebase main onto free…',
     'Fast-forward main to free', 'Reset main to free › Soft (keep index and files)', 'Reset main to free › Mixed (keep files)', 'Reset main to free › Hard (discard changes)',
   ]);
-  expect(menu('branch-drop', drop(MAIN, FREE))).toEqual(['Rebase main onto free', 'Fast-forward free to main', 'Reset free to main…']);
-  expect(menu('branch-drop', drop(MAIN, ORIGIN_FREE))).toEqual(['Rebase main onto origin/free', 'Push main to origin/free']);
+  expect(menu('branch-drop', drop(MAIN, FREE))).toEqual(['Rebase main onto free', 'Interactive rebase main onto free…', 'Fast-forward free to main', 'Reset free to main…']);
+  expect(menu('branch-drop', drop(MAIN, ORIGIN_FREE))).toEqual(['Rebase main onto origin/free', 'Interactive rebase main onto origin/free…', 'Push main to origin/free']);
   // Another checkout's branch: neither (the backend would refuse both).
   expect(menu('branch-drop', drop(FREE, BUSY))).toEqual([]);
   find('branch-drop', drop(MAIN, FREE), 'Reset free to main…').run!(drop(MAIN, FREE));

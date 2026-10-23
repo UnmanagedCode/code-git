@@ -1,4 +1,5 @@
 import { abbrev, ccHead, headLabel, headOf, shortBranch } from '@/features/branches/refInfo';
+import { openRebaseEditor } from '@/features/rebase/open';
 import { ancestorsWithin } from '@/features/graph/ancestry';
 import type { BranchDropCtx, CommitCtx, CommitsCtx, DragRef, RefCtx } from '@/features/graph/contexts';
 import type { CommitItem } from '@/features/graph/types';
@@ -10,7 +11,8 @@ import type { MergeMode } from './api';
 import { mergeFlow, rebaseFlow } from './flows';
 
 // The merge and rebase menu items (docs/merge.md → Where the actions are). Orders: the branch-drop menu's 100–199
-// (merge 100–102, rebase 110), the branch menu's 330–, the commit menu's 312–, the commits menu's 320–; group `rewrite`
+// (merge 100–102, rebase 110, interactive 120), the branch menu's 330–332, the commit menu's 312–313, the commits menu's
+// 320–322; group `rewrite`
 // beside C5's reset (300), revert (310) and cherry-pick (311). HEAD is read from the graph's refs answer.
 
 const parentsMemo = new WeakMap<readonly CommitItem[], ReadonlyMap<string, string[]>>();
@@ -75,6 +77,26 @@ export function dropRebase(c: BranchDropCtx): { branch: DragRef; onto: DragRef }
   return null;
 }
 
+/** The interactive editor rebasing HEAD's branch onto `onto` (`git rebase -i <onto>`: the commits not in it). */
+function interactiveOnto(tab: Tab, onto: string, ontoLabel: string): void {
+  const expect = headOf(tab).oid;
+  if (!expect) return;
+  void openRebaseEditor(tab, { mode: 'rebase', base: onto, onto, ontoLabel, branch: headLabel(tab), expect, plan: { base: onto, head: expect } });
+}
+
+/** A selected run inside HEAD's history (squash N), oldest with a parent; null otherwise. */
+function squashable(c: CommitsCtx): CommitItem[] | null {
+  const chain = chainOf(c);
+  return chain && chain.every((x) => inHeadHistory(c.tab, x.oid)) ? chain : null;
+}
+
+/** Selected commits to cherry-pick onto HEAD: commit rows only, none a merge, none already in HEAD's history. */
+function pickable(c: CommitsCtx): CommitItem[] | null {
+  if (!headBorn(c.tab) || c.rows.some((r) => r.kind !== 'commit')) return null;
+  const items = c.rows.map((r) => (r.kind === 'commit' ? r.item : null)).filter((x): x is CommitItem => x !== null);
+  return items.every((x) => x.parents.length <= 1 && !inHeadHistory(c.tab, x.oid)) ? items : null;
+}
+
 /** Another branch than HEAD's, at another commit, with HEAD born: what the branch menu merges or rebases onto. */
 const otherBranch = (c: RefCtx) => !!c.ref.oid && headBorn(c.tab) && !isHeadBranch(c.tab, c.ref) && c.ref.oid !== headOf(c.tab).oid;
 
@@ -91,6 +113,12 @@ export const SEQUENCE_ACTIONS: MenuAction<never>[] = [
     when: (c: BranchDropCtx) => dropRebase(c) !== null,
     run: (c: BranchDropCtx) => { const d = dropRebase(c)!; rebaseOnto(c.tab, d.onto.oid!, d.onto.short); },
   },
+  {
+    id: 'sequence.drop.interactive', context: 'branch-drop', group: 'rebase', order: 120,
+    label: (c: BranchDropCtx) => { const d = dropRebase(c)!; return `Interactive rebase ${d.branch.short} onto ${d.onto.short}…`; },
+    when: (c: BranchDropCtx) => dropRebase(c) !== null,
+    run: (c: BranchDropCtx) => { const d = dropRebase(c)!; interactiveOnto(c.tab, d.onto.oid!, d.onto.short); },
+  },
   // ---- a branch other than HEAD's ----
   {
     id: 'sequence.branch.merge', context: 'branch', group: 'rewrite', order: 330,
@@ -102,6 +130,11 @@ export const SEQUENCE_ACTIONS: MenuAction<never>[] = [
     label: (c: RefCtx) => `Rebase ${headLabel(c.tab)} onto ${c.ref.short}`, when: otherBranch,
     run: (c: RefCtx) => rebaseOnto(c.tab, c.ref.oid!, c.ref.short),
   },
+  {
+    id: 'sequence.branch.interactive', context: 'branch', group: 'rewrite', order: 332,
+    label: (c: RefCtx) => `Interactive rebase ${headLabel(c.tab)} onto ${c.ref.short}…`, when: otherBranch,
+    run: (c: RefCtx) => interactiveOnto(c.tab, c.ref.oid!, c.ref.short),
+  },
   // ---- a commit outside HEAD's history ----
   {
     id: 'sequence.commit.rebase', context: 'commit', group: 'rewrite', order: 312,
@@ -109,7 +142,35 @@ export const SEQUENCE_ACTIONS: MenuAction<never>[] = [
     when: (c: CommitCtx) => headBorn(c.tab) && c.commit.oid !== headOf(c.tab).oid && !inHeadHistory(c.tab, c.commit.oid),
     run: (c: CommitCtx) => rebaseOnto(c.tab, c.commit.oid, abbrev(c.commit.oid)),
   },
-  // ---- the newest N commits of HEAD's branch ----
+  {
+    // A parent commit of HEAD's: the commits after it, up to HEAD, in the editor.
+    id: 'sequence.commit.interactive', context: 'commit', group: 'rewrite', order: 313, label: 'Interactive rebase from here…',
+    when: (c: CommitCtx) => c.commit.oid !== headOf(c.tab).oid && inHeadHistory(c.tab, c.commit.oid),
+    run: (c: CommitCtx) => interactiveOnto(c.tab, c.commit.oid, abbrev(c.commit.oid)),
+  },
+  // ---- several commits ----
+  {
+    id: 'sequence.commits.squash', context: 'commits', group: 'rewrite', order: 320,
+    label: (c: CommitsCtx) => `Squash ${c.rows.length} commits…`, when: (c: CommitsCtx) => squashable(c) !== null,
+    run: (c: CommitsCtx) => {
+      const chain = squashable(c)!;
+      const expect = headOf(c.tab).oid!;
+      const base = chain.at(-1)!.parents[0];
+      void openRebaseEditor(c.tab, {
+        mode: 'squash', base, onto: base, ontoLabel: abbrev(base), branch: headLabel(c.tab), expect, plan: { base, head: expect }, selected: chain.map((x) => x.oid),
+      });
+    },
+  },
+  {
+    id: 'sequence.commits.cherryPick', context: 'commits', group: 'rewrite', order: 321,
+    label: (c: CommitsCtx) => `Cherry-pick ${c.rows.length} commits…`, when: (c: CommitsCtx) => pickable(c) !== null,
+    run: (c: CommitsCtx) => {
+      const head = headOf(c.tab).oid!;
+      // The graph lists newest first: oldest first is the order they apply in.
+      const oids = pickable(c)!.map((x) => x.oid).reverse();
+      void openRebaseEditor(c.tab, { mode: 'pick', base: head, onto: head, ontoLabel: headLabel(c.tab), branch: headLabel(c.tab), expect: head, plan: { oids } });
+    },
+  },
   {
     id: 'sequence.commits.rebaseOnto', context: 'commits', group: 'rewrite', order: 322,
     label: (c: CommitsCtx) => `Rebase ${c.rows.length} commits onto…`,

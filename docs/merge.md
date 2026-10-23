@@ -11,13 +11,32 @@ HEAD (its branch and commit) is read from the graph's refs answer; the backend c
 | Context | Item (order) | Offered when |
 |---|---|---|
 | A branch dropped on HEAD's branch | **Merge `<S>` into `<T>`** (100) · **Merge `<S>` into `<T>` (no fast-forward)** (101) · **Squash `<S>` into `<T>`** (102) | the target is HEAD's branch and the two commits differ |
-| A branch dropped on another | **Rebase `<X>` onto `<Y>`** (110) | one side is HEAD's branch (`X`), the commits differ: HEAD's branch dragged onto `Y`, or `Y` dropped on HEAD's branch |
-| Branch (local or remote) | **Merge `<b>` into `<HEAD>`** (330) · **Rebase `<HEAD>` onto `<b>`** (331) | not HEAD's branch, not at HEAD's commit; HEAD born. `<HEAD>` is HEAD's branch, or `HEAD` when detached |
+| A branch dropped on another | **Rebase `<X>` onto `<Y>`** (110) · **Interactive rebase `<X>` onto `<Y>`…** (120) | one side is HEAD's branch (`X`), the commits differ: HEAD's branch dragged onto `Y`, or `Y` dropped on HEAD's branch |
+| Branch (local or remote) | **Merge `<b>` into `<HEAD>`** (330) · **Rebase `<HEAD>` onto `<b>`** (331) · **Interactive rebase `<HEAD>` onto `<b>`…** (332) | not HEAD's branch, not at HEAD's commit; HEAD born. `<HEAD>` is HEAD's branch, or `HEAD` when detached |
 | Commit | **Rebase `<HEAD>` onto this commit** (312) | not HEAD's commit and not an ancestor of HEAD among the loaded rows; HEAD born |
-| Several commits | **Rebase N commits onto…** (322) | the selection is one first-parent run (each commit the parent of the one above it, none a merge or a root) whose newest commit is HEAD's: the dialog below |
+| Commit | **Interactive rebase from here…** (313) | an ancestor of HEAD among the loaded rows, not HEAD's commit: the editor lists the commits after it, up to HEAD |
+| Several commits | **Squash N commits…** (320) | one first-parent run (each commit the parent of the one above it, none a merge or a root) inside HEAD's loaded history: the editor over `<oldest's parent>..HEAD` with the run preset (the oldest Pick, the rest Squash) |
+| Several commits | **Cherry-pick N commits…** (321) | commit rows only, none a merge, none in HEAD's loaded history; HEAD born: the editor in pick mode, oldest first |
+| Several commits | **Rebase N commits onto…** (322) | one first-parent run whose newest commit is HEAD's: the dialog below |
 
 - **Rebase N commits onto…** opens a dialog (`state/sequenceDialog.ts`, rendered by `SequenceDialogHost`, mounted by the shell) listing every other local and remote branch; **Rebase** replays the N commits onto the picked branch (`upstream` = the oldest's parent, so older commits leave the branch). On a `code-conductor/*` HEAD the dialog shows the cc warning inline and sends `ccOwned`. A refusal stays inline.
 - **Merge** (any mode) runs at once: it only adds commits. A **rebase** of a `code-conductor/*` HEAD asks first (the cc HEAD gate, `withCcHeadAck`, "Rebasing it"), and a stale-refs `CC_OWNED_BRANCH` reopens that confirmation from the toast.
+
+### The interactive editor
+
+Opened by the 120 / 332 / 313 / 320 / 321 items, it replaces the graph (`REBASE_PANEL`, an on-demand center panel; `openRebaseEditor` in `frontend/src/features/rebase/open.ts` loads the commits with `rebase.plan` first). Not persisted: a reload shows the graph.
+
+| Part | Behaviour |
+|---|---|
+| Header | "Interactive rebase `<branch>` onto `<onto>`" / "Cherry-pick N commits onto `<branch>`" / "Squash N commits"; the hint "Oldest first; squash and fixup meld into the commit above"; **Reset** (back to the rows as opened; disabled when unedited), **Cancel** and ✕ (ask "Discard the edits?" when edited), **Start** |
+| Rows | Oldest first. A drag handle, the action select (Pick / Reword / Edit / Squash / Fixup / Drop), the short oid, the summary (or the new message's), **Message…** on a row whose chain takes a message (a reword, or a chain holding a squash), the author, the date, **Move up** / **Move down** |
+| Keys on the focused row | **P R E S F D** set the action (**R** also opens the message dialog); **↑ / ↓** move the focus; **Alt+↑ / Alt+↓** move the row |
+| Drag | Pointer events on the handle; the target from the rows' midpoints, after `DRAG_THRESHOLD` (`features/graph/drag.ts`); the target row is outlined |
+| Message dialog | Summary (one line) + description; a squash chain's default is the head's message, then each squashed (not fixed-up) commit's, blank-line separated (`defaultSquashMessage`) |
+| Start | Errors inline (a squash/fixup with no kept row above, a reword without a message, a blank summary); dropped rows ask "Drop N commits?" (irreversible). Rebase and squash modes go through the cc HEAD gate; pick mode never asks (it only adds). Done: the editor closes with a toast; a conflict or `edit` stop: it closes, the toast offers Resolve… / Abort…, and Changes opens |
+| Start disabled | No rows; every row Drop ("use Reset to move the branch instead"); a merge, rebase, cherry-pick or revert in progress |
+
+Toasts: "Rebased `<branch>` onto `<onto>`", "Cherry-picked N commits onto `<branch>`", "Squashed into one commit on `<branch>`", "`<branch>`: nothing changed"; stops as a rebase's.
 
 ### The operation banner
 
@@ -68,6 +87,27 @@ Start refusals with a toast of their own: `OPERATION_IN_PROGRESS` "Something is 
 1. Gates (`rebaseGates`), in order: `assertWorktree`; git ≥ 2.26 (`assertGitAtLeast`, `GIT_TOO_OLD`: `--empty` arrived then); `assertNoOperation`; HEAD born and at `expect`; `assertCcHeadAck` (`CC_OWNED_BRANCH`, `head: true`); `assertClean` (`DIRTY_WORKTREE`); `upstream` a commit; `rev-list --merges --count <upstream>..HEAD` > 0 → `HAS_MERGES` (a rebase would flatten merges; `rebase.rebaseMerges` is pinned off); then `onto` a commit.
 2. Runs `rebase(git, ['--onto=<onto>', '--end-of-options', <upstream>])` with `SEQUENCE_LIMITS.timeoutMs` (600 000 ms, cc's maximum). Every rebase passes `REBASE`'s pins: `rebase.autoStash`, `rebase.updateRefs`, `rebase.autoSquash` false; `rebase.backend=merge`; `rebase.rebaseMerges=false`.
 3. **Outcome**: `upToDate` (exit 0, HEAD unchanged, nothing in progress), `done` (undo: the branch from its old tip to the new one, `undo.head`), `conflicts` (left in progress: the stop rule below), `stopped`.
+
+### Interactive rebase
+
+`rebase.plan` (read) lists the editor's commits: `{base, head}` → `base..head` oldest first (`rev-list --count` first: over `REBASE_LIMITS.maxCommits` → `TOO_MANY_COMMITS {count, max}`), or `{oids}` → those commits in the order given (`cat-file --batch-check`: `REV_UNKNOWN` for a non-commit). Each `{oid, parents, summary, description, author: {name, email, time}}` (`splitMessage`); a merge commit → `HAS_MERGES`.
+
+`rebase.interactive {mode, base, onto, expect, rows, ccOwned?}` (`src/git/ops/rebase.js`):
+
+| Mode | Rows | Gates beyond `rebaseGates` (with `upstream = base`) |
+|---|---|---|
+| `rebase` (also the editor's squash) | exactly the commits of `base..expect`, each once (`rev-list`), in any order — else `BAD_PARAMS` | the cc acknowledgement |
+| `pick` (cherry-pick N) | any non-merge commits, each once; `base`, `onto` and `expect` must all be HEAD (`BAD_PARAMS`) | none: it only adds |
+
+- **`BAD_PARAMS`** (`buildTodo` / `messageText` in `src/git/rebase/todo.js`, before anything runs): an unknown action; a squash or fixup with no kept row above it; a message on a row that takes none; a reword, or the head of a chain holding a squash, without one; a message with an empty or multi-line summary, a NUL, or over `REBASE_LIMITS.messageMaxBytes`; no rows; every row `drop`; a commit named twice. More than `REBASE_LIMITS.maxCommits` rows → `TOO_MANY_COMMITS`.
+- **Chains**: a kept row (pick, reword, edit) and the squash / fixup rows after it; a drop does not break a chain (git melds into the last kept commit). A chain takes a message when its head is a reword or it holds a squash.
+
+### The scripted editor and carriers
+
+- **The todo goes on the exec's stdin.** `rebase -i --empty=drop --onto=<onto> --end-of-options <base>` runs with `GIT_SEQUENCE_EDITOR='cat >'`: git runs `sh -c 'cat > "$@"' 'cat >' <todo-path>`, the editor inherits git's stdin, and `cat` copies the todo into git's own todo file. The editor string is a constant; no user data reaches a shell, an env value or argv. There is no temp file of ours (on a provider System cc stages stdin itself, cc `docs/plugins.md` → Host exec), no tty, and hooks never read it (git runs them with no stdin).
+- **Messages are carried by commits, not an editor.** Each row that takes a message gets a **carrier** first (`makeCarrier`, `src/git/rebase/carrier.js`): `commit-tree [-S] [-p <X's parent>] -F - --end-of-options <X>^{tree}`, the message on stdin, `GIT_AUTHOR_NAME` / `EMAIL` / `DATE` copied from X (`log -1 --format=%an%x00%ae%x00%ad --date=raw`). `commit-tree` ignores `commit.gpgSign`, so it is read (`config --type=bool --get commit.gpgSign`) and `-S` passed; a signer that fails is `GIT_FAILED` before any rebase starts. `pick <carrier>` applies exactly X's change with the new message; with nothing changed before it git fast-forwards onto the carrier itself.
+- **The todo**: `squash` → `fixup` (the chain's head is a carrier holding the final message); `reword` → `pick <carrier>`; `edit` → `edit` (`edit <carrier>` when its chain takes a message); `drop` → an explicit `drop <oid>` (so `rebase.missingCommitsCheck=error` passes). Messages live in git's own objects, so they survive a conflict stop, a later `--continue` and a reload.
+- **During the start `GIT_EDITOR` stays `false`** (`BASE_ENV`): an unexpected editor launch fails loudly. Every `--continue` sets `GIT_EDITOR=:`. The env variables beat `sequence.editor` and `core.editor`.
 
 ### State detection
 
@@ -128,4 +168,7 @@ A merge or rebase that stops on conflicts stays in progress, whoever started it.
 - **A multi-commit cherry-pick or revert run by git's sequencer and left stopped after a manual `git commit`** (no `CHERRY_PICK_HEAD` / `REVERT_HEAD` left, only `.git/sequencer/`) is not detected.
 - **A branch or tag named `MERGE_HEAD`, `CHERRY_PICK_HEAD` or `REVERT_HEAD` reads as that operation in progress**: `cat-file` resolves the name to the ref when the pseudo-ref is absent (git warns about such names). A rebase needs its state directory, so it is not affected.
 - **Commit-message `#` lines can be stripped by `--continue`**: git's cleanup for a message it prepared is `strip` unless `commit.cleanup` says otherwise.
+- **`--empty=drop`**: a pick that became empty (its change is already in the new base) is dropped, not kept as an empty commit.
+- **Carriers are dangling commits until gc** when a rebase is aborted before reaching them.
+- **The rows are read from the loaded graph for the menus**: "Interactive rebase from here…", "Squash N commits…" and "Cherry-pick N commits…" decide ancestry among the loaded rows only; the backend checks the real range.
 - **Gates are check-then-act**: each command takes the project lock on its own, so another op can run between the state read and git's own run.

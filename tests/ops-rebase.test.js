@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { getOp, OPS } from '../src/git/ops/index.js';
 import { REBASE } from '../src/git/remote/integrate.js';
+import { hermeticEnv } from './_git.js';
 import { endOfOptionsBefore, refsWorld, refused } from './_refsWorld.js';
 
 // rebase.start against real git: onto a branch, N commits onto another, the stop rule, the gates and hostile config.
@@ -128,4 +130,163 @@ test('a rebase start refuses OPERATION_IN_PROGRESS while another is stopped', as
   w.repo.checkout('main');
   w.repo.git('merge', '-q', '--no-commit', '-s', 'ours', 'topic');
   await assert.rejects(w.op('rebase.start', { onto: w.base, upstream: w.base, expect: w.m1 }), refused('OPERATION_IN_PROGRESS', { operation: 'merge' }));
+});
+
+// ---- rebase.plan and rebase.interactive ----
+
+const log = (w, range) => w.repo.git('log', '--format=%s', range).split('\n').filter(Boolean);
+const decodeStdin = (b) => (b.stdinB64 === undefined ? '' : Buffer.from(b.stdinB64, 'base64').toString('utf8'));
+const interactiveCalls = (w) => w.cc.state.execCalls.filter((b) => b.argv.includes('-i') && b.argv.includes('rebase'));
+const msg = (summary, description = '') => ({ summary, description });
+
+/** topic: base ← t1 ← t2 (by Ada, 2020-02-01) ← t3, checked out; main: base ← m1. */
+async function iworld(t) {
+  const w = await world(t);
+  // Rewrite t2 with its own author and date so a reword's carrier can be checked to keep them.
+  w.repo.git('reset', '-q', '--hard', w.t1);
+  w.repo.write('t2.txt', 't2\n');
+  w.repo.git('add', 't2.txt');
+  w.repo.git('commit', '-q', '--author=Ada Lovelace <ada@example.com>', '--date=2020-02-01T10:00:00+01:00', '-m', 't2', '-m', 'body of t2');
+  const t2 = w.oid('HEAD');
+  const t3 = w.repo.commit({ 't3.txt': 't3\n' }, 't3');
+  const ir = (rows, over = {}) => w.op('rebase.interactive', { mode: 'rebase', base: w.base, onto: w.base, expect: w.oid('HEAD'), rows, ...over });
+  return { ...w, t2, t3, ir };
+}
+
+test('rebase.plan lists base..head oldest first with parents, summary, description and author; oids keep the given order', async (t) => {
+  const w = await iworld(t);
+  const { commits } = await w.op('rebase.plan', { base: w.base, head: w.t3 });
+  assert.deepEqual(commits.map((c) => [c.oid, c.summary]), [[w.t1, 't1'], [w.t2, 't2'], [w.t3, 't3']]);
+  assert.deepEqual(commits[1].parents, [w.t1]);
+  assert.equal(commits[1].description, 'body of t2');
+  assert.deepEqual(commits[1].author, { name: 'Ada Lovelace', email: 'ada@example.com', time: 1580547600 });
+  const picked = await w.op('rebase.plan', { oids: [w.t3, w.t1] });
+  assert.deepEqual(picked.commits.map((c) => c.oid), [w.t3, w.t1]);
+  await assert.rejects(w.op('rebase.plan', { oids: [w.repo.git('rev-parse', 'HEAD^{tree}')] }), refused('REV_UNKNOWN'));
+});
+
+test('rebase.plan refuses TOO_MANY_COMMITS past the cap (count and max) and HAS_MERGES for a merge', async (t) => {
+  const w = await iworld(t);
+  const max = 300;
+  assert.throws(() => getOp(OPS, 'rebase.plan').params({ oids: Array.from({ length: max + 1 }, (_, i) => i.toString(16).padStart(40, '0')) }), refused('TOO_MANY_COMMITS', { count: max + 1, max }));
+  // max + 1 empty commits on top of t3, through fast-import.
+  const stream = Array.from({ length: max + 1 }, (_, i) => `commit refs/heads/long\ncommitter T <t@example.com> 0 +0000\ndata 2\nc\n${i === 0 ? `from ${w.t3}\n` : ''}\n`).join('');
+  execFileSync('git', ['-C', w.repo.dir, 'fast-import', '--quiet'], { input: stream, env: hermeticEnv(w.repo.home) });
+  await assert.rejects(w.op('rebase.plan', { base: w.base, head: w.oid('long') }), refused('TOO_MANY_COMMITS', { count: max + 4, max }));
+  w.repo.git('merge', '-q', '--no-ff', '-m', 'merge main', 'main');
+  await assert.rejects(w.op('rebase.plan', { base: w.base, head: w.oid('HEAD') }), refused('HAS_MERGES'));
+});
+
+test('interactive: reorder and drop give exactly the rows\' history; the drop is explicit (rebase.missingCommitsCheck=error passes)', async (t) => {
+  const w = await iworld(t);
+  w.repo.git('config', 'rebase.missingCommitsCheck', 'error');
+  const r = await w.ir([{ oid: w.t3, action: 'pick' }, { oid: w.t2, action: 'drop' }, { oid: w.t1, action: 'pick' }]);
+  assert.equal(r.outcome, 'done');
+  assert.deepEqual(log(w, `${w.base}..topic`), ['t1', 't3']);
+  assert.equal(fs.existsSync(path.join(w.repo.dir, 't2.txt')), false);
+  assert.deepEqual(r.undo.refs, [{ ref: 'refs/heads/topic', old: w.t3, new: w.oid('topic') }]);
+});
+
+test('interactive: a reword carries the new message and keeps the author name, email and date', async (t) => {
+  const w = await iworld(t);
+  await w.ir([{ oid: w.t1, action: 'pick' }, { oid: w.t2, action: 'reword', message: msg('t2 reworded', 'why') }, { oid: w.t3, action: 'pick' }]);
+  assert.deepEqual(log(w, `${w.base}..topic`), ['t3', 't2 reworded', 't1']);
+  assert.equal(w.repo.git('log', '-1', '--format=%an|%ae|%ad|%B', '--date=raw', 'topic~1'), 'Ada Lovelace|ada@example.com|1580547600 +0100|t2 reworded\n\nwhy');
+  assert.equal(w.oid('topic~2'), w.t1, 'the unchanged pick before it is kept as is');
+});
+
+test('interactive: squash melds into the commit above with the chosen message; fixup keeps the head\'s message', async (t) => {
+  const w = await iworld(t);
+  await w.ir([{ oid: w.t1, action: 'pick', message: msg('t1 and t2') }, { oid: w.t2, action: 'squash' }, { oid: w.t3, action: 'fixup' }]);
+  assert.deepEqual(log(w, `${w.base}..topic`), ['t1 and t2']);
+  assert.deepEqual(w.repo.git('ls-tree', '--name-only', 'topic').split('\n').filter((f) => f.startsWith('t')), ['t1.txt', 't2.txt', 't3.txt']);
+});
+
+test('interactive: edit stops (stopped, the done list as sent); head.continue finishes', async (t) => {
+  const w = await iworld(t);
+  const r = await w.ir([{ oid: w.t1, action: 'pick' }, { oid: w.t2, action: 'edit' }, { oid: w.t3, action: 'pick' }]);
+  assert.equal(r.outcome, 'stopped');
+  assert.equal(fs.readFileSync(path.join(w.repo.dir, '.git', 'rebase-merge', 'done'), 'utf8'), `pick ${w.t1}\nedit ${w.t2}\n`);
+  assert.equal((await w.op('commit.state')).operation.kind, 'rebase');
+  const c = await w.op('head.continue', { which: 'rebase' });
+  assert.equal(c.outcome, 'done');
+  assert.deepEqual(log(w, `${w.base}..topic`), ['t3', 't2', 't1']);
+});
+
+test('pick mode: the rows cherry-picked onto HEAD in order (base = onto = expect = HEAD), no cc acknowledgement needed', async (t) => {
+  const w = await iworld(t);
+  w.repo.checkout('main');
+  const wt = w.worktree('wt', 'code-conductor/wt', w.m1);
+  const r = await w.op('rebase.interactive', { mode: 'pick', base: w.m1, onto: w.m1, expect: w.m1, rows: [{ oid: w.t3, action: 'pick' }, { oid: w.t1, action: 'pick' }] }, 'wt');
+  assert.equal(r.outcome, 'done');
+  assert.deepEqual(w.repo.git('-C', wt.dir, 'log', '--format=%s', `${w.m1}..HEAD`).split('\n'), ['t1', 't3']);
+  assert.throws(() => getOp(OPS, 'rebase.interactive').params({ mode: 'pick', base: w.base, onto: w.m1, expect: w.m1, rows: [{ oid: w.t1, action: 'pick' }] }), refused('BAD_PARAMS'));
+});
+
+test('squash N commits (rebase mode from the oldest\'s parent): the selected run becomes one commit, the newer ones are replayed on it', async (t) => {
+  const w = await iworld(t);
+  const r = await w.op('rebase.interactive', {
+    mode: 'rebase', base: w.base, onto: w.base, expect: w.t3,
+    rows: [{ oid: w.t1, action: 'pick', message: msg('t1+t2', 't1\n\nt2') }, { oid: w.t2, action: 'squash' }, { oid: w.t3, action: 'pick' }],
+  });
+  assert.equal(r.outcome, 'done');
+  assert.deepEqual(log(w, `${w.base}..topic`), ['t3', 't1+t2']);
+  assert.equal(w.repo.git('log', '-1', '--format=%B', 'topic~1'), 't1+t2\n\nt1\n\nt2');
+});
+
+test('no user data in argv or env: the editor is exactly "cat >", the todo goes on stdin, messages only on carriers\' stdin', async (t) => {
+  const w = await iworld(t);
+  const secret = 'Reworded $(touch /tmp/x) `id`';
+  await w.ir([{ oid: w.t1, action: 'pick' }, { oid: w.t2, action: 'reword', message: msg(secret) }, { oid: w.t3, action: 'drop' }]);
+  const [call] = interactiveCalls(w);
+  assert.equal(call.env.GIT_SEQUENCE_EDITOR, 'cat >');
+  const carrier = w.oid('topic');
+  assert.equal(decodeStdin(call), `pick ${w.t1}\npick ${carrier}\ndrop ${w.t3}\n`);
+  for (const b of w.cc.state.execCalls) {
+    assert.ok(!b.argv.some((a) => a.includes('Reworded')), `argv: ${b.argv.join(' ')}`);
+    assert.ok(!Object.values(b.env ?? {}).some((v) => v.includes('Reworded')), 'env');
+  }
+  const tree = w.cc.state.execCalls.find((b) => b.argv.includes('commit-tree'));
+  assert.equal(decodeStdin(tree), `${secret}\n`);
+  assert.deepEqual([tree.env.GIT_AUTHOR_NAME, tree.env.GIT_AUTHOR_EMAIL, tree.env.GIT_AUTHOR_DATE], ['Ada Lovelace', 'ada@example.com', '1580547600 +0100']);
+});
+
+test('hostile config never runs: sequence.editor and core.editor naming a command leave no marker; rebase.instructionFormat is ignored', async (t) => {
+  const w = await iworld(t);
+  const marker = path.join(w.repo.root, 'MARKER');
+  w.repo.git('config', 'sequence.editor', `touch '${marker}'; false`);
+  w.repo.git('config', 'core.editor', `touch '${marker}'; false`);
+  w.repo.git('config', 'rebase.instructionFormat', '%s %an');
+  const r = await w.ir([{ oid: w.t2, action: 'pick' }, { oid: w.t1, action: 'pick' }, { oid: w.t3, action: 'reword', message: msg('t3!') }]);
+  assert.equal(r.outcome, 'done');
+  assert.deepEqual(log(w, `${w.base}..topic`), ['t3!', 't1', 't2']);
+  assert.equal(fs.existsSync(marker), false);
+});
+
+test('rows must be exactly base..HEAD (BAD_PARAMS for one missing, one extra or a duplicate); nothing runs', async (t) => {
+  const w = await iworld(t);
+  const p = (rows) => w.ir(rows);
+  await assert.rejects(p([{ oid: w.t1, action: 'pick' }, { oid: w.t2, action: 'pick' }]), refused('BAD_PARAMS'));
+  await assert.rejects(p([{ oid: w.t1, action: 'pick' }, { oid: w.t2, action: 'pick' }, { oid: w.t3, action: 'pick' }, { oid: w.m1, action: 'pick' }]), refused('BAD_PARAMS'));
+  assert.throws(() => getOp(OPS, 'rebase.interactive').params({ mode: 'rebase', base: w.base, onto: w.base, expect: w.t3, rows: [{ oid: w.t1, action: 'pick' }, { oid: w.t1, action: 'drop' }] }), refused('BAD_PARAMS'));
+  assert.throws(() => getOp(OPS, 'rebase.interactive').params({ mode: 'rebase', base: w.base, onto: w.base, expect: w.t3, rows: [{ oid: w.t1, action: 'pick', note: 1 }] }), refused('BAD_PARAMS'));
+  assert.equal(interactiveCalls(w).length, 0);
+});
+
+test('commit.gpgSign=true with a signer that fails → GIT_FAILED from the carrier, before any rebase starts', async (t) => {
+  const w = await iworld(t);
+  w.repo.git('config', 'commit.gpgSign', 'true');
+  w.repo.git('config', 'gpg.program', 'false');
+  await assert.rejects(w.ir([{ oid: w.t1, action: 'pick' }, { oid: w.t2, action: 'reword', message: msg('x') }, { oid: w.t3, action: 'pick' }]), refused('GIT_FAILED'));
+  assert.ok(w.cc.state.execCalls.find((b) => b.argv.includes('commit-tree')).argv.includes('-S'), 'the carrier asked to sign');
+  assert.deepEqual([interactiveCalls(w).length, (await w.op('commit.state')).operation, w.oid('topic')], [0, null, w.t3]);
+});
+
+test('rebase mode on a code-conductor/* HEAD needs ccOwned', async (t) => {
+  const w = await iworld(t);
+  w.repo.checkout('main');
+  w.worktree('wt', 'code-conductor/wt', w.t3);
+  const params = { mode: 'rebase', base: w.base, onto: w.base, expect: w.t3, rows: [{ oid: w.t1, action: 'pick' }, { oid: w.t2, action: 'drop' }, { oid: w.t3, action: 'pick' }] };
+  await assert.rejects(w.op('rebase.interactive', params, 'wt'), refused('CC_OWNED_BRANCH', { head: true }));
+  assert.equal((await w.op('rebase.interactive', { ...params, ccOwned: true }, 'wt')).outcome, 'done');
 });

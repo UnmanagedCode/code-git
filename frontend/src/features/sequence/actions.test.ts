@@ -6,6 +6,7 @@ import type { CommitItem, Ref, RefsResult } from '@/features/graph/types';
 import { labelOf, resolveActions, type MenuAction } from '@/shell/menus';
 import { EMPTY_GRAPH, graphStore } from '@/state/graph';
 import { sequenceDialogStore } from '@/state/sequenceDialog';
+import { shownPanelStore } from '@/state/shownPanel';
 import { tabKey } from '@/state/tabs';
 import { linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
 import { commit, oid, ref, refsResult, worktree } from '@/test/graphData';
@@ -41,19 +42,21 @@ const commitCtx = (n: number): CommitCtx => ({ tab: T, commit: COMMITS.find((c) 
 const commits = (...ns: number[]): CommitsCtx => ({ tab: T, rows: ns.map((n) => ({ kind: 'commit' as const, id: oid(n), item: COMMITS.find((c) => c.oid === oid(n))! })) });
 const ok = (result: unknown) => ({ ok: true, result });
 
-test('drop onto HEAD\'s branch: Merge, Merge (no fast-forward), Squash at 100–102 and Rebase HEAD onto the source at 110', () => {
+test('drop onto HEAD\'s branch: Merge, Merge (no fast-forward), Squash at 100–102, Rebase HEAD onto the source at 110, Interactive at 120', () => {
   setGraph();
   expect(menu('branch-drop', drop(FREE, MAIN))).toEqual([
     '100 Merge free into main', '101 Merge free into main (no fast-forward)', '102 Squash free into main', '110 Rebase main onto free',
+    '120 Interactive rebase main onto free…',
   ]);
   expect(menu('branch-drop', drop(ORIGIN_FREE, MAIN))).toEqual([
     '100 Merge origin/free into main', '101 Merge origin/free into main (no fast-forward)', '102 Squash origin/free into main', '110 Rebase main onto origin/free',
+    '120 Interactive rebase main onto origin/free…',
   ]);
 });
 
-test('drop of HEAD\'s branch onto another: only Rebase HEAD onto the target; neither side HEAD\'s, or the same commit: nothing', () => {
+test('drop of HEAD\'s branch onto another: only Rebase and Interactive rebase HEAD onto the target; neither side HEAD\'s, or the same commit: nothing', () => {
   setGraph();
-  expect(menu('branch-drop', drop(MAIN, FREE))).toEqual(['110 Rebase main onto free']);
+  expect(menu('branch-drop', drop(MAIN, FREE))).toEqual(['110 Rebase main onto free', '120 Interactive rebase main onto free…']);
   expect(menu('branch-drop', drop(FREE, BUSY))).toEqual([]);
   expect(menu('branch-drop', drop({ ...FREE, oid: HEAD }, MAIN))).toEqual([]);
 });
@@ -71,30 +74,58 @@ test('the drop items post merge.start with the source ref, its oid, the mode and
   await waitFor(() => expect(paramsOf(f, 'POST api/ops/rebase.start')).toEqual([{ onto: ORIGIN_FREE.oid, upstream: ORIGIN_FREE.oid, expect: HEAD }]));
 });
 
-test('branch menu: Merge <b> into <HEAD> (330) and Rebase <HEAD> onto <b> (331), for another branch at another commit with HEAD born', () => {
+test('branch menu: Merge <b> into <HEAD> (330), Rebase <HEAD> onto <b> (331), Interactive rebase… (332), for another branch at another commit with HEAD born', () => {
   setGraph();
-  expect(menu('branch', branch(FREE))).toEqual(['330 Merge free into main', '331 Rebase main onto free']);
-  expect(menu('branch', branch(ORIGIN_FREE))).toEqual(['330 Merge origin/free into main', '331 Rebase main onto origin/free']);
+  expect(menu('branch', branch(FREE))).toEqual(['330 Merge free into main', '331 Rebase main onto free', '332 Interactive rebase main onto free…']);
+  expect(menu('branch', branch(ORIGIN_FREE))).toEqual(['330 Merge origin/free into main', '331 Rebase main onto origin/free', '332 Interactive rebase main onto origin/free…']);
   expect(menu('branch', branch(MAIN))).toEqual([]);
   expect(menu('branch', branch({ ...FREE, oid: HEAD }))).toEqual([]);
   setGraph({ oid: null, unborn: true });
   expect(menu('branch', branch(FREE))).toEqual([]);
   setGraph({ branch: null, detached: true });
-  expect(menu('branch', branch(FREE))).toEqual(['330 Merge free into HEAD', '331 Rebase HEAD onto free']);
+  expect(menu('branch', branch(FREE))).toEqual(['330 Merge free into HEAD', '331 Rebase HEAD onto free', '332 Interactive rebase HEAD onto free…']);
 });
 
-test('commit menu: Rebase <HEAD> onto this commit (312) only for a commit outside HEAD\'s loaded history', () => {
+test('commit menu: Rebase <HEAD> onto this commit (312) outside HEAD\'s loaded history; Interactive rebase from here… (313) on its ancestors', () => {
   setGraph();
   expect(menu('commit', commitCtx(5))).toEqual(['312 Rebase main onto this commit']);
   expect(menu('commit', commitCtx(6))).toEqual(['312 Rebase main onto this commit']);
-  for (const n of [4, 3, 1]) expect(menu('commit', commitCtx(n))).toEqual([]);
+  for (const n of [3, 1]) expect(menu('commit', commitCtx(n))).toEqual(['313 Interactive rebase from here…']);
+  expect(menu('commit', commitCtx(4))).toEqual([]);
 });
 
 test('commits menu: Rebase N commits onto… (322) for a first-parent run ending at HEAD; it opens the dialog with the oldest\'s parent as upstream', () => {
   setGraph();
-  expect(menu('commits', commits(4, 3, 2))).toEqual(['322 Rebase 3 commits onto…']);
+  expect(menu('commits', commits(4, 3, 2))).toEqual(['320 Squash 3 commits…', '322 Rebase 3 commits onto…']);
   run('commits', commits(4, 3), 'Rebase 2 commits onto…');
   expect(sequenceDialogStore.get()).toMatchObject({ kind: 'rebaseOnto', count: 2, upstream: oid(2), expect: HEAD });
-  // Not ending at HEAD, not contiguous, a root commit (no parent), a merge: no item.
-  for (const ns of [[3, 2], [4, 2], [2, 1], [6, 4]]) expect(menu('commits', commits(...ns))).toEqual([]);
+  // Not ending at HEAD (Squash still applies), not contiguous, a root commit (no parent), a merge: no 322.
+  expect(menu('commits', commits(3, 2))).toEqual(['320 Squash 2 commits…']);
+  for (const ns of [[4, 2], [2, 1], [6, 4]]) expect(menu('commits', commits(...ns)).filter((l) => l.startsWith('322'))).toEqual([]);
+});
+
+test('commits menu: Squash N commits… (320) for a first-parent run inside HEAD\'s history with a parent; it opens the editor (squash preset) over base..HEAD', async () => {
+  setGraph();
+  const f = stubGraph(linearWorld(2), {
+    'POST api/ops/rebase.plan': ok({ commits: [3, 4].map((n) => ({ oid: oid(n), parents: [oid(n - 1)], summary: `c${n}`, description: '', author: { name: 'A', email: 'a@x', time: 1 } })) }),
+  });
+  for (const ns of [[4, 2], [2, 1], [5, 1]]) expect(menu('commits', commits(...ns)).filter((l) => l.startsWith('320'))).toEqual([]);
+  run('commits', commits(3, 2), 'Squash 2 commits…');
+  await waitFor(() => expect(paramsOf(f, 'POST api/ops/rebase.plan')).toEqual([{ base: oid(1), head: HEAD }]));
+  expect(shownPanelStore.get().get(tabKey(T))).toBe('rebase');
+});
+
+test('commits menu: Cherry-pick N commits… (321) for commits outside HEAD\'s history, none a merge; the editor lists them oldest first', async () => {
+  setGraph();
+  const f = stubGraph(linearWorld(2), { 'POST api/ops/rebase.plan': ok({ commits: [] }) });
+  expect(menu('commits', commits(6, 5))).toEqual([]);
+  graphStore.set((m) => {
+    const g = m.get(tabKey(T))!;
+    return new Map(m).set(tabKey(T), { ...g, commits: [...g.commits, C(7, [5])] });
+  });
+  const picks: CommitsCtx = { tab: T, rows: [7, 5].map((n) => ({ kind: 'commit' as const, id: oid(n), item: n === 7 ? C(7, [5]) : COMMITS.find((c) => c.oid === oid(5))! })) };
+  expect(menu('commits', picks)).toEqual(['321 Cherry-pick 2 commits…']);
+  expect(menu('commits', commits(4, 3)).some((l) => l.startsWith('321'))).toBe(false);
+  run('commits', picks, 'Cherry-pick 2 commits…');
+  await waitFor(() => expect(paramsOf(f, 'POST api/ops/rebase.plan')).toEqual([{ oids: [oid(5), oid(7)] }]));
 });

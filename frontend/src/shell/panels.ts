@@ -3,6 +3,7 @@ import { ACTIVITY_PANEL } from '@/features/activity/panel';
 import { COMPARE_PANEL, DIFF_PANEL } from '@/features/diff/panel';
 import { DETAILS_PANEL, GRAPH_PANEL, REFS_PANEL } from '@/features/graph/panel';
 import { WORKDIR_PANEL } from '@/features/workdir/panel';
+import { REBASE_PANEL } from '@/features/rebase/panel';
 import type { Tab } from '@/state/tabs';
 
 // The panel registry. A feature defines its panel in its own folder and adds one entry to PANELS.
@@ -20,6 +21,6 @@ export interface PanelDef {
   onDemand?: boolean;
 }
 
-const PANELS: PanelDef[] = [ACTIVITY_PANEL, GRAPH_PANEL, REFS_PANEL, DETAILS_PANEL, COMPARE_PANEL, DIFF_PANEL, WORKDIR_PANEL];
+const PANELS: PanelDef[] = [ACTIVITY_PANEL, GRAPH_PANEL, REFS_PANEL, DETAILS_PANEL, COMPARE_PANEL, DIFF_PANEL, WORKDIR_PANEL, REBASE_PANEL];
 
 export const panelsFor = (slot: PanelSlot): PanelDef[] => PANELS.filter((p) => p.slot === slot).sort((a, b) => a.order - b.order);

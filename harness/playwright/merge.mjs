@@ -75,7 +75,7 @@ try {
     // 1. drop feature/ff onto main (HEAD): the exact menu, then Merge → a fast-forward
     await dragRef('refs/heads/feature/ff', 'refs/heads/main');
     const items = await menuItems();
-    const want = ['Merge feature/ff into main', 'Merge feature/ff into main (no fast-forward)', 'Squash feature/ff into main', 'Rebase main onto feature/ff', 'Fast-forward main to feature/ff', 'Reset main to feature/ff'];
+    const want = ['Merge feature/ff into main', 'Merge feature/ff into main (no fast-forward)', 'Squash feature/ff into main', 'Rebase main onto feature/ff', 'Interactive rebase main onto feature/ff…', 'Fast-forward main to feature/ff', 'Reset main to feature/ff'];
     check(items.join('|') === want.join('|'), `the drop menu onto HEAD's branch is exactly ${want.join(', ')} (${items.join(', ')})`);
     await shot('merge-drop-menu-light-desktop');
     await choose('Merge feature/ff into main');

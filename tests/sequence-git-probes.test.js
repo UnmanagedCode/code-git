@@ -62,11 +62,15 @@ test('probe: GIT_SEQUENCE_EDITOR="cat >" copies stdin into git\'s todo exactly; 
   assert.equal(left, `drop ${p.a}\n`);
 });
 
-test('probe: REBASE_HEAD names the commit at an edit stop and at a conflict stop', (t) => {
+test('probe: REBASE_HEAD names the commit at an edit stop and at a conflict stop; after an edit stop on the last todo line it outlives the rebase', (t) => {
   const p = linear(t);
   p.todoRebase(`edit ${p.a}\npick ${p.b}\npick ${p.c}\n`, p.base);
   assert.equal(p.oid('REBASE_HEAD'), p.a);
-  p.git(['rebase', '--abort']);
+  assert.equal(p.git(['rebase', '--continue'], { extra: { GIT_EDITOR: ':' } }).status, 0);
+  assert.equal(p.exists('REBASE_HEAD'), false, 'the picks after it remove it');
+  p.todoRebase(`pick ${p.a}\npick ${p.b}\nedit ${p.c}\n`, p.base);
+  assert.equal(p.git(['rebase', '--continue'], { extra: { GIT_EDITOR: ':' } }).status, 0);
+  assert.deepEqual([fs.existsSync(p.gitDir('rebase-merge')), p.oid('REBASE_HEAD')], [false, p.c], 'REBASE_HEAD is left behind');
   const d = diverged(t);
   d.repo.checkout('topic');
   const r = d.git(['-c', 'rebase.backend=merge', 'rebase', '--end-of-options', 'main']);

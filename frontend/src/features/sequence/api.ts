@@ -38,3 +38,16 @@ export const mergeStart = (t: Target, p: { ref: string | null; oid: string; mode
 /** Replays `upstream..HEAD` onto `onto`. */
 export const rebaseStart = (t: Target, p: { onto: string; upstream: string; expect: string; ccOwned?: boolean }) =>
   runOp<RebaseResult>('rebase.start', t, { onto: p.onto, upstream: p.upstream, expect: p.expect, ...ack(p.ccOwned) });
+
+export type RowAction = 'pick' | 'reword' | 'edit' | 'squash' | 'fixup' | 'drop';
+export interface PlanCommit {
+  oid: string; parents: string[]; summary: string; description: string; author: { name: string; email: string; time: number };
+}
+/** What the editor lists: `base..head` (oldest first), or the given commits in the given order. */
+export type PlanSpec = { base: string; head: string } | { oids: string[] };
+export interface InteractiveRow { oid: string; action: RowAction; message?: { summary: string; description: string } }
+export interface InteractiveRequest { mode: 'rebase' | 'pick'; base: string; onto: string; expect: string; rows: InteractiveRow[]; ccOwned?: boolean }
+
+export const rebasePlan = (t: Target, spec: PlanSpec) => runOp<{ commits: PlanCommit[] }>('rebase.plan', t, spec);
+export const rebaseInteractive = (t: Target, r: InteractiveRequest) =>
+  runOp<RebaseResult>('rebase.interactive', t, { mode: r.mode, base: r.base, onto: r.onto, expect: r.expect, rows: r.rows, ...ack(r.ccOwned) });

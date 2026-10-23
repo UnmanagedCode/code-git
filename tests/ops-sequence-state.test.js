@@ -121,3 +121,16 @@ test('hostile rebase state files are ignored, never trusted: a non-oid onto, a h
   fs.writeFileSync(path.join(dir, 'head-name'), 'refs/heads/a..b\n');
   assert.equal((await w.state()).operation.rebase.branch, null);
 });
+
+test('a REBASE_HEAD left behind by a finished rebase (no state directory) is no rebase: operation null', async (t) => {
+  const w = await world(t);
+  w.repo.checkout('topic');
+  w.user('-c', 'rebase.backend=merge', '-c', `sequence.editor=printf 'pick ${w.topic}\\npick ${w.t2}\\nedit ${w.t3}\\n' >`, 'rebase', '-i', '--onto=main', 'main');
+  w.repo.write('f.txt', 'resolved\n');
+  w.repo.git('add', 'f.txt');
+  spawnSync('git', ['-C', w.repo.dir, 'rebase', '--continue'], { env: { ...hermeticEnv(w.repo.home), GIT_EDITOR: ':' } });
+  spawnSync('git', ['-C', w.repo.dir, 'rebase', '--continue'], { env: { ...hermeticEnv(w.repo.home), GIT_EDITOR: ':' } });
+  assert.equal(fs.existsSync(path.join(w.repo.dir, '.git', 'rebase-merge')), false);
+  assert.equal(w.exists('REBASE_HEAD'), true, 'the leftover this test is about');
+  assert.deepEqual(await w.state(), { merging: false, operation: null, conflicts: [] });
+});

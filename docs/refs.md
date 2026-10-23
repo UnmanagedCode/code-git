@@ -80,7 +80,7 @@ cc owns `code-conductor/*` branches: its worktree records name them. A write tha
 |---|---|
 | `branch.delete`, `branch.deleteRemote`, `branch.move` of a cc branch; `branch.rename` from or to a cc name | `branch.create` of a cc name without checkout |
 | **Moving a cc-owned HEAD** (this checkout's HEAD is `code-conductor/*`): `head.reset` in every mode; `branch.checkout` of another branch (local or remote); `branch.create` with checkout | Checking out the branch already checked out; a remote checkout whose local twin is HEAD (only a fast-forward); `branch.fastForward` of the cc HEAD branch (additive); `head.revert`, `head.cherryPick`, `merge.start`, `head.continue` (they add commits, as a commit does); checking out a cc branch from a non-cc HEAD |
-| **Rebasing a cc-owned HEAD**: `rebase.start`, a rebase pull ([merge](merge.md)) | — |
+| **Rebasing a cc-owned HEAD**: `rebase.start`, `rebase.interactive` in rebase mode (the editor's rebase and squash), a rebase pull ([merge](merge.md)) | `rebase.interactive` in pick mode (cherry-pick N: it only adds) |
 
 In the UI, moving a cc-owned HEAD with an action that has no dialog (double-click or menu checkout, remote checkout, soft or mixed reset from a menu or the drop menu) opens the **cc HEAD move** confirmation (`confirmCcHeadMove` in `features/branches/actions.ts`, through `confirm()`) first ("This checkout is code-conductor's worktree on `<branch>`. Switching away / Resetting it leaves cc's worktree record, and its sync and merge, on a branch or commit the agent did not make."). The hard-reset dialog and the create-branch dialog (with checkout on) show the same warning inline instead of a second dialog. The delete, rename and force-move dialogs warn about a cc-owned name.
 
@@ -114,7 +114,7 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 | `head.revert`, `head.cherryPick` | nothing (a new commit) | reset to `undo.head.old` |
 | `head.abort` | the stopped merge / rebase / revert / cherry-pick's partial result and its conflict resolutions | — |
 | `merge.start` | nothing (a fast-forward or a merge commit; a squash only stages) | fast-forward / merged: reset back to `undo.head.old` |
-| `rebase.start` | nothing until done (the old commits stay reachable from the reflog) | done: reset the branch back to `undo.refs[].old` |
+| `rebase.start`, `rebase.interactive` | nothing until done (the old commits stay reachable from the reflog); dropped rows' changes leave the branch | done: reset the branch back to `undo.refs[].old` |
 | `head.continue` | nothing (it commits what is staged and goes on) | done: reset back to `undo.head.old` (a rebase: the branch's tip before the rebase, `undo.refs`) |
 | `head.skip` | the skipped commit's changes and any resolution made for it | done: as `head.continue` |
 
@@ -124,7 +124,7 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 
 ### Drag-menu orders
 
-The `branch-drop` menu's 100–199 are the merge/rebase card's (Merge 100, Merge no-ff 101, Squash 102, Rebase 110: [merge](merge.md#where-the-actions-are)); Fast-forward is 200, the remotes' Push 250 (group `remote`), Reset 300.
+The `branch-drop` menu's 100–199 are the merge/rebase card's (Merge 100, Merge no-ff 101, Squash 102, Rebase 110, Interactive rebase 120: [merge](merge.md#where-the-actions-are)); Fast-forward is 200, the remotes' Push 250 (group `remote`), Reset 300.
 
 ### Git versions
 
