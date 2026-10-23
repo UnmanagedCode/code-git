@@ -24,7 +24,7 @@ const TEST_OPS = buildRegistry([repoOps, [
     name: 'test.twoStep', kind: 'read', params: () => ({}),
     async run(git) { await git(['rev-parse', 'HEAD']); await git(['status']); return { done: true }; },
   },
-  { name: 'test.target', kind: 'read', params: () => ({}), run: async (_git, _params, ctx) => ctx },
+  { name: 'test.target', kind: 'read', params: () => ({}), run: async (_git, _params, { target, journal }) => ({ target, journal: typeof journal?.state }) },
   {
     name: 'test.rev', kind: 'read',
     params: (raw) => ({ rev: assertRev(raw?.rev) }),
@@ -157,12 +157,12 @@ test('an option-looking revision is refused before anything reaches exec', async
   assert.ok(cc.state.execCalls[0].argv.includes('--end-of-options'));
 });
 
-test("an op's run receives {target} as its third argument: the validated target, worktree null for the main checkout", async (t) => {
+test("an op's run receives {target, journal} as its third argument: the validated target (worktree null for the main checkout) and the undo journal", async (t) => {
   const { call } = await world(t);
   const wt = await call('POST', '/api/ops/test.target', { target: { project: 'app', worktree: 'feat' } });
-  assert.deepEqual(wt.body, { ok: true, result: { target: { project: 'app', worktree: 'feat' } } });
+  assert.deepEqual(wt.body, { ok: true, result: { target: { project: 'app', worktree: 'feat' }, journal: 'function' } });
   const main = await call('POST', '/api/ops/test.target', { target: APP });
-  assert.deepEqual(main.body.result, { target: { project: 'app', worktree: null } });
+  assert.deepEqual(main.body.result, { target: { project: 'app', worktree: null }, journal: 'function' });
 });
 
 test('activity: GET lists entries newest last and SSE pushes running then closed entries', async (t) => {

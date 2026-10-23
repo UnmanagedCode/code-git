@@ -9,7 +9,7 @@
 | Module | Responsibility |
 |---|---|
 | `server.js` | `start({port, distDir, …})`: builds the app, listens on `127.0.0.1`, answers parser-rejected requests (`clientError`) with the CSP. Exports `start`, `createApp`, `CSP`, `DEFAULT_PORT`; autostarts only when run directly |
-| `src/app.js` | `createApp({distDir, ops?, activity?})`: wiring only — headers → `/health` → `/api` (JSON check, body parser, feature routes, API 404) → UI → 404 → error handler. `ops`/`activity` are injectable for tests |
+| `src/app.js` | `createApp({distDir, ops?, activity?, journal?})`: wiring only — headers → `/health` → `/api` (JSON check, body parser, feature routes, API 404) → UI → 404 → error handler. `ops`/`activity`/`journal` are injectable for tests |
 | `src/http/security.js` | `CSP`, the headers middleware, `requireJson` |
 | `src/http/static.js` | `serveDist(distDir)`: the `ASSET_RE` allowlist, `inside()` realpath check, 503 while unbuilt |
 | `src/http/route.js` | `route(fn)`: a throw becomes a refusal response; `sendError` |
@@ -23,6 +23,7 @@
 | `src/git/runner.js` | `runGit(ctx, args, opts)`: **the** choke point for git; `subArgs(target)` (a submodule target's `-C <path> --git-dir=.git`) |
 | `src/git/locks.js` | `createLocks()`: keyed promise queue |
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
+| `src/git/undo/` | Undo and redo ([undo](undo.md)): `journal.js` (`createJournal`, `targetKey`: the per-checkout undo and redo slots), `record.js` (`journalAround`: what the ops route does around every op) |
 | `src/git/ops/repo.js` | `repo.summary` |
 | `src/git/ops/diff.js` | `diff.files`, `diff.file`, `diff.patch`; `patchFilename` |
 | `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`, `commitOid`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS`; `parseContext` / `contextArg` / `FULL_CONTEXT` |
@@ -111,7 +112,8 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 | To add | Create | Register in |
 |---|---|---|
-| A backend op | `src/git/ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run}]` | the list passed to `buildRegistry` in `src/git/ops/index.js` |
+| A backend op | `src/git/ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run, undo?}]` | the list passed to `buildRegistry` in `src/git/ops/index.js` |
+| Register an op's undo | an `undo(params, result) → UndoPlan \| null` field on the write's own definition ([undo → Registering an op](undo.md#registering-an-op)) | nothing |
 | Backend routes (rarely: ops go through `api/ops/:name`) | `src/routes/<feature>.js` exporting `mount(router, deps)` | `mountRoutes` in `src/routes/index.js` |
 | A panel | a `PanelDef` (`{id, slot, title, component, order, onDemand?}`) in `frontend/src/features/<feature>/` | `PANELS` in `frontend/src/shell/panels.ts` |
 | A panel shown on demand (the diff) | a `PanelDef` with `onDemand: true`; show it with `showPanel(tab, id)` (`state/shownPanel.ts`) | `PANELS`; while shown it replaces its slot's other panels for that tab |
@@ -162,7 +164,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 - **Remote commands**: every command that talks to a remote runs through `netRun` (`src/git/remote/net.js`: `NET_CONFIG` + `NETWORK_LIMITS`) and turns a whole-command failure into `remoteFailure`; `src/git/remote/push.js` (`remoteName` in `params`, `knownRemote`, `push`).
 - **A rebase that stops on conflicts**: `onRebaseStopped(git, files)` in `src/git/remote/integrate.js` is the single policy point: it stays in progress and the caller answers `{outcome: 'conflicts', files}` ([merge → The stop rule](merge.md#the-stop-rule)). `rebase(git, args, opts)` there runs every rebase.
 - **What is in progress**: `operationState(git)` (`src/git/sequence/state.js`) for an op; `workdirOf(tab).operation` / `.conflicts` in the UI. A start refuses with `assertNoOperation` (`src/git/sequence/guard.js`).
-- **Undo**: every ref-changing op returns `result.undo` (`undoRecord`, [refs → Undo record](refs.md#undo-record)); a journal reads it in `runRefOp` (`features/branches/run.ts`).
+- **Undo**: every ref-changing op returns `result.undo` (`undoRecord`, [refs → Undo record](refs.md#undo-record)); a registered op's `undo` builder turns it into the plan the backend journal keeps ([undo](undo.md)).
 - **Pushing from another surface**: `pushFlow(tab, {branch, remote?, to?, setUpstream?})` or `pushHead(tab)` (`features/remotes/pushFlow.ts`): the cc warning and the rejected → force-with-lease flow come with it.
 - **Branch actions**: `checkout(tab, ref)`, `reset(tab, point, mode)` and `withCcHeadAck` in `features/branches/actions.ts`; `openRefDialog` for a confirmation.
 
@@ -173,7 +175,8 @@ What a later card touches to add a feature — each is one file of its own plus 
 - `name` matches `^[a-z]+\.[a-zA-Z]+$` and is unique.
 - `kind` is `'read'` or `'write'`.
 - `cancellable`, when given, is a boolean; it defaults to `kind === 'read'`. A write sets `cancellable: true` only where aborting mid-command cannot leave the repo half-changed, and its card states why: `remote.fetch` (atomic ref updates, gc off, no index or worktree), `remote.push`, `tag.push`, `tag.deleteRemote`, `branch.deleteRemote` (atomic remote ref updates). `remote.pull`, `merge.start`, `rebase.start`, `rebase.interactive`, `conflict.save`, `conflict.take`, `head.continue`, `head.skip` and `head.abort` are not: an abort mid-merge or mid-rebase would.
-- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target})` returns JSON. `target` is the call's validated `{project, worktree, sub?}` (worktree `null` = main checkout; `sub` a submodule chain), for an op that names its output after the checkout (`diff.patch`); git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`.
+- `undo`, when given, is a function, and only on a write ([undo → Registering an op](undo.md#registering-an-op)).
+- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target, journal})` returns JSON. `target` is the call's validated `{project, worktree, sub?}` (worktree `null` = main checkout; `sub` a submodule chain), for an op that names its output after the checkout (`diff.patch`); `journal` is the undo journal, read only by the `undo.*` ops; git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`.
 
 ## Runner pipeline (`runGit`)
 
