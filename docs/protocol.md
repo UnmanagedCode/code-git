@@ -416,7 +416,7 @@ RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */
 
 ### Stash ops (`src/git/ops/stash.js`; all writes, not cancellable)
 
-`stash.push`, `stash.pushLines`, `stash.apply`, `stash.pop`, `stash.applyFile`, `stash.drop`, `stash.rename`, `stash.branch`. A stash is always named by its W commit's full oid (`{oid}`), never `stash@{n}`. A `stash.push` `GIT_FAILED` may carry `{oid, selector, undo}`: git stored the stash before failing. Params, argv, gates, refusals, results and the undo record: [stash](stash.md).
+`stash.push`, `stash.pushLines`, `stash.apply`, `stash.pop`, `stash.applyFile`, `stash.drop`, `stash.rename`, `stash.branch`. A stash is always named by its W commit's full oid (`{oid}`), never `stash@{n}`. A `stash.push` `GIT_FAILED` may carry `{oid, selector}`: git stored the stash before failing. Params, argv, gates, refusals, results and the undo record: [stash](stash.md).
 
 ### Paging convention (for ops that list)
 

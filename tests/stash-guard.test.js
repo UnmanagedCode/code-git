@@ -57,16 +57,28 @@ test('with core.ignorecase the guard folds case: a symlink `Link` blocks `link/x
   await w.guard(['LINKS/x', 'tracked/f.txt']);
 });
 
-test('assertFileTarget: a symlink or a directory at the path is blocked, a file or nothing is not; linkOk lets a symlink through', async (t) => {
+test('assertFileTarget: a directory or a link to one at the path is blocked; a file, a symlink to a file or nothing is not', async (t) => {
   const w = await guardWorld(t);
   const git = gitFor(ctxFor(w.target, 'write'));
   outsideLink(w, 'dirlink');
   fs.symlinkSync('a.txt', path.join(w.repo.dir, 'filelink'));
   fs.mkdirSync(path.join(w.repo.dir, 'adir'));
-  for (const p of ['dirlink', 'filelink', 'adir']) await assert.rejects(assertFileTarget(git, p), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === p, p);
-  await assertFileTarget(git, 'a.txt');
-  await assertFileTarget(git, 'absent.txt');
-  await assertFileTarget(git, 'filelink', { linkOk: true });
-  await assert.rejects(assertFileTarget(git, 'dirlink', { linkOk: true }), refused('PATH_BLOCKED'));
+  for (const p of ['dirlink', 'adir']) await assert.rejects(assertFileTarget(git, p), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === p, p);
+  for (const p of ['a.txt', 'absent.txt', 'filelink']) await assertFileTarget(git, p);
 });
 
+test('a non-boolean core.ignorecase (auto) reads as false: the failure is git\'s own on the listing, with its message', async (t) => {
+  const w = await guardWorld(t);
+  w.repo.git('config', 'core.ignorecase', 'auto');
+  // git refuses the value for every command (status, rev-parse, stash list…); the guard's config read is not where it fails.
+  await assert.rejects(w.guard(['link/x']), (e) => e.code === 'GIT_FAILED' && e.message === 'git ls-files exited with 128' && /bad boolean config value 'auto'/.test(e.extra.stderr));
+  assert.equal(runs(w, 'config', '--type=bool', '--get', 'core.ignorecase').length, 1);
+});
+
+test('with core.ignorecase a link inside a fully untracked directory (u/s) is still found: the directories are queried too', async (t) => {
+  const w = await guardWorld(t);
+  fs.mkdirSync(path.join(w.repo.dir, 'u'));
+  outsideLink(w, 'u/s');
+  w.repo.git('config', 'core.ignorecase', 'true');
+  await assert.rejects(w.guard(['u/s/x']), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === 'u/s');
+});

@@ -63,10 +63,13 @@ async function savedPaths(git, p) {
  */
 async function ownNewStash(git, { before, head, branch, message }) {
   const fresh = [];
-  for (const s of await listStashes(git)) {
+  const list = await listStashes(git);
+  for (const s of list) {
     if (s.oid === before) break;
     fresh.push(s);
   }
+  // The pre-push tip is gone (another session dropped it): which entries are new cannot be told.
+  if (before !== null && fresh.length === list.length) return null;
   const ours = fresh.filter((s) => s.parents[0] === head && (message ? s.message === `On ${branch}: ${message}` : s.message.startsWith(`WIP on ${branch}: `)));
   return ours.length === 1 ? ours[0] : null;
 }
@@ -88,19 +91,20 @@ async function assertCanApply(git, s) {
 /**
  * `stash apply [--index] <oid>`: clean → {conflicts: []}; merge conflicts (unmerged entries afterwards) → {conflicts}; git
  * refusing to overwrite local changes → CHECKOUT_CONFLICT; any other failure → GIT_FAILED.
- * With `--index`, git resets the index to HEAD before its merge; when the merge then refuses ("Index was not
- * unstashed.") the user's staged changes are left unstaged. The index is saved first (`write-tree`, only when something
- * is staged) and read back in that case, so a refused apply leaves the staging as it was.
+ * With `--index`, git resets the index to HEAD before its merge; when the merge then refuses to start ("Index was not
+ * unstashed." and no unmerged entry) the user's staged changes are left unstaged. The index is saved first
+ * (`write-tree`, only when something is staged) and read back in that case only. git prints the same line after a
+ * conflicted merge, whose index (the unmerged entries and the user's other staging) git kept: that one is never touched.
  */
 async function applyStash(git, oid, index) {
   const staged = index && (await git(['diff-index', '--cached', '--quiet', 'HEAD'], { okExit: [0, 1] })).exitCode === 1;
   const saved = staged ? text(await git(['write-tree'])).trim() : null;
   const r = await git(['stash', 'apply', '-q', ...(index ? ['--index'] : []), oid], { okExit: [0, 1] });
   if (r.exitCode === 0) return { conflicts: [] };
-  if (saved && decoder.decode(r.stderr).includes('Index was not unstashed.')) await git(['read-tree', saved]);
   const unmerged = (await namesOf(git, ['ls-files', '-u', '-z'])).map((f) => f.slice(f.indexOf('\t') + 1));
   if (unmerged.length) return { conflicts: [...new Set(unmerged)] };
   const stderr = decoder.decode(r.stderr);
+  if (saved && stderr.includes('Index was not unstashed.')) await git(['read-tree', saved]);
   const files = parseConflictFiles(stderr);
   if (files.length) throw new Refusal('CHECKOUT_CONFLICT', 'local changes would be overwritten', { files, stderr });
   throw new Refusal('GIT_FAILED', `git stash apply exited with ${r.exitCode}`, { exitCode: r.exitCode, stderr });
@@ -181,12 +185,14 @@ export const ops = [
         if (e.code !== 'GIT_FAILED') throw e;
         // git can fail after storing the stash (`--staged` with a file staged and then changed again; `--keep-index`,
         // which may also have reset the index). The stash is kept, not dropped: it may be the only copy of what git
-        // already took out of the index, so the refusal names it, with the undo a successful save would carry.
+        // already took out of the index, so the refusal names it. No undo: the worktree and index may still hold the
+        // same changes, and popping the stash would apply them twice.
         const s = await ownNewStash(git, mine);
         if (!s) throw e;
-        throw new Refusal('GIT_FAILED', `${e.message} after storing ${s.selector}: the changes are in that stash`, { ...e.extra, oid: s.oid, selector: s.selector, undo: pushUndo(s) });
+        throw new Refusal('GIT_FAILED', `${e.message} after storing ${s.selector}: the changes are in that stash`, { ...e.extra, oid: s.oid, selector: s.selector });
       }
-      if (NO_CHANGES_RE.test(text(r)) || NO_CHANGES_RE.test(decoder.decode(r.stderr))) throw new Refusal('NOTHING_TO_STASH', 'there are no local changes to stash');
+      // stdout only: git prints the line there, and a reference-transaction hook's output goes to git's stderr.
+      if (NO_CHANGES_RE.test(text(r))) throw new Refusal('NOTHING_TO_STASH', 'there are no local changes to stash');
       const s = await ownNewStash(git, mine);
       // Saved, but another session's stash at the same base with the same subject arrived at the same moment: which
       // entry is this save's cannot be told, so no undo claims one.
@@ -333,7 +339,7 @@ export const ops = [
       const mode = decoder.decode((await git(['ls-tree', '-z', '--full-tree', to, '--', p.path])).stdout).split(' ')[0];
       if (mode === '160000') throw new Refusal('PARTIAL_UNSUPPORTED', `${p.path} is a submodule: apply the whole stash`);
       await assertNotBlocked(git, [p.path]);
-      await assertFileTarget(git, p.path, { linkOk: mode === '120000' });
+      await assertFileTarget(git, p.path);
       const diff = await git([...DIFF_CONFIG, 'diff', ...DIFF_FLAGS, '--binary', '--end-of-options', from, to, '--', p.path], { maxOutputBytes: DIFF_LIMITS.patchMaxOutputBytes });
       const r = await git(['apply', '--whitespace=nowarn', '--no-ignore-whitespace', '-'], { stdin: diff.stdout, okExit: [0, 1, 128] });
       if (r.exitCode !== 0) {

@@ -313,18 +313,42 @@ function linkedFile(w, p) {
   return outside;
 }
 
-test('applyFile onto a file now a symlink (the final component) → PATH_BLOCKED; the outside file is untouched', async (t) => {
+test('applyFile onto a file now a symlink to an outside file: git refuses ("wrong type"), the link stays, the outside file is untouched', async (t) => {
   const w = await stashWorld(t);
   const oid = await saved(w, { 'a.txt': 'a stashed\n' });
   const outside = linkedFile(w, 'a.txt');
+  await assert.rejects(w.op('stash.applyFile', { oid, path: 'a.txt' }), (e) => e.code === 'PATCH_DOES_NOT_APPLY' && /wrong type/.test(e.extra.stderr));
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n');
+  assert.equal(fs.lstatSync(path.join(w.repo.dir, 'a.txt')).isSymbolicLink(), true);
+});
+
+test('applyFile onto a directory or a link to a directory at the path → PATH_BLOCKED, no apply run', async (t) => {
+  const w = await stashWorld(t);
+  const oid = await saved(w, { 'a.txt': 'a stashed\n' });
+  fs.rmSync(path.join(w.repo.dir, 'a.txt'));
+  const outside = outsideLink(w, 'a.txt');
   w.cc.state.execCalls.length = 0;
   await assert.rejects(w.op('stash.applyFile', { oid, path: 'a.txt' }), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === 'a.txt');
-  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n');
-  assert.equal(runs(w, 'apply').length, 0);
-  // A directory standing at the path is refused the same way.
+  assert.deepEqual(fs.readdirSync(outside), []);
   fs.rmSync(path.join(w.repo.dir, 'a.txt'));
   fs.mkdirSync(path.join(w.repo.dir, 'a.txt'));
   await assert.rejects(w.op('stash.applyFile', { oid, path: 'a.txt' }), refused('PATH_BLOCKED'));
+  assert.equal(runs(w, 'apply').length, 0);
+});
+
+test('applyFile of a symlink → regular file change replaces the link; the outside target is untouched', async (t) => {
+  const w = await stashWorld(t);
+  const outside = path.join(w.repo.root, 'outside-target');
+  fs.writeFileSync(outside, 'OUTSIDE\n');
+  fs.symlinkSync(outside, path.join(w.repo.dir, 'ln'));
+  w.repo.commit({}, 'add ln');
+  fs.rmSync(path.join(w.repo.dir, 'ln'));
+  const oid = await saved(w, { ln: 'now a file\n' });
+  assert.equal(fs.lstatSync(path.join(w.repo.dir, 'ln')).isSymbolicLink(), true);
+  await w.op('stash.applyFile', { oid, path: 'ln' });
+  assert.equal(fs.lstatSync(path.join(w.repo.dir, 'ln')).isSymbolicLink(), false);
+  assert.equal(read(w, 'ln'), 'now a file\n');
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n');
 });
 
 test('applyFile of a tracked symlink the stash retargets applies (its own version is a symlink)', async (t) => {
@@ -351,4 +375,63 @@ test('applyFile of a submodule (gitlink, mode 160000) → PARTIAL_UNSUPPORTED', 
   w.repo.git('stash', 'store', '-m', 'On main: gitlink', oid);
   await assert.rejects(w.op('stash.applyFile', { oid, path: 'vendor/lib' }), refused('PARTIAL_UNSUPPORTED'));
   assert.equal(exists(w, 'vendor/lib'), false);
+});
+
+/** A stash of `a.txt` → 'stashed', then `a.txt` = 'mine' committed (HEAD moved), and `b.txt` staged as unrelated work. */
+async function conflicting(t) {
+  const w = await stashWorld(t);
+  const oid = await saved(w, { 'a.txt': 'stashed\n' });
+  w.repo.commit({ 'a.txt': 'mine\n' }, 'moves a');
+  w.repo.write('b.txt', 'b staged\n');
+  w.repo.git('add', 'b.txt');
+  return { ...w, oid };
+}
+const unmergedPaths = (w) => w.repo.git('ls-files', '-u').split('\n').filter(Boolean).map((l) => l.split('\t')[1]);
+
+test('Apply with staged changes over a staged a.txt the stash also changes → {conflicts}, git\'s unmerged index and unrelated staging kept (repro A)', async (t) => {
+  const w = await stashWorld(t);
+  const oid = await saved(w, { 'a.txt': 'stashed\n' });
+  w.repo.write('a.txt', 'mine\n');
+  w.repo.write('b.txt', 'b staged\n');
+  w.repo.git('add', 'a.txt', 'b.txt');
+  const r = await w.op('stash.apply', { oid, index: true });
+  assert.deepEqual(r.conflicts, ['a.txt']);
+  assert.deepEqual([...new Set(unmergedPaths(w))], ['a.txt']);
+  assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
+  assert.equal(runs(w, 'read-tree').length, 0);
+});
+
+test('Apply with staged changes, a conflict with the moved HEAD and unrelated staging → {conflicts}, unmerged entries and staging intact (repro B)', async (t) => {
+  const w = await conflicting(t);
+  const r = await w.op('stash.apply', { oid: w.oid, index: true });
+  assert.deepEqual(r.conflicts, ['a.txt']);
+  assert.deepEqual([...new Set(unmergedPaths(w))], ['a.txt']);
+  assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
+  assert.equal(runs(w, 'read-tree').length, 0);
+  assert.match(read(w, 'a.txt'), /^<<<<<<< /);
+});
+
+test('pop with index and branch (always --index) on that conflict → {conflicts}, the stash kept, unmerged entries intact', async (t) => {
+  const p = await conflicting(t);
+  const r = await p.op('stash.pop', { oid: p.oid, index: true });
+  assert.deepEqual({ conflicts: r.conflicts, dropped: r.dropped }, { conflicts: ['a.txt'], dropped: false });
+  assert.deepEqual([...new Set(unmergedPaths(p))], ['a.txt']);
+  assert.equal(p.indexBlob('b.txt').toString(), 'b staged\n');
+  assert.deepEqual(stashList(p).map((s) => s.oid), [p.oid]);
+});
+
+test('branch (always --index) whose apply conflicts → {conflicts}, the stash kept, unmerged entries and the staging intact', async (t) => {
+  const w = await stashWorld(t);
+  const oid = await saved(w, { 'a.txt': 'stashed\n' });
+  // The switch to the base carries the staged a.txt and b.txt into the apply: a.txt conflicts there.
+  w.repo.write('a.txt', 'mine\n');
+  w.repo.write('b.txt', 'b staged\n');
+  w.repo.git('add', 'a.txt', 'b.txt');
+  const r = await w.op('stash.branch', { oid, name: 'nb' });
+  assert.deepEqual({ conflicts: r.conflicts, dropped: r.dropped }, { conflicts: ['a.txt'], dropped: false });
+  assert.equal(w.repo.git('symbolic-ref', 'HEAD'), 'refs/heads/nb');
+  assert.deepEqual([...new Set(unmergedPaths(w))], ['a.txt']);
+  assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
+  assert.equal(runs(w, 'read-tree').length, 0);
+  assert.deepEqual(stashList(w).map((s) => s.oid), [oid]);
 });

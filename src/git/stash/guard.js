@@ -22,7 +22,8 @@ const parentOf = (dir) => (dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')
 
 /** Whether the repo says its filesystem ignores case (`core.ignorecase`, set by git at init). */
 async function ignoresCase(git) {
-  const r = await git(['config', '--type=bool', '--get', 'core.ignorecase'], { okExit: [0, 1] });
+  // 128: a value that is not a boolean (`auto`): git itself then treats the filesystem as case-sensitive.
+  const r = await git(['config', '--type=bool', '--get', 'core.ignorecase'], { okExit: [0, 1, 128] });
   return r.exitCode === 0 && decoder.decode(r.stdout).trim() === 'true';
 }
 
@@ -33,9 +34,10 @@ const blocked = (found) => new Refusal('PATH_BLOCKED', `${found[0]} is not a dir
  * (or ignored) symlink or file stands there. Writing `d/x` through an untracked symlink `d` is how `git apply --index`
  * — which `stash push -- <paths>` runs internally — reaches outside the repo. `ls-files --others --directory` lists such
  * an entry as the prefix itself, an untracked directory as `prefix/`, and descends into a tracked one.
- * With `core.ignorecase` the comparison folds case, and each leading directory's parent is listed instead (literal
+ * With `core.ignorecase` the comparison folds case, and each leading directory's parent is listed too (literal
  * pathspecs cannot be made case-insensitive: git refuses GIT_LITERAL_PATHSPECS with GIT_ICASE_PATHSPECS), so the entry
- * is seen in whatever case it has on disk.
+ * is seen in whatever case it has on disk. The directories themselves stay queried: a parent's listing names a fully
+ * untracked directory as `u/` and nothing under it.
  */
 export async function assertNotBlocked(git, paths) {
   const dirs = leadingDirs(paths);
@@ -43,21 +45,24 @@ export async function assertNotBlocked(git, paths) {
   const icase = await ignoresCase(git);
   const key = icase ? fold : (s) => s;
   const wanted = new Set(dirs.map(key));
-  const parents = [...new Set(dirs.map(parentOf))];
-  const query = !icase ? dirs : parents.includes('.') ? ['.'] : parents;
-  const listed = await perChunk(git, ['ls-files', '--others', '--directory', '-z'], query, { maxOutputBytes: STASH_LIMITS.pathsMaxOutputBytes });
-  const found = listed.filter((e) => wanted.has(key(e)));
+  const list = (query) => perChunk(git, ['ls-files', '--others', '--directory', '-z'], query, { maxOutputBytes: STASH_LIMITS.pathsMaxOutputBytes });
+  const listed = await list(dirs);
+  if (icase) {
+    const parents = [...new Set(dirs.map(parentOf))];
+    listed.push(...await list(parents.includes('.') ? ['.'] : parents));
+  }
+  const found = [...new Set(listed.filter((e) => wanted.has(key(e))))];
   if (found.length) throw blocked(found);
 }
 
 /**
- * PATH_BLOCKED when `path` itself is a directory, a link to one, or a symlink where the content to write is not one
- * (`linkOk`: the stash's own version is a symlink). For the ops that write one named file (stash.applyFile,
- * stash.pushLines): the final component, which assertNotBlocked's leading directories do not cover.
+ * PATH_BLOCKED when `path` itself is a directory or a link to one: what a patch naming the file cannot change in place.
+ * For the ops that write one named file (stash.applyFile, stash.pushLines): the final component, which
+ * assertNotBlocked's leading directories do not cover. A symlink to a file passes: `git apply` replaces or deletes the
+ * link itself, never writing through it.
  */
-export async function assertFileTarget(git, path, { linkOk = false } = {}) {
-  const { kind } = await worktreeEntry(git, path);
-  if (kind === 'other' || (kind === 'symlink' && !linkOk)) throw blocked([path]);
+export async function assertFileTarget(git, path) {
+  if ((await worktreeEntry(git, path)).kind === 'other') throw blocked([path]);
 }
 
 /** CONFLICTED when the index has unmerged entries: a stash save or apply needs a resolved index. */

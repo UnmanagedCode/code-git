@@ -169,7 +169,7 @@ test('pushLines on an unborn HEAD → NO_HEAD; bad params → BAD_PARAMS', async
   await assert.rejects(w.op('stash.pushLines', { path: 'f.txt', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }), refused('NO_HEAD'));
 });
 
-test('pushLines onto a file now a symlink (the final component) → PATH_BLOCKED before any read or write', async (t) => {
+test('pushLines onto a file now a symlink to an outside file: a type change, refused before any write; the outside file is untouched', async (t) => {
   const w = await world(t);
   const fd = await shown(w);
   const outside = path.join(w.repo.root, 'outside-f');
@@ -177,9 +177,37 @@ test('pushLines onto a file now a symlink (the final component) → PATH_BLOCKED
   fs.rmSync(path.join(w.repo.dir, 'f.txt'));
   fs.symlinkSync(outside, path.join(w.repo.dir, 'f.txt'));
   w.cc.state.execCalls.length = 0;
-  await assert.rejects(w.op('stash.pushLines', { path: 'f.txt', context: 3, hunks: request(fd, [[0, 'all']]) }), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === 'f.txt');
+  await assert.rejects(w.op('stash.pushLines', { path: 'f.txt', context: 3, hunks: request(fd, [[0, 'all']]) }), refused('PARTIAL_UNSUPPORTED'));
   assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n');
+  assert.equal(fs.lstatSync(path.join(w.repo.dir, 'f.txt')).isSymbolicLink(), true);
   assert.deepEqual(stashList(w), []);
   assert.deepEqual([...runs(w, 'apply'), ...runs(w, 'stash', 'store')], []);
 });
 
+test('pushLines onto a directory or a link to a directory at the path → PATH_BLOCKED before any read or write', async (t) => {
+  const w = await world(t);
+  const fd = await shown(w);
+  fs.rmSync(path.join(w.repo.dir, 'f.txt'));
+  const outside = path.join(w.repo.root, 'outside-dir');
+  fs.mkdirSync(outside);
+  fs.symlinkSync(outside, path.join(w.repo.dir, 'f.txt'));
+  w.cc.state.execCalls.length = 0;
+  await assert.rejects(w.op('stash.pushLines', { path: 'f.txt', context: 3, hunks: request(fd, [[0, 'all']]) }), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === 'f.txt');
+  assert.deepEqual(fs.readdirSync(outside), []);
+  assert.deepEqual([...w.execArgv().filter((a) => a.includes('-U3')), ...runs(w, 'apply'), ...runs(w, 'stash', 'store')], []);
+});
+
+test('pushLines of a tracked symlink retargeted outside the repo: stashed, the link put back, the outside target untouched', async (t) => {
+  const w = await world(t);
+  fs.symlinkSync('g.txt', path.join(w.repo.dir, 'ln'));
+  w.repo.git('add', 'ln');
+  w.repo.git('commit', '-qm', 'add ln');
+  const outside = path.join(w.repo.root, 'outside-target');
+  fs.writeFileSync(outside, 'OUTSIDE\n');
+  fs.rmSync(path.join(w.repo.dir, 'ln'));
+  fs.symlinkSync(outside, path.join(w.repo.dir, 'ln'));
+  const r = await pushLines(w, [[0, 'all']], {}, 'ln');
+  assert.equal(blob(w, `${r.oid}:ln`), outside);
+  assert.equal(fs.readlinkSync(path.join(w.repo.dir, 'ln')), 'g.txt');
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n');
+});

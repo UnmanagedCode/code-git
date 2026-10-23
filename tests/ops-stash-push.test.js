@@ -181,7 +181,7 @@ test('hostile core.worktree: the stash acts on the checkout, elsewhereSnapshot u
   noViolations(w.cc);
 });
 
-test('a failed --staged save that git had already stored names the stash, with the pop undo (refusal carries oid)', async (t) => {
+test('a failed --staged save that git had already stored names the stash (oid, selector) and carries no undo: the changes are still in place', async (t) => {
   const w = await stashWorld(t);
   w.repo.write('b.txt', 'b staged\n');
   w.repo.git('add', 'b.txt');
@@ -192,9 +192,11 @@ test('a failed --staged save that git had already stored names the stash, with t
     assert.ok(top, 'git stored a stash before failing');
     assert.equal(e.extra.oid, top.oid);
     assert.equal(e.extra.selector, 'stash@{0}');
-    assert.deepEqual(e.extra.undo.stashes, [{ oid: top.oid, old: null, new: { message: top.message }, restore: 'pop' }]);
+    assert.equal(e.extra.undo, undefined);
     return true;
   });
+  assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
+  assert.equal(read(w, 'b.txt'), 'b staged\nand changed again\n');
 });
 
 test('a failed save that stored nothing stays a plain GIT_FAILED (no oid)', async (t) => {
@@ -253,3 +255,33 @@ test('push of a directory pathspec guards what it expands to: a tracked dir now 
   assert.deepEqual(fs.readdirSync(outside), []);
   assert.equal(runs(w, 'stash', 'push').length, 0);
 });
+
+test('a reference-transaction hook printing "No local changes to save" (on git\'s stderr) does not hide a stored stash', async (t) => {
+  const w = await stashWorld(t);
+  const marker = path.join(w.repo.root, 'hook-ran');
+  w.repo.hook('reference-transaction', `#!/bin/sh\necho "No local changes to save"\ntouch '${marker}'\n`);
+  w.repo.write('a.txt', 'a2\n');
+  const r = await w.op('stash.push', { message: 'hooked' });
+  assert.ok(fs.existsSync(marker), 'the hook ran');
+  assert.deepEqual(stashList(w).map((s) => s.oid), [r.oid]);
+  assert.equal(r.selector, 'stash@{0}');
+  assert.equal(r.undo.stashes[0].oid, r.oid);
+  assert.equal(read(w, 'a.txt'), 'a\n');
+});
+
+test('a pre-push tip dropped by another session before the list is read: unverified, no undo', async (t) => {
+  const w = await stashWorld(t);
+  w.repo.write('b.txt', 'older\n');
+  w.repo.git('stash', 'push', '-q', '-m', 'older');
+  w.repo.write('a.txt', 'mine\n');
+  w.cc.state.execHook = (body) => (body.argv.includes('stash') && body.argv.includes('list') ? 'hold' : undefined);
+  const saving = w.op('stash.push', { message: 'mine' });
+  const held = await w.cc.nextHeld();
+  w.repo.git('stash', 'drop', '-q', 'stash@{1}');
+  w.cc.state.execHook = null;
+  held.release();
+  const r = await saving;
+  assert.deepEqual({ oid: r.oid, unverified: r.unverified, stashes: r.undo.stashes }, { oid: null, unverified: true, stashes: [] });
+  assert.deepEqual(stashList(w).map((s) => s.message), ['On main: mine']);
+});
+
