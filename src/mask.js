@@ -8,7 +8,8 @@
 export const maskUrl = (url) => url.replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/@:]*):[\s\S]*@/, '$1:***@');
 
 /**
- * `text` with every `scheme://user:password@` inside it masked as maskUrl does, a url ending at whitespace or a quote:
- * git quotes the url it failed on in its own messages (`fatal: clone of '<url>' into submodule path …`).
+ * `text` with every `scheme://user:password@` inside it masked as maskUrl does, within each whitespace-separated token:
+ * from the userinfo's first `:` to the token's last `@`. A password may hold quotes, so a quote does not end it: git
+ * quotes the url it failed on in its own messages (`fatal: clone of '<url>' into …`, `Submodule 'x' (<url>) registered`).
  */
-export const maskUrls = (text) => text.replace(/([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/@:\s'"]*):[^\s'"]*@/g, '$1:***@');
+export const maskUrls = (text) => text.replace(/([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/@:\s]*):\S*@/g, '$1:***@');

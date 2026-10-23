@@ -2,7 +2,6 @@ import { Refusal } from '../../refusals.js';
 import { joinMessage, messageParams } from '../commit/message.js';
 import { worktreeEntry } from '../diff/noIndex.js';
 import { commitOid } from '../diff/source.js';
-import { maskUrls } from '../../mask.js';
 import { bad, optBool, paramsObject } from '../params.js';
 import { netRun } from '../remote/net.js';
 import { submoduleFailure } from '../submodule/failure.js';
@@ -120,7 +119,7 @@ export const ops = [
       const args = ['submodule', 'add', ...(p.name ? ['--name', p.name] : []), ...(p.branch ? ['-b', p.branch] : []), '--', p.url, p.path];
       const r = await netRun(git, args, CLONE);
       if (r.exitCode !== 0) {
-        const stderr = maskUrls(decoder.decode(r.stderr));
+        const stderr = decoder.decode(r.stderr);
         if (stderr.includes('A git directory for')) {
           throw new Refusal('SUBMODULE_EXISTS', `a removed submodule named ${name} kept its repository in .git/modules: choose another name`, { reason: 'gitdir', path: p.path, name, stderr });
         }

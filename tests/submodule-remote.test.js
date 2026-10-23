@@ -93,3 +93,35 @@ test('a credentialed url never reaches the activity log: submodule.setUrl and su
   assert.equal(JSON.stringify(add.body).includes('s3cr3t-pw'), false);
   assert.match(add.body.stderr, /u:\*\*\*@/);
 });
+
+test("a password holding ' or \" never leaves the backend: add and update refusals, the activity log", { skip: NO_HTTP }, async (t) => {
+  for (const pw of ["pa'ss-q1", 'pa"ss-q2']) {
+    const w = await subWorld(t, { nested: false });
+    const port = await closedPort();
+    const url = `http://u:${pw}@127.0.0.1:${port}/r.git`;
+    const add = await w.op('submodule.add', { url, path: 'cred' });
+    assert.equal(add.body.code, 'REMOTE_UNREACHABLE', pw);
+    w.unclone();
+    w.repo.git('config', '-f', '.gitmodules', 'submodule.libA.url', url);
+    const up = await w.op('submodule.update', { paths: ['libA'] });
+    assert.equal(up.body.code, 'REMOTE_UNREACHABLE', pw);
+    // git's own lines name the url: masked in both refusals' stderr and everywhere in the log.
+    assert.match(up.body.stderr, /registered|clone of/);
+    const log = await w.app.call('GET', '/api/activity');
+    // The tail after the quote is what a quote-ended mask would have left behind (JSON escapes the quote itself).
+    for (const [what, v] of [['add', add.body], ['update', up.body], ['activity', log.body]]) assert.equal(JSON.stringify(v).includes(pw.slice(3)), false, `${what} ${pw}`);
+    assert.match(up.body.stderr, /u:\*\*\*@127\.0\.0\.1/);
+  }
+});
+
+test('a timeout refusal (GIT_TIMEOUT, partial stderr) is masked too', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const stderr = "Cloning into 'x'...\nfatal: clone of 'https://u:t1me0ut-pw@h/r.git' into submodule path 'x'\n";
+  w.cc.state.execHook = (b) => (b.argv.includes('add') && b.argv.includes('submodule')
+    ? { status: 504, body: { error: 'exec: timed out', code: 'EXEC_TIMEOUT', stderr: Buffer.from(stderr).toString('base64'), encoding: 'base64' } } : undefined);
+  const r = await w.op('submodule.add', { url: 'https://u:t1me0ut-pw@h/r.git', path: 'x' });
+  assert.equal(r.body.code, 'GIT_TIMEOUT');
+  assert.match(r.body.stderr, /clone of 'https:\/\/u:\*\*\*@h\/r\.git'/);
+  assert.equal(JSON.stringify(r.body).includes('t1me0ut-pw'), false);
+  assert.equal(JSON.stringify((await w.app.call('GET', '/api/activity')).body).includes('t1me0ut-pw'), false);
+});

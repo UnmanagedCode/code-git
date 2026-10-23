@@ -52,3 +52,8 @@ test('maskUrls masks every credentialed url inside a text, stopping at whitespac
   assert.equal(maskUrls(text), "Cloning into 'x'...\nfatal: clone of 'https://u:***@host/r.git' into submodule path 'x' failed\nsee ssh://git:***@h:22/r and http://plain/h@x");
   assert.equal(maskUrls('no urls here'), 'no urls here');
 });
+
+test("maskUrls: a password holding ' or \" is masked whole (quotes do not end it; whitespace does)", () => {
+  assert.equal(maskUrls("fatal: clone of 'https://u:pa'ss@host/r.git' into submodule path"), "fatal: clone of 'https://u:***@host/r.git' into submodule path");
+  assert.equal(maskUrls('Submodule \'c\' (http://u:pa"ss@h/r.git) registered'), "Submodule 'c' (http://u:***@h/r.git) registered");
+});

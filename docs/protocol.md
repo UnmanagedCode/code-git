@@ -6,7 +6,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 
 ## Conventions
 
-- JSON everywhere under `api/`. A refusal is `{error, code, …extra}` with the status from `HTTP_STATUS` (`src/refusals.js`), the single source for codes.
+- JSON everywhere under `api/`. A refusal is `{error, code, …extra}` with the status from `HTTP_STATUS` (`src/refusals.js`), the single source for codes. A url password inside its `stderr` or `detail` is masked (`maskUrls`, in `Refusal.toBody`).
 - **State-changing requests** (every non-GET/HEAD under `api/`) must send `Content-Type: application/json` (`/^application\/json\s*(;|$)/i`), else 415 `UNSUPPORTED_MEDIA_TYPE`. Body limit 1 MB (over: 413 `BODY_TOO_LARGE`); malformed JSON: 400 `BAD_REQUEST`.
 - Every response — API, UI, 404, 503, errors, parser-rejected requests — carries `Content-Security-Policy` (`CSP` in `src/http/security.js`) and `X-Content-Type-Options: nosniff`.
 - An unknown `api/` path is a JSON 404 `NOT_FOUND`; no route answers with the UI.
