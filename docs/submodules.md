@@ -91,6 +91,7 @@ Every op acts on the target's repo (the checkout or the chain's submodule) with 
 | `core.sshCommand`, `core.gitProxy`, `credential.helper`, `url.*.insteadOf` in a submodule's config | They apply when git fetches inside an existing submodule (parity with the remote ops); an insteadOf to `ext::`/`fd::` is neutralised by `NET_CONFIG`. A fresh clone's child process does not read the parent's local config |
 | A nested submodule's own config | Checked only at the level the op runs at (a submodule tab checks its repo); recursion relies on the propagated pins and git's defaults |
 | `safe.directory` | An explicit `--git-dir` skips git's ownership check; the submodule directory lives inside a checkout the user owns |
+| A case-insensitive filesystem (a macOS or Windows local provider) | `gitDirMatches` compares `<parent git dir>/modules/<name>` with git's `--absolute-git-dir` byte for byte, never folding case — on Linux, folding would let a case-variant name alias a sibling's git dir. Where the filesystem folds case, git may report the git dir in the case it was created with, so a submodule whose `.gitmodules` name differs from that only in case is refused (`gitdir`, or `escapes` in the list) |
 | The pointer commit's temporary index | `$GIT_DIR/code-git-pointer-index` stays behind, emptied: [architecture → Temporary indexes](architecture.md) |
 | The preflight → op gap | The containment check and the op are separate commands; a symlink or gitfile swapped in between is not caught |
 
