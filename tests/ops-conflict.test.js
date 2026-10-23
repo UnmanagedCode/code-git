@@ -256,3 +256,27 @@ test('read refuses PATH_BLOCKED behind an untracked symlinked leading directory:
   assert.ok(!JSON.stringify(err.toBody()).includes('outside x'), 'the outside content is not in the answer');
   assert.ok(!w.argvs().slice(before).some((a) => a.includes('hash-object') || (a.includes('--no-index') && a.includes('d/x.txt'))), 'the worktree file was never read');
 });
+
+test('take the side that deleted a gitlink (deletedByThem; sub/ a directory) resolves it as git rm does: no PATH_BLOCKED', async (t) => {
+  const w = await refsWorld(t);
+  const r = w.repo;
+  const gitlink = (to) => { r.git('update-index', '--add', '--cacheinfo', `160000,${to},sub`); r.git('commit', '-q', '-m', `sub ${to.slice(0, 7)}`); };
+  gitlink(w.base);
+  r.git('branch', 'other');
+  gitlink(r.commit({ 'y.txt': 'y\n' }, 'y'));
+  r.checkout('other');
+  r.git('rm', '-q', '--cached', 'sub');
+  r.git('commit', '-q', '-m', 'drop sub');
+  r.checkout('main');
+  r.write('sub/inner.txt', 'checkout\n');
+  assert.equal(spawnSync('git', ['-C', r.dir, 'merge', '--no-edit', 'other'], { env: hermeticEnv(r.home) }).status, 1);
+  assert.equal((await w.op('conflict.read', { path: 'sub' })).kind, 'deletedByThem');
+  // What plain `git rm -q -f -- sub` leaves, in a twin of this state.
+  const twin = path.join(r.root, 'twin');
+  fs.cpSync(r.dir, twin, { recursive: true });
+  spawnSync('git', ['-C', twin, 'rm', '-q', '-f', '--', 'sub'], { env: hermeticEnv(r.home) });
+  const res = await w.op('conflict.take', { paths: ['sub'], side: 'theirs' });
+  assert.deepEqual(res, { resolved: [], deleted: ['sub'] });
+  assert.equal(r.git('ls-files', '-s', '--', 'sub'), '', 'no stage of sub is left');
+  assert.equal(fs.existsSync(path.join(r.dir, 'sub', 'inner.txt')), fs.existsSync(path.join(twin, 'sub', 'inner.txt')), 'the directory is left as git rm leaves it');
+});

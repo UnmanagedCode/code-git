@@ -182,7 +182,11 @@ export const ops = [
       // Every path, before any write: checkout, add and rm all follow an untracked symlinked leading directory (rm
       // unlinks the file outside), and a half-applied take would leave some paths resolved behind a refusal.
       await assertNotBlocked(git, paths);
-      for (const p of paths) if (conflicts.get(p)[side]?.mode !== GITLINK) await assertFileTarget(git, p);
+      // A path with a gitlink on any stage is a submodule's directory on disk, whichever side is taken.
+      for (const p of paths) {
+        const c = conflicts.get(p);
+        if (![c.base, c.ours, c.theirs].some((st) => st?.mode === GITLINK)) await assertFileTarget(git, p);
+      }
       const gitlinks = [];
       const files = [];
       const deleted = [];
