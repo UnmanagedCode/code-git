@@ -188,7 +188,7 @@ test('history.blame: previous and previousPath name the commit before and the fi
 });
 
 // Invariant: blame's file names are git's C-quoted porcelain values unquoted: a name holding `"` or a tab comes back as
-// the path itself (filename and previousPath), plain or across a rename, and opens in diff.file.
+// the path itself (filename and previousPath), plain or across a rename, and opens in diff.file with the change found.
 test('history.blame: a quoted path (", tab) comes back unquoted, plain and renamed', async (t) => {
   const w = await opWorld(t);
   const c1 = w.repo.commit({ 'q"uote.txt': 'a\n', 'ta\tb.txt': 't\n' }, 'add');
@@ -201,4 +201,7 @@ test('history.blame: a quoted path (", tab) comes back unquoted, plain and renam
   assert.equal(renamed.commits[c1].filename, 'q"uote.txt');
   const fd = await w.op('diff.file', { source: { kind: 'commit', rev: c2 }, path: renamed.commits[c2].filename, oldPath: renamed.commits[c2].previousPath, context: 3, whitespace: 'none' });
   assert.equal(fd.path, 'n"ew.txt');
+  // The pathspec matched the file (an unmatched one answers with no hunks): the rename's edit is there.
+  assert.ok(fd.hunks.length >= 1, 'diff.file found the change');
+  assert.ok(fd.hunks.some((h) => h.lines.some((l) => l.kind === 'add' && l.text === 'b')), 'the added line b');
 });
