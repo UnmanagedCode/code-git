@@ -38,7 +38,7 @@ async function removeFlow(tab: Tab, remote: string): Promise<void> {
   const ok = await confirm({
     title: `Remove remote ${remote}?`,
     body: `Deletes its configuration and its ${refs.length} remote-tracking ${refs.length === 1 ? 'branch' : 'branches'} here; nothing changes on the remote. ${branches.length ? 'These branches lose their upstream:' : 'No local branch tracks it.'}`,
-    items: branches, count: branches.length || undefined,
+    items: branches,
     confirmLabel: 'Remove remote',
   });
   if (!ok) return;
