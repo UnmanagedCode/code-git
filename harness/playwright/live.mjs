@@ -5,7 +5,8 @@
 // (commit.state: operation and conflicts). It never calls a write
 // op (the script fails if any is posted), never registers or enables the plugin.
 // Run: CONDUCTOR_URL=http://127.0.0.1:<cc port> node harness/playwright/live.mjs [project[/worktree] …]
-// Default checkouts: code-git, code-git/c1-foundation, test, test/review-demo. Screenshots go to out/live/.
+// Default checkouts: code-git and test, plus each one's first worktree by name, as cc lists them at run time (worktrees
+// come and go with cards). A named checkout cc does not list is an error. Screenshots go to out/live/.
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,19 +16,51 @@ import { NETWORK_LIMITS } from '../../src/git/remote/limits.js';
 
 const cc = process.env.CONDUCTOR_URL;
 if (!cc) throw new Error('CONDUCTOR_URL is not set: point it at the live cc (see harness/playwright/README.md)');
-const health = await (await fetch(`${cc}/api/health`)).json();
+/** The only way this script reaches cc: a GET. */
+const ccGet = async (p) => { const r = await fetch(`${cc}${p}`); if (!r.ok) throw new Error(`live: GET ${p} → ${r.status}`); return r.json(); };
+const health = await ccGet('/api/health');
 if (health.app !== 'code-conductor') throw new Error(`${cc} is not a code-conductor: ${JSON.stringify(health)}`);
 
 const { bootServer, withPage } = await import(BROWSER);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.join(here, 'out', 'live');
 mkdirSync(outDir, { recursive: true });
-const CHECKOUTS = (process.argv.length > 2 ? process.argv.slice(2) : ['code-git', 'code-git/c1-foundation', 'test', 'test/review-demo'])
-  .map((s) => { const [project, worktree = null] = s.split('/'); return { project, worktree }; });
 const label = (c) => (c.worktree ? `${c.project}/${c.worktree}` : c.project);
 const check = (cond, what) => { if (!cond) throw new Error(`live: ${what}`); console.log(`ok: ${what}`); };
 
-const projects = await (await fetch(`${cc}/api/projects`)).json();
+const projects = await ccGet('/api/projects');
+const DEFAULT_PROJECTS = ['code-git', 'test'];
+const byWorktreeName = (a, b) => a.worktreeName.localeCompare(b.worktreeName);
+/** The checkouts to open: the named ones (each must be a checkout cc lists), else the derived default. */
+function selectCheckouts(args) {
+  if (args.length > 0) {
+    return args.map((s) => {
+      const [project, worktree = null] = s.split('/');
+      const p = projects.find((x) => x.name === project && x.isGitRepo !== false);
+      const names = (p?.worktrees ?? []).map((w) => w.worktreeName);
+      if (!p || (worktree && !names.includes(worktree))) {
+        throw new Error(`live: ${s} is not a checkout in cc (${p ? `${project}'s worktrees: ${names.join(', ') || 'none'}` : 'no such project'})`);
+      }
+      return { project, worktree };
+    });
+  }
+  const picked = [];
+  const reasons = [];
+  for (const name of DEFAULT_PROJECTS) {
+    const p = projects.find((x) => x.name === name);
+    const reason = !p ? 'not in cc' : p.isGitRepo === false ? 'not a git repository' : p.systemUnreachable ? 'its System is unreachable' : null;
+    if (reason) { console.log(`note: ${name} skipped: ${reason}`); reasons.push(`${name}: ${reason}`); continue; }
+    picked.push({ project: name, worktree: null });
+    const first = [...(p.worktrees ?? [])].sort(byWorktreeName)[0];
+    if (first) picked.push({ project: name, worktree: first.worktreeName });
+  }
+  if (picked.length === 0) throw new Error(`live: NO_CHECKOUTS: cc lists no openable checkout of ${DEFAULT_PROJECTS.join(', ')} (${reasons.join('; ')})`);
+  return picked;
+}
+const CHECKOUTS = selectCheckouts(process.argv.slice(2));
+console.log(`checkouts: ${CHECKOUTS.map(label).join(', ')}`);
+const REMOTE_LIST_WAIT_MS = 60_000;
+
 const srv = await bootServer({ cwd: path.resolve(here, '..', '..'), entry: 'server.js', silent: true, env: { CONDUCTOR_URL: cc } });
 /** Runs a read op through this backend → {status, body}. Refuses anything the registry does not call a read. */
 async function readOp(name, target, params) {
@@ -44,6 +77,13 @@ try {
     page.on('request', (r) => {
       const op = /\/api\/ops\/([\w.]+)$/.exec(new URL(r.url()).pathname)?.[1];
       if (op && OPS.get(op)?.kind !== 'read') nonReads.push(op);
+    });
+    // The response to a remote.list request comes after every command of that op run has closed.
+    const answered = new Set();
+    page.on('response', (r) => {
+      if (new URL(r.url()).pathname !== '/api/ops/remote.list') return;
+      const project = JSON.parse(r.request().postData() ?? '{}').target?.project;
+      if (project) answered.add(project);
     });
     let n = 0;
     const shot = async (name) => {
@@ -66,7 +106,11 @@ try {
     await shot('picker');
     await page.keyboard.press('Escape');
 
+    const opened = [];
     for (const c of CHECKOUTS) {
+      // A worktree can go away with its card between the selection and now: skipped, not a failure.
+      const row = c.worktree ? (await ccGet(`/api/projects/${encodeURIComponent(c.project)}/worktrees`)).find((w) => w.worktreeName === c.worktree) : null;
+      if (c.worktree && !row) { console.log(`note: ${label(c)} skipped: no longer in cc`); continue; }
       await page.getByRole('button', { name: 'Open repository', exact: true }).click();
       if (c.worktree) {
         await dialog.getByRole('button', { name: `Show worktrees of ${c.project}` }).click();
@@ -85,18 +129,31 @@ try {
       const kind = /^detached ?[0-9a-f]{7,}$/.test(head) ? 'detached' : /^\S+ ?no commits yet$/.test(head) ? 'unborn' : /^\S+$/.test(head) ? 'branch' : null;
       check(kind !== null, `${label(c)}: HEAD shows a branch, or the detached or unborn badge (got "${head}")`);
       if (c.worktree && kind === 'branch') {
-        const recorded = (await (await fetch(`${cc}/api/projects/${encodeURIComponent(c.project)}/worktrees`)).json()).find((w) => w.worktreeName === c.worktree)?.branch;
+        const recorded = row.branch;
         console.log(`note: ${label(c)}: HEAD ${head} ${head === recorded ? 'is' : 'is not'} the branch cc recorded (${recorded ?? 'none'})`);
       }
       const remoteBar = page.getByRole('group', { name: 'Remote', exact: true });
       for (const b of ['Pull', 'Push']) await remoteBar.getByRole('button', { name: b, exact: true }).waitFor();
       check(await remoteBar.getByRole('button', { name: /^Fetch/ }).count() === 1, `${label(c)}: the toolbar shows Fetch, Pull and Push`);
       await shot(label(c).replace('/', '_'));
+      opened.push(c);
     }
+    if (opened.length === 0) throw new Error(`live: NO_CHECKOUTS: every checkout vanished from cc before it opened (${CHECKOUTS.map(label).join(', ')})`);
 
-    const ran = (await (await fetch(`${srv.url}/api/activity`)).json()).entries;
-    for (const project of [...new Set(CHECKOUTS.map((c) => c.project))]) {
-      const listed = ran.filter((e) => e.op === 'remote.list' && e.target.project === project);
+    for (const project of [...new Set(opened.map((c) => c.project))]) {
+      // Wait for the op run to finish: an entry reads `running` until its command closes, and its later commands may not
+      // have opened yet; `no running entry` also covers a re-run the tab starts meanwhile.
+      const deadline = Date.now() + REMOTE_LIST_WAIT_MS;
+      let listed;
+      for (;;) {
+        listed = (await (await fetch(`${srv.url}/api/activity`)).json()).entries.filter((e) => e.op === 'remote.list' && e.target.project === project);
+        if (answered.has(project) && listed.length > 0 && listed.every((e) => e.status !== 'running')) break;
+        if (Date.now() > deadline) {
+          const seen = listed.length ? `[${listed.map((e) => `${e.argv.slice(-3).join(' ')} → ${e.status}`).join(', ')}]` : 'none';
+          throw new Error(`live: ${project}: remote.list did not finish within ${REMOTE_LIST_WAIT_MS} ms; last seen: ${answered.has(project) ? 'answered' : 'no response yet'}, entries ${seen}`);
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
       for (const e of listed) console.log(`note: ${project}: remote.list ran ${e.argv.slice(-3).join(' ')} → ${e.status}, exit ${e.exitCode}`);
       // `config --get-regexp` exits 1 when no remote key exists (accepted); `git remote` itself must exit 0.
       check(listed.length > 0 && listed.every((e) => e.status === 'ok') && listed.some((e) => e.argv.at(-1) === 'remote' && e.exitCode === 0),
@@ -104,7 +161,7 @@ try {
     }
 
     // A non-local System: where HEAD's upstream branch is on its remote, with the System's own credentials, never a prompt.
-    for (const c of CHECKOUTS) {
+    for (const c of opened) {
       const system = projects.find((p) => p.name === c.project)?.system ?? 'local';
       if (system === 'local') continue;
       const summary = await readOp('repo.summary', c);
@@ -124,7 +181,7 @@ try {
 
     // commit.state's operation and conflicts on a non-local System (its cat-file reads the pseudo-refs from stdin): a
     // checkout with nothing in progress and nothing conflicted answers null and [].
-    for (const c of CHECKOUTS) {
+    for (const c of opened) {
       const system = projects.find((p) => p.name === c.project)?.system ?? 'local';
       if (system === 'local') continue;
       const state = await readOp('commit.state', c);
@@ -135,17 +192,21 @@ try {
     }
 
     const activity = page.getByRole('region', { name: 'Activity' });
-    for (const c of CHECKOUTS) {
+    for (const c of opened) {
       const row = activity.getByRole('listitem').filter({ has: page.getByText(label(c), { exact: true }) })
         .filter({ hasText: 'status --porcelain=v2' }).filter({ hasText: 'exit 0' });
       check(await row.count() >= 1, `${label(c)}: the activity panel shows its git status with exit 0`);
     }
     await page.keyboard.press('Control+1');
-    await page.getByRole('heading', { name: label(CHECKOUTS[0]), exact: true }).waitFor();
+    await page.getByRole('heading', { name: label(opened[0]), exact: true }).waitFor();
     check(true, 'Ctrl+1 activates the first tab');
-    await page.keyboard.press('Control+2');
-    await page.getByRole('heading', { name: label(CHECKOUTS[1]), exact: true }).waitFor();
-    check(true, 'Ctrl+2 activates the second tab');
+    if (opened.length >= 2) {
+      await page.keyboard.press('Control+2');
+      await page.getByRole('heading', { name: label(opened[1]), exact: true }).waitFor();
+      check(true, 'Ctrl+2 activates the second tab');
+    } else {
+      console.log('note: one tab open, Ctrl+2 not checked');
+    }
     await shot('final');
     check(nonReads.length === 0, `the page posted only read ops${nonReads.length ? `: ${nonReads.join(', ')}` : ''}`);
     const after = (await (await fetch(`${srv.url}/api/activity`)).json()).entries;
