@@ -1,6 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { parseRemotes } from '../parse/graph.js';
 import { classifyRemoteFailure, parsePushPorcelain, splitRequested } from '../parse/push.js';
+import { assertNoSymref } from '../refs/resolve.js';
 import { NETWORK_LIMITS } from './limits.js';
 
 // The commands that talk to a remote. Credentials come only from the System's helper or agent: BASE_ENV turns every
@@ -27,11 +28,19 @@ export async function knownRemote(git, name) {
 /**
  * `git push --porcelain --no-follow-tags` of `refspecs` (`src:dst`) to `remote` → {updated, rejected, upToDate,
  * unrequested} (splitRequested over parsePushPorcelain): the first three hold only the refspecs' destinations.
- * `--no-follow-tags` keeps a configured `push.followTags` from publishing tags nobody selected. A push that reports no
+ * `--no-follow-tags` keeps a configured `push.followTags` from publishing tags nobody selected. A branch destination whose
+ * remote-tracking ref here is symbolic (live or dangling) refuses SYMBOLIC_REF before anything runs. A push that reports no
  * ref at all failed as a whole: REMOTE_AUTH_FAILED / REMOTE_UNREACHABLE, or GIT_FAILED with git's stderr (a pre-push
  * hook that refused lands here). Rejected refs are the caller's to judge.
  */
 export async function push(git, remote, refspecs) {
+  // git updates the remote-tracking ref of every branch it pushes or deletes, following a symbolic one: an alias
+  // refs/remotes/<remote>/<b> → refs/heads/victim would move or delete `victim` past every guard. Assumes the default
+  // fetch refspec (refs/heads/<b> there ↔ refs/remotes/<remote>/<b> here); tags update no tracking ref.
+  for (const spec of refspecs) {
+    const dst = spec.slice(spec.indexOf(':') + 1);
+    if (dst.startsWith('refs/heads/')) await assertNoSymref(git, `refs/remotes/${remote}/${dst.slice('refs/heads/'.length)}`);
+  }
   const r = await git(['push', '--porcelain', '--no-follow-tags', '--end-of-options', remote, ...refspecs], {
     timeoutMs: NETWORK_LIMITS.timeoutMs, maxOutputBytes: NETWORK_LIMITS.maxOutputBytes, okExit: [0, 1, 128],
   });

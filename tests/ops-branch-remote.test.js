@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getOp, OPS } from '../src/git/ops/index.js';
+import { push } from '../src/git/remote/push.js';
+import { ctxFor, gitFor } from './_ctx.js';
 import { refsWorld, refused } from './_refsWorld.js';
 
 const onOrigin = (w, ref) => { try { return w.origin.git('rev-parse', '--verify', '-q', ref); } catch { return null; } };
@@ -42,4 +44,37 @@ test('a remote named like an option is refused before any exec', async (t) => {
   }
   assert.deepEqual(w.cc.state.execCalls, []);
   assert.throws(() => getOp(OPS, 'tag.push').params({ remote: 'origin', names: ['-x'] }), refused('BAD_REF'));
+});
+
+test('a symbolic remote-tracking ref refuses a remote delete (SYMBOLIC_REF) before any push: the cc branch it points at and its worktree stay', async (t) => {
+  const w = await refsWorld(t);
+  const wt = w.worktree('wt', 'code-conductor/wt');
+  w.repo.git('push', '-q', 'origin', 'main:doomed');
+  w.repo.git('fetch', '-q', 'origin');
+  w.repo.git('update-ref', '-d', 'refs/remotes/origin/doomed');
+  w.repo.git('symbolic-ref', 'refs/remotes/origin/doomed', 'refs/heads/code-conductor/wt');
+  await assert.rejects(w.op('branch.deleteRemote', { remote: 'origin', branches: ['doomed'] }), refused('SYMBOLIC_REF', { target: 'refs/heads/code-conductor/wt' }));
+  assert.equal(w.oid('refs/heads/code-conductor/wt'), w.base);
+  assert.equal(w.repo.git('-C', wt.dir, 'symbolic-ref', 'HEAD'), 'refs/heads/code-conductor/wt');
+  assert.equal(w.repo.git('-C', wt.dir, 'rev-parse', 'HEAD'), w.base);
+  assert.equal(w.origin.git('rev-parse', 'refs/heads/doomed'), w.base, 'the remote branch was not deleted either');
+  assert.equal(w.argvs().some((a) => a[0] === 'push'), false, 'no push ran');
+});
+
+test('the shared push() refuses a branch push whose tracking ref is symbolic, live or dangling; tags are unaffected', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('branch', 'victim');
+  w.repo.git('branch', 'x');
+  w.repo.git('symbolic-ref', 'refs/remotes/origin/x', 'refs/heads/victim');
+  w.repo.git('symbolic-ref', 'refs/remotes/origin/y', 'refs/heads/nowhere');
+  w.repo.git('tag', 'v1');
+  const ctx = ctxFor({ project: 'repo' }, 'write', { op: 'test.push', cancellable: true });
+  const git = gitFor(ctx);
+  await assert.rejects(push(git, 'origin', ['refs/heads/x:refs/heads/x']), refused('SYMBOLIC_REF', { target: 'refs/heads/victim' }));
+  await assert.rejects(push(git, 'origin', ['refs/heads/x:refs/heads/y']), refused('SYMBOLIC_REF', { target: 'refs/heads/nowhere' }));
+  assert.equal(w.argvs().some((a) => a[0] === 'push'), false, 'no push ran');
+  assert.equal(w.repo.git('symbolic-ref', 'refs/remotes/origin/x'), 'refs/heads/victim');
+  assert.equal(w.oid('victim'), w.base);
+  const r = await push(git, 'origin', ['refs/tags/v1:refs/tags/v1']);
+  assert.deepEqual(r.updated.map((u) => u.ref), ['refs/tags/v1']);
 });
