@@ -16,6 +16,10 @@ import type { GraphRow } from '../types';
 import { DISPLAY_MAX, FILE_RENDER_CAP } from '@/lib/clip';
 import { BODY_SHOWN, CO_AUTHORS_SHOWN, CommitDetails } from './CommitDetails';
 
+// The cap test caps with a small FILE_RENDER_CAP, so it mounts a few rows instead of a thousand; every other list here
+// stays under it. clip and DISPLAY_MAX stay real.
+vi.mock('@/lib/clip', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/lib/clip')>()), FILE_RENDER_CAP: 5 }));
+
 const TAB = { project: 'app', worktree: null };
 const A = oid(2);
 const P = oid(1);
@@ -247,6 +251,10 @@ test('View changes opens the commit diff; a multi-selection offers the combined 
   act(() => dispatchSelection(TAB, { type: 'toggle', id: P, rows: rowsOf(A, P) }));
   fireEvent.click(screen.getByRole('button', { name: 'View combined diff' }));
   expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commits', oids: [A, P], wip: false });
+});
+
+test('the cap seam is in effect for this file', () => {
+  expect(FILE_RENDER_CAP).toBe(5);
 });
 
 test('a file list over the cap shows the first FILE_RENDER_CAP and "Show all N"', async () => {
