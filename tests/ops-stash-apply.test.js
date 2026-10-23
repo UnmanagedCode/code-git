@@ -435,3 +435,18 @@ test('branch (always --index) whose apply conflicts → {conflicts}, the stash k
   assert.equal(runs(w, 'read-tree').length, 0);
   assert.deepEqual(stashList(w).map((s) => s.oid), [oid]);
 });
+
+test('a refused apply --index without "Index was not unstashed." (no unmerged entries) reads nothing back: GIT_FAILED with git\'s stderr', async (t) => {
+  const w = await stashWorld(t);
+  const oid = await saved(w, { 'a.txt': 'a2\n' });
+  w.repo.write('b.txt', 'b staged\n');
+  w.repo.git('add', 'b.txt');
+  w.cc.state.execHook = (body) => (body.argv.includes('apply') && body.argv.includes('--index')
+    ? { status: 200, body: { exitCode: 1, stdout: '', stderr: Buffer.from('error: something else went wrong\n').toString('base64'), encoding: 'base64', durationMs: 1 } }
+    : undefined);
+  await assert.rejects(w.op('stash.apply', { oid, index: true }), (e) => e.code === 'GIT_FAILED' && e.extra.stderr === 'error: something else went wrong\n');
+  // The snapshot was taken (something was staged), and not read back.
+  assert.equal(runs(w, 'write-tree').length, 1);
+  assert.deepEqual(runs(w, 'read-tree'), []);
+  assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
+});
