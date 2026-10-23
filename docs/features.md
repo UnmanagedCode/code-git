@@ -54,8 +54,16 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 | HEAD | Branch name; **detached** badge + the first 10 characters of the commit id; or the unborn branch name + **no commits yet** badge |
 | Upstream | `no upstream`, or the upstream name with ↑ahead ↓behind |
 | Changes | `N staged`, `N unstaged`, `N untracked`, `N conflicted` (non-zero counts emphasised; conflicted in the destructive colour) |
+| Commands | Opens the command palette (below) |
 | Refresh | Reloads the summary (spins while loading) |
 | Error | `NOT_A_REPO`: "Not a git repository" plus git's stderr in a block; any other refusal: its message. A refresh the user cancelled from the activity panel is not an error: the previous summary stays |
+
+## Command palette and shortcuts
+
+- **Command palette**: Ctrl/⌘+P, or the header's **Commands** button. Type to filter (the letters in order, case-insensitive), ↑/↓ to move, Enter or a click to run, Esc to close. A command that picks (**Checkout branch…**, **Go to tab…**) opens a second list: type to filter it, Enter runs it with the highlighted item, Esc goes back to the commands. Each row shows its group and, when it has one, its shortcut.
+- Commands are offered only where they apply (no tab open: only **Show keyboard shortcuts**). They run what the rest of the UI runs, with the same confirmations and toasts: **Show changes**, **Stage all**, **Unstage all**, **Stash changes…**, **Create branch…**, **Checkout branch…** (local branches but HEAD's, then remote branches), **Fetch all remotes**, **Pull** (the project's default mode) and one per pull mode, **Push**, **Go to tab…** (more than one tab), **Close tab**, **Refresh** (the header summary and the graph), **Show keyboard shortcuts**.
+- **Keyboard shortcuts sheet**: Ctrl/⌘+/ (or the palette) lists every shortcut by where it acts, generated from the one catalog the key handlers use, so it is always complete.
+- Ctrl/⌘+P and Ctrl/⌘+/ do nothing while focus is in a text field or a dialog is open. Ctrl/⌘+P never opens the browser's print dialog from the app.
 
 ## Commit graph
 

@@ -162,3 +162,6 @@ export function useContentFocus(onOpenAutoFocus?: (e: Event) => void, onCloseAut
     },
   };
 }
+
+/** Whether an app modal (a Radix dialog or alert dialog) is open now. */
+export const anyModalOpen = (): boolean => !!document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]');

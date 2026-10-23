@@ -5,6 +5,7 @@ import { GRAPH_KEYS } from '@/features/graph/keys';
 import { REBASE_KEYS } from '@/features/rebase/keys';
 import { TAB_KEYS } from '@/features/tabs/keys';
 import { COMMIT_KEYS, WORKDIR_KEYS } from '@/features/workdir/keys';
+import { SHELL_KEYS } from './keys';
 
 // The one shortcut catalog (docs/architecture.md → Extension points). Every key handler matches its event against a
 // catalog Shortcut here, and the shortcut sheet and the command palette render the same entries, so a binding cannot
@@ -77,7 +78,7 @@ export interface ShortcutGroup { scope: string; shortcuts: Shortcut[] }
 
 /** The catalog, by scope, in the order the sheet shows it. A feature adds its `keys.ts` list here. */
 export const SHORTCUT_GROUPS: ShortcutGroup[] = (() => {
-  const all = [...TAB_KEYS, ...BRANCH_KEYS, ...GRAPH_KEYS, ...WORKDIR_KEYS, ...COMMIT_KEYS, ...DIFF_KEYS, ...REBASE_KEYS, ...CONFLICT_KEYS];
+  const all = [...SHELL_KEYS, ...TAB_KEYS, ...BRANCH_KEYS, ...GRAPH_KEYS, ...WORKDIR_KEYS, ...COMMIT_KEYS, ...DIFF_KEYS, ...REBASE_KEYS, ...CONFLICT_KEYS];
   const groups: ShortcutGroup[] = [];
   for (const s of all) {
     const g = groups.find((x) => x.scope === s.scope) ?? groups[groups.push({ scope: s.scope, shortcuts: [] }) - 1];
