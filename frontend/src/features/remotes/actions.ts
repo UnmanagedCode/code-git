@@ -6,7 +6,7 @@ import { getTracking, trackingOf } from '@/state/branchTracking';
 import { getGraph } from '@/state/graph';
 import { openRemoteDialog } from '@/state/remoteDialog';
 import { remoteInfo } from '@/state/remotes';
-import type { Tab } from '@/state/tabs';
+import { refsKey, type Tab } from '@/state/tabs';
 import { removeRemote } from './api';
 import { pushFlow } from './pushFlow';
 import { fetchFlow, runRemoteOp } from './run';
@@ -76,18 +76,18 @@ export const REMOTE_ACTIONS: MenuAction<never>[] = [
   },
   {
     id: 'remotes.remote.edit', context: 'remote', group: 'edit', order: 700, label: 'Edit…',
-    when: (c: RemoteCtx) => remoteInfo(c.tab.project, c.remote)?.legacy === false,
+    when: (c: RemoteCtx) => remoteInfo(refsKey(c.tab), c.remote)?.legacy === false,
     run: (c: RemoteCtx) => openRemoteDialog({ kind: 'edit', tab: c.tab, remote: c.remote }),
   },
   {
     id: 'remotes.remote.remove', context: 'remote', group: 'edit', order: 720, destructive: true, label: 'Remove…',
-    when: (c: RemoteCtx) => remoteInfo(c.tab.project, c.remote)?.legacy === false,
+    when: (c: RemoteCtx) => remoteInfo(refsKey(c.tab), c.remote)?.legacy === false,
     run: (c: RemoteCtx) => void removeFlow(c.tab, c.remote),
   },
   {
     id: 'remotes.remote.copyUrl', context: 'remote', group: 'copy', order: 900, label: 'Copy URL',
-    when: (c: RemoteCtx) => !!remoteInfo(c.tab.project, c.remote)?.displayUrl,
-    run: (c: RemoteCtx) => void navigator.clipboard?.writeText(remoteInfo(c.tab.project, c.remote)!.displayUrl!),
+    when: (c: RemoteCtx) => !!remoteInfo(refsKey(c.tab), c.remote)?.displayUrl,
+    run: (c: RemoteCtx) => void navigator.clipboard?.writeText(remoteInfo(refsKey(c.tab), c.remote)!.displayUrl!),
   },
 ] as MenuAction<never>[];
 

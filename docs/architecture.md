@@ -57,7 +57,7 @@
 | `src/git/parse/unmerged.js` | `parseUnmerged`: `ls-files -u -z` → conflicted paths, their stages and kind — pure |
 | `src/git/parse/refs.js`, `parse/push.js` | `parseTracking`, `parseConflictFiles`; `parsePushPorcelain`, `classifyRemoteFailure` — pure |
 | `src/git/ops/submodule.js` | `submodule.list`, `.add`, `.init`, `.update`, `.sync`, `.setUrl`, `.remove`, `.commitPointer` ([submodules](submodules.md)) |
-| `src/git/submodule/` | `validate.js` (`submodulePath`, `submoduleName`, `submoduleChain`, `isDotGitAlias`), `target.js` (`assertInsideCheckout`: the containment preflight), `list.js` (`listSubmodules`, `parseSubmoduleConfig`, `readGitmodules`, `urlProblem`), `gates.js` (entries known and unblocked, repo-scope `protocol.*`, url checks, `orphanCount`, the symlinked-`.gitmodules` check), `failure.js` (`submoduleFailure`), `url.js` (`submoduleUrl`, `isRelativeUrl`), `limits.js` (`SUBMODULE_LIMITS`), `copied/` (the C6 copies below) |
+| `src/git/submodule/` | `validate.js` (`submodulePath`, `submoduleName`, `submoduleChain`, `isDotGitAlias`), `target.js` (`assertInsideCheckout`: the containment preflight), `list.js` (`listSubmodules`, `parseSubmoduleConfig`, `readGitmodules`, `urlProblem`), `gates.js` (entries known and unblocked, repo-scope `protocol.*`, url checks, `orphanCount`, the symlinked-`.gitmodules` check), `failure.js` (`submoduleFailure`), `url.js` (`submoduleUrl`, `isRelativeUrl`), `limits.js` (`SUBMODULE_LIMITS`) |
 | `src/activity/log.js` | `createActivityLog()`: the ring, its events, cancel |
 | `src/routes/*.js` | One file per feature, each `mount(router, deps)`; `index.js` mounts them |
 
@@ -96,7 +96,7 @@
 | `features/branches/` | Branches, tags and HEAD ([refs](refs.md)): `api.ts` (wire types + op wrappers), `run.ts` (`runRefOp`: toast + graph refresh + the Changes panel's state once loaded), `actions.ts` (`BRANCH_ACTIONS`, the cc HEAD gate `withCcHeadAck`), `refInfo.ts` (checked-out / cc-owned reads of the graph's refs), `RefDialogHost.tsx` + `dialogs/`, `TrackingBadge.tsx`, `CreateBranchButton.tsx` |
 | `state/refDialog.ts`, `state/refSelection.ts`, `state/branchTracking.ts` | The pending branch/tag dialog; the refs panel's branch selection per tab (`refSelectionReducer`, `selectedRefs`); ahead/behind per project (`useTracking`) |
 | `features/remotes/` | Remotes ([remotes](remotes.md)): `api.ts` (wire types + op wrappers), `run.ts` (`runRemoteOp`: busy flag + `runRefOp` + remotes refresh; `fetchFlow`, `pullFlow` and their outcome toasts), `pushFlow.ts` (`pushFlow`, `forceFlow`, `pushHead`: the one push path for every surface), `actions.ts` (`REMOTE_ACTIONS`), `RemoteToolbar.tsx`, `RemoteDialog.tsx` (add, edit, push), `RemotesHost.tsx` (the dialogs and the auto-fetch timers, mounted once by the shell), `autoFetch.ts` (`useAutoFetch`, `autoFetchTick`, `setRemoteClock`) |
-| `state/remotes.ts`, `state/remotePrefs.ts`, `state/remoteDialog.ts` | Per project: the `remote.list` answer, which remote op is busy, the last auto-fetch failure (`useRemotes`, refetched when a tab's graph refs change); the persisted pull mode / auto-fetch interval / push-after-commit (`code-git:remotes:<project>`); the open remote dialog |
+| `state/remotes.ts`, `state/remotePrefs.ts`, `state/remoteDialog.ts` | Per `refsKey` (the project; a submodule tab its own repo): the `remote.list` answer, which remote op is busy, the last auto-fetch failure (`useRemotes`, refetched when a tab's graph refs change); the persisted pull mode / auto-fetch interval / push-after-commit (`code-git:remotes:<project>`); the open remote dialog |
 | `features/sequence/` | What is in progress ([merge](merge.md)): `api.ts` (the `Operation` / `Conflict` types, `head.continue` / `skip` / `abort` wrappers), `labels.ts` (`sideLabels`, `operationTitle`, `commitLabel`: pure), `flows.ts` (`runSequenceOp`, `continueFlow`, `skipFlow`, `abortFlow`, `stoppedToast`, `mergeFlow`, `rebaseFlow`, `rebaseDone`, `startFailed`), `actions.ts` (`SEQUENCE_ACTIONS`), `message.ts` (`splitDraft`), `OperationBanner.tsx` (mounted by `WorkdirContent`), `SequenceDialogHost.tsx` (mounted by `Shell`; "Rebase N commits onto…") |
 | `state/sequenceDialog.ts` | The one open merge/rebase dialog |
 | `features/conflicts/` | The three-pane merge tool ([merge → The conflict tool](merge.md#the-conflict-tool)): `diff3.ts` (`splitLines`, `matchLines` — Myers —, `merge3`: pure), `output.ts` (`initialOutput`, `setPick`, `applyEdit`, `unresolved`, `nextBlock` / `prevBlock`, `hasMarkers`: pure), `panel.ts` (`CONFLICT_PANEL`), `open.ts` (`openConflict`, `closeConflict`, `labelsFor`), `state.ts` (the open file per tab), `flows.ts` (`saveConflict`, `markResolved`, `takeSide`, `closeTool`), `actions.ts` (`CONFLICT_FILE_ACTIONS` on `'workdir-file'`), `ConflictTool.tsx` |
@@ -300,19 +300,6 @@ For the undo card: what an op overwrites or deletes, and whether git can give it
 | `conflict.take` | Those paths' unmerged stages, any resolution in their worktree files, and — for a side that deleted it — the file | The stages no (they are the operation's; aborting it restores the pre-operation state); the deleted file's other version stays in its stage's blob until gc |
 | `rebase.interactive` with drops | The dropped commits leave the branch | Yes until gc: the branch's old tip (`undo.refs[].old`) still holds them |
 
-## C6 copies
-
-C9 (submodules) copies two modules of the C6 Remotes card, which is not on the integration branch yet. Each copy's first line names its original. On rebase onto C6: delete each copy, import the original, and drop the copied rows.
-
-| Copy | Original | What |
-|---|---|---|
-| `src/git/submodule/copied/url.js` | `src/git/remote/url.js` | `URL_MAX`, `remoteUrl` and its regexes (not `newRemoteName`) |
-| `src/git/submodule/copied/net.js` | `src/git/remote/net.js` | `NET_CONFIG`, `netRun` (not `remoteFailure` or its messages) |
-| `BAD_URL` in `src/refusals.js` | C6's `BAD_URL` | keep one |
-| the `remoteUrl` cases in `tests/submodule-url.test.js` | `tests/remote-url.test.js` | keep the `submoduleUrl` cases |
-
-`submoduleFailure` (`src/git/submodule/failure.js`) maps remote failures with this branch's `classifyRemoteFailure`; on rebase its remote branch becomes C6's `remoteFailure`.
-
 ## Long ops, cancel and paging
 
 - cc's exec buffers output and has no progress channel. An op stays pending up to its `timeoutMs`; its activity entry is pushed as `running` first, so the UI shows an elapsed timer and, when the op is cancellable, **Cancel**.
@@ -328,7 +315,7 @@ C9 (submodules) copies two modules of the C6 Remotes card, which is not on the i
 
 ## UI state and routing
 
-- No state library: `createStore` + `useSyncExternalStore`. Each feature owns its store; per-checkout state is keyed by `tabKey` (`project + '\0' + (worktree ?? '')`, then `'\0' + path` per submodule chain entry). State derived from refs that a project's worktrees share (branch tracking) is keyed by `refsKey` (the project, or a submodule tab's own key); graph prefs by `prefsKey` (the project, or `project/<chain>`).
+- No state library: `createStore` + `useSyncExternalStore`. Each feature owns its store; per-checkout state is keyed by `tabKey` (`project + '\0' + (worktree ?? '')`, then `'\0' + path` per submodule chain entry). State derived from refs that a project's worktrees share (branch tracking, the remotes list and busy state) is keyed by `refsKey` (the project, or a submodule tab's own key); graph prefs by `prefsKey` (the project, or `project/<chain>`).
 - Tabs persist under `code-git:tabs` (a row with a malformed `sub` is dropped); the active tab is mirrored into `?project=…&worktree=…&sub=…` (one `sub` per chain entry) with `history.pushState` (which cc's bridge turns into `replaceState`), read on load and on `popstate`.
 - Untrusted text (argv, stderr, ref and project names, git messages) renders only as React text children: no raw-HTML API, no `href`/`src`/`style` built from data. `guards.test.ts` scans the sources for both, and for colours that bypass the tokens (literal colours, palette shades, `white`/`black`, non-`var()` arbitrary values) outside the copied `components/ui/`.
 - Palette: `cc-theme-fallback.css` is a one-time snapshot of cc's tokens in `@layer base`; embedded, cc's unlayered `/pluginTheme.css` wins. `palette.test.ts` pins its values and the `@theme inline` block from cc's `docs/plugin-ui.md`.

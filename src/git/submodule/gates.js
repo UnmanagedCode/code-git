@@ -1,7 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { worktreeEntry } from '../diff/noIndex.js';
 import { OID_RE } from '../validate.js';
-import { remoteUrl } from './copied/url.js';
+import { remoteUrl } from '../remote/url.js';
 import { entryAt, listSubmodules, parseSubmoduleConfig } from './list.js';
 
 // What a submodule write checks before git runs: the entries it names, the repo's own config, the urls git would clone

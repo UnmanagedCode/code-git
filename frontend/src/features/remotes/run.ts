@@ -6,7 +6,7 @@ import { abortFlow } from '@/features/sequence/flows';
 import { confirm } from '@/lib/confirm';
 import type { ToastText, Tracked } from '@/lib/opToast';
 import { refreshRemotes, setRemoteBusy, type RemoteBusy } from '@/state/remotes';
-import type { Tab } from '@/state/tabs';
+import { refsKey, type Tab } from '@/state/tabs';
 import { refreshWorkdir } from '@/state/workdir';
 import { fetchRemotes, isFetchError, pullHead, type FetchResult, type PullMode, type PullResult } from './api';
 
@@ -17,11 +17,11 @@ export const PULL_LABEL: Record<PullMode, string> = { ff: 'Pull (fast-forward if
 
 /** runRefOp (toast, then a graph refresh) with the project's `kind` (if any) busy while it runs, then the remotes listed again. */
 export async function runRemoteOp<T>(tab: Tab, kind: RemoteBusy | null, labels: RefOpLabels<T>, fn: () => Promise<T>): Promise<Tracked<T>> {
-  if (kind) setRemoteBusy(tab.project, kind, true);
+  if (kind) setRemoteBusy(refsKey(tab), kind, true);
   try {
     return await runRefOp(tab, labels, fn);
   } finally {
-    if (kind) setRemoteBusy(tab.project, kind, false);
+    if (kind) setRemoteBusy(refsKey(tab), kind, false);
     void refreshRemotes(tab);
   }
 }

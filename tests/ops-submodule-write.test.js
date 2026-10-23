@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { LIMITS } from '../src/git/limits.js';
-import { NET_CONFIG } from '../src/git/submodule/copied/net.js';
+import { NET_CONFIG } from '../src/git/remote/net.js';
 import { SUBMODULE_LIMITS } from '../src/git/submodule/limits.js';
 import { afterBase, subWorld } from './_submodules.js';
 

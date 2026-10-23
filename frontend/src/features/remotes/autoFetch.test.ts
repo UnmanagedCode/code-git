@@ -99,3 +99,16 @@ test('one toast per failure streak, a per-remote error counts as a failure, and 
   w.tick();
   await waitFor(() => expect(toasts().filter((t) => t.includes('Auto-fetch failed'))).toHaveLength(2));
 });
+
+test("a project open only in a submodule tab is auto-fetched through its checkout (target without sub), the submodule never", async () => {
+  const clock = manualClock();
+  const w = remotesWorld({});
+  act(() => dispatchTabs({ type: 'open', tab: { ...T, sub: ['libs/a'] } }));
+  render(createElement('div', null, createElement(RemotesHost), createElement(Toasts)));
+  act(() => updateRemotePrefs('app', { autoFetchMinutes: 5 }));
+  expect(clock.timers.size).toBe(1);
+  clock.tick();
+  await waitFor(() => expect(w.fetch.calls.filter((c) => c.url.pathname.endsWith('/ops/remote.fetch'))).toHaveLength(1));
+  const sent = w.fetch.calls.filter((c) => c.url.pathname.endsWith('/ops/remote.fetch')).map((c) => (c.body as { target: unknown }).target);
+  expect(sent).toEqual([{ project: 'app' }]);
+});

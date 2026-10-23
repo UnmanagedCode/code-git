@@ -540,7 +540,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `REMOTE_CONFIG_UNSUPPORTED` | 409 | A fetch refspec of the remote code-git cannot map to the tracking refs a push updates, or a remote with no url whose config git reads from a legacy remote file; `remote`, `refspec` |
 | `REMOTE_UNKNOWN` | 404 | The remote name is malformed or not one of `git remote`'s |
 | `PUSH_REJECTED` | 409 | The remote rejected every ref of a push; `rejected`; from `remote.push` also `remote`, `to`, `tracking: {ref, oid} \| null` |
-| `BAD_URL` | 400 | A remote url refused (`remoteUrl` in `src/git/remote/url.js`): not an allowlisted shape, a `<transport>::` helper url, a leading `-`, whitespace or a control character, too long |
+| `BAD_URL` | 400 | A remote or submodule url refused (`remoteUrl` in `src/git/remote/url.js`; `submoduleUrl` in `src/git/submodule/url.js` adds relative `./` / `../` urls): not an allowlisted shape, a `<transport>::` helper url, a leading `-`, whitespace or a control character, too long |
 | `REMOTE_EXISTS` | 409 | A remote of that name exists (`remote.add`, `remote.rename`) |
 | `NO_UPSTREAM` | 409 | Pull or push without a remote, and HEAD's branch (or the branch) has no remote upstream; detached HEAD |
 | `DIRTY_WORKTREE` | 409 | A rebase pull with tracked changes in the working tree or the index; or a rebase's `head.continue` git refused over unstaged changes (the rebase stays; `stderr`) |
@@ -557,7 +557,6 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `PATH_BLOCKED` | 409 | A stash op (or `conflict.save`, or `conflict.take` for any path it names, before it writes anything; `conflict.read`, which would read through it) would write through something git cannot write into: a leading directory of a path it writes is an untracked (or ignored) symlink or file (`assertNotBlocked`), or — for `stash.applyFile`, `stash.pushLines`, `conflict.save`, and `conflict.take` on every path where no stage is a gitlink — the file itself is a directory or a link to a directory (`assertFileTarget`); `paths` ([stash → Gates](stash.md#gates)) |
 | `STASH_MOVED` | 409 | The stash list changed while dropping; the entry dropped by mistake was stored back; `{oid, restored}` |
 | `GIT_TOO_OLD` | 409 | The project's System runs a git below the feature's floor (a rebase: 2.26); `{feature, need, have}` |
-| `BAD_URL` | 400 | A url refused (`remoteUrl`, `submoduleUrl`): a `<transport>::` helper, a leading `-`, whitespace or a control character, an unknown shape, over `URL_MAX` |
 | `SUBMODULE_UNKNOWN` | 404 | No `.gitmodules` entry declares that path; `path` |
 | `SUBMODULE_UNSAFE` | 409 | Not acted on: `reason` `name` / `path` / `escapes` (the entry, or a chain resolving outside the checkout; `path`), `url` (a url git would clone or resolve against is refused; `names`), `config` (the repo's own config sets `protocol.*`; `keys`), `gitmodules` (`.gitmodules` is a symlink) |
 | `SUBMODULE_NOT_POPULATED` | 409 | The submodule is not cloned (or the chain's directory does not exist); `path` |

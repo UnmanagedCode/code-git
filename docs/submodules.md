@@ -56,7 +56,7 @@ Every op acts on the target's repo (the checkout or the chain's submodule) with 
 
 **Orphans** (`orphanCount` in `src/git/submodule/gates.js`): in the submodule, 0 when HEAD is on a branch; else `rev-list --count HEAD --not --branches --tags --remotes --end-of-options <recorded> --` (counted without `<recorded>` when the submodule does not have it yet).
 
-**Failures** (`submoduleFailure` in `src/git/submodule/failure.js`, from git's stderr under `LC_ALL=C`): `transport '<x>' not allowed` → `SUBMODULE_TRANSPORT_BLOCKED {transport}` (for `file`, the message names the System's `protocol.file.allow`); a checkout over local changes (`would be overwritten by checkout`, `Your local changes`) → `SUBMODULE_DIRTY`; `classifyRemoteFailure` → `REMOTE_AUTH_FAILED` / `REMOTE_UNREACHABLE`; else `GIT_FAILED {exitCode}`. Each carries `stderr`.
+**Failures** (`submoduleFailure` in `src/git/submodule/failure.js`, from git's stderr under `LC_ALL=C`): `transport '<x>' not allowed` → `SUBMODULE_TRANSPORT_BLOCKED {transport}` (for `file`, the message names the System's `protocol.file.allow`); a checkout over local changes (`would be overwritten by checkout`, `Your local changes`) → `SUBMODULE_DIRTY`; else the remote ops' `remoteFailure` (`src/git/remote/net.js`): `REMOTE_AUTH_FAILED` / `REMOTE_UNREACHABLE` with `reason`, or `GIT_FAILED {exitCode}`. Each carries `stderr`.
 
 **Caps**: `SUBMODULE_LIMITS.cloneTimeoutMs` and `cloneMaxOutputBytes` for `add` and `update`; the other writes use the write defaults (`LIMITS.write`).
 

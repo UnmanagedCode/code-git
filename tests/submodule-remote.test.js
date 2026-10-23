@@ -5,7 +5,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { test } from 'node:test';
 import { BASE_ARGS } from '../src/git/runner.js';
-import { NET_CONFIG } from '../src/git/submodule/copied/net.js';
+import { NET_CONFIG } from '../src/git/remote/net.js';
 import { subWorld } from './_submodules.js';
 
 // Submodule clones and fetches against remotes that refuse: no prompt can hang, and the failure says why. A local http

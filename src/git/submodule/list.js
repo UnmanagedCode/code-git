@@ -1,7 +1,7 @@
 import { commitOid } from '../diff/source.js';
 import { perChunk } from '../stage/paths.js';
 import { OID_RE } from '../validate.js';
-import { remoteUrl } from './copied/url.js';
+import { remoteUrl } from '../remote/url.js';
 import { SUBMODULE_LIMITS } from './limits.js';
 import { isRelativeUrl } from './url.js';
 import { submoduleName, submodulePath } from './validate.js';

@@ -66,4 +66,8 @@ test('elapsed: the running text gains the seconds elapsed, once a second, until 
   await p;
   act(() => { vi.advanceTimersByTime(3000); });
   await waitFor(() => expect(toastTexts()).toEqual(['Updated libs/a']));
+  // Unmount the toast within the test: sonner's own unmount timer must not outlive the test environment.
+  vi.useRealTimers();
+  act(() => { toast.dismiss(); });
+  await waitFor(() => expect(toastTexts()).toEqual([]));
 });

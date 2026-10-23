@@ -1,5 +1,5 @@
 import { Refusal } from '../../refusals.js';
-import { remoteUrl, URL_MAX } from './copied/url.js';
+import { remoteUrl, URL_MAX } from '../remote/url.js';
 
 // A submodule's url as a user may type it. Pure; checked before any exec.
 

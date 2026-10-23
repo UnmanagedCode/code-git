@@ -1,7 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { joinMessage, messageParams } from '../commit/message.js';
 import { bad, optBool, paramsObject } from '../params.js';
-import { netRun } from '../submodule/copied/net.js';
+import { netRun } from '../remote/net.js';
 import { submoduleFailure } from '../submodule/failure.js';
 import {
   assertDeclaredUrls, assertDefaultRemoteUrl, assertGitmodulesWritable, assertNoRepoProtocolConfig, assertResolvedUrls,

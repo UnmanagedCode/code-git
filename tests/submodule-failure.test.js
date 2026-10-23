@@ -6,13 +6,13 @@ import { submoduleFailure } from '../src/git/submodule/failure.js';
 
 const fail = (stderr, exitCode = 1) => submoduleFailure({ exitCode, stderr: Buffer.from(stderr) }, 'submodule update');
 
-test('submoduleFailure: transport policy, checkout over local changes, remote auth/reach, else GIT_FAILED; stderr always kept', () => {
+test('submoduleFailure: transport policy, checkout over local changes, then the remote ops\' remoteFailure (code + reason) or GIT_FAILED; stderr always kept', () => {
   const cases = [
     ["fatal: transport 'file' not allowed\n", 'SUBMODULE_TRANSPORT_BLOCKED', { transport: 'file' }],
     ["fatal: transport 'ext' not allowed\n", 'SUBMODULE_TRANSPORT_BLOCKED', { transport: 'ext' }],
     ['error: Your local changes to the following files would be overwritten by checkout:\n\ta.txt\n', 'SUBMODULE_DIRTY', {}],
-    ["fatal: could not read Username for 'https://h': terminal prompts disabled\n", 'REMOTE_AUTH_FAILED', {}],
-    ["fatal: unable to access 'https://h/r.git/': Could not resolve host: h\n", 'REMOTE_UNREACHABLE', {}],
+    ["fatal: could not read Username for 'https://h': terminal prompts disabled\n", 'REMOTE_AUTH_FAILED', { reason: 'prompt' }],
+    ["fatal: unable to access 'https://h/r.git/': Could not resolve host: h\n", 'REMOTE_UNREACHABLE', { reason: 'dns' }],
     ['fatal: something else\n', 'GIT_FAILED', { exitCode: 128 }],
   ];
   for (const [stderr, code, extra] of cases) {

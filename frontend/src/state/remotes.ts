@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import { listRemotes, type RemoteInfo } from '@/features/remotes/api';
 import { createStore, useStore } from './store';
 import { useGraphData } from './graph';
-import type { Tab } from './tabs';
+import { refsKey, type Tab } from './tabs';
 
-// Per project (worktrees share remotes): the `remote.list` answer, which remote op is running, and the last
+// Per refsKey (a project's worktrees share remotes; a submodule has its own): the `remote.list` answer, which remote op is running, and the last
 // auto-fetch failure. Refetched whenever a tab's graph refs change and after every remote op.
 
 export type RemoteBusy = 'fetch' | 'pull' | 'push';
@@ -18,7 +18,7 @@ const EMPTY: RemotesState = { data: null, busy: { fetch: false, pull: false, pus
 
 export const remotesStore = createStore<ReadonlyMap<string, RemotesState>>(new Map());
 const inFlight = new Map<string, { again: boolean }>();
-/** Per project, the graph refs object the last list was fetched for: many tabs share one fetch. */
+/** Per refsKey, the graph refs object the last list was fetched for: many tabs share one fetch. */
 const seen = new Map<string, object>();
 let epoch = 0;
 
@@ -29,45 +29,47 @@ export function resetRemotes(): void {
   remotesStore.set(new Map());
 }
 
-const put = (project: string, f: (s: RemotesState) => RemotesState) => remotesStore.set((m) => new Map(m).set(project, f(m.get(project) ?? EMPTY)));
+const put = (key: string, f: (s: RemotesState) => RemotesState) => remotesStore.set((m) => new Map(m).set(key, f(m.get(key) ?? EMPTY)));
 
-export const getRemotes = (project: string): RemotesState => remotesStore.get().get(project) ?? EMPTY;
-/** The remote named `name` in the project's last list. */
-export const remoteInfo = (project: string, name: string): RemoteInfo | undefined => getRemotes(project).data?.find((r) => r.name === name);
+/** `key`: refsKey(tab). */
+export const getRemotes = (key: string): RemotesState => remotesStore.get().get(key) ?? EMPTY;
+/** The remote named `name` in the repo's last list (`key`: refsKey(tab)). */
+export const remoteInfo = (key: string, name: string): RemoteInfo | undefined => getRemotes(key).data?.find((r) => r.name === name);
 
-export const setRemoteBusy = (project: string, kind: RemoteBusy, on: boolean): void => put(project, (s) => ({ ...s, busy: { ...s.busy, [kind]: on } }));
-export const setAutoFetchError = (project: string, error: string | null): void => put(project, (s) => ({ ...s, autoFetchError: error }));
+export const setRemoteBusy = (key: string, kind: RemoteBusy, on: boolean): void => put(key, (s) => ({ ...s, busy: { ...s.busy, [kind]: on } }));
+export const setAutoFetchError = (key: string, error: string | null): void => put(key, (s) => ({ ...s, autoFetchError: error }));
 
-/** Lists the project's remotes; a call while one runs schedules one rerun. A failure keeps the last list. */
+/** Lists the repo's remotes; a call while one runs schedules one rerun. A failure keeps the last list. */
 export async function refreshRemotes(tab: Tab): Promise<void> {
-  const running = inFlight.get(tab.project);
+  const key = refsKey(tab);
+  const running = inFlight.get(key);
   if (running) { running.again = true; return; }
   const at = epoch;
   const run = { again: false };
-  inFlight.set(tab.project, run);
+  inFlight.set(key, run);
   try {
     do {
       run.again = false;
       try {
-        const data = await listRemotes({ project: tab.project, worktree: tab.worktree });
+        const data = await listRemotes(tab);
         if (at !== epoch) return;
-        put(tab.project, (s) => ({ ...s, data }));
+        put(key, (s) => ({ ...s, data }));
       } catch {
         // The list is an aid (what is offered); the backend checks every remote op again.
       }
     } while (run.again && at === epoch);
   } finally {
-    if (at === epoch) inFlight.delete(tab.project);
+    if (at === epoch) inFlight.delete(key);
   }
 }
 
-/** The project's remotes, listed again whenever this tab's graph refs change. */
+/** The repo's remotes, listed again whenever this tab's graph refs change. */
 export function useRemotes(tab: Tab): RemotesState {
   const refs = useGraphData(tab).refs;
   useEffect(() => {
-    if (!refs || seen.get(tab.project) === refs) return;
-    seen.set(tab.project, refs);
+    if (!refs || seen.get(refsKey(tab)) === refs) return;
+    seen.set(refsKey(tab), refs);
     void refreshRemotes(tab);
   }, [refs, tab]);
-  return useStore(remotesStore).get(tab.project) ?? EMPTY;
+  return useStore(remotesStore).get(refsKey(tab)) ?? EMPTY;
 }
