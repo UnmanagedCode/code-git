@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
+import { RefsPanel } from '@/features/graph/RefsPanel';
 import { openRemoteDialog, remoteDialogStore } from '@/state/remoteDialog';
 import { refusal, remote, remotesWorld, T } from '@/test/remotesWorld';
 import { RemotesHost } from './RemotesHost';
@@ -93,4 +94,12 @@ test('the Push dialog pushes the branch to the chosen remote under the typed nam
   expect(remoteDialogStore.get()).toBeNull();
   act(() => openRemoteDialog({ kind: 'push', tab: T, branch: 'main', remote: 'origin' }));
   expect((screen.getByRole('checkbox', { name: 'Set as upstream' }) as HTMLInputElement).checked).toBe(false);
+});
+
+test('the refs panel lists a remote with no fetched branch, and its Add remote button opens the add dialog', async () => {
+  remotesWorld({ remotes: [remote('origin'), remote('empty')] });
+  render(<RefsPanel tab={T} />);
+  expect(await screen.findByRole('button', { name: 'empty' })).toBeTruthy();
+  await userEvent.click(screen.getByRole('button', { name: 'Add remote' }));
+  expect(remoteDialogStore.get()).toEqual({ kind: 'add', tab: T });
 });

@@ -68,7 +68,8 @@ test('branch menu: Checkout is hidden for HEAD and for another checkout\'s branc
   expect(menu('branch', branch(BUSY))).not.toContain('Delete busy…');
   expect(menu('branch', branch(BUSY))).not.toContain('Rename…');
   const free = menu('branch', branch(FREE));
-  expect(free.slice(0, 6)).toEqual(['Checkout', 'Create branch here…', 'Create tag here…', 'Rename…', 'Set upstream…', 'Reset main to here › Soft (keep index and files)']);
+  // The remotes card's Push to <remote>… (250s) sits between upstream (220) and reset (300).
+  expect(free.slice(0, 7)).toEqual(['Checkout', 'Create branch here…', 'Create tag here…', 'Rename…', 'Set upstream…', 'Push to origin…', 'Reset main to here › Soft (keep index and files)']);
   expect(free).toContain('Delete free…');
   expect(menu('branch', branch(ORIGIN_FREE))).toEqual(expect.arrayContaining(['Checkout', 'Delete free from origin…']));
 });
@@ -101,13 +102,13 @@ test('the branches context deletes only branches not checked out, counting them;
   expect(menu('branches', { tab: T, refs: [BUSY, MAIN] })).toEqual([]);
 });
 
-test('the branch-drop menu has exactly Fast-forward and Reset: a submenu onto HEAD, a force-move onto a free branch, nothing onto a remote', () => {
+test('the branch-drop menu has exactly Fast-forward and Reset: a submenu onto HEAD, a force-move onto a free branch; onto a remote only the remotes card\'s Push', () => {
   setRefs(refsOn());
   expect(menu('branch-drop', drop(FREE, MAIN))).toEqual([
     'Fast-forward main to free', 'Reset main to free › Soft (keep index and files)', 'Reset main to free › Mixed (keep files)', 'Reset main to free › Hard (discard changes)',
   ]);
   expect(menu('branch-drop', drop(MAIN, FREE))).toEqual(['Fast-forward free to main', 'Reset free to main…']);
-  expect(menu('branch-drop', drop(MAIN, ORIGIN_FREE))).toEqual([]);
+  expect(menu('branch-drop', drop(MAIN, ORIGIN_FREE))).toEqual(['Push main to origin/free']);
   // Another checkout's branch: neither (the backend would refuse both).
   expect(menu('branch-drop', drop(FREE, BUSY))).toEqual([]);
   find('branch-drop', drop(MAIN, FREE), 'Reset free to main…').run!(drop(MAIN, FREE));

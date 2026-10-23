@@ -4,6 +4,7 @@ import { STASH_ACTIONS } from '@/features/stash/actions';
 import { TAB_ACTIONS } from '@/features/tabs/actions';
 import { RESTORE_ACTION, WORKDIR_FILE_ACTIONS, WORKDIR_GRAPH_ACTIONS } from '@/features/workdir/actions';
 import { BRANCH_ACTIONS } from '@/features/branches/actions';
+import { REMOTE_ACTIONS } from '@/features/remotes/actions';
 
 // The context-menu action registry. A feature adds its actions in its own folder and one entry in ACTIONS;
 // <ActionMenuItems context="…" ctx={…}> renders the ones for a context (docs/architecture.md → Extension points).
@@ -31,7 +32,7 @@ export interface MenuAction<C = unknown> {
   primary?: boolean;
 }
 
-const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS, ...GRAPH_ACTIONS, ...WORKDIR_FILE_ACTIONS, RESTORE_ACTION, ...WORKDIR_GRAPH_ACTIONS, ...BRANCH_ACTIONS, ...STASH_ACTIONS];
+const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS, ...GRAPH_ACTIONS, ...WORKDIR_FILE_ACTIONS, RESTORE_ACTION, ...WORKDIR_GRAPH_ACTIONS, ...BRANCH_ACTIONS, ...STASH_ACTIONS, ...REMOTE_ACTIONS];
 
 /** An action as a menu shows it: its submenu, if any, built and resolved. */
 export type ResolvedAction<C> = Omit<MenuAction<C>, 'children'> & { children?: ResolvedAction<C>[] };
