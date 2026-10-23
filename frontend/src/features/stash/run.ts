@@ -1,31 +1,12 @@
+import { conflictToast, fileList } from '@/features/branches/run';
 import type { ApiError } from '@/lib/api';
 import { trackOp, type ToastText, type Tracked } from '@/lib/opToast';
 import { refreshGraph } from '@/state/graph';
 import type { Tab } from '@/state/tabs';
 import { refreshAfterWrite } from '@/state/workdir';
 
-// Every stash op from the UI runs through runStashOp: its toast, then the Changes lists, the header summary, an open
-// unstaged/staged diff and the graph refreshed whatever the outcome.
-
-/** Files named in a toast; the rest is counted. */
-export const FILES_SHOWN = 5;
-
-/** "a.txt, b.txt and 3 more" */
-export function fileList(files: string[], max = FILES_SHOWN): string {
-  const shown = files.slice(0, max).join(', ');
-  return files.length > max ? `${shown} and ${files.length - max} more` : shown;
-}
-
-/** The toast for local changes in the way (CHECKOUT_CONFLICT), C5's wording. */
-export function conflictToast(e: ApiError): Partial<ToastText> | undefined {
-  if (e.code !== 'CHECKOUT_CONFLICT') return undefined;
-  const files = (e.body as { files?: unknown } | undefined)?.files;
-  const list = Array.isArray(files) ? files.filter((f): f is string => typeof f === 'string') : [];
-  return {
-    title: 'Local changes would be overwritten',
-    description: `${list.length ? `${fileList(list)}. ` : ''}Commit, stash or discard these changes first.`,
-  };
-}
+// Every stash op from the UI runs through runStashOp: its toast (CHECKOUT_CONFLICT worded as the ref ops word it), then
+// the Changes lists, the header summary, an open unstaged/staged diff and the graph refreshed whatever the outcome.
 
 export interface StashOpLabels<T> {
   running: string;

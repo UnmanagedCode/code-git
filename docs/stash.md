@@ -116,7 +116,7 @@ Every op returns `result.undo`: the ref ops' record (`undoRecord`, `src/git/refs
 | File | Role |
 |---|---|
 | `api.ts` | Wire types (`StashUndo`, results) and `runOp` wrappers; always the oid |
-| `run.ts` | `runStashOp(tab, labels, fn)`: the toast, then `refreshAfterWrite` + `refreshGraph(tab, 'write')` whatever the outcome; `CHECKOUT_CONFLICT` → "Local changes would be overwritten" naming the files; `appliedToast` (a conflict is a warning naming the files, "The stash was kept." for pop and branch) |
+| `run.ts` | `runStashOp(tab, labels, fn)`: the toast, then `refreshAfterWrite` + `refreshGraph(tab, 'write')` whatever the outcome; `CHECKOUT_CONFLICT` → "Local changes would be overwritten" naming the files (the ref ops' `conflictToast`, `features/branches/run.ts`); `appliedToast` (files named with that file's `fileList`) (a conflict is a warning naming the files, "The stash was kept." for pop and branch) |
 | `views.ts` | `stashViewOf(stashes, oid)` (W → all, I → staged, U → untracked), `stashViewSource`, `viewsOf`, `messageOf` |
 | `StashViewSwitch.tsx` | The radiogroup "Stash view" in the diff header, in place of the parent select |
 | `actions.ts` | `STASH_ACTIONS` (group `stash`, orders 400–405), `openStashSave`, `applyStash`, `popStash`, `dropStash`, `applyStashFile` |

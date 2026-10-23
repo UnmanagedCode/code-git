@@ -39,7 +39,7 @@ function rejectedToast(e: ApiError): Partial<ToastText> | undefined {
 }
 
 /** The toast for a refusal every ref op can meet: local changes in the way. */
-function conflictToast(e: ApiError): Partial<ToastText> | undefined {
+export function conflictToast(e: ApiError): Partial<ToastText> | undefined {
   if (e.code !== 'CHECKOUT_CONFLICT') return undefined;
   const files = (e.body as { files?: unknown } | undefined)?.files;
   const list = Array.isArray(files) ? files.filter((f): f is string => typeof f === 'string') : [];

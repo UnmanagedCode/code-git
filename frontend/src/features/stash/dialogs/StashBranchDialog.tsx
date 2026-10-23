@@ -3,8 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import type { Stash } from '@/features/graph/types';
-import { confirmCcHeadMove } from '@/features/branches/actions';
-import type { ApiError } from '@/lib/api';
+import { ccHeadBranchOf, confirmCcHeadMove } from '@/features/branches/actions';
 import { clip } from '@/lib/clip';
 import type { ToastText } from '@/lib/opToast';
 import { closeStashDialog, type StashDialog } from '@/state/stashDialog';
@@ -14,13 +13,6 @@ import { appliedToast, runStashOp } from '../run';
 import { dialogError, ErrorBlock, type DialogError } from './shared';
 
 type BranchDialog = Extract<StashDialog, { kind: 'branch' }>;
-
-/** The HEAD branch a CC_OWNED_BRANCH refusal about this checkout names, or null for any other error. */
-function ccHeadOf(e: ApiError): string | null {
-  const body = e.body as { head?: unknown; branches?: unknown } | undefined;
-  if (e.code !== 'CC_OWNED_BRANCH' || body?.head !== true) return null;
-  return Array.isArray(body.branches) && typeof body.branches[0] === 'string' ? body.branches[0] : '';
-}
 
 const branchDone = (stash: Stash, name: string) => (r: BranchResult): string | ToastText => {
   if (r.conflicts.length) return appliedToast('', stash.selector, r.conflicts, true);
@@ -47,7 +39,7 @@ function BranchContent({ dialog: { tab, stash } }: { dialog: BranchDialog }) {
     const r = await runStashOp(tab, { running: `Creating ${n}…`, toastRunning: false, done: branchDone(stash, n) }, () => stashBranch(tab, stash.oid, n));
     setBusy(false);
     if (r.ok) { closeStashDialog(); return; }
-    const cc = ccHeadOf(r.error);
+    const cc = ccHeadBranchOf(r.error);
     if (cc === null) { setError(dialogError(r.error)); return; }
     // One modal at a time: the confirmation replaces this dialog.
     closeStashDialog();

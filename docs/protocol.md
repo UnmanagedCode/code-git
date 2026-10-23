@@ -498,8 +498,8 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `PICK_EMPTY` | 409 | A revert or cherry-pick would commit nothing; nothing is left in progress |
 | `NOTHING_IN_PROGRESS` | 409 | `head.abort` with no revert or cherry-pick in progress |
 | `STASH_UNKNOWN` | 404 | The oid is not in the stash list ([stash](stash.md)) |
-| `NOTHING_TO_STASH` | 409 | A save changed nothing: `refs/stash` did not move |
-| `PATH_BLOCKED` | 409 | A leading directory of a path a stash op writes is an untracked (or ignored) symlink or file; `paths` |
+| `NOTHING_TO_STASH` | 409 | A save had nothing to stash: git printed "No local changes to save" on stdout (decided from that line, not from whether `refs/stash` moved) |
+| `PATH_BLOCKED` | 409 | A stash op would write through something git cannot write into: a leading directory of a path it writes is an untracked (or ignored) symlink or file (`assertNotBlocked`), or — for `stash.applyFile` and `stash.pushLines` — the file itself is a directory or a link to a directory (`assertFileTarget`); `paths` ([stash → Gates](stash.md#gates)) |
 | `STASH_MOVED` | 409 | The stash list changed while dropping; the entry dropped by mistake was stored back; `{oid, restored}` |
 | `GIT_TOO_OLD` | 409 | The project's System runs a git below the feature's floor; `{feature, need, have}` |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
