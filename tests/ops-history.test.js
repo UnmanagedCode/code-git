@@ -186,3 +186,19 @@ test('history.blame: previous and previousPath name the commit before and the fi
   assert.deepEqual([b.commits[c2].filename, b.commits[c2].previous, b.commits[c2].previousPath], ['new name.txt', c1, 'old name.txt']);
   assert.deepEqual([b.commits[c1].filename, b.commits[c1].previous, b.commits[c1].previousPath], ['old name.txt', null, null]);
 });
+
+// Invariant: blame's file names are git's C-quoted porcelain values unquoted: a name holding `"` or a tab comes back as
+// the path itself (filename and previousPath), plain or across a rename, and opens in diff.file.
+test('history.blame: a quoted path (", tab) comes back unquoted, plain and renamed', async (t) => {
+  const w = await opWorld(t);
+  const c1 = w.repo.commit({ 'q"uote.txt': 'a\n', 'ta\tb.txt': 't\n' }, 'add');
+  w.repo.git('mv', 'q"uote.txt', 'n"ew.txt');
+  const c2 = w.repo.commit({ 'n"ew.txt': 'a\nb\n' }, 'rename and edit');
+  const plain = await w.op('history.blame', { rev: c2, path: 'ta\tb.txt' });
+  assert.equal(plain.commits[c1].filename, 'ta\tb.txt');
+  const renamed = await w.op('history.blame', { rev: c2, path: 'n"ew.txt' });
+  assert.deepEqual([renamed.commits[c2].filename, renamed.commits[c2].previousPath], ['n"ew.txt', 'q"uote.txt']);
+  assert.equal(renamed.commits[c1].filename, 'q"uote.txt');
+  const fd = await w.op('diff.file', { source: { kind: 'commit', rev: c2 }, path: renamed.commits[c2].filename, oldPath: renamed.commits[c2].previousPath, context: 3, whitespace: 'none' });
+  assert.equal(fd.path, 'n"ew.txt');
+});

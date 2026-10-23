@@ -1,6 +1,33 @@
 // Parsers for the history ops (src/git/ops/history.js). Pure: each takes decoded git output (LC_ALL=C).
 
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const decoder = new TextDecoder('utf-8', { fatal: false });
+const encoder = new TextEncoder();
+/** git's single-letter C escapes (quote.c): the byte each stands for. */
+const ESCAPES = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 };
+
+/**
+ * A git C-quoted value (`"q\"uote.txt"`, `"caf\303\251"`) as the string it stands for: git quotes a path holding `"`,
+ * `\` or a control character even with core.quotePath=false, in the output that has no -z (blame porcelain). Escapes
+ * are bytes (octal `\nnn` included), decoded as UTF-8 at the end. A value that is not wholly quoted is returned as it is.
+ */
+export function unquoteC(value) {
+  if (value.length < 2 || value[0] !== '"' || value.at(-1) !== '"') return value;
+  const bytes = [];
+  const body = value.slice(1, -1);
+  for (let i = 0; i < body.length; i++) {
+    const ch = String.fromCodePoint(body.codePointAt(i));
+    if (ch !== '\\') { bytes.push(...encoder.encode(ch)); i += ch.length - 1; continue; }
+    const next = body[i + 1];
+    if (next in ESCAPES) { bytes.push(ESCAPES[next]); i++; continue; }
+    const oct = /^[0-3][0-7]{2}/.exec(body.slice(i + 1, i + 4));
+    if (!oct) return value;
+    bytes.push(parseInt(oct[0], 8));
+    i += 3;
+  }
+  return decoder.decode(new Uint8Array(bytes));
+}
+
 const STATUS = /^[ACDMRTUXB]\d*$/;
 
 /**
@@ -43,7 +70,7 @@ export function parseFileHistory(out, startPath) {
 /**
  * `blame --porcelain` → `{lines: [{n, oid, origLine, text}], commits: {[oid]: {author, mail, time, summary, filename,
  * previous, previousPath}}}`. A group header `<oid> <orig> <final> [<count>]` is followed by that commit's headers the
- * first time it appears (and `filename` / `previous` per group), then each line as `\t<text>`.
+ * first time it appears (and `filename` / `previous` per group), then each line as `\t<text>`. Paths are C-unquoted.
  */
 export function parseBlame(out) {
   const lines = [];
@@ -73,12 +100,12 @@ export function parseBlame(out) {
     else if (key === 'author-mail') c.mail = value.replace(/^<|>$/g, '');
     else if (key === 'author-time') c.time = Number(value);
     else if (key === 'summary') c.summary = value;
-    else if (key === 'filename') c.filename = value;
+    else if (key === 'filename') c.filename = unquoteC(value);
     else if (key === 'previous') {
       // "previous <oid> <path>": the commit before, and the file's name there (the old name after a rename).
       const sp2 = value.indexOf(' ');
       c.previous = (sp2 === -1 ? value : value.slice(0, sp2)) || null;
-      c.previousPath = sp2 === -1 ? null : value.slice(sp2 + 1);
+      c.previousPath = sp2 === -1 ? null : unquoteC(value.slice(sp2 + 1));
     }
   }
   return { lines, commits };

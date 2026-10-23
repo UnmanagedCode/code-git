@@ -9,7 +9,7 @@ A file's commits across renames, who last changed each line, and where HEAD and 
 | Op | What | Pages by |
 |---|---|---|
 | `history.file` | the commits that touched a path, following renames (`log --follow -M`), newest first; each names the file as it was there and a rename's old name | re-walk + slice, bounded by `HISTORY_LIMITS.followMaxCommits` (`--skip` is broken under `--follow`: [protocol → Paging convention](protocol.md#paging-convention-for-ops-that-list)) |
-| `history.blame` | per line: the commit, its line number there, the text; each commit's author, mail, time, summary, file name and previous commit | `-L <start>,+<count>`, `count` ≤ `blameLinesMax` |
+| `history.blame` | per line: the commit, its line number there, the text; each commit's author, mail, time, summary, file name, previous commit and `previousPath` (the file's name in that previous commit: the old name after a rename); paths unquoted from git's C quoting | `-L <start>,+<count>`, `count` ≤ `blameLinesMax` |
 | `history.reflog` | HEAD's or a local branch's reflog: selector, oid, time, action, who, subject | `--skip` |
 | `history.paths` | every file of a commit (`ls-tree -r`) | one command, refused over `pathsMaxOutputBytes` |
 
