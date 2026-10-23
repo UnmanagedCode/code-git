@@ -38,7 +38,7 @@ One dialog at a time (`state/refDialog.ts`, rendered by `features/branches/RefDi
 | Set upstream | Set upstream… | A select of the remote branches (preselected: the current upstream, else the remote branch of the same name); **Unset** when one is set |
 | Reset (hard) | Reset … › Hard | "Discards N staged changes and M unstaged changes (untracked files stay)" from the checkout's summary; destructive **Reset hard**. Soft and mixed run straight from the menu |
 | Force-move | Reset `<target>` to `<source>`… (drop) | "`<name>` moves from `<old7>` to `<new7>`; commits only on `<name>` are no longer reachable from it"; destructive **Move branch** |
-| cc HEAD move | below | the cc warning; **Switch anyway** / **Reset anyway** |
+| cc HEAD move | below | the shared confirmation (`confirm()` in `lib/confirm.ts`, rendered by the Changes panel's `ConfirmHost`): the cc warning; **Switch anyway** / **Reset anyway**. It closes on confirm; the op then reports through its toast |
 
 ### Toasts
 
@@ -81,7 +81,7 @@ cc owns `code-conductor/*` branches: its worktree records name them. A write tha
 | `branch.delete`, `branch.deleteRemote`, `branch.move` of a cc branch; `branch.rename` from or to a cc name | `branch.create` of a cc name without checkout |
 | **Moving a cc-owned HEAD** (this checkout's HEAD is `code-conductor/*`): `head.reset` in every mode; `branch.checkout` of another branch (local or remote); `branch.create` with checkout | Checking out the branch already checked out; a remote checkout whose local twin is HEAD (only a fast-forward); `branch.fastForward` of the cc HEAD branch (additive); `head.revert`, `head.cherryPick` (they add commits, as a commit does); checking out a cc branch from a non-cc HEAD |
 
-In the UI, moving a cc-owned HEAD with an action that has no dialog (double-click or menu checkout, remote checkout, soft or mixed reset from a menu or the drop menu) opens the **cc HEAD move** confirmation first ("This checkout is code-conductor's worktree on `<branch>`. Switching away / Resetting it leaves cc's worktree record, and its sync and merge, on a branch or commit the agent did not make."). The hard-reset dialog and the create-branch dialog (with checkout on) show the same warning inline instead of a second dialog. The delete, rename and force-move dialogs warn about a cc-owned name.
+In the UI, moving a cc-owned HEAD with an action that has no dialog (double-click or menu checkout, remote checkout, soft or mixed reset from a menu or the drop menu) opens the **cc HEAD move** confirmation (`confirmCcHeadMove` in `features/branches/actions.ts`, through `confirm()`) first ("This checkout is code-conductor's worktree on `<branch>`. Switching away / Resetting it leaves cc's worktree record, and its sync and merge, on a branch or commit the agent did not make."). The hard-reset dialog and the create-branch dialog (with checkout on) show the same warning inline instead of a second dialog. The delete, rename and force-move dialogs warn about a cc-owned name.
 
 ### Checkout
 

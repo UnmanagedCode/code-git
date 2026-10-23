@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 import type { Ref, RefsResult } from '@/features/graph/types';
 import { EMPTY_GRAPH, getGraph, graphStore } from '@/state/graph';
 import { openRefDialog, refDialogStore, type RefDialog } from '@/state/refDialog';
@@ -8,6 +8,8 @@ import { tabKey } from '@/state/tabs';
 import { checkout as checkoutFixture, oid, ref, refsResult } from '@/test/graphData';
 import { json } from '@/test/fixtures';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
+import { ConfirmHost } from '@/features/workdir/ConfirmDialog';
+import { checkout } from './actions';
 import { RefDialogHost } from './RefDialogHost';
 import { NAMES_SHOWN } from './dialogs/Frame';
 
@@ -134,21 +136,25 @@ test('createBranch on a cc HEAD warns only while "Check out after creating" is o
   await waitFor(() => expect(sent(f, 'branch.create')[1]).toEqual({ name: 'on', from: oid(3), checkout: true, ccOwned: true }));
 });
 
-test('ccHeadMove names the branch as text; only Switch anyway runs, with the acknowledgement', async () => {
-  setHead(MAIN);
-  backend({});
-  const run = vi.fn(async () => {});
-  const d: RefDialog = { kind: 'ccHeadMove', tab: T, branch: 'code-conductor/<img src=x>', action: 'checkout', label: 'Switching to free', run };
-  let dialog = show(d);
+test('the cc HEAD confirmation (C4\'s ConfirmHost) names the branch as text; Cancel sends nothing, only Switch anyway checks out with ccOwned', async () => {
+  setHead({ ...ref('refs/heads/code-conductor/<img/src=x>', oid(8)), isHead: true });
+  const f = backend({ 'branch.checkout': { ok: true, result: { branch: 'refs/heads/free', created: false, localExisted: true, fastForwarded: false, ffBlocked: null, undo: {} } } });
+  render(<ConfirmHost />);
+  act(() => checkout(T, ref('refs/heads/free', oid(5))));
+  let dialog = await screen.findByRole('dialog');
   expect(dialog.querySelector('img')).toBeNull();
-  expect(within(dialog).getByRole('note').textContent).toContain('code-conductor/<img src=x>');
+  expect(dialog.textContent).toContain("code-conductor's worktree on code-conductor/<img/src=x>");
   await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-  expect(run).not.toHaveBeenCalled();
-  act(() => openRefDialog(d));
-  dialog = screen.getByRole('dialog');
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  act(() => checkout(T, ref('refs/heads/free', oid(5))));
+  dialog = await screen.findByRole('dialog');
+  await userEvent.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(sent(f, 'branch.checkout')).toEqual([]);
+  act(() => checkout(T, ref('refs/heads/free', oid(5))));
+  dialog = await screen.findByRole('dialog');
   await userEvent.click(within(dialog).getByRole('button', { name: 'Switch anyway' }));
-  expect(run).toHaveBeenCalledWith(true);
-  expect(refDialogStore.get()).toBeNull();
+  await waitFor(() => expect(sent(f, 'branch.checkout')).toEqual([{ ref: 'refs/heads/free', ccOwned: true }]));
 });
 
 test('REF_EXISTS shows inline and keeps the dialog open; the running state disables submit', async () => {

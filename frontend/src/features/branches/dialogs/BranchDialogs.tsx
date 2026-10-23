@@ -10,15 +10,10 @@ import type { ApiError } from '@/lib/api';
 import type { Tab } from '@/state/tabs';
 import { rejectedLines, rejectedOf } from '../run';
 import { createBranch, deleteBranches, NAMES_MAX, deleteRemoteBranches, moveBranch, renameBranch, setUpstream } from '../api';
-import { abbrev, ccHead, headOf, isCcOwned, remoteBranch, shortBranch } from '../refInfo';
+import { abbrev, ccHead, ccHeadWarning, headOf, isCcOwned, remoteBranch, shortBranch } from '../refInfo';
 import { CcWarning, fieldClass, NameList, RefDialogFrame, useRefOp } from './Frame';
 
 type Of<K extends RefDialog['kind']> = Extract<RefDialog, { kind: K }>;
-
-/** The ccHeadMove text, shared with the dialogs that show it inline. */
-export function ccHeadText(branch: string, what: string) {
-  return <>This checkout is code-conductor's worktree on <strong className="font-mono">{clip(branch)}</strong>. {what} leaves cc's worktree record, and its sync and merge, on a branch or commit the agent did not make.</>;
-}
 
 export function CreateBranchDialog({ d }: { d: Of<'createBranch'> }) {
   const [name, setName] = useState('');
@@ -44,7 +39,7 @@ export function CreateBranchDialog({ d }: { d: Of<'createBranch'> }) {
         <input type="checkbox" checked={checkout} onChange={(e) => setCheckout(e.target.checked)} />
         Check out after creating
       </label>
-      {cc && <CcWarning>{ccHeadText(shortBranch(headOf(d.tab).branch!), 'Switching to the new branch')}</CcWarning>}
+      {cc && <CcWarning>{ccHeadWarning(shortBranch(headOf(d.tab).branch!), 'Switching to the new branch')}</CcWarning>}
     </RefDialogFrame>
   );
 }

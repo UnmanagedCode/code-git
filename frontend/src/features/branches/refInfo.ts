@@ -29,6 +29,10 @@ export const headLabel = (tab: Tab): string => {
   return b ? shortBranch(b) : 'HEAD';
 };
 
+/** The warning shown before moving a code-conductor/* HEAD; `what`: "Switching away", "Resetting it", … */
+export const ccHeadWarning = (branch: string, what: string): string =>
+  `This checkout is code-conductor's worktree on ${branch}. ${what} leaves cc's worktree record, and its sync and merge, on a branch or commit the agent did not make.`;
+
 /** This checkout's HEAD is a code-conductor/* branch: moving it needs the user's acknowledgement. */
 export const ccHead = (tab: Tab): boolean => {
   const b = headOf(tab).branch;

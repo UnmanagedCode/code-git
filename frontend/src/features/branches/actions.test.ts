@@ -7,6 +7,7 @@ import { actionsFor, labelOf, runPrimary, type ResolvedAction } from '@/shell/me
 import { trackingStore } from '@/state/branchTracking';
 import { NAMES_MAX } from './api';
 import { EMPTY_GRAPH, graphStore } from '@/state/graph';
+import { confirmStore, settleConfirm } from '@/lib/confirm';
 import { refDialogStore, type RefDialog } from '@/state/refDialog';
 import { tabKey } from '@/state/tabs';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
@@ -144,7 +145,7 @@ const resets = (head: Ref) => [
   () => find('branch-drop', drop(FREE, { ...head, isHead: true }), `Reset ${head.short} to free › Soft (keep index and files)`).run!(drop(FREE, head)),
 ];
 
-test('on a code-conductor/* HEAD: checkout (menu, double-click, remote) and soft/mixed resets send nothing until ccHeadMove is confirmed, then send ccOwned', async () => {
+test('on a code-conductor/* HEAD: checkout (menu, double-click, remote) and soft/mixed resets send nothing until the cc confirmation is accepted, then send ccOwned', async () => {
   setRefs(refsOn(ccHeadRef));
   const f = backend();
   const gated: (() => void)[] = [
@@ -154,18 +155,18 @@ test('on a code-conductor/* HEAD: checkout (menu, double-click, remote) and soft
     ...resets(ccHeadRef),
   ];
   for (const open of gated) {
-    refDialogStore.set(null);
+    settleConfirm(false);
     open();
-    const d = refDialogStore.get();
-    expect(d?.kind).toBe('ccHeadMove');
+    const pending = confirmStore.get();
+    expect(pending?.opts.body).toContain("code-conductor's worktree on code-conductor/wt");
     await Promise.resolve();
     expect(sent(f, 'branch.checkout').length + sent(f, 'head.reset').length).toBe(0);
   }
-  // Confirming (the dialog's run) sends the acknowledgement.
-  const d = refDialogStore.get() as Extract<RefDialog, { kind: 'ccHeadMove' }>;
-  expect(d).toMatchObject({ branch: 'code-conductor/wt', action: 'reset' });
-  await d.run(true);
-  expect(sent(f, 'head.reset')).toEqual([{ to: oid(5), mode: 'soft', expect: oid(8), ccOwned: true }]);
+  // Accepting the last one (a drag-menu soft reset) sends the acknowledgement.
+  expect(confirmStore.get()?.opts.confirmLabel).toBe('Reset anyway');
+  settleConfirm(true);
+  await waitFor(() => expect(sent(f, 'head.reset')).toEqual([{ to: oid(5), mode: 'soft', expect: oid(8), ccOwned: true }]));
+  expect(sent(f, 'branch.checkout')).toEqual([]);
 });
 
 test('with a normal HEAD the same actions run at once, without ccOwned', async () => {
@@ -175,6 +176,7 @@ test('with a normal HEAD the same actions run at once, without ccOwned', async (
   runPrimary('branch', branch(FREE));
   for (const r of resets(MAIN)) r();
   expect(refDialogStore.get()).toBeNull();
+  expect(confirmStore.get()).toBeNull();
   await waitFor(() => expect(sent(f, 'branch.checkout')).toEqual([{ ref: FREE.name }, { ref: FREE.name }]));
   await waitFor(() => expect(sent(f, 'head.reset')).toHaveLength(3));
   expect(sent(f, 'head.reset').every((p) => !('ccOwned' in (p as object)))).toBe(true);
@@ -187,6 +189,7 @@ test('on a code-conductor/* HEAD, Fast-forward, Revert and Cherry-pick run witho
   find('commit', commitCtx(oid(3)), 'Revert commit').run!(commitCtx(oid(3)));
   find('commit', commitCtx(oid(3)), 'Cherry-pick commit').run!(commitCtx(oid(3)));
   expect(refDialogStore.get()).toBeNull();
+  expect(confirmStore.get()).toBeNull();
   await waitFor(() => expect(sent(f, 'branch.fastForward')).toHaveLength(1));
   await waitFor(() => expect(sent(f, 'head.revert').length + sent(f, 'head.cherryPick').length).toBe(2));
 });

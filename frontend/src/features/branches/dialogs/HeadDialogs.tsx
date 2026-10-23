@@ -1,9 +1,7 @@
-import { clip } from '@/lib/clip';
 import { useGraphData } from '@/state/graph';
-import { closeRefDialog, type RefDialog } from '@/state/refDialog';
+import type { RefDialog } from '@/state/refDialog';
 import { resetHead } from '../api';
-import { ccHead, headOf, shortBranch } from '../refInfo';
-import { ccHeadText } from './BranchDialogs';
+import { ccHead, ccHeadWarning, headOf, shortBranch } from '../refInfo';
 import { CcWarning, RefDialogFrame, useRefOp } from './Frame';
 
 type Of<K extends RefDialog['kind']> = Extract<RefDialog, { kind: K }>;
@@ -24,19 +22,7 @@ export function ResetDialog({ d }: { d: Of<'reset'> }) {
       onSubmit={() => void run(d.tab, { running: `Resetting ${head}…`, done: () => `Reset ${head} to ${d.to.label} (hard)` },
         () => resetHead(d.tab, { to: d.to.oid, mode: 'hard', expect: d.expect, ccOwned: cc || undefined }))}
     >
-      {cc && <CcWarning>{ccHeadText(shortBranch(headOf(d.tab).branch!), 'Resetting it')}</CcWarning>}
-    </RefDialogFrame>
-  );
-}
-
-/** The confirmation for moving a code-conductor/* HEAD by an action with no dialog of its own (checkout, soft/mixed reset). */
-export function CcHeadMoveDialog({ d }: { d: Of<'ccHeadMove'> }) {
-  return (
-    <RefDialogFrame
-      title={`${clip(d.label)}?`} submit={d.action === 'checkout' ? 'Switch anyway' : 'Reset anyway'} busyLabel="…" destructive busy={false} error={null}
-      onSubmit={() => { closeRefDialog(); void d.run(true); }}
-    >
-      <CcWarning>{ccHeadText(d.branch, d.action === 'checkout' ? 'Switching away' : 'Resetting it')}</CcWarning>
+      {cc && <CcWarning>{ccHeadWarning(shortBranch(headOf(d.tab).branch!), 'Resetting it')}</CcWarning>}
     </RefDialogFrame>
   );
 }

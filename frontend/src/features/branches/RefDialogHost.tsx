@@ -1,6 +1,6 @@
 import { useRefDialog, type RefDialog } from '@/state/refDialog';
 import { CreateBranchDialog, DeleteBranchesDialog, MoveBranchDialog, RenameBranchDialog, SetUpstreamDialog } from './dialogs/BranchDialogs';
-import { CcHeadMoveDialog, ResetDialog } from './dialogs/HeadDialogs';
+import { ResetDialog } from './dialogs/HeadDialogs';
 import { CreateTagDialog, DeleteTagsDialog } from './dialogs/TagDialogs';
 
 const ids = new WeakMap<RefDialog, number>();
@@ -24,7 +24,6 @@ export function RefDialogHost() {
     case 'deleteTags': return <DeleteTagsDialog key={key} d={d} />;
     case 'setUpstream': return <SetUpstreamDialog key={key} d={d} />;
     case 'reset': return <ResetDialog key={key} d={d} />;
-    case 'ccHeadMove': return <CcHeadMoveDialog key={key} d={d} />;
     case 'moveBranch': return <MoveBranchDialog key={key} d={d} />;
   }
 }

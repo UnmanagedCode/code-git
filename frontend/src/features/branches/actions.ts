@@ -2,6 +2,7 @@ import type { BranchDropCtx, BranchesCtx, CommitCtx, RefCtx } from '@/features/g
 import type { Ref } from '@/features/graph/types';
 import type { ApiError } from '@/lib/api';
 import type { ToastText } from '@/lib/opToast';
+import { confirm } from '@/lib/confirm';
 import type { MenuAction } from '@/shell/menus';
 import { trackingOf } from '@/state/branchTracking';
 import { openRefDialog, type Point } from '@/state/refDialog';
@@ -9,7 +10,7 @@ import type { Tab } from '@/state/tabs';
 import {
   checkoutBranch, cherryPick, fastForward, NAMES_MAX, pushTags, resetHead, revertCommit, type CheckoutResult, type ResetMode,
 } from './api';
-import { abbrev, ccHead, checkedOutAnywhere, checkedOutElsewhere, headLabel, headOf, isCcOwned, refNamed, remoteBranch, remotesOf, shortBranch } from './refInfo';
+import { abbrev, ccHead, ccHeadWarning, checkedOutAnywhere, checkedOutElsewhere, headLabel, headOf, isCcOwned, refNamed, remoteBranch, remotesOf, shortBranch } from './refInfo';
 import { applyToast, fileList, rejectedLines, runRefOp } from './run';
 
 // The branch, tag and HEAD actions (docs/refs.md → Menus). Orders: 100 checkout, 200 create, 300 history-rewriting;
@@ -22,12 +23,22 @@ const pointOf = (r: Ref): Point | null => (r.oid ? { oid: r.oid, label: r.short 
 const commitPoint = (c: CommitCtx): Point => ({ oid: c.commit.oid, label: abbrev(c.commit.oid) });
 
 /**
- * Runs `run` at once unless this checkout's HEAD is a code-conductor/* branch; then only the ccHeadMove confirmation
- * runs it, with the acknowledgement.
+ * Asks (the shared confirm(), lib/confirm.ts) before moving the code-conductor/* HEAD `branch`; only Confirm runs `run`,
+ * with the acknowledgement. Cancel and Esc send nothing.
  */
+export async function confirmCcHeadMove(branch: string, action: 'checkout' | 'reset', label: string, run: (ccOwned: true) => Promise<unknown>): Promise<void> {
+  const ok = await confirm({
+    title: `${label}?`,
+    body: ccHeadWarning(branch, action === 'checkout' ? 'Switching away' : 'Resetting it'),
+    confirmLabel: action === 'checkout' ? 'Switch anyway' : 'Reset anyway',
+  });
+  if (ok) await run(true);
+}
+
+/** Runs `run` at once unless this checkout's HEAD is a code-conductor/* branch; then only after confirmCcHeadMove. */
 export function withCcHeadAck(tab: Tab, action: 'checkout' | 'reset', label: string, run: (ccOwned?: true) => Promise<unknown>): void {
   if (!ccHead(tab)) { void run(); return; }
-  openRefDialog({ kind: 'ccHeadMove', tab, branch: shortBranch(headOf(tab).branch!), action, label, run });
+  void confirmCcHeadMove(shortBranch(headOf(tab).branch!), action, label, run);
 }
 
 /** A CC_OWNED_BRANCH refusal about this HEAD (the UI's refs were stale): the toast offers the confirmation. */
@@ -37,7 +48,7 @@ const ccRetry = (tab: Tab, action: 'checkout' | 'reset', label: string, run: (cc
   const branch = Array.isArray(body.branches) && typeof body.branches[0] === 'string' ? body.branches[0] : '';
   return {
     title: 'This checkout is code-conductor\'s worktree',
-    action: { label: 'Review…', onClick: () => openRefDialog({ kind: 'ccHeadMove', tab, branch, action, label, run }) },
+    action: { label: 'Review…', onClick: () => void confirmCcHeadMove(branch, action, label, run) },
   };
 };
 

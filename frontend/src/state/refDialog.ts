@@ -18,8 +18,6 @@ export type RefDialog =
   | { kind: 'setUpstream'; tab: Tab; branch: string }
   /** Every mode the user confirms (hard); `branch`: HEAD's branch (short) or null when detached; `expect`: HEAD now. */
   | { kind: 'reset'; tab: Tab; to: Point; mode: ResetMode; branch: string | null; expect: string }
-  /** Moving a code-conductor/* HEAD by an action that has no dialog of its own; `run` gets the acknowledgement. */
-  | { kind: 'ccHeadMove'; tab: Tab; branch: string; action: 'checkout' | 'reset'; label: string; run: (ccOwned: true) => Promise<unknown> }
   /** Force-move a branch that is not checked out. */
   | { kind: 'moveBranch'; tab: Tab; name: string; from: string; to: Point };
 
