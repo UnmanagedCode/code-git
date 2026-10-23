@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArchiveIcon, EllipsisVerticalIcon, RefreshCwIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { FileViewToggle } from '@/features/diff/FileList';
 import { OperationBanner } from '@/features/sequence/OperationBanner';
 import { openStashSave } from '@/features/stash/actions';
 import { useStore } from '@/state/store';
@@ -28,6 +29,7 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
     <div className="flex flex-col text-sm" aria-busy={state.busy || state.loading}>
       <div className="flex items-center gap-1 border-b px-3 py-1.5">
         <h2 className="flex-1 text-sm font-semibold">Changes</h2>
+        <FileViewToggle />
         <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Stash changes…" disabled={!changed || state.busy} onClick={() => openStashSave(tab, { mode: 'all' })}>
           <ArchiveIcon />
         </Button>

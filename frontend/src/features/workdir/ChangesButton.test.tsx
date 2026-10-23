@@ -9,6 +9,8 @@ import { summary } from '@/test/fixtures';
 import { workdirWorld } from '@/test/workdirWorld';
 import { LG_QUERY } from '@/lib/useMediaQuery';
 import { openWorkingTree } from './entry';
+import { openDiff } from '@/features/diff/openDiff';
+import { setDialogOpen } from '@/state/workdir';
 
 const APP = { project: 'app', worktree: null };
 
@@ -42,6 +44,23 @@ test('the graph toolbar Changes button (n = staged + unstaged + untracked) opens
   expect(within(d).getByRole('region', { name: 'Commit message' })).toBeTruthy();
   await userEvent.click(within(d).getByRole('button', { name: 'Close' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
+
+test('with the unstaged diff open, a plain click in the dialog views that file and closes it; Ctrl-click keeps it open', async () => {
+  screenWidth(false);
+  workdirWorld({ unstaged: [dfile({ path: 'src/a.ts' }), dfile({ path: 'src/c.ts' })], staged: [] });
+  render(<Shell />);
+  act(() => dispatchTabs({ type: 'open', tab: APP }));
+  act(() => openDiff(APP, { kind: 'unstaged' }, { path: 'src/a.ts' }));
+  await waitFor(() => expect(diffStore.get().get(tabKey(APP))?.list.result).toBeTruthy());
+  act(() => setDialogOpen(APP, true));
+  const section = () => within(dialog()).getByRole('region', { name: 'Unstaged Files' });
+  fireEvent.click(within(section()).getByText('src/c.ts'), { ctrlKey: true });
+  expect(diffStore.get().get(tabKey(APP))?.selected).toEqual(['src/a.ts', 'src/c.ts']);
+  expect(dialog()).toBeTruthy();
+  await userEvent.click(within(section()).getByText('src/c.ts'));
+  expect(diffStore.get().get(tabKey(APP))).toMatchObject({ source: { kind: 'unstaged' }, viewed: 'src/c.ts', selected: ['src/c.ts'] });
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Changes' })).toBeNull());
 });
 
 test('clicking a file in the dialog closes it and opens that file\'s diff', async () => {

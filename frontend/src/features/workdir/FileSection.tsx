@@ -1,105 +1,76 @@
-import { useState, type KeyboardEvent } from 'react';
-import { EllipsisVerticalIcon, MinusIcon, PlusIcon, Undo2Icon } from 'lucide-react';
+import type { KeyboardEvent } from 'react';
+import { MinusIcon, PlusIcon, Undo2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import type { DiffFile } from '@/features/diff/api';
+import { useOpenDiff } from '@/features/diff/binding';
 import { openConflict } from '@/features/conflicts/open';
-import { fileLabel, STATUS_LABEL } from '@/features/diff/FileList';
+import { FileList } from '@/features/diff/FileList';
 import { openDiff } from '@/features/diff/openDiff';
-import { clip, FILE_RENDER_CAP } from '@/lib/clip';
-import { isTextEntry } from '@/lib/textEntry';
-import { cn } from '@/lib/utils';
-import { ActionMenuItems } from '@/shell/ActionMenu';
+import { matches } from '@/shell/shortcuts';
+import { setSelection } from '@/state/diff';
 import type { Tab } from '@/state/tabs';
 import { setDialogOpen } from '@/state/workdir';
-import { canDiscard, discardAll, discardFile, stageAll, stageFile, unstageAll, unstageFile, type Section, type WorkdirFileCtx } from './actions';
-import { matchCombo, matches } from '@/shell/shortcuts';
-import { ROW_MOVE_KEY, ROW_OPEN_KEY, ROW_STAGE_KEY, ROW_UNSTAGE_KEY } from './keys';
+import {
+  canDiscard, discardAll, discardFile, stageAll, stageFile, stageFilesOf, unstageAll, unstageFile, unstageFilesOf, type Section, type WorkdirFileCtx,
+} from './actions';
+import { ROW_STAGE_KEY, ROW_UNSTAGE_KEY } from './keys';
 
-const STATUS_CLASS: Record<string, string | undefined> = { A: 'text-success', '?': 'text-success', D: 'text-destructive', U: 'text-destructive', R: 'text-info', C: 'text-info' };
 const TITLE: Record<Section, string> = { unstaged: 'Unstaged Files', staged: 'Staged Files' };
 
-function Row({ tab, file, section, busy }: { tab: Tab; file: DiffFile; section: Section; busy: boolean }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const ctx: WorkdirFileCtx = { tab, file, section };
-  const open = () => {
-    setDialogOpen(tab, false);
+/**
+ * One list of the Changes panel: its header with the bulk actions, and the shared file list (Path or Tree) with each
+ * row's Stage / Unstage / Discard and menu; S stages and U unstages the focused row (never while typing in a field). A
+ * Tree directory stages or unstages every file of this section beneath it (a folder Stage leaves conflicted files
+ * out: staging one marks it resolved). While this section's diff is open, the list drives it.
+ */
+export function FileSection({ tab, section, files, busy }: { tab: Tab; section: Section; files: DiffFile[]; busy: boolean }) {
+  const diff = useOpenDiff(tab);
+  const bound = diff?.source.kind === section ? diff : null;
+  const label = `${TITLE[section]} (${files.length})`;
+  const open = (sel: string[], file: DiffFile, plain: boolean) => {
+    // A plain pick closes the narrow Changes dialog, so the diff it picks is in view.
+    if (plain) setDialogOpen(tab, false);
+    if (bound) { setSelection(tab, sel, file.path); return; }
     // A conflicted file has no diff to show: it opens in the merge tool.
     if (file.status === 'U') void openConflict(tab, file.path);
     else openDiff(tab, { kind: section }, { path: file.path });
   };
-  return (
-    <li
-      role="option"
-      aria-selected={false}
-      tabIndex={0}
-      data-path={file.path}
-      className="group flex cursor-default items-center gap-2 px-2 py-0.5 text-xs outline-none hover:bg-accent/50 focus-visible:bg-accent focus-visible:ring-1 focus-visible:ring-ring"
-      onClick={open}
-      onKeyDown={(e) => { if (matches(e, ROW_OPEN_KEY)) { e.preventDefault(); open(); } }}
-      onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}
-    >
-      <span className={cn('w-3 shrink-0 text-center font-mono font-semibold', STATUS_CLASS[file.status])} aria-label={STATUS_LABEL[file.status]} title={STATUS_LABEL[file.status]}>
-        {file.status}
-      </span>
-      <span className="min-w-0 flex-1 truncate font-mono" title={clip(fileLabel(file))}>{clip(fileLabel(file))}</span>
-      <span className="flex shrink-0 items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100 pointer-coarse:opacity-100">
-        {section === 'unstaged' ? (
-          <>
-            {canDiscard(file) && (
-              <Button variant="ghost" size="icon-sm" className="size-5" aria-label={`Discard ${file.path}`} disabled={busy} onClick={(e) => { e.stopPropagation(); void discardFile(tab, file); }}>
-                <Undo2Icon className="size-3.5" />
-              </Button>
-            )}
-            <Button variant="ghost" size="icon-sm" className="size-5" aria-label={`Stage ${file.path}`} disabled={busy} onClick={(e) => { e.stopPropagation(); void stageFile(tab, file); }}>
-              <PlusIcon className="size-3.5" />
-            </Button>
-          </>
-        ) : (
-          <Button variant="ghost" size="icon-sm" className="size-5" aria-label={`Unstage ${file.path}`} disabled={busy} onClick={(e) => { e.stopPropagation(); void unstageFile(tab, file); }}>
-            <MinusIcon className="size-3.5" />
-          </Button>
-        )}
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" className="size-5" aria-label={`Actions for ${file.path}`} onClick={(e) => e.stopPropagation()}>
-              <EllipsisVerticalIcon className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-            <ActionMenuItems context="workdir-file" ctx={ctx} />
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </span>
-    </li>
-  );
-}
-
-/**
- * One list of the Changes panel: its header with the bulk actions, and a row per file. ↑/↓ move between rows; S stages
- * and U unstages the focused row (never while typing in a field).
- */
-export function FileSection({ tab, section, files, busy }: { tab: Tab; section: Section; files: DiffFile[]; busy: boolean }) {
-  // The first FILE_RENDER_CAP rows until "Show all N": a huge working tree does not mount every row at once.
-  const [all, setAll] = useState(false);
-  const shown = all ? files : files.slice(0, FILE_RENDER_CAP);
-  const onKeyDown = (e: KeyboardEvent<HTMLUListElement>) => {
-    if (isTextEntry(e.target as Element)) return;
-    const row = (e.target as Element).closest('li[role="option"]');
-    const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('li[role="option"]')];
-    const i = row ? rows.indexOf(row as HTMLElement) : -1;
-    const moveBy = matchCombo(e, ROW_MOVE_KEY);
-    if (moveBy) {
-      e.preventDefault();
-      rows[Math.max(0, Math.min(rows.length - 1, i + (moveBy.key === 'ArrowDown' ? 1 : -1)))]?.focus();
-      return;
-    }
-    const file = i === -1 ? undefined : shown[i];
-    if (!file || busy) return;
+  const onRowKeyDown = (e: KeyboardEvent, file: DiffFile) => {
+    if (busy) return;
     if (matches(e, ROW_STAGE_KEY) && section === 'unstaged') { e.preventDefault(); void stageFile(tab, file); }
     if (matches(e, ROW_UNSTAGE_KEY) && section === 'staged') { e.preventDefault(); void unstageFile(tab, file); }
   };
-  const label = `${TITLE[section]} (${files.length})`;
+  const actions = (file: DiffFile) => (section === 'unstaged' ? (
+    <>
+      {canDiscard(file) && (
+        <Button variant="ghost" size="icon-sm" className="size-5" aria-label={`Discard ${file.path}`} disabled={busy} onClick={(e) => { e.stopPropagation(); void discardFile(tab, file); }}>
+          <Undo2Icon className="size-3.5" />
+        </Button>
+      )}
+      <Button variant="ghost" size="icon-sm" className="size-5" aria-label={`Stage ${file.path}`} disabled={busy} onClick={(e) => { e.stopPropagation(); void stageFile(tab, file); }}>
+        <PlusIcon className="size-3.5" />
+      </Button>
+    </>
+  ) : (
+    <Button variant="ghost" size="icon-sm" className="size-5" aria-label={`Unstage ${file.path}`} disabled={busy} onClick={(e) => { e.stopPropagation(); void unstageFile(tab, file); }}>
+      <MinusIcon className="size-3.5" />
+    </Button>
+  ));
+  const dirActions = (under: DiffFile[], dir: string) => {
+    if (section === 'staged') {
+      return (
+        <Button variant="ghost" size="icon-sm" className="size-5" aria-label={`Unstage folder ${dir}`} disabled={busy} onClick={() => void unstageFilesOf(tab, under)}>
+          <MinusIcon className="size-3.5" />
+        </Button>
+      );
+    }
+    const stageable = under.filter((f) => f.status !== 'U');
+    return stageable.length > 0 && (
+      <Button variant="ghost" size="icon-sm" className="size-5" aria-label={`Stage folder ${dir}`} disabled={busy} onClick={() => void stageFilesOf(tab, stageable)}>
+        <PlusIcon className="size-3.5" />
+      </Button>
+    );
+  };
   return (
     <section aria-label={TITLE[section]} className="border-b">
       <div className="flex flex-wrap items-center gap-x-1 px-2 py-1">
@@ -114,14 +85,19 @@ export function FileSection({ tab, section, files, busy }: { tab: Tab; section: 
         )}
       </div>
       {files.length ? (
-        <>
-          <ul role="listbox" aria-label={label} className="pb-1" onKeyDown={onKeyDown}>
-            {shown.map((f) => <Row key={`${f.oldPath ?? ''}\0${f.path}`} tab={tab} file={f} section={section} busy={busy} />)}
-          </ul>
-          {shown.length < files.length && (
-            <Button variant="ghost" size="sm" className="mb-1 ml-2 h-6 px-2 text-xs" onClick={() => setAll(true)}>Show all {files.length}</Button>
-          )}
-        </>
+        <FileList
+          label={label}
+          files={files}
+          viewed={bound?.viewed ?? null}
+          selected={bound?.selected}
+          multi={!!bound}
+          followFocus={!!bound}
+          onSelect={open}
+          actions={actions}
+          dirActions={dirActions}
+          menu={(file) => ({ context: 'workdir-file', ctx: { tab, file, section } satisfies WorkdirFileCtx })}
+          onRowKeyDown={onRowKeyDown}
+        />
       ) : (
         <p className="px-3 pb-2 text-xs text-muted-foreground">{section === 'unstaged' ? 'No unstaged changes.' : 'Nothing staged.'}</p>
       )}

@@ -21,8 +21,11 @@ export interface WorkdirFileCtx { tab: Tab; file: DiffFile; section: Section }
 const DISCARDABLE = new Set(['M', 'D', 'T', '?']);
 export const canDiscard = (f: DiffFile): boolean => DISCARDABLE.has(f.status);
 
-export const stageFile = (tab: Tab, f: DiffFile) => runWorkdirOp(tab, () => stageFiles(tab, { paths: patchPaths([f]) }));
-export const unstageFile = (tab: Tab, f: DiffFile) => runWorkdirOp(tab, () => unstageFiles(tab, { paths: patchPaths([f]) }));
+/** Stages / unstages `files` in one op (a rename brings its old path: patchPaths). */
+export const stageFilesOf = (tab: Tab, files: DiffFile[]) => runWorkdirOp(tab, () => stageFiles(tab, { paths: patchPaths(files) }));
+export const unstageFilesOf = (tab: Tab, files: DiffFile[]) => runWorkdirOp(tab, () => unstageFiles(tab, { paths: patchPaths(files) }));
+export const stageFile = (tab: Tab, f: DiffFile) => stageFilesOf(tab, [f]);
+export const unstageFile = (tab: Tab, f: DiffFile) => unstageFilesOf(tab, [f]);
 export const stageAll = (tab: Tab) => runWorkdirOp(tab, () => stageFiles(tab, { all: true }));
 export const unstageAll = (tab: Tab) => runWorkdirOp(tab, () => unstageFiles(tab, { all: true }));
 
