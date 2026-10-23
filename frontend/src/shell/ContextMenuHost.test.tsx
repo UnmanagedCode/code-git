@@ -129,3 +129,22 @@ test('the click a swallowed release produces is the only one swallowed: a later 
   fireEvent.click(item);
   await waitFor(() => expect(ran).toEqual(['hide']));
 });
+
+test('another pointer\'s press keeps the swallowed pointer\'s click armed: its delayed compatibility click still runs nothing', async () => {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 21, button: 0, pointerType: 'touch' });
+  open();
+  const item = await screen.findByRole('menuitem', { name: 'Hide' });
+  // Finger 1 lifts over the item: swallowed, its click is now armed.
+  fireEvent.pointerUp(item, { pointerId: 21, button: 0, pointerType: 'touch' });
+  // Finger 2 presses and lifts on the menu before finger 1's compatibility click arrives.
+  const menuEl = screen.getByRole('menu');
+  fireEvent.pointerDown(menuEl, { pointerId: 22, button: 0, pointerType: 'touch' });
+  fireEvent.pointerUp(menuEl, { pointerId: 22, button: 0, pointerType: 'touch' });
+  // Finger 1's delayed click: swallowed.
+  fireEvent.click(item);
+  expect(ran).toEqual([]);
+  // Only that one: a later click runs the item.
+  fireEvent.click(item);
+  await waitFor(() => expect(ran).toEqual(['hide']));
+});

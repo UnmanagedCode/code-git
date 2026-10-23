@@ -21,46 +21,47 @@ let seq = 0;
  *
  * Disarming never waits on a timer: a release lost outside the window, a release that produces no click, or a
  * compatibility click queued late (touch) must not eat a later, real click. A new press of the same pointer ends its
- * armed release; any new press or key ends an armed click; the window losing focus or the page being hidden ends all.
+ * armed release and its armed click; a key ends an armed click; the window losing focus or the page being hidden ends all.
  */
 /** Pointers pressed and not yet released. */
 const pressed = new Set<number>();
 /** Pointers whose next release is swallowed: pressed when a menu opened. */
 const armedReleases = new Set<number>();
-/** A swallowed release armed this: the click it may produce is swallowed too. */
-let armedClick = false;
+/** The pointer whose swallowed release may still produce a click (swallowed too), or null. */
+let armedClick: number | null = null;
 
 function disarm(): void {
   armedReleases.clear();
-  armedClick = false;
+  armedClick = null;
 }
 
 if (typeof window !== 'undefined') {
   window.addEventListener('pointerdown', (e) => {
-    // A new press of this pointer: its armed release was lost (a mouse reuses its id). Another pointer's press (a second
-    // finger) leaves the first one's release armed. Either way a pending click from an earlier release will not come.
+    // A new press of this pointer: its armed release was lost (a mouse reuses its id), and a click from its earlier
+    // release will not come. Another pointer's press (a second finger) leaves both armed: the first finger's release,
+    // or its delayed compatibility click, may still land on the item.
     armedReleases.delete(e.pointerId);
-    armedClick = false;
+    if (armedClick === e.pointerId) armedClick = null;
     pressed.add(e.pointerId);
   }, true);
   window.addEventListener('pointerup', (e) => {
     pressed.delete(e.pointerId);
     if (!armedReleases.delete(e.pointerId)) return;
     e.stopPropagation();
-    armedClick = true;
+    armedClick = e.pointerId;
   }, true);
   window.addEventListener('pointercancel', (e) => {
     pressed.delete(e.pointerId);
     armedReleases.delete(e.pointerId);
   }, true);
   window.addEventListener('click', (e) => {
-    if (!armedClick) return;
-    armedClick = false;
+    if (armedClick === null) return;
+    armedClick = null;
     e.stopPropagation();
     e.preventDefault();
   }, true);
   // Enter or Space on an item clicks it: a key always means the user's own choice.
-  window.addEventListener('keydown', () => { armedClick = false; }, true);
+  window.addEventListener('keydown', () => { armedClick = null; }, true);
   const lost = () => { pressed.clear(); disarm(); };
   window.addEventListener('blur', lost);
   document.addEventListener('visibilitychange', lost);

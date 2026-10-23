@@ -6,7 +6,8 @@ import { runOp, type Target } from '@/lib/endpoints';
 export const NAMES_MAX = 100;
 
 export interface RefChange { ref: string; old: string | null; new: string | null; upstream?: string | null }
-export interface RemoteRefChange { remote: string; ref: string; old: string | null; new: string | null }
+/** `tracking`: for a remote branch delete, the tracking ref here git deleted with it (`old` is its value). */
+export interface RemoteRefChange { remote: string; ref: string; old: string | null; new: string | null; tracking?: string | null }
 export interface HeadState { branch: string | null; oid: string | null }
 /** What an op created, moved or deleted (docs/refs.md → Undo record). */
 export interface UndoRecord {
