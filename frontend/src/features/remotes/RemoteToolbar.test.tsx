@@ -114,9 +114,9 @@ test('pull outcomes: diverged under ff-only says what to pick; a merge conflict 
   await waitFor(() => expect(w.posts('head.abort')).toEqual([{ which: 'merge' }]));
 });
 
-test('a rebase pull on a code-conductor/* HEAD asks first and then sends ccOwned; DIRTY_WORKTREE and PULL_CONFLICTS say what happened', async () => {
+test('a rebase pull on a code-conductor/* HEAD asks first and then sends ccOwned; DIRTY_WORKTREE says what happened', async () => {
   const w = remotesWorld({ head: 'code-conductor/wt', answers: { 'remote.pull': (p: { ccOwned?: boolean }) => (p.ccOwned
-    ? refusal('PULL_CONFLICTS', 'rebasing would conflict in 1 file; nothing changed', { files: ['g.txt'] })
+    ? { mode: 'rebase', upstream: 'refs/remotes/origin/code-conductor/wt', outcome: 'rebased', files: [], oid: 'x', fetch: {}, undo: {} }
     : refusal('DIRTY_WORKTREE', 'commit or stash the local changes first')) } });
   show();
   await openOptions();
@@ -125,10 +125,25 @@ test('a rebase pull on a code-conductor/* HEAD asks first and then sends ccOwned
   expect(w.posts('remote.pull')).toEqual([]);
   settleConfirm(true);
   await waitFor(() => expect(w.posts('remote.pull')).toEqual([{ mode: 'rebase', ccOwned: true }]));
-  await waitFor(() => expect(toastText()).toContain('The rebase would conflict; nothing changed'));
-  expect(toastText()).toContain('Conflicts in g.txt.');
+  await waitFor(() => expect(toastText()).toContain('Rebased'));
   await userEvent.click(button('Pull'));
   await waitFor(() => expect(toastText()).toContain('Commit or stash first'));
+});
+
+test('a rebase pull that stops on conflicts toasts "The pull stopped on conflicts" with Abort rebase…, which confirms, then aborts the rebase', async () => {
+  const w = remotesWorld({ answers: {
+    'remote.pull': { mode: 'rebase', upstream: 'refs/remotes/origin/main', outcome: 'conflicts', files: ['g.txt'], oid: 'x', fetch: {}, undo: {} },
+  } });
+  show();
+  await openOptions();
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Pull (rebase)' }));
+  await waitFor(() => expect(toastText()).toContain('The pull stopped on conflicts'));
+  expect(toastText()).toContain('Conflicts in g.txt.');
+  await userEvent.click(screen.getByRole('button', { name: 'Abort rebase…' }));
+  await waitFor(() => expect(confirmStore.get()?.opts.confirmLabel).toBe('Abort rebase'));
+  expect(w.posts('head.abort')).toEqual([]);
+  settleConfirm(true);
+  await waitFor(() => expect(w.posts('head.abort')).toEqual([{ which: 'rebase' }]));
 });
 
 test('an auto-fetch failure marks Fetch with a warning naming the reason', async () => {

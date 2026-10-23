@@ -1,5 +1,6 @@
 import { ApiError } from '@/lib/api';
 import { listDiffFiles, type DiffFilesResult } from '@/features/diff/api';
+import type { Conflict, Operation } from '@/features/sequence/api';
 import {
   commitCreate, commitState, commitTemplate, headMessage, stageFiles, type CommitParams, type Draft,
 } from '@/features/workdir/api';
@@ -17,6 +18,10 @@ export interface WorkdirState {
   unstaged: DiffFilesResult | null;
   staged: DiffFilesResult | null;
   merging: boolean;
+  /** The merge, rebase, cherry-pick or revert in progress (commit.state), null when none. */
+  operation: Operation | null;
+  /** The unmerged paths, whatever is in progress. */
+  conflicts: Conflict[];
   loading: boolean;
   error: string | null;
   /** An op is running: the panel's actions are disabled. */
@@ -37,7 +42,7 @@ export interface WorkdirState {
 
 export const EMPTY_DRAFT: Draft = { summary: '', description: '' };
 const fresh = (): WorkdirState => ({
-  unstaged: null, staged: null, merging: false, loading: false, error: null, busy: false, opError: null, draft: EMPTY_DRAFT,
+  unstaged: null, staged: null, merging: false, operation: null, conflicts: [], loading: false, error: null, busy: false, opError: null, draft: EMPTY_DRAFT,
   templateDraft: null, templateProblem: null, templatePath: null, amend: { on: false, head: null, saved: null }, noVerify: false, focus: null, dialogOpen: false,
 });
 
@@ -57,17 +62,27 @@ const toOpError = (e: unknown): OpError => {
   return { message: message(e), stderr: typeof body?.stderr === 'string' && body.stderr.trim() ? body.stderr : null };
 };
 
-/** Reloads both lists and the merge state. */
+/** Reloads both lists and the merge state: what is in progress and what is conflicted. */
 export async function refreshWorkdir(tab: Tab): Promise<void> {
   put(tab, (s) => ({ ...s, loading: true, error: null }));
   try {
     const [unstaged, staged, state] = await Promise.all([
       listDiffFiles(tab, { kind: 'unstaged' }, 'none'), listDiffFiles(tab, { kind: 'staged' }, 'none'), commitState(tab),
     ]);
-    put(tab, (s) => ({ ...s, unstaged, staged, merging: state.merging, loading: false }));
+    put(tab, (s) => ({
+      ...s, unstaged, staged, merging: state.merging, operation: state.operation ?? null, conflicts: state.conflicts ?? [], loading: false,
+    }));
   } catch (e) {
     put(tab, (s) => ({ ...s, loading: false, error: message(e) }));
   }
+}
+
+/**
+ * Reloads the lists and the merge state of a checkout whose Changes panel has loaded (no requests for one never shown):
+ * every ref op may change the working tree or start an operation the panel's banner shows.
+ */
+export function refreshWorkdirIfShown(tab: Tab): void {
+  if (workdirStore.get().has(tabKey(tab))) void refreshWorkdir(tab);
 }
 
 /** First show per tab: the lists, and the template once (it pre-fills an empty draft while amend is off). */
@@ -110,6 +125,8 @@ export async function runWorkdirOp(tab: Tab, f: () => Promise<unknown>): Promise
   return ok;
 }
 
+/** Marks the panel busy while a write it did not start runs (a continue, skip or abort from its banner). */
+export const setWorkdirBusy = (tab: Tab, busy: boolean): void => put(tab, (s) => ({ ...s, busy }));
 export const setDraft = (tab: Tab, d: Partial<Draft>): void => put(tab, (s) => ({ ...s, draft: { ...s.draft, ...d } }));
 export const setNoVerify = (tab: Tab, on: boolean): void => put(tab, (s) => ({ ...s, noVerify: on }));
 export const setDialogOpen = (tab: Tab, open: boolean): void => put(tab, (s) => ({ ...s, dialogOpen: open }));

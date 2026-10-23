@@ -4,6 +4,7 @@ import { joinMessage, splitMessage, templateDraft } from '../commit/message.js';
 import { readNoIndex } from '../diff/noIndex.js';
 import { commitOid } from '../diff/source.js';
 import { bad, optBool, paramsObject } from '../params.js';
+import { operationState } from '../sequence/state.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
 import { assertWorktree } from '../worktree.js';
 
@@ -100,7 +101,11 @@ export const ops = [
     name: 'commit.state',
     kind: 'read',
     params: noParams('commit.state'),
-    run: async (git) => ({ merging: await merging(git) }),
+    // merging: MERGE_HEAD exists (the commit box concludes a merge); operation and conflicts: src/git/sequence/state.js.
+    async run(git) {
+      const { merging: m, operation, conflicts } = await operationState(git);
+      return { merging: m, operation, conflicts };
+    },
   },
   {
     name: 'commit.headMessage',

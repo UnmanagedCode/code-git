@@ -1,4 +1,5 @@
 import type { DiffFile, FileDiff } from '@/features/diff/api';
+import type { Conflict, Operation } from '@/features/sequence/api';
 import type { RepoSummary } from '@/lib/endpoints';
 import { filesResult, OID } from './diffFixtures';
 import { summary as summaryFx } from './fixtures';
@@ -11,6 +12,9 @@ export interface WorkdirWorld {
   unstaged?: DiffFile[];
   staged?: DiffFile[];
   merging?: boolean;
+  /** commit.state's operation and conflicts; left out of the answer when undefined (an older backend's shape). */
+  operation?: Operation | null;
+  conflicts?: Conflict[];
   template?: { summary: string; description: string } | null;
   head?: { summary: string; description: string };
   summary?: RepoSummary;
@@ -21,7 +25,7 @@ export interface WorkdirWorld {
 }
 
 const WRITES = ['stage.files', 'stage.unstageFiles', 'stage.discardFiles', 'stage.stageLines', 'stage.unstageLines', 'stage.discardLines',
-  'commit.create', 'ignore.add', 'files.restore', 'patch.check', 'patch.apply',
+  'commit.create', 'ignore.add', 'files.restore', 'patch.check', 'patch.apply', 'head.continue', 'head.skip', 'head.abort',
   'stash.push', 'stash.pushLines', 'stash.apply', 'stash.pop', 'stash.applyFile', 'stash.drop', 'stash.rename', 'stash.branch'];
 
 export function workdirWorld(w: WorkdirWorld = {}) {
@@ -53,7 +57,10 @@ export function workdirWorld(w: WorkdirWorld = {}) {
     })),
     'POST api/ops/graph.page': op('graph.page', () => ({ items: [], nextCursor: null })),
     'GET api/repos/app/worktrees': { worktrees: [] },
-    'POST api/ops/commit.state': op('commit.state', () => ({ merging: w.merging ?? false })),
+    'POST api/ops/commit.state': op('commit.state', () => ({
+      merging: w.merging ?? false,
+      ...(w.operation !== undefined ? { operation: w.operation } : {}), ...(w.conflicts !== undefined ? { conflicts: w.conflicts } : {}),
+    })),
     'POST api/ops/commit.template': op('commit.template', () => ({ path: w.template ? '/t' : null, draft: w.template ?? null, problem: null })),
     'POST api/ops/commit.headMessage': op('commit.headMessage', () => ({ oid: 'a'.repeat(40), ...(w.head ?? { summary: 'HEAD summary', description: 'HEAD body' }) })),
     // The remotes card's reads (push after commit): no remote unless answered.

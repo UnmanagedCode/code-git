@@ -59,13 +59,17 @@ test('NOTHING_TO_COMMIT with nothing staged (unstaged changes do not count); a m
   w.repo.git('checkout', '-q', '--', 'a.txt');
   w.repo.branch('other');
   w.repo.commit({ 'b.txt': 'b\n' }, 'other');
+  const other = w.repo.git('rev-parse', 'HEAD');
   w.repo.checkout('main');
-  assert.deepEqual(await w.op('commit.state'), { merging: false });
+  const clean = { merging: false, operation: null, conflicts: [] };
+  assert.deepEqual(await w.op('commit.state'), clean);
   w.repo.git('merge', '-q', '--no-commit', '-s', 'ours', 'other');
-  assert.deepEqual(await w.op('commit.state'), { merging: true });
+  assert.deepEqual(await w.op('commit.state'), {
+    merging: true, operation: { kind: 'merge', incoming: { oid: other, subject: 'other' }, rebase: null }, conflicts: [],
+  });
   await w.op('commit.create', { summary: 'Merge other' });
   assert.equal(parents(w).length, 2);
-  assert.deepEqual(await w.op('commit.state'), { merging: false });
+  assert.deepEqual(await w.op('commit.state'), clean);
 });
 
 test('amend takes in the staged changes and replaces HEAD (same parent)', async (t) => {

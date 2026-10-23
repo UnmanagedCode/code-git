@@ -114,6 +114,10 @@ The lists load when the tab is first shown, on Refresh and after every op; there
 
 Write actions on the graph's branch, tag, commit and drop menus, a dialog for each destructive one, double-click to check out (a tag: jump), a toolbar **Branch** button (Ctrl/⌘+B), multi-select delete in the refs panel and ahead/behind badges on local branches. Full behaviour, the checked-out and `code-conductor/*` rules: [refs](refs.md).
 
+## Merge, rebase and conflicts
+
+What is in progress in a checkout — a merge, rebase, cherry-pick or revert, or conflicts left by a squash merge or a stash — shows as a banner in the Changes panel, after a reload too, with **Continue**, **Skip** and **Abort…**. A pull that stops on conflicts, merge or rebase, stays in progress the same way. Details: [merge](merge.md).
+
 ## Remotes
 
 Graph toolbar **Fetch**, **Pull** (split: the default mode, and a menu of the three modes, the default, Fetch all (prune)… and Auto-fetch) and **Push**; remote rows in the refs panel (**Add remote**, Fetch, Fetch (prune)…, Edit…, Remove…, Copy URL); **Push** / **Push to `<remote>`…** on a local branch and on a drop onto a remote branch; force-with-lease after a rejected push; **Push after commit** in the commit box. Full behaviour: [remotes](remotes.md).

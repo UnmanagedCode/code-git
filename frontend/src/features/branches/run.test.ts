@@ -64,3 +64,18 @@ test('a fully rejected push toasts each rejected ref with its reason', async () 
   await waitFor(() => expect(toastText()).toContain('The remote rejected the push'));
   expect(toastText()).toContain('refs/tags/v1: already exists');
 });
+
+test('runRefOp reloads the Changes panel\'s state (commit.state) once that panel has loaded for the tab, never before', async () => {
+  const { ensureWorkdir } = await import('@/state/workdir');
+  const fetch = stubGraph(linearWorld(2), {
+    'POST api/ops/branch.checkout': { ok: true, result: { branch: 'refs/heads/ok' } },
+    'POST api/ops/commit.state': { ok: true, result: { merging: false, operation: null, conflicts: [] } },
+    'POST api/ops/commit.template': { ok: true, result: { path: null, draft: null, problem: null } },
+  });
+  await runRefOp(T, { running: 'r', done: () => 'd' }, () => checkoutBranch(T, 'refs/heads/ok'));
+  expect(fetch.count('POST api/ops/commit.state')).toBe(0);
+  await ensureWorkdir(T);
+  await waitFor(() => expect(fetch.count('POST api/ops/commit.state')).toBe(1));
+  await runRefOp(T, { running: 'r', done: () => 'd' }, () => checkoutBranch(T, 'refs/heads/ok'));
+  await waitFor(() => expect(fetch.count('POST api/ops/commit.state')).toBe(2));
+});

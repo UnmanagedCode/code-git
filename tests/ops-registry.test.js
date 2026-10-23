@@ -90,3 +90,11 @@ test('the HEAD ops are registered as non-cancellable writes', () => {
     assert.equal(d.cancellable, false, name);
   }
 });
+
+test('the sequence writes (continue, skip, abort, and the merge / rebase / conflict starts) are non-cancellable writes; their reads cancellable', () => {
+  for (const name of ['head.abort', 'head.continue', 'head.skip']) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'write', name);
+    assert.equal(d.cancellable, false, name);
+  }
+});

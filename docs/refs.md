@@ -2,7 +2,7 @@
 
 # Branches, tags and HEAD
 
-Writing refs from the graph: branches (create, checkout, rename, delete, upstream, fast-forward, force-move, delete on a remote), tags (create, push, delete locally or on a remote) and HEAD (reset, revert, cherry-pick, abort). Ops and their wire shapes: [protocol](protocol.md#branch-tag-and-head-ops-srcgitopsbranchjs-tagjs-headjs).
+Writing refs from the graph: branches (create, checkout, rename, delete, upstream, fast-forward, force-move, delete on a remote), tags (create, push, delete locally or on a remote) and HEAD (reset, revert, cherry-pick, and continuing, skipping or aborting what stopped: [merge](merge.md)). Ops and their wire shapes: [protocol](protocol.md#branch-tag-and-head-ops-srcgitopsbranchjs-tagjs-headjs).
 
 ## Using it
 
@@ -48,7 +48,7 @@ Every op from these menus and dialogs shows a toast (bottom right): a running on
 |---|---|
 | `PUSH_REJECTED` | "The remote rejected the push" + each `ref: reason` (the refusal's message names them too). A partly rejected tag push is a warning listing the same |
 | `CHECKOUT_CONFLICT` | "Local changes would be overwritten" + the first `CONFLICT_FILES_SHOWN` files ("and N more") + "Commit, stash or discard these changes first." |
-| Revert / cherry-pick conflicts | Warning "… stopped on conflicts", the conflicted files, **Abort** (`head.abort`). Continuing is a commit (the header's conflicted count shows the state) |
+| Revert / cherry-pick conflicts | Warning "… stopped on conflicts", the conflicted files, **Abort** (`head.abort`). The Changes banner shows the operation with **Continue** / **Skip** / **Abort…** ([merge → The operation banner](merge.md#the-operation-banner)); a commit from the commit box concludes it too |
 | `CC_OWNED_BRANCH` with `head: true` (the UI's refs were stale) | **Review…** opens the cc HEAD confirmation, whose confirm retries with the acknowledgement |
 
 ## Rules
@@ -66,7 +66,7 @@ This checkout is recognised by its HEAD (`symbolic-ref HEAD`), other checkouts b
 
 ### Bare repositories
 
-Under `--work-tree=.` (`BASE_ARGS`) a bare repository's own files would look like a working tree, so every op here that writes the working tree or the index refuses one first (`BARE_REPO`, `assertWorktree` in `src/git/worktree.js`): checkout (and create with checkout), mixed and hard reset, revert, cherry-pick, abort, and the fast-forward of this checkout's own branch. Ops that change refs only — create without checkout, rename, delete, force-move, a free branch's fast-forward, soft reset, upstream, tags, pushes — run. In a bare repository they write only git's own ref metadata besides the ref: `--work-tree=.` makes git treat it as non-bare, so reflogs (`logs/`) are kept and a reset records `ORIG_HEAD`.
+Under `--work-tree=.` (`BASE_ARGS`) a bare repository's own files would look like a working tree, so every op here that writes the working tree or the index refuses one first (`BARE_REPO`, `assertWorktree` in `src/git/worktree.js`): checkout (and create with checkout), mixed and hard reset, revert, cherry-pick, continue, skip, abort, and the fast-forward of this checkout's own branch. Ops that change refs only — create without checkout, rename, delete, force-move, a free branch's fast-forward, soft reset, upstream, tags, pushes — run. In a bare repository they write only git's own ref metadata besides the ref: `--work-tree=.` makes git treat it as non-bare, so reflogs (`logs/`) are kept and a reset records `ORIG_HEAD`.
 
 ### Symbolic refs
 
@@ -111,7 +111,9 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 | `head.reset` soft / mixed | HEAD's position (mixed: the index too) | reset back to `undo.head.old` |
 | `head.reset` hard | HEAD's position, the index and tracked worktree changes | reset back to `undo.head.old`, then `git stash apply --index <undo.worktreeSnapshot>` (a `stash create` commit, until gc; `--index` restores the staged/unstaged split, without it everything comes back unstaged). Untracked files are never touched |
 | `head.revert`, `head.cherryPick` | nothing (a new commit) | reset to `undo.head.old` |
-| `head.abort` | the stopped revert / cherry-pick's partial result | — |
+| `head.abort` | the stopped merge / rebase / revert / cherry-pick's partial result and its conflict resolutions | — |
+| `head.continue` | nothing (it commits what is staged and goes on) | done: reset back to `undo.head.old` (a rebase: the branch's tip before the rebase, `undo.refs`) |
+| `head.skip` | the skipped commit's changes and any resolution made for it | done: as `head.continue` |
 
 ### Network ops
 

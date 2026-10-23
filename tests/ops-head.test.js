@@ -17,7 +17,7 @@ async function resetWorld(t) {
   return { ...w, two };
 }
 
-test('params: mode is soft/mixed/hard, oids full hex, mainline 1…16, which revert/cherry-pick/merge', () => {
+test('params: mode is soft/mixed/hard, oids full hex, mainline 1…16, which merge/rebase/cherry-pick/revert (skip: not merge)', () => {
   const r = (name, raw) => assert.throws(() => getOp(OPS, name).params(raw), (e) => ['BAD_PARAMS', 'BAD_REF'].includes(e.code), JSON.stringify(raw));
   const oid = 'a'.repeat(40);
   r('head.reset', { to: oid, expect: oid, mode: 'keep' });
@@ -25,9 +25,16 @@ test('params: mode is soft/mixed/hard, oids full hex, mainline 1…16, which rev
   r('head.revert', { oid, mainline: 0 });
   r('head.revert', { oid, mainline: 17 });
   r('head.cherryPick', { oid, mainline: '1' });
-  r('head.abort', { which: 'rebase' });
+  r('head.abort', { which: 'am' });
   r('head.abort', { which: 'toString' });
-  for (const which of ['revert', 'cherry-pick', 'merge']) assert.deepEqual(getOp(OPS, 'head.abort').params({ which }), { which });
+  r('head.continue', { which: 'bisect' });
+  r('head.skip', { which: 'merge' });
+  r('head.skip', { which: 'rebase', extra: 1 });
+  for (const which of ['revert', 'cherry-pick', 'merge', 'rebase']) {
+    assert.deepEqual(getOp(OPS, 'head.abort').params({ which }), { which });
+    assert.deepEqual(getOp(OPS, 'head.continue').params({ which }), { which });
+  }
+  for (const which of ['revert', 'cherry-pick', 'rebase']) assert.deepEqual(getOp(OPS, 'head.skip').params({ which }), { which });
 });
 
 test('reset soft keeps index and worktree, mixed keeps the worktree only, hard discards both; undo records the branch and HEAD move', async (t) => {

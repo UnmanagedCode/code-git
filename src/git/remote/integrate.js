@@ -1,6 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { parseConflictFiles } from '../parse/refs.js';
 import { guardOverwrite } from '../refs/write.js';
+import { operationState } from '../sequence/state.js';
 
 // Integrating a fetched upstream into this checkout's branch: the second half of remote.pull. Pull is never `git pull`:
 // a fetch (fetch.js) and then one of these, each with the config that would reshape it overridden on the command line.
@@ -14,7 +15,7 @@ const MERGE = ['-c', 'merge.autoStash=false', 'merge'];
  * would move every other branch pointing into the rebased range, code-conductor/* ones included) and
  * `rebase.autoSquash` (it would reorder commits).
  */
-const REBASE = ['-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false', 'rebase'];
+export const REBASE = ['-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false', 'rebase'];
 
 const unmergedFiles = async (git) => decoder.decode((await git(['diff', '--name-only', '--diff-filter=U', '-z'])).stdout).split('\0').filter(Boolean);
 
@@ -37,24 +38,28 @@ export async function merge(git, oid, message) {
 }
 
 /**
- * THE policy for a rebase that stopped on conflicts (`files`): abort it, so the checkout is as it was, and refuse
- * PULL_CONFLICTS. The one place that decides; a later card keeps the rebase in progress by changing only this.
+ * THE policy for a rebase that stopped on conflicts (`files`): it stays in progress, as a merge's conflicts do, and the
+ * caller answers `conflicts` with the files (`head.continue` / `head.skip` / `head.abort` take it from there). The one
+ * place that decides.
  */
 export async function onRebaseStopped(git, files) {
-  await git(['rebase', '--abort']);
-  throw new Refusal('PULL_CONFLICTS', `rebasing would conflict in ${files.length} ${files.length === 1 ? 'file' : 'files'}; nothing changed`, { files });
+  return { outcome: 'conflicts', files };
 }
 
+/** Whether a rebase is in progress in this checkout (an `edit` stop leaves one after exit 0). */
+const rebasing = async (git) => (await operationState(git)).operation?.kind === 'rebase';
+
 /**
- * Rebases this checkout's branch onto `oid`. Stopped on conflicts → onRebaseStopped. Any other failure is aborted
- * first if git left a rebase in progress (`rebase --abort`, exit 128 when it did not), then refused: untracked files in
- * the way → CHECKOUT_CONFLICT, else GIT_FAILED with git's stderr.
+ * `git rebase <args>` (REBASE's pins first; `env`, `stdin` and `timeoutMs` for the run) → {outcome: 'done' | 'stopped',
+ * files: []} (exit 0; `stopped`: an `edit` stop left the rebase in progress), or onRebaseStopped's answer when it stopped
+ * on conflicts. Any other failure is aborted first if git left a rebase in progress (`rebase --abort`, exit 128 when it
+ * did not), then refused: untracked files in the way → CHECKOUT_CONFLICT, else GIT_FAILED with git's stderr.
  */
-export async function rebase(git, oid) {
-  const r = await git([...REBASE, '--end-of-options', oid], { okExit: [0, 1] });
-  if (r.exitCode === 0) return;
+export async function rebase(git, args, { env, stdin, timeoutMs } = {}) {
+  const r = await git([...REBASE, ...args], { okExit: [0, 1], env, stdin, timeoutMs });
+  if (r.exitCode === 0) return { outcome: (await rebasing(git)) ? 'stopped' : 'done', files: [] };
   const files = await unmergedFiles(git);
-  if (files.length) await onRebaseStopped(git, files);
+  if (files.length) return onRebaseStopped(git, files);
   const stderr = decoder.decode(r.stderr);
   await git(['rebase', '--abort'], { okExit: [0, 128] });
   const blocked = parseConflictFiles(stderr);

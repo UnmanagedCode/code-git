@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArchiveIcon, EllipsisVerticalIcon, RefreshCwIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { OperationBanner } from '@/features/sequence/OperationBanner';
 import { openStashSave } from '@/features/stash/actions';
 import { useStore } from '@/state/store';
 import { tabKey, type Tab } from '@/state/tabs';
@@ -12,7 +13,7 @@ import { CommitBox } from './CommitBox';
 import { DetachedBanner } from './DetachedBanner';
 import { FileSection } from './FileSection';
 
-/** The Changes content: detached banner, unstaged and staged lists, the last op's error, the commit box. */
+/** The Changes content: detached and operation banners, unstaged and staged lists, the last op's error, the commit box. */
 export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' | 'dialog' }) {
   useStore(workdirStore);
   const state = workdirOf(tab);
@@ -46,7 +47,9 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
           <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Close" onClick={() => setDialogOpen(tab, false)}><XIcon /></Button>
         )}
       </div>
-      <DetachedBanner summary={summary} />
+      {/* A rebase detaches HEAD for its whole run: the operation banner says what is going on instead. */}
+      {state.operation?.kind !== 'rebase' && <DetachedBanner summary={summary} />}
+      <OperationBanner tab={tab} state={state} />
       {state.error && <p role="alert" className="px-3 py-2 text-xs break-words text-destructive">{state.error}</p>}
       {state.opError && (
         <div role="alert" className="flex items-start gap-1 border-b px-3 py-2 text-xs">
