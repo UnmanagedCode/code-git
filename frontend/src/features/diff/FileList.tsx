@@ -78,7 +78,7 @@ interface Props<F extends ListFile> {
   onSelect: (selected: string[], viewed: F, plain: boolean) => void;
   /** Row buttons, revealed on hover and focus; their clicks must stop propagating. */
   actions?: (f: F) => ReactNode;
-  /** A Tree directory's buttons, given the files listed beneath it. */
+  /** A Tree directory's buttons, given every file beneath it (those past the render cap too). */
   dirActions?: (files: F[], dirPath: string) => ReactNode;
   /** The row menu (⋮ and right-click): `targets` is the selection when the row is in it, else the row alone. */
   menu?: (f: F, targets: F[]) => { context: string; ctx: unknown };
@@ -153,6 +153,19 @@ export function FileList<F extends ListFile>({
   const tree = useMemo(() => (view === 'tree' ? buildFileTree(shown) : null), [shown, view]);
   const ordered = useMemo(() => orderedFiles(shown, view), [shown, view]);
   const byPath = useMemo(() => new Map(shown.map((f) => [f.path, f])), [shown]);
+  // A directory's actions act on every file beneath it, rendered under the cap or not.
+  const underDir = useMemo(() => {
+    const m = new Map<string, F[]>();
+    if (view !== 'tree' || !dirActions) return m;
+    const walk = (nodes: TreeNode<F>[]): F[] => nodes.flatMap((n) => {
+      if (n.kind === 'file') return [n.file];
+      const under = walk(n.children);
+      m.set(n.path, under);
+      return under;
+    });
+    walk(buildFileTree(files));
+    return m;
+  }, [files, view, !!dirActions]);
   const sel = selected ?? [];
 
   const click = (f: F) => (e: MouseEvent) => {
@@ -212,7 +225,6 @@ export function FileList<F extends ListFile>({
       />
     );
   };
-  const filesUnder = (nodes: TreeNode<F>[]): F[] => nodes.flatMap((n) => (n.kind === 'file' ? [n.file] : filesUnder(n.children)));
   const renderTree = (nodes: TreeNode<F>[], depth: number): ReactNode => nodes.map((n) => (n.kind === 'file'
     ? row(n.file, n.file.oldPath ? `${n.file.oldPath} → ${n.name}` : n.name, depth)
     : (
@@ -222,7 +234,7 @@ export function FileList<F extends ListFile>({
           <span className="min-w-0 flex-1 truncate">{clip(n.name)}</span>
           {dirActions && (
             <span className="flex shrink-0 items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
-              {dirActions(filesUnder(n.children), n.path)}
+              {dirActions(underDir.get(n.path) ?? [], n.path)}
             </span>
           )}
         </div>
