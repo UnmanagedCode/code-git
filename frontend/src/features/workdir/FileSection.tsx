@@ -7,7 +7,7 @@ import { openConflict } from '@/features/conflicts/open';
 import { FileList } from '@/features/diff/FileList';
 import { openDiff } from '@/features/diff/openDiff';
 import { matches } from '@/shell/shortcuts';
-import { setSelection } from '@/state/diff';
+import { loadList, setSelection } from '@/state/diff';
 import type { Tab } from '@/state/tabs';
 import { setDialogOpen } from '@/state/workdir';
 import {
@@ -21,7 +21,8 @@ const TITLE: Record<Section, string> = { unstaged: 'Unstaged Files', staged: 'St
  * One list of the Changes panel: its header with the bulk actions, and the shared file list (Path or Tree) with each
  * row's Stage / Unstage / Discard and menu; S stages and U unstages the focused row (never while typing in a field). A
  * Tree directory stages or unstages every file of this section beneath it (a folder Stage leaves conflicted files
- * out: staging one marks it resolved). While this section's diff is open, the list drives it.
+ * out: staging one marks it resolved). While this section's diff is open, the list drives it (a file the diff's list
+ * lacks refetches that list).
  */
 export function FileSection({ tab, section, files, busy }: { tab: Tab; section: Section; files: DiffFile[]; busy: boolean }) {
   const diff = useOpenDiff(tab);
@@ -30,7 +31,14 @@ export function FileSection({ tab, section, files, busy }: { tab: Tab; section: 
   const open = (sel: string[], file: DiffFile, plain: boolean) => {
     // A plain pick closes the narrow Changes dialog, so the diff it picks is in view.
     if (plain) setDialogOpen(tab, false);
-    if (bound) { setSelection(tab, sel, file.path); return; }
+    if (bound) {
+      setSelection(tab, sel, file.path);
+      // A file this section lists but the diff's loaded list does not (the panel reloaded on its own): refetch the
+      // diff's list, which keeps the pick (loadList).
+      const listed = bound.list.result?.files;
+      if (listed && !listed.some((f) => f.path === file.path)) void loadList(tab);
+      return;
+    }
     // A conflicted file has no diff to show: it opens in the merge tool.
     if (file.status === 'U') void openConflict(tab, file.path);
     else openDiff(tab, { kind: section }, { path: file.path });

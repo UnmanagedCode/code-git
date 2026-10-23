@@ -5,7 +5,7 @@ import { Shell } from '@/shell/Shell';
 import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { dispatchTabs, tabKey } from '@/state/tabs';
-import { dfile } from '@/test/diffFixtures';
+import { dfile, fdiff, hunk } from '@/test/diffFixtures';
 import { json, summary } from '@/test/fixtures';
 import { workdirWorld, type WorkdirWorld } from '@/test/workdirWorld';
 
@@ -122,6 +122,33 @@ test('a second row clicked before the unstaged diff\'s list answers is the one v
   await waitFor(() => expect(diffStore.get().get(tabKey(APP))?.list.loading).toBe(false));
   expect(diffStore.get().get(tabKey(APP))).toMatchObject({ source: { kind: 'unstaged' }, viewed: 'z.ts', selected: ['z.ts'] });
   expect(row('Unstaged Files', 'z.ts').getAttribute('aria-current')).toBe('true');
+});
+
+test('bound section: a listed file is viewed with no new list; one that appeared after Reload changes refetches the diff\'s list and is shown', async () => {
+  const w = await show({
+    unstaged: [M, NEW],
+    fileDiffs: { 'src/a.ts': fdiff([hunk(1, 1, ['+a'])], { path: 'src/a.ts' }), 'notes.txt': fdiff([hunk(1, 1, ['+n'])], { path: 'notes.txt' }), 'src/new.ts': fdiff([hunk(1, 1, ['+fresh line'])], { path: 'src/new.ts' }) },
+  });
+  const diffLists = () => (w.posts('diff.files') as { source: { kind: string } }[]).length;
+  await userEvent.click(within(section('Unstaged Files')).getByText('src/a.ts'));
+  await waitFor(() => expect(diffStore.get().get(tabKey(APP))?.list.result).toBeTruthy());
+  // A new file shows up in the panel only: Reload changes does not reload the diff's list.
+  w.lists.unstaged.push(dfile({ path: 'src/new.ts', status: 'A' }));
+  const before = diffLists();
+  await userEvent.click(screen.getByRole('button', { name: 'Reload changes' }));
+  await waitFor(() => expect(row('Unstaged Files', 'src/new.ts')).not.toBeNull());
+  expect(diffStore.get().get(tabKey(APP))?.list.result?.files.map((f) => f.path)).not.toContain('src/new.ts');
+  const afterReload = diffLists();
+  expect(afterReload).toBe(before + 2);
+  await userEvent.click(within(section('Unstaged Files')).getByText('notes.txt'));
+  expect(diffStore.get().get(tabKey(APP))?.viewed).toBe('notes.txt');
+  expect(diffLists()).toBe(afterReload);
+  await userEvent.click(within(section('Unstaged Files')).getByText('src/new.ts'));
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Diff' }).textContent).toContain('fresh line'));
+  expect(diffLists()).toBe(afterReload + 1);
+  expect(diffStore.get().get(tabKey(APP))).toMatchObject({ source: { kind: 'unstaged' }, viewed: 'src/new.ts', selected: ['src/new.ts'] });
+  expect(screen.getByLabelText('Viewed file').textContent).toContain('src/new.ts');
+  expect(row('Unstaged Files', 'src/new.ts').getAttribute('aria-current')).toBe('true');
 });
 
 test('with the unstaged diff open its section drives it: viewed row current, a click or ↓ views a file without a new list; a staged row opens the staged diff', async () => {
