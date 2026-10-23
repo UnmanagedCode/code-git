@@ -100,7 +100,7 @@ Every op acts on the target's repo (the checkout or the chain's submodule) with 
 | File | Role |
 |---|---|
 | `api.ts` | Wire types (`SubmoduleEntry`, `SubmoduleList`) and the op wrappers |
-| `state.ts` | `submodulesStore` by `tabKey`; `loadSubmodules` (one request in flight per tab plus one rerun); `useSubmodules` reads on mount, after a finished write on the same project (the activity store) and on window focus |
+| `state.ts` | `submodulesStore` by `tabKey`; `loadSubmodules` (one request in flight per tab plus one rerun); `useSubmodules` reads on mount, after a write op run on the project ends and no other is running (`onSettledWrite`, [architecture → Write op runs](architecture.md#write-op-runs)), and on window focus unless a write run of the project is in flight |
 | `SubmodulesPanel.tsx`, `panel.ts` | The left-slot panel (`SUBMODULES_PANEL`), `statusBadges`, and `SubmodulesButton`: below `lg` (left slot hidden) the graph toolbar's **Submodules** button opens the panel in a dialog. Row menus render in the panel's own `ContextMenuHost` (`'submodules'`), inside that dialog on a phone |
 | `actions.ts` | `SUBMODULE_ACTIONS` (context `'submodule'`, ctx `{tab, entry}`), `openSubmodule`, `subTab`, `update`, `initialize`, `sync`, `remove` |
 | `run.ts` | `runSubmoduleOp`: `trackOp`, then the submodule list, the Changes lists and summary, and the graph of the acted-on repo refreshed whatever the outcome |
@@ -126,4 +126,3 @@ Read-only against a live cc, default project `test`: the checkout's list, a refu
 - **No pointer prompt on a browser reload or close**: only a tab closing inside the app offers it.
 - **A nested submodule's local config is checked only at the level the op runs at.**
 - **Extra commands per op** in a submodule tab: the containment preflight's three checkout reads plus two per chain level.
-- **A read can fail transiently during a multi-command submodule write.** The UI refreshes after each finished command of a write, so a read started mid-`remove` or mid-`update` can meet a submodule being deleted or cloned and fail: a `repo.summary` or graph read (`GIT_FAILED`, or `NOT_A_REPO` as `repo.summary` words git's exit 128) flashes an error in the header or graph, and the Submodules panel's own `submodule.list` refresh (its `git status` meeting a half-made `.git/modules/<name>`: `GIT_FAILED`, "not a git repository") flashes one in the panel. Each recovers when the op ends and its refresh runs. `harness/playwright/submodules.mjs` tolerates exactly these three reads (`repo.summary`, `graph.*`, `submodule.list`) overlapping an in-flight `submodule.remove`/`update`, and then requires a clean page.

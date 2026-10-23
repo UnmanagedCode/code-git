@@ -1,6 +1,6 @@
 import { act } from '@testing-library/react';
 import { expect, test } from 'vitest';
-import { entry, json, summary } from '@/test/fixtures';
+import { entry, json, opRun, summary } from '@/test/fixtures';
 import { commit, oid, ref } from '@/test/graphData';
 import { linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
 import {
@@ -164,22 +164,65 @@ test('loadStats asks only for commits without stats, at most STATS_CHUNK, one re
   expect(fetch.count('POST api/ops/graph.stats')).toBe(2);
 });
 
-test('triggers: a finished write on the same project refreshes; a read, another project or a running write does not', async () => {
+const runningRun = (id: number, over = {}) => opRun({ id, opRunId: `run-${id}`, status: 'running', endedAt: null, ...over });
+const endedRun = (id: number, over = {}) => opRun({ id, opRunId: `run-${id}`, ...over });
+
+// Invariant: a write op run of the project refreshes once when it ends — never between its commands (entries closing
+// while the run runs), never for another project's run.
+test('triggers: one refresh when a write run of the project ends, none while it runs or for another project', async () => {
   const world = linearWorld(5);
+  world.worktrees = [{ worktreeName: 'wt', branch: 'code-conductor/wt', baseBranch: 'main', locked: false }];
   const fetch = stubGraph(world);
-  activityStore.set({ entries: [entry({ id: 1, kind: 'write' })], error: null });
+  activityStore.set({ entries: [], runs: [endedRun(1)], error: null });
   await openGraph(TAB);
-  const refreshes = () => fetch.count('POST api/ops/graph.refs');
-  activityStore.set({ entries: [entry({ id: 1, kind: 'write' }), entry({ id: 2, kind: 'read' }), entry({ id: 3, kind: 'write', target: { project: 'other', worktree: null } })], error: null });
-  activityStore.set((s) => ({ ...s, entries: [...s.entries, entry({ id: 4, kind: 'write', status: 'running' })] }));
+  const reads = () => ['graph.refs', 'graph.page', 'repo.summary'].map((op) => fetch.count(`POST api/ops/${op}`));
+  const opened = reads();
+  activityStore.set({ entries: [entry({ id: 2, kind: 'write', opRunId: 'run-2', status: 'ok' })], runs: [endedRun(1), runningRun(2)], error: null });
+  activityStore.set((s) => ({ ...s, entries: [...s.entries, entry({ id: 3, kind: 'write', opRunId: 'run-2', status: 'ok' })] }));
+  activityStore.set((s) => ({ ...s, runs: [...s.runs, endedRun(3, { target: { project: 'other', worktree: null } })] }));
   await flush();
-  expect(refreshes()).toBe(1);
-  activityStore.set((s) => ({ ...s, entries: [...s.entries.slice(0, 3), entry({ id: 4, kind: 'write', status: 'failed', target: { project: 'app', worktree: 'wt' } })] }));
+  expect(reads()).toEqual(opened);
+  activityStore.set((s) => ({ ...s, runs: [endedRun(1), endedRun(2), endedRun(3, { target: { project: 'other', worktree: null } })] }));
   await flush();
-  expect(refreshes()).toBe(2);
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(opened[0] + 1);
+  // Every checkout's summary: its own and the worktree's.
+  expect(fetch.count('POST api/ops/repo.summary')).toBe(opened[2] + 2);
+  activityStore.set((s) => ({ ...s, runs: [...s.runs, endedRun(4, { target: { project: 'app', worktree: 'wt' } })] }));
+  await flush();
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(opened[0] + 2);
   activityStore.set((s) => ({ ...s }));
   await flush();
-  expect(refreshes()).toBe(2);
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(opened[0] + 2);
+});
+
+// Invariant: a focus while a write run of the project is running reads nothing; the run's end refreshes once.
+test('triggers: window focus during a write run reads nothing; the run end refreshes once', async () => {
+  const fetch = stubGraph(linearWorld(5));
+  dispatchTabs({ type: 'open', tab: TAB });
+  setGraphClock(() => 1e9);
+  activityStore.set({ entries: [], runs: [runningRun(1)], error: null });
+  await openGraph(TAB);
+  const before = fetch.count('POST api/ops/graph.refs');
+  window.dispatchEvent(new Event('focus'));
+  document.dispatchEvent(new Event('visibilitychange'));
+  await flush();
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(before);
+  activityStore.set((s) => ({ ...s, runs: [endedRun(1)] }));
+  await flush();
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(before + 1);
+});
+
+// Invariant: closing the tab stops its run watcher: a run ending afterwards reads nothing.
+test('triggers: a closed tab does not refresh when a write run ends', async () => {
+  const fetch = stubGraph(linearWorld(5));
+  dispatchTabs({ type: 'open', tab: TAB });
+  activityStore.set({ entries: [], runs: [runningRun(1)], error: null });
+  await openGraph(TAB);
+  const before = fetch.count('POST api/ops/graph.refs');
+  dispatchTabs({ type: 'close', index: 0 });
+  activityStore.set((s) => ({ ...s, runs: [endedRun(1)] }));
+  await flush();
+  expect(fetch.count('POST api/ops/graph.refs')).toBe(before);
 });
 
 test('triggers: window focus refreshes the active tab at most once per throttle window; a visibility pref change reloads pages without re-reading refs', async () => {
@@ -246,7 +289,7 @@ test('triggers ignore a graph that was never opened (its checkout is not a repo)
   const fetch = stubGraph(linearWorld(3));
   dispatchTabs({ type: 'open', tab: TAB });
   window.dispatchEvent(new Event('focus'));
-  activityStore.set({ entries: [entry({ id: 5, kind: 'write' })], error: null });
+  activityStore.set({ entries: [], runs: [endedRun(5)], error: null });
   updatePrefs('app', (p) => ({ ...p, hidden: ['refs/heads/main'] }));
   await flush();
   expect(fetch.count('POST api/ops/graph.refs')).toBe(0);

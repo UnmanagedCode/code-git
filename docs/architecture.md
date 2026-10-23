@@ -62,7 +62,7 @@
 | `src/git/parse/refs.js`, `parse/push.js` | `parseTracking`, `parseConflictFiles`; `parsePushPorcelain`, `classifyRemoteFailure` — pure |
 | `src/git/ops/submodule.js` | `submodule.list`, `.add`, `.init`, `.update`, `.sync`, `.setUrl`, `.remove`, `.commitPointer` ([submodules](submodules.md)) |
 | `src/git/submodule/` | `validate.js` (`submodulePath`, `submoduleName`, `submoduleChain`, `isDotGitAlias`), `target.js` (`assertInsideCheckout`: the containment preflight), `gitdir.js` (`gitDirMatches`: the git dir a submodule may have), `list.js` (`listSubmodules`, `parseSubmoduleConfig`, `readGitmodules`, `urlProblem`), `gates.js` (entries known and unblocked, repo-scope `protocol.*`, url checks, `orphanCount`, the symlinked-`.gitmodules` check), `failure.js` (`submoduleFailure`), `url.js` (`submoduleUrl`, `isRelativeUrl`), `limits.js` (`SUBMODULE_LIMITS`) |
-| `src/activity/log.js` | `createActivityLog()`: the ring, its events, cancel |
+| `src/activity/log.js` | `createActivityLog()`: the entry ring, the write-run ring (`openRun` → `track` / `end`, `listRuns`), their events, cancel |
 | `src/routes/*.js` | One file per feature, each `mount(router, deps)`; `index.js` mounts them |
 
 **Frontend** (`frontend/src/`):
@@ -73,11 +73,12 @@
 | `lib/api.ts` | `api()`: relative URLs only, JSON body + content type on non-GET, `ApiError` |
 | `lib/endpoints.ts` | Typed calls and the API's TypeScript shapes |
 | `lib/route.ts` | Query-string route read/write |
-| `lib/sse.ts` | One shared `EventSource` on `api/activity/events`; a handler gets the event's entry (nothing on a reconnect); `setEventSourceFactory` is the test seam |
+| `lib/sse.ts` | One shared `EventSource` on `api/activity/events`; handlers are payload-free signals (an `activity` or `run` event, a (re)connect); `setEventSourceFactory` is the test seam |
 | `lib/storage.ts` | The only `localStorage` user; keys prefixed `code-git:` |
 | `state/store.ts` | `createStore` + `useStore` (`useSyncExternalStore`) |
 | `state/tabs.ts` | `tabsReducer` (pure), `tabsStore`, `tabKey`, `parentTab`, `refsKey`, `prefsKey`, `isSubChain`, persistence |
-| `state/useRepos.ts`, `useActivity.ts`, `useRepoSummary.ts` | One store per feature; per-checkout state is a map keyed by `tabKey` |
+| `state/useRepos.ts`, `useActivity.ts`, `useRepoSummary.ts` | One store per feature; per-checkout state is a map keyed by `tabKey`. `activityStore` holds `{entries, runs}` |
+| `state/settledWrites.ts` | When a watcher may read after a write ([Write op runs](#write-op-runs)): `onSettledWrite(project, match, fn)`, `writeRunning(project)` over `activityStore`'s runs |
 | `state/shownPanel.ts` | Which on-demand panel each tab shows (`showPanel`, `hidePanel`, `useShownPanel`); `pruneClosedTabs` drops a closed tab's keys from a tab-keyed store |
 | `state/diff.ts` | `diffStore` (per tab: source, list, selection, viewed path, file diffs by `fileKey`), `prefsStore` (persisted `code-git:diff-prefs`), the list/file loaders |
 | `features/diff/` | `openDiff.ts` (the entry point), `api.ts` (wire types + op wrappers), `model.ts` / `viewRows.ts` / `wordDiff.ts` / `segments.ts` (pure row models), `highlight/` (Prism, lazily loaded), the panels and views |
@@ -99,7 +100,7 @@
 | `shell/Shell.tsx` | Layout, panel slots, picker |
 | `shell/panels.ts`, `shell/menus.ts`, `shell/ActionMenu.tsx` | The panel and context-menu registries |
 | `features/history/` | File history, blame and the reflog ([history](history.md#ui-frontendsrcfeatureshistory)): `api.ts`, `state.ts` (per `tabKey`), `open.ts` (`openFileHistory`, `openBlame`, `openReflog`), `panel.ts` (`HISTORY_PANEL`, `REFLOG_PANEL`), `HistoryPanel` (history list + `CommitFileView` through the diff's views; the blame view), `ReflogPanel`, `authorColors.ts`, `actions.ts` (`HISTORY_ACTIONS`; context `'reflog-entry'`), `commands.ts` |
-| `state/undo.ts`, `features/undo/` | The journal's slots per `tabKey` (`useUndo`, `refreshUndo`: refetched on mount, focus, and a finished write in that checkout on the activity stream — no op wrapper knows about undo); `api.ts`, `flows.ts` (`undoFlow` / `redoFlow`: the confirmation from the slot's `confirm`, then `runRefOp`; `blockedReason`; `UNDO_SHELL_KEYS`), `keys.ts`, `commands.ts`, `UndoButtons` (the repo header's) |
+| `state/undo.ts`, `features/undo/` | The journal's slots per `tabKey` (`useUndo`, `refreshUndo`: refetched on mount, focus, and when a write op run in that checkout ends (`onSettledWrite`) — no op wrapper knows about undo); `api.ts`, `flows.ts` (`undoFlow` / `redoFlow`: the confirmation from the slot's `confirm`, then `runRefOp`; `blockedReason`; `UNDO_SHELL_KEYS`), `keys.ts`, `commands.ts`, `UndoButtons` (the repo header's) |
 | `shell/commands.ts`, `features/*/commands.ts`, `shell/CommandPalette.tsx`, `shell/ShortcutSheet.tsx`, `shell/overlays.ts`, `shell/keys.ts`, `shell/useShellKeys.ts` | The command palette (`COMMANDS`, `filterCommands`, `filterPicks`: each feature's `commands.ts` list) and the shortcut sheet, both mounted by `Shell` and opened from `overlayStore`; the shell's own keys (Ctrl/⌘+P, Ctrl/⌘+/) and `useShellKeys` (global keys, off in text fields and dialogs) |
 | `shell/shortcuts.ts`, `features/*/keys.ts` | The shortcut catalog: `Combo`, `Shortcut`, `matches` / `matchCombo` (the only reader of an event's key and modifier fields: `guards.test.ts`), `pointerMods` (click modifiers), `comboLabel` / `shortcutLabel`, `SHORTCUT_GROUPS` (each feature's `keys.ts` list, by scope) |
 | `features/<feature>/` | Feature components and their tests |
@@ -194,7 +195,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 - `kind` is `'read'` or `'write'`.
 - `cancellable`, when given, is a boolean; it defaults to `kind === 'read'`. A write sets `cancellable: true` only where aborting mid-command cannot leave the repo half-changed, and its card states why: `remote.fetch` (atomic ref updates, gc off, no index or worktree), `remote.push`, `tag.push`, `tag.deleteRemote`, `branch.deleteRemote` (atomic remote ref updates). `remote.pull`, `merge.start`, `rebase.start`, `rebase.interactive`, `conflict.save`, `conflict.take`, `head.continue`, `head.skip` and `head.abort` are not: an abort mid-merge or mid-rebase would.
 - `undo`, when given, is a function, and only on a write ([undo → Registering an op](undo.md#registering-an-op)).
-- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target, journal})` returns JSON. `target` is the call's validated `{project, worktree, sub?}` (worktree `null` = main checkout; `sub` a submodule chain), for an op that names its output after the checkout (`diff.patch`); `journal` is the undo journal, read only by the `undo.*` ops; git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`.
+- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target, journal})` returns JSON. `target` is the call's validated `{project, worktree, sub?}` (worktree `null` = main checkout; `sub` a submodule chain), for an op that names its output after the checkout (`diff.patch`); `journal` is the undo journal, read only by the `undo.*` ops; git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`. For a write, the route opens the call's run first (`activity.openRun`), counts each `git` call through `run.track`, and calls `run.end()` in a `finally` ([Write op runs](#write-op-runs)).
 
 ## Runner pipeline (`runGit`)
 
@@ -331,9 +332,16 @@ What an op overwrites or deletes, and whether git can give it back. The branch, 
 
 ## Activity log
 
-- In memory, per backend process, newest `LIMITS.activityRing` entries. **Diagnostic only**: undo, reflog and every other feature derive state from git, never from this log.
+- In memory, per backend process, newest `LIMITS.activityRing` entries; runs are capped the same way, but only ended runs are dropped (a running one stays until it ends, so `writeRunning` never reads a project idle mid-write). **Diagnostic only**: undo, reflog and every other feature derive state from git, never from this log.
 - Records what ran (argv, an argument that is a url with a password masked by `maskUrl` in `src/mask.js`: `https://u:***@h/r`), where, the op's env overlay with secret-looking values redacted, stdin size (never content), the stderr tail (hook output included, decoded with `TextDecoder` `fatal: false`).
 - `events` (an `EventEmitter`) feeds the SSE route; the UI refetches on each event.
+
+### Write op runs
+
+- **Why.** A multi-command write (`submodule.remove`: rm, deinit, …; `submodule.update`: init, clone, checkout; a rebase `remote.pull`: fetch, then rebase) leaves the repository half-done between its commands. A watcher refreshing when a command closes would read that state (a header saying "not a git repository", a detached HEAD mid-rebase). The project lock is per command (`runGit`), so nothing else marks the gap.
+- **Backend.** `routes/ops.js` opens a run for every write call before the containment preflight, wraps `git` in `run.track` (a call counts from its start, lock wait included, until it settles), and calls `run.end()` in `finally`. The log marks the run `ended` once `end()` was called and no tracked call is pending — so a `Promise.all` whose first command failed still waits for a sibling queued on the lock ([protocol → Activity](protocol.md#activity)).
+- **UI.** `state/settledWrites.ts`, over `activityStore.runs`: `onSettledWrite(project, match, fn)` calls `fn` once a matching run of the project ended and none of the project's runs is running (overlapping writes: one call, after the last; a run already running at subscribe time is waited for). Its users: the graph's watcher (`watchGraph`: refs, every checkout's summary, pages), the Submodules panel (`useSubmodules`), undo (`useUndo`, this checkout's runs only). `writeRunning(project)` gates the graph's and the Submodules panel's focus refresh (skipped: the run's end refreshes with the same reads) and auto-fetch (`skipReason` → `writing`).
+- **Not deferred.** A read the user starts (Refresh, opening a tab, a diff, an op wrapper's own refresh after its answer) and anything changed outside code-git can still meet a write half-done.
 
 ## UI state and routing
 

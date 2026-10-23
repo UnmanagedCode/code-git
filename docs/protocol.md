@@ -20,7 +20,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | `GET api/repos` | — | `{repos: Repo[]}` | `CONDUCTOR_UNAVAILABLE` |
 | `GET api/repos/:project/worktrees` | — | `{worktrees: Worktree[]}` | `BAD_TARGET`, `PROJECT_UNKNOWN`, `CONDUCTOR_UNAVAILABLE` |
 | `POST api/ops/:name` | `{target, params?}` | `{ok: true, result}` | see [Ops](#ops) |
-| `GET api/activity` | — | `{entries: ActivityEntry[]}`, newest last | — |
+| `GET api/activity` | — | `{entries: ActivityEntry[], runs: OpRun[]}`, each newest last | — |
 | `GET api/activity/events` | — | `text/event-stream` (below) | — |
 | `POST api/activity/:id/cancel` | `{}` (JSON) | `{ok: true}` | 404 `ACTIVITY_UNKNOWN`; 409 `NOT_CANCELLABLE` (the op does not allow cancel, whatever its state); 409 `NOT_RUNNING` (already finished) |
 
@@ -527,9 +527,22 @@ An op that lists pages **by git arguments**, never by slicing output (cc's exec 
 | `status` | `running` → `ok` \| `failed` (exit outside the op's accepted codes, `code: GIT_FAILED`) \| `refused` (a cc refusal) \| `timeout` (`GIT_TIMEOUT`) \| `cancelled` (`CANCELLED`) |
 | `code` | The refusal code, or `null` |
 
-**Events.** `GET api/activity/events` sends `event: activity` with the entry as `data` (JSON) when an entry opens and when it closes, and a `: ping` comment every `HEARTBEAT_MS` (`src/routes/activity.js`). Treat events as signals: the UI refetches `api/activity` on each.
+**`OpRun`** (one call of a **write** op; `openRun` in `src/activity/log.js`, opened by `POST api/ops/:name`). Reads open none.
 
-The log keeps the newest `LIMITS.activityRing` entries in memory. It is diagnostic: nothing derives repo state from it.
+| Field | Meaning |
+|---|---|
+| `id` | Number, increasing (its own sequence, not an entry's `id`) |
+| `opRunId` | The `opRunId` its commands' entries carry |
+| `op`, `kind` | Op name; always `write` |
+| `target` | As an entry's: the call's `{project, worktree, sub?}` |
+| `status` | `running` → `ended` |
+| `startedAt`, `endedAt` | ISO times; `endedAt` is `null` while running |
+
+**Run guarantee.** A run is `running` from the route's start of the call — before the submodule containment preflight and the op's first command — until the op returned or threw **and every git call it made has settled**, the time a call spent waiting for the project's write lock included. Then it is `ended`, exactly once. So once a run is `ended`, no command of that call is running or can still start: a read made then sees the repository as the write left it. A failed op, a refusal (preflight included) and a client that went away all end the run too (a non-cancellable write's run ends when its commands finish). Two writes on one project are two runs, each ending on its own. Between two commands of a write no entry may be `running` while its run is: the run, not the entries, says whether a write is in flight.
+
+**Events.** `GET api/activity/events` sends `event: activity` with the entry as `data` (JSON) when an entry opens and when it closes, `event: run` with the `OpRun` as `data` when a run opens and when it ends, and a `: ping` comment every `HEARTBEAT_MS` (`src/routes/activity.js`). Treat events as signals: the UI refetches `api/activity` on each.
+
+The log keeps the newest `LIMITS.activityRing` entries in memory, and as many runs: over the cap the oldest **ended** runs go, never a running one, so the run ring exceeds `LIMITS.activityRing` only by the runs still running. It is diagnostic: nothing derives repo state from it (the UI times its refreshes by the runs).
 
 ## Refusal codes
 

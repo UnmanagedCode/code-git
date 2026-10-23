@@ -8,7 +8,7 @@ import { stubFetch } from '@/test/stubFetch';
 function stub() {
   return stubFetch({
     'GET api/repos': { repos: [] },
-    'GET api/activity': { entries: [] },
+    'GET api/activity': { entries: [], runs: [] },
     'POST api/ops/repo.summary': { ok: true, result: summary() },
   });
 }

@@ -35,7 +35,7 @@ const diffAlert = () => within(screen.getByRole('region', { name: 'Diff' })).fin
 
 async function open(patch: Response | object = { ok: true, result: { filename: 'abc1234.patch', base64: B64, bytes: BYTES.length } }) {
   const fetch = stubFetch({
-    'GET api/activity': { entries: [] },
+    'GET api/activity': { entries: [], runs: [] },
     'POST api/ops/repo.summary': { ok: true, result: summary() },
     'POST api/ops/diff.files': { ok: true, result: filesResult([dfile({ path: 'a.ts' }), dfile({ path: 'b.ts' }), dfile({ path: 'c.ts', oldPath: 'old/c.ts', status: 'R', similarity: 90 })], { commit: { oid: OID('c'), parents: [OID('p')] } }) },
     'POST api/ops/diff.file': { ok: true, result: fdiff([hunk(1, 1, ['+x'])]) },

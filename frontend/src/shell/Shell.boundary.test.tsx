@@ -20,7 +20,7 @@ test('a panel that throws while rendering is contained: the header and the other
   const err = vi.spyOn(console, 'error').mockImplementation(() => {});
   installFakeEventSource();
   stubFetch({
-    'GET api/activity': { entries: [] },
+    'GET api/activity': { entries: [], runs: [] },
     'POST api/ops/repo.summary': { ok: true, result: summary() },
     'POST api/ops/graph.refs': { ok: true, result: { head: { oid: null, branch: 'refs/heads/main', detached: false, unborn: true }, refs: [], stashes: [], worktrees: [], worktreesError: null } },
     'GET api/repos/app/worktrees': { worktrees: [] },

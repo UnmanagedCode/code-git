@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { pruneClosedTabs } from '@/state/shownPanel';
 import { createStore, useStore } from '@/state/store';
 import { tabKey, tabsStore, type Tab } from '@/state/tabs';
-import { activityStore } from '@/state/useActivity';
+import { onSettledWrite, writeRunning } from '@/state/settledWrites';
 import { listSubmodules, type SubmoduleList } from './api';
 
 // Each tab's submodule list, keyed by tabKey. One request in flight per tab, plus one rerun when asked again meanwhile.
@@ -51,22 +51,16 @@ export async function loadSubmodules(tab: Tab): Promise<void> {
 }
 
 /**
- * The tab's submodules, read when shown and again after a finished write on the same project (the activity store, as
- * the graph watches it) or when the window regains focus, for as long as a consumer is mounted.
+ * The tab's submodules, read when shown and again when a write op run on the project ends (onSettledWrite, as the graph
+ * watches it) or when the window regains focus outside one, for as long as a consumer is mounted.
  */
 export function useSubmodules(tab: Tab): SubmodulesState {
   const key = tabKey(tab);
   useEffect(() => {
     void loadSubmodules(tab);
-    const newest = () => Math.max(0, ...activityStore.get().entries.filter((e) => e.target.project === tab.project).map((e) => e.id));
-    let lastId = newest();
-    const unsub = activityStore.subscribe(() => {
-      const done = activityStore.get().entries.filter((e) => e.target.project === tab.project && e.id > lastId && e.kind === 'write' && e.status !== 'running');
-      if (!done.length) return;
-      lastId = Math.max(...done.map((e) => e.id));
-      void loadSubmodules(tab);
-    });
-    const onFocus = () => { if (document.visibilityState !== 'hidden') void loadSubmodules(tab); };
+    const unsub = onSettledWrite(tab.project, () => true, () => void loadSubmodules(tab));
+    // During a write run its end reads the list again: a focus read now would see the write half-done.
+    const onFocus = () => { if (document.visibilityState !== 'hidden' && !writeRunning(tab.project)) void loadSubmodules(tab); };
     window.addEventListener('focus', onFocus);
     return () => {
       unsub();

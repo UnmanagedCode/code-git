@@ -50,6 +50,18 @@ export interface ActivityEntry {
   code: string | null;
 }
 
+/** A write op run: running from the route's start of the op until it returned or threw and every git call it made settled. */
+export interface OpRun {
+  id: number;
+  opRunId: string;
+  op: string;
+  kind: 'write';
+  target: Target;
+  status: 'running' | 'ended';
+  startedAt: string;
+  endedAt: string | null;
+}
+
 const targetBody = (t: Target) => ({
   project: t.project, ...(t.worktree ? { worktree: t.worktree } : {}), ...(t.sub?.length ? { sub: t.sub } : {}),
 });
@@ -62,5 +74,5 @@ export const runOp = <T>(name: string, target: Target, params?: unknown, opts?: 
   api<{ ok: true; result: T }>(`api/ops/${encodeURIComponent(name)}`, {
     method: 'POST', body: { target: targetBody(target), ...(params === undefined ? {} : { params }) }, signal: opts?.signal,
   }).then((r) => r.result);
-export const listActivity = () => api<{ entries: ActivityEntry[] }>('api/activity').then((r) => r.entries);
+export const listActivity = () => api<{ entries: ActivityEntry[]; runs: OpRun[] }>('api/activity');
 export const cancelActivity = (id: number) => api<{ ok: true }>(`api/activity/${id}/cancel`, { method: 'POST' });

@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { LIMITS } from '../src/git/limits.js';
 import { NET_CONFIG } from '../src/git/remote/net.js';
 import { SUBMODULE_LIMITS } from '../src/git/submodule/limits.js';
+import { sse } from './_app.js';
 import { afterBase, subWorld } from './_submodules.js';
 
 // The submodule writes against real repos: what each changes, and what each refuses to change.
@@ -378,6 +379,29 @@ test('remove of a clean submodule needs no discard and passes no -f', async (t) 
   await w.ok('submodule.remove', { path: 'libA' });
   assert.equal(w.repo.git('ls-files', '--', 'libA'), '');
   assert.equal(w.execArgv().map(afterBase).some((a) => (a[0] === 'rm' || a[1] === 'deinit') && a.includes('-f')), false);
+});
+
+// Invariant: the multi-command remove (C9's op) is bracketed — every one of its entries closes before its run ends.
+test('remove is one write run: every command it ran closes before event: run reports it ended', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const stream = await sse(`${w.app.url}/api/activity/events`, t);
+  await w.ok('submodule.remove', { path: 'libA' });
+  const events = [];
+  for (;;) {
+    const ev = await stream.next();
+    events.push(ev);
+    if (ev.event === 'run' && ev.data.op === 'submodule.remove' && ev.data.status === 'ended') break;
+  }
+  const { opRunId } = events.at(-1).data;
+  const mine = events.filter((e) => e.data.opRunId === opRunId);
+  assert.deepEqual([mine[0].event, mine[0].data.status], ['run', 'running']);
+  const entryEvents = mine.filter((e) => e.event === 'activity');
+  const ids = new Set(entryEvents.map((e) => e.data.id));
+  assert.ok(ids.size >= 3, `remove ran ${ids.size} commands`);
+  for (const id of ids) assert.ok(entryEvents.some((e) => e.data.id === id && e.data.status === 'ok'), `entry ${id} closed before the run ended`);
+  assert.equal(mine.filter((e) => e.event === 'run').length, 2);
+  const { runs } = (await w.app.call('GET', '/api/activity')).body;
+  assert.deepEqual(runs.filter((r) => r.opRunId === opRunId).map((r) => r.status), ['ended']);
 });
 
 test('commitPointer commits only the gitlink, leaves other staged changes staged, refuses SUBMODULE_POINTER_MOVED', async (t) => {

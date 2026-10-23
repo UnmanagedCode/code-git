@@ -1,4 +1,4 @@
-import type { ActivityEntry, Repo, RepoSummary } from '@/lib/endpoints';
+import type { ActivityEntry, OpRun, Repo, RepoSummary } from '@/lib/endpoints';
 
 export const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -17,4 +17,9 @@ export const entry = (over: Partial<ActivityEntry> = {}): ActivityEntry => ({
   id: 1, opRunId: 'run-1', op: 'repo.summary', target: { project: 'app', worktree: null },
   argv: ['git', '--no-pager', 'status', '--porcelain=v2'], env: {}, stdinBytes: 0, kind: 'read', cancellable: true,
   startedAt: '2026-01-01T00:00:00.000Z', durationMs: 12, exitCode: 0, stderr: '', stderrTruncated: false, status: 'ok', code: null, ...over,
+});
+
+export const opRun = (over: Partial<OpRun> = {}): OpRun => ({
+  id: 1, opRunId: 'run-1', op: 'commit.create', kind: 'write', target: { project: 'app', worktree: null },
+  status: 'ended', startedAt: '2026-01-01T00:00:00.000Z', endedAt: '2026-01-01T00:00:01.000Z', ...over,
 });

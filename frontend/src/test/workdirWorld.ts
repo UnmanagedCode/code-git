@@ -39,7 +39,7 @@ export function workdirWorld(w: WorkdirWorld = {}) {
     return v instanceof Response ? v : { ok: true, result: v };
   };
   const routes: Record<string, unknown> = {
-    'GET api/activity': { entries: [] },
+    'GET api/activity': { entries: [], runs: [] },
     'POST api/ops/repo.summary': op('repo.summary', () => w.summary ?? summaryFx()),
     'POST api/ops/diff.files': op('diff.files', (p) => {
       const kind = (p.source as { kind: string }).kind as 'unstaged' | 'staged';

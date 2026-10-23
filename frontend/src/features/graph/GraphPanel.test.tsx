@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
-import { entry, summary } from '@/test/fixtures';
+import { opRun, summary } from '@/test/fixtures';
 import { commit, oid, ref } from '@/test/graphData';
 import { linearWorld, paramsOf, stubGraph, type GraphWorld } from '@/test/graphBackend';
 import { getGraph, loadUntil, PAGE } from '@/state/graph';
@@ -72,7 +72,7 @@ test('nearing the end of the loaded rows requests the next page at skip 500', as
   expect(paramsOf(fetch, 'POST api/ops/graph.page')[1]).toMatchObject({ skip: PAGE, limit: PAGE });
 });
 
-test('a finished write reloads moved tips: the selection survives and the first visible row keeps its offset; unmoved tips reload nothing', async () => {
+test('a finished write run reloads moved tips: the selection survives and the first visible row keeps its offset; unmoved tips reload nothing', async () => {
   const world = linearWorld(600);
   const fetch = await show(world);
   await scrollTo(100 * ROW_H + 5);
@@ -82,12 +82,12 @@ test('a finished write reloads moved tips: the selection survives and the first 
   [world.commits[0], world.commits[1]] = [world.commits[1], world.commits[0]];
   world.refs.refs[0] = ref('refs/heads/main', oid(602), { isHead: true });
   world.refs.head.oid = oid(602);
-  act(() => activityStore.set({ entries: [entry({ id: 9, kind: 'write', op: 'commit.create' })], error: null }));
+  act(() => activityStore.set({ entries: [], runs: [opRun({ id: 9, op: 'commit.create' })], error: null }));
   await waitFor(() => expect(getGraph(TAB).tipsKey).toBe(oid(602)));
   await waitFor(() => expect(list().scrollTop).toBe(102 * ROW_H + 5));
   expect(getSelection(TAB).ids).toEqual([oid(500)]);
   const pages = paramsOf(fetch, 'POST api/ops/graph.page').length;
-  act(() => activityStore.set({ entries: [entry({ id: 9, kind: 'write' }), entry({ id: 10, kind: 'write' })], error: null }));
+  act(() => activityStore.set({ entries: [], runs: [opRun({ id: 9 }), opRun({ id: 10 })], error: null }));
   await waitFor(() => expect(fetch.count('POST api/ops/graph.refs')).toBe(3));
   expect(paramsOf(fetch, 'POST api/ops/graph.page')).toHaveLength(pages);
 });

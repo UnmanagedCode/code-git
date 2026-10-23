@@ -27,20 +27,59 @@ export function capStderr(buf, cap = LIMITS.stderrCap) {
 /**
  * An in-memory ring of activity entries. Emits `activity` with an entry snapshot on every open and close.
  * Entry status: running → ok | failed | refused | timeout | cancelled.
+ * Beside it, a ring of write op runs (openRun), emitting `run` with a run snapshot when one opens and when it ends.
  */
 export function createActivityLog({ ring = LIMITS.activityRing } = {}) {
   const events = new EventEmitter();
   events.setMaxListeners(0);
   const entries = [];
+  const runs = [];
   const live = new Map(); // id → {entry, controller}, while running
   let nextId = 1;
   let nextRun = 1;
+  let nextRunRecord = 1;
   const snapshot = (e) => ({ ...e, target: copyTarget(e.target), argv: [...e.argv], env: { ...e.env } });
+  const runSnapshot = (r) => ({ ...r, target: copyTarget(r.target) });
+  // Over the cap, the oldest *ended* runs go: a running one stays (the UI would read its project as idle mid-write), so
+  // the ring exceeds the cap only by the runs still running.
+  const trimRuns = () => {
+    for (let i = 0, excess = runs.length - ring; excess > 0 && i < runs.length;) {
+      if (runs[i].status === 'ended') { runs.splice(i, 1); excess--; } else i++;
+    }
+  };
 
   return {
     events,
     newRunId: () => `run-${nextRun++}`,
     list: () => entries.map(snapshot),
+    listRuns: () => runs.map(runSnapshot),
+
+    /**
+     * Records a write op run starting. `track(promise)` counts one git call of the run until it settles (lock wait
+     * included) and passes its outcome through; `end()` (idempotent) says the op returned or threw. The run is `ended`
+     * once both hold: no git call of it can still run or start, so a client reading the repo then sees it settled.
+     */
+    openRun({ opRunId, op, kind, target }) {
+      const run = { id: nextRunRecord++, opRunId, op, kind, target: copyTarget(target), status: 'running', startedAt: new Date().toISOString(), endedAt: null };
+      runs.push(run);
+      trimRuns();
+      events.emit('run', runSnapshot(run));
+      let pending = 0;
+      let ending = false;
+      const settle = () => {
+        if (!ending || pending || run.status !== 'running') return;
+        Object.assign(run, { status: 'ended', endedAt: new Date().toISOString() });
+        trimRuns();
+        events.emit('run', runSnapshot(run));
+      };
+      return {
+        track(promise) {
+          pending++;
+          return promise.finally(() => { pending--; settle(); });
+        },
+        end() { ending = true; settle(); },
+      };
+    },
 
     /**
      * Records a command about to run. `signal` (the op's) aborts it too. Resolves the entry and the signal the

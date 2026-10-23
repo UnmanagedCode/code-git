@@ -112,8 +112,8 @@ Below Tailwind's `lg` (`WIDE_GRAPH_QUERY`, 64rem) the side slots are hidden: the
 - **Refresh triggers** (no timer):
   1. First show of the tab, once the checkout's own `repo.summary` succeeded (a checkout that is not a repo never loads a graph);
   2. the toolbar's refresh button;
-  3. an activity entry of `kind: 'write'` for the same project that has finished and is newer than the last one seen (`watchGraph` reads `activityStore`, which the always-mounted activity panel refetches on every SSE event);
-  4. the window regaining focus or becoming visible, at most once per `FOCUS_THROTTLE_MS`, for the active tab — catches agents committing in cc worktrees; another open tab is marked and refreshed when it is shown again;
+  3. a write op run on the same project ending, with no other run of the project running — once per run (or per overlapping set of runs), never between its commands (`watchGraph` → `onSettledWrite` over `activityStore`'s runs, which the always-mounted activity panel refetches on every SSE event; [architecture → Write op runs](architecture.md#write-op-runs));
+  4. the window regaining focus or becoming visible, at most once per `FOCUS_THROTTLE_MS`, for the active tab — catches agents committing in cc worktrees; another open tab is marked and refreshed when it is shown again; skipped while a write run of the project is in flight (its end refreshes);
   5. a hide/solo change (re-resolves the tips of the refs already read, no refs re-read).
   Triggers 3–5 run from the first show until the tab closes, whether or not the graph panel is mounted: a diff replaces it in the center slot, and closing the diff shows the snapshot as the triggers left it.
   Concurrent triggers coalesce: one run in flight plus one queued rerun.

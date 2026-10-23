@@ -5,7 +5,7 @@ import { getRemotePrefs, remotePrefsStore } from '@/state/remotePrefs';
 import { getRemotes, refreshRemotes, setAutoFetchError, setRemoteBusy } from '@/state/remotes';
 import { useStore } from '@/state/store';
 import { refsKey, useTabs, type Tab } from '@/state/tabs';
-import { activityStore } from '@/state/useActivity';
+import { writeRunning } from '@/state/settledWrites';
 import { fetchRemotes, isFetchError } from './api';
 
 // Auto-fetch (off by default): one timer per project with an open tab, at the project's `autoFetchMinutes`. A tick
@@ -28,14 +28,13 @@ export const setRemoteClock = (c: RemoteClock | null): void => { clock = c ?? RE
 const toasted = new Set<string>();
 export const resetAutoFetch = (): void => { toasted.clear(); clock = REAL_CLOCK; };
 
-/** Why a tick does not run now: the page is hidden, a remote op of the checkout is running, or any write of the project is. */
+/** Why a tick does not run now: the page is hidden, a remote op of the checkout is running, or a write op run of the project is. */
 function skipReason(tab: Tab): string | null {
   const { project } = tab;
   if (document.visibilityState !== 'visible') return 'hidden';
   const busy = getRemotes(refsKey(tab)).busy;
   if (busy.fetch || busy.pull || busy.push) return 'busy';
-  const writing = activityStore.get().entries.some((e) => e.status === 'running' && e.kind === 'write' && e.target.project === project);
-  return writing ? 'writing' : null;
+  return writeRunning(project) ? 'writing' : null;
 }
 
 /** One auto-fetch of `tab`'s project, unless skipReason says not now. */

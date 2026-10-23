@@ -11,7 +11,7 @@ const XSS = '<img src=x onerror=alert(1)>';
 test('a running cancellable entry shows Cancel, which posts JSON to its cancel route', async () => {
   let entries = [entry({ id: 7, status: 'running', exitCode: null, durationMs: null, cancellable: true })];
   const fetch = stubFetch({
-    'GET api/activity': () => ({ entries }),
+    'GET api/activity': () => ({ entries, runs: [] }),
     'POST api/activity/7/cancel': () => { entries = [{ ...entries[0], status: 'cancelled' }]; return { ok: true }; },
   });
   render(<ActivityPanel tab={null} />);
@@ -25,6 +25,7 @@ test('a running cancellable entry shows Cancel, which posts JSON to its cancel r
 test('no Cancel on a running non-cancellable entry or on a finished one', async () => {
   stubFetch({
     'GET api/activity': {
+      runs: [],
       entries: [
         entry({ id: 1, status: 'running', cancellable: false, exitCode: null, durationMs: null }),
         entry({ id: 2, status: 'ok', cancellable: true }),
@@ -39,7 +40,7 @@ test('no Cancel on a running non-cancellable entry or on a finished one', async 
 
 test('an SSE event triggers a refetch; the data comes from the refetch, not the event', async () => {
   let entries = [entry({ id: 1 })];
-  const fetch = stubFetch({ 'GET api/activity': () => ({ entries }) });
+  const fetch = stubFetch({ 'GET api/activity': () => ({ entries, runs: [] }) });
   render(<ActivityPanel tab={null} />);
   await screen.findByText('exit 0');
   const before = fetch.count('GET api/activity');
@@ -50,9 +51,20 @@ test('an SSE event triggers a refetch; the data comes from the refetch, not the 
   expect(screen.queryByText('event.payload')).toBeNull();
 });
 
+// Invariant: an `event: run` (a write run opening or ending) refetches the log too, so its runs reach the store.
+test('an SSE run event triggers a refetch', async () => {
+  const fetch = stubFetch({ 'GET api/activity': { entries: [entry({ id: 1 })], runs: [] } });
+  render(<ActivityPanel tab={null} />);
+  await screen.findByText('exit 0');
+  const before = fetch.count('GET api/activity');
+  act(() => FakeEventSource.last!.emit({ id: 1, status: 'ended' }, 'run'));
+  await waitFor(() => expect(fetch.count('GET api/activity')).toBe(before + 1));
+});
+
 test('entries show newest first with op, target, exit, duration and argv; stderr expands', async () => {
   stubFetch({
     'GET api/activity': {
+      runs: [],
       entries: [
         entry({ id: 1, op: 'repo.summary', durationMs: 1500 }),
         entry({ id: 2, op: 'repo.second', target: { project: 'app', worktree: 'feat' }, exitCode: 128, stderr: 'fatal: boom', status: 'failed', code: 'GIT_FAILED' }),
@@ -73,7 +85,7 @@ test('entries show newest first with op, target, exit, duration and argv; stderr
 
 test('the This tab filter shows only the active checkout', async () => {
   stubFetch({
-    'GET api/activity': { entries: [entry({ id: 1, op: 'on.main' }), entry({ id: 2, op: 'on.feat', target: { project: 'app', worktree: 'feat' } })] },
+    'GET api/activity': { runs: [], entries: [entry({ id: 1, op: 'on.main' }), entry({ id: 2, op: 'on.feat', target: { project: 'app', worktree: 'feat' } })] },
   });
   render(<ActivityPanel tab={{ project: 'app', worktree: 'feat' }} />);
   await screen.findByText('on.main');
@@ -85,6 +97,7 @@ test('the This tab filter shows only the active checkout', async () => {
 test('XSS: argv, stderr and project names render as literal text, never markup', async () => {
   stubFetch({
     'GET api/activity': {
+      runs: [],
       entries: [entry({ id: 1, op: XSS, argv: ['git', XSS], stderr: XSS, status: 'failed', target: { project: XSS, worktree: XSS } })],
     },
   });
@@ -99,7 +112,7 @@ test('XSS: argv, stderr and project names render as literal text, never markup',
 });
 
 test('the panel collapses', async () => {
-  stubFetch({ 'GET api/activity': { entries: [entry({ id: 1, op: 'visible.op' })] } });
+  stubFetch({ 'GET api/activity': { runs: [], entries: [entry({ id: 1, op: 'visible.op' })] } });
   render(<ActivityPanel tab={null} />);
   await screen.findByText('visible.op');
   await userEvent.click(screen.getByRole('button', { name: 'Activity' }));
@@ -107,7 +120,7 @@ test('the panel collapses', async () => {
 });
 
 test('a reconnect refetches (events may have been missed); unmounting closes the stream', async () => {
-  const fetch = stubFetch({ 'GET api/activity': { entries: [entry({ id: 1 })] } });
+  const fetch = stubFetch({ 'GET api/activity': { runs: [], entries: [entry({ id: 1 })] } });
   const { unmount } = render(<ActivityPanel tab={null} />);
   await screen.findByText('exit 0');
   const before = fetch.count('GET api/activity');
@@ -121,7 +134,7 @@ test('a reconnect refetches (events may have been missed); unmounting closes the
 test('losing the cancel race (NOT_RUNNING) is silent; any other cancel failure is shown', async () => {
   let answer = { status: 409, code: 'NOT_RUNNING' };
   stubFetch({
-    'GET api/activity': { entries: [entry({ id: 7, status: 'running', exitCode: null, durationMs: null })] },
+    'GET api/activity': { runs: [], entries: [entry({ id: 7, status: 'running', exitCode: null, durationMs: null })] },
     'POST api/activity/7/cancel': () => new Response(JSON.stringify({ error: `refused ${answer.code}`, code: answer.code }), { status: answer.status }),
   });
   render(<ActivityPanel tab={null} />);
