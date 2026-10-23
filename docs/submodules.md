@@ -91,6 +91,7 @@ Every op acts on the target's repo (the checkout or the chain's submodule) with 
 | `core.sshCommand`, `core.gitProxy`, `credential.helper`, `url.*.insteadOf` in a submodule's config | They apply when git fetches inside an existing submodule (parity with the remote ops); an insteadOf to `ext::`/`fd::` is neutralised by `NET_CONFIG`. A fresh clone's child process does not read the parent's local config |
 | A nested submodule's own config | Checked only at the level the op runs at (a submodule tab checks its repo); recursion relies on the propagated pins and git's defaults |
 | `safe.directory` | An explicit `--git-dir` skips git's ownership check; the submodule directory lives inside a checkout the user owns |
+| The pointer commit's temporary index | `$GIT_DIR/code-git-pointer-index` stays behind, emptied: [architecture → Temporary indexes](architecture.md) |
 | The preflight → op gap | The containment check and the op are separate commands; a symlink or gitfile swapped in between is not caught |
 
 ## UI (`frontend/src/features/submodules/`)

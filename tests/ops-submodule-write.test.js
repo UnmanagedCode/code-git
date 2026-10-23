@@ -447,6 +447,23 @@ test('commitPointer refuses OPERATION_IN_PROGRESS during a stopped merge, cherry
   }
 });
 
+test('commitPointer leaves its temporary index empty, after a commit and after a failed one', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const tmp = w.file('.git/code-git-pointer-index');
+  const entries = () => execFileSync('git', ['-C', w.repo.dir, 'ls-files', '-s'], { env: { ...w.env, GIT_INDEX_FILE: tmp }, encoding: 'utf8' });
+  w.fx('libA', 'commit', '-q', '--allow-empty', '-m', 'one');
+  await w.ok('submodule.commitPointer', { path: 'libA', expect: headOf(w, 'libA'), summary: 's' });
+  assert.ok(fs.existsSync(tmp));
+  assert.equal(entries(), '');
+  // A pre-commit hook that refuses: the commit fails, HEAD stays, the temporary index is emptied all the same.
+  w.repo.hook('pre-commit', '#!/bin/sh\nexit 1\n');
+  w.fx('libA', 'commit', '-q', '--allow-empty', '-m', 'two');
+  const head = w.repo.git('rev-parse', 'HEAD');
+  assert.equal((await w.op('submodule.commitPointer', { path: 'libA', expect: headOf(w, 'libA'), summary: 's' })).body.code, 'GIT_FAILED');
+  assert.equal(w.repo.git('rev-parse', 'HEAD'), head);
+  assert.equal(entries(), '');
+});
+
 test('long ops use cloneTimeoutMs; the others the write default', async (t) => {
   const w = await subWorld(t, { nested: false });
   await w.ok('submodule.add', { url: w.urls.libA, path: 'two' });

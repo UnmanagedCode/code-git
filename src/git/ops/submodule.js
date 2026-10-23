@@ -286,9 +286,15 @@ export const ops = [
       const index = decoder.decode((await git(['rev-parse', '--git-path', 'code-git-pointer-index'])).stdout).replace(/\n$/, '');
       const tmp = { env: { GIT_INDEX_FILE: index } };
       const gitlink = ['update-index', '--add', '--cacheinfo', `160000,${p.expect},${p.path}`];
-      await git(head ? ['read-tree', head] : ['read-tree', '--empty'], tmp);
-      await git(gitlink, tmp);
-      await git(['commit', '-F', '-'], { ...tmp, stdin: joinMessage(p.summary, p.description) });
+      try {
+        await git(head ? ['read-tree', head] : ['read-tree', '--empty'], tmp);
+        await git(gitlink, tmp);
+        await git(['commit', '-F', '-'], { ...tmp, stdin: joinMessage(p.summary, p.description) });
+      } finally {
+        // git cannot delete the file (no fs access here: docs/architecture.md → Temporary indexes); emptied, nothing of
+        // the tree lingers. A failure to empty it does not hide the op's own outcome.
+        await git(['read-tree', '--empty'], { ...tmp, okExit: [0, 128] });
+      }
       await git(gitlink);
       const oid = decoder.decode((await git(['rev-parse', '--verify', 'HEAD'])).stdout).trim();
       return { oid };
