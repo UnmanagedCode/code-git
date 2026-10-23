@@ -31,6 +31,9 @@ const check = (cond, what) => { if (!cond) throw new Error(`live: ${what}`); con
 const projects = await ccGet('/api/projects');
 const DEFAULT_PROJECTS = ['code-git', 'test'];
 const byWorktreeName = (a, b) => a.worktreeName.localeCompare(b.worktreeName);
+/** Why the picker disables a cc project row (`disabledReason` in frontend/src/state/useRepos.ts), else null. */
+const disabledReason = (p) => (p.degraded ? `degraded: ${p.degraded}` : p.systemUnreachable ? p.systemUnreachable
+  : p.gitRefusal ? `git refused: ${p.gitRefusal}` : p.isGitRepo === false ? 'not a git repository' : null);
 /** The checkouts to open: the named ones (each must be a checkout cc lists), else the derived default. */
 function selectCheckouts(args) {
   if (args.length > 0) {
@@ -38,10 +41,9 @@ function selectCheckouts(args) {
       const [project, worktree = null] = s.split('/');
       const p = projects.find((x) => x.name === project);
       const names = (p?.worktrees ?? []).map((w) => w.worktreeName);
-      if (!p || p.isGitRepo === false || (worktree && !names.includes(worktree))) {
-        const why = !p ? 'no such project' : p.isGitRepo === false ? `${project} is not a git repository` : `${project}'s worktrees: ${names.join(', ') || 'none'}`;
-        throw new Error(`live: ${s} is not a checkout in cc (${why})`);
-      }
+      const why = !p ? 'no such project' : disabledReason(p)
+        ?? (worktree && !names.includes(worktree) ? `${project}'s worktrees: ${names.join(', ') || 'none'}` : null);
+      if (why) throw new Error(`live: ${s} is not a checkout in cc (${why})`);
       return { project, worktree };
     });
   }
@@ -49,9 +51,7 @@ function selectCheckouts(args) {
   const reasons = [];
   for (const name of DEFAULT_PROJECTS) {
     const p = projects.find((x) => x.name === name);
-    // The picker's disable reasons (`disabledReason` in frontend/src/state/useRepos.ts): such a row cannot be opened.
-    const reason = !p ? 'not in cc' : p.degraded ? `degraded: ${p.degraded}` : p.systemUnreachable ? `its System is unreachable: ${p.systemUnreachable}`
-      : p.gitRefusal ? `git refused: ${p.gitRefusal}` : p.isGitRepo === false ? 'not a git repository' : null;
+    const reason = !p ? 'not in cc' : disabledReason(p);
     if (reason) { console.log(`note: ${name} skipped: ${reason}`); reasons.push(`${name}: ${reason}`); continue; }
     picked.push({ project: name, worktree: null });
     const first = [...(p.worktrees ?? [])].sort(byWorktreeName)[0];
@@ -157,20 +157,25 @@ try {
     if (sent.has(UNPARSED)) throw new Error(`live: ${sent.get(UNPARSED)} remote.list request(s) had no readable target.project`);
     for (const project of [...new Set(opened.map((c) => c.project))]) {
       // Wait for every run the page started to finish: an entry reads `running` until its command closes, and a run's
-      // later commands may not have opened yet, so each request's response is the end of its run.
+      // later commands may not have opened yet, so each request's response is the end of its run. The counts are read
+      // before the snapshot, so every run counted as answered has all its entries in it.
       const deadline = Date.now() + REMOTE_LIST_WAIT_MS;
       let listed;
+      let counts;
       for (;;) {
+        counts = { sent: sent.get(project) ?? 0, answered: answered.get(project) ?? 0, failed: failed.get(project) ?? 0 };
         listed = (await (await fetch(`${srv.url}/api/activity`)).json()).entries.filter((e) => e.op === 'remote.list' && e.target.project === project);
-        const counts = { sent: sent.get(project) ?? 0, answered: answered.get(project) ?? 0, failed: failed.get(project) ?? 0 };
-        if (counts.sent > 0 && counts.answered === counts.sent && listed.length > 0 && listed.every((e) => e.status !== 'running')) break;
+        const settled = counts.sent > 0 && counts.answered + counts.failed === counts.sent;
+        const state = `${counts.sent} sent, ${counts.answered} answered, ${counts.failed} failed`;
+        if (settled && counts.failed > 0) throw new Error(`live: ${project}: a remote.list request failed without a response (${state})`);
+        if (settled && listed.length > 0 && listed.every((e) => e.status !== 'running')) break;
         if (Date.now() > deadline) {
           const seen = listed.length ? `[${listed.map((e) => `${e.argv.slice(-3).join(' ')} → ${e.status}`).join(', ')}]` : 'none';
-          throw new Error(`live: ${project}: remote.list did not finish within ${REMOTE_LIST_WAIT_MS} ms; last seen: ${counts.sent} sent, ${counts.answered} answered, ${counts.failed} failed, entries ${seen}`);
+          throw new Error(`live: ${project}: remote.list did not finish within ${REMOTE_LIST_WAIT_MS} ms; last seen: ${state}, entries ${seen}`);
         }
         await new Promise((r) => setTimeout(r, 250));
       }
-      console.log(`note: ${project}: remote.list requests ${sent.get(project)} sent, ${answered.get(project)} answered`);
+      console.log(`note: ${project}: remote.list requests ${counts.sent} sent, ${counts.answered} answered`);
       for (const e of listed) console.log(`note: ${project}: remote.list ran ${e.argv.slice(-3).join(' ')} → ${e.status}, exit ${e.exitCode}`);
       // `config --get-regexp` exits 1 when no remote key exists (accepted); `git remote` itself must exit 0.
       check(listed.length > 0 && listed.every((e) => e.status === 'ok') && listed.some((e) => e.argv.at(-1) === 'remote' && e.exitCode === 0),
