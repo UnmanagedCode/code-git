@@ -9,12 +9,17 @@ export interface RefChange { ref: string; old: string | null; new: string | null
 /** `tracking`: for a remote branch delete, the tracking ref here git deleted with it (`old` is its value). */
 export interface RemoteRefChange { remote: string; ref: string; old: string | null; new: string | null; tracking?: string | null }
 export interface HeadState { branch: string | null; oid: string | null }
+/** A stash entry an op added or removed, and how an undo puts it back (docs/stash.md → Undo record). */
+export interface StashChange { oid: string; old: { message: string } | null; new: { message: string } | null; restore: 'store' | 'pop' | 'drop' }
 /** What an op created, moved or deleted (docs/refs.md → Undo record). */
 export interface UndoRecord {
   refs: RefChange[];
   remoteRefs: RemoteRefChange[];
   head: { old: HeadState; new: HeadState } | null;
   worktreeSnapshot: string | null;
+  stashes: StashChange[];
+  /** base64 bytes `git apply -R` takes back out of the worktree. */
+  worktreePatch: string | null;
 }
 export interface Rejected { ref: string; reason: string }
 /** A ref the remote reported that the push did not ask for (`flag`: git's porcelain flag). */

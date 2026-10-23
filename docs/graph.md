@@ -54,10 +54,10 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 | Multi-selection | View combined diff (when the selection has one), Copy N SHAs (newline-separated) |
 | Branch / tag | Jump to commit, Copy name, Hide / Show (not offered for the checked-out branch), Solo / Unsolo; branches also Pin to left / Unpin |
 | Remote | Hide remote / Show remote, Solo remote / Unsolo remote, Show all (while something on that remote is hidden) |
-| Stash | Show details (not while the Stashes section is hidden: there is no stash row to select), View changes, Copy message, Hide stashes |
-| WIP | C4's **Show changes** (its Changes panel), View unstaged changes, View staged changes; another checkout's also Open X in a tab |
+| Stash | C8's **Apply**, **Apply with staged changes**, **Pop**, **Create branch…**, **Rename…**, **Drop…** (order 400–405: [stash](stash.md)); Show details (not while the Stashes section is hidden: there is no stash row to select), View changes, Copy message, Hide stashes |
+| WIP | C8's **Stash changes…** (the own checkout only); C4's **Show changes** (its Changes panel), View unstaged changes, View staged changes; another checkout's also Open X in a tab |
 | Worktree | Open in a tab (a cc checkout), Copy path |
-| File | Copy path |
+| File | C8's **Apply this file** (a stash's file: into the working tree only); Copy path |
 
 ### Diffs
 
@@ -71,6 +71,7 @@ The graph opens diffs through the diff viewer's `openDiff` (`features/graph/diff
 | Multi-selection menu | **View combined diff** (as Enter) |
 | WIP menu | **View unstaged changes**, **View staged changes** |
 | Stash menu | **View changes** |
+| The stash view switch (in a stash's diff header, in place of the parent select) | **All changes** `{kind: 'commit', rev: W, parent: 1}`, **Staged** `{rev: I}`, **Untracked** `{rev: U}` (only with untracked files) ([stash](stash.md#ui-frontendsrcfeaturesstash)) |
 
 Another checkout's WIP opens in that checkout's tab (opened if needed).
 

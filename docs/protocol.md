@@ -242,7 +242,7 @@ The ops below change the index or the worktree (`kind: 'write'`, not cancellable
 
 ### Stage selection: `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` (write)
 
-Stage, unstage or discard a selection of one file's hunks and lines. One implementation (`applySelection` in `src/git/ops/stage.js`; the pure builder is `buildSelectionPatch` in `src/git/stage/selection.js`).
+Stage, unstage or discard a selection of one file's hunks and lines. One implementation (`applySelection` in `src/git/ops/stage.js`; the request check `selectionParams` and the re-read + build `readSelectionPatch` in `src/git/stage/readSelection.js`, shared with `stash.pushLines`; the pure builder is `buildSelectionPatch` in `src/git/stage/selection.js`).
 
 - `params`: `{path, context?, hunks: [{header, lines: [{index, text}]}]}`.
   - `context`: 0…1000 or `'full'` (default 3) — the context the diff was shown with.
@@ -256,7 +256,7 @@ Stage, unstage or discard a selection of one file's hunks and lines. One impleme
 | `stage.unstageLines` | HEAD → index: `git diff … --cached --end-of-options <HEAD oid> -- path` | reverse | `git apply --cached -R` |
 | `stage.discardLines` | index → worktree | reverse | `git apply -R` (worktree only) |
 
-Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply.whitespace` and `apply.ignoreWhitespace`) and reads the patch from stdin. **Never `--unidiff-zero`**: the patch is built from a second re-read at `max(context, APPLY_MIN_CONTEXT)` (`src/git/ops/stage.js`; `'full'` stays full), because `git apply --unidiff-zero` matches a context-free hunk at the wrong occurrence — on a file without a final newline it exits 0 having changed other lines, even with git's own `-U0` patch. With context, git checks it, and a hunk without leading or trailing context must sit at the file's start or end.
+Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply.whitespace` and `apply.ignoreWhitespace`) and reads the patch from stdin. **Never `--unidiff-zero`**: the patch is built from a second re-read at `max(context, APPLY_MIN_CONTEXT)` (`src/git/stage/readSelection.js`; `'full'` stays full), because `git apply --unidiff-zero` matches a context-free hunk at the wrong occurrence — on a file without a final newline it exits 0 having changed other lines, even with git's own `-U0` patch. With context, git checks it, and a hunk without leading or trailing context must sit at the file's start or end.
 
 **Steps:**
 
@@ -375,12 +375,15 @@ Behaviour, the checked-out and cc-owned rules and what each op destroys: [refs](
 ```
 UndoRecord      { refs: RefChange[], remoteRefs: RemoteRefChange[],
                   head: {old: {branch: refname|null, oid: oid|null}, new: {branch, oid}} | null,
-                  worktreeSnapshot: oid | null }
+                  worktreeSnapshot: oid | null,
+                  stashes: StashChange[] /* the stash ops' ([stash](stash.md#undo-record)); [] here */,
+                  worktreePatch: base64 | null /* stash.applyFile's; null here */ }
 RefChange       { ref /* refs/heads/… | refs/tags/… */, old: oid|null /* null = created */, new: oid|null /* null = deleted */,
                   upstream?: refname|null /* a deleted branch's upstream */,
                   symref?: refname /* a deleted symbolic ref's target: restore with symbolic-ref; old and new are null */ }
 RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */, old: oid|null /* best known */, new: oid|null,
                   tracking?: refname|null /* branch.deleteRemote: the tracking ref here git deleted with it (old is its value) */ }
+StashChange     { oid, old: {message}|null, new: {message}|null, restore: 'store' | 'pop' | 'drop' }
 ```
 
 | Op | kind | `params` | Runs (after the reads `for-each-ref refs/heads` with `%(worktreepath)`, `symbolic-ref -q HEAD`, `rev-parse --verify -q HEAD`) | `result` | Refusals |
@@ -413,6 +416,10 @@ RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */
 - Results and undo lists come from the `--porcelain` ref lines for the refspecs' destinations only (`splitRequested` in `src/git/parse/push.js`); a line for any other ref is listed in `unrequested: [{ref, flag}]` (the porcelain flag), never dropped.
 - No ref line and a non-zero exit: 502 `REMOTE_AUTH_FAILED` or 502 `REMOTE_UNREACHABLE` (`classifyRemoteFailure` in `src/git/parse/push.js`), with `stderr`; anything else (a pre-push hook that refused) 422 `GIT_FAILED` with `stderr`. Hooks always run.
 - Every ref rejected and none updated or up to date: 409 `PUSH_REJECTED` with `rejected: [{ref, reason}]`; the message names each `ref: reason` (the first five, then a count). A partly rejected push succeeds and lists `rejected`.
+
+### Stash ops (`src/git/ops/stash.js`; all writes, not cancellable)
+
+`stash.push`, `stash.pushLines`, `stash.apply`, `stash.pop`, `stash.applyFile`, `stash.drop`, `stash.rename`, `stash.branch`. A stash is always named by its W commit's full oid (`{oid}`), never `stash@{n}`. A `stash.push` `GIT_FAILED` may carry `{oid, selector}`: git stored the stash before failing. Params, argv, gates, refusals, results and the undo record: [stash](stash.md).
 
 ### Paging convention (for ops that list)
 
@@ -483,13 +490,18 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `REF_EXISTS` | 409 | A branch or tag of that name exists |
 | `REF_MOVED` | 409 | The ref is no longer at the op's `expect` |
 | `NOT_FAST_FORWARD` | 409 | The target is not a descendant of the branch |
-| `CHECKOUT_CONFLICT` | 409 | Local changes would be overwritten; `files`, `stderr` |
+| `CHECKOUT_CONFLICT` | 409 | Local changes would be overwritten (or a stash's untracked file is already there); `files`, `stderr` |
 | `SYMBOLIC_REF` | 409 | The branch named is a symbolic ref; `target` = the ref it points at |
 | `REMOTE_CONFIG_UNSUPPORTED` | 409 | A fetch refspec of the remote code-git cannot map to the tracking refs a push updates, or a remote with no url whose config git reads from a legacy remote file; `remote`, `refspec` |
 | `REMOTE_UNKNOWN` | 404 | The remote name is malformed or not one of `git remote`'s |
 | `PUSH_REJECTED` | 409 | The remote rejected every ref of a push; `rejected` |
 | `PICK_EMPTY` | 409 | A revert or cherry-pick would commit nothing; nothing is left in progress |
 | `NOTHING_IN_PROGRESS` | 409 | `head.abort` with no revert or cherry-pick in progress |
+| `STASH_UNKNOWN` | 404 | The oid is not in the stash list ([stash](stash.md)) |
+| `NOTHING_TO_STASH` | 409 | A save had nothing to stash: git printed "No local changes to save" on stdout (decided from that line, not from whether `refs/stash` moved) |
+| `PATH_BLOCKED` | 409 | A stash op would write through something git cannot write into: a leading directory of a path it writes is an untracked (or ignored) symlink or file (`assertNotBlocked`), or — for `stash.applyFile` and `stash.pushLines` — the file itself is a directory or a link to a directory (`assertFileTarget`); `paths` ([stash → Gates](stash.md#gates)) |
+| `STASH_MOVED` | 409 | The stash list changed while dropping; the entry dropped by mistake was stored back; `{oid, restored}` |
+| `GIT_TOO_OLD` | 409 | The project's System runs a git below the feature's floor; `{feature, need, have}` |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |

@@ -34,14 +34,25 @@ export async function assertNoIndexReadsItself(git, path) {
  * `maxBytes`), or `file` (`bytes` = the content). The diff is decoded as latin1, one character per byte, so CR and
  * non-UTF-8 bytes survive. `path` may be absolute (a commit template outside the repo).
  */
-export async function readNoIndex(git, path, { maxBytes }) {
-  const none = { mode: null, bytes: null, linkTarget: null };
+/**
+ * What stands at `path` on disk, by the raw probe alone (no content read): `{kind, mode}`, `kind` = `absent` (git cannot
+ * access it), `other` (a directory, or a link to one), `symlink` (mode 120000, never followed) or `file`.
+ */
+export async function worktreeEntry(git, path) {
   const p = await probe(git, path);
   if (!readsItself(p.fields, path)) {
     // A missing path: exit 1, no entry, git naming exactly the path (a directory's message names `<path>/null`).
-    return { ...none, kind: p.fields.join('') === '' && p.stderr.includes(`Could not access '${path}'`) ? 'absent' : 'other' };
+    return { kind: p.fields.join('') === '' && p.stderr.includes(`Could not access '${path}'`) ? 'absent' : 'other', mode: null };
   }
   const mode = p.fields[0].split(' ')[1];
+  return { kind: mode === SYMLINK ? 'symlink' : 'file', mode };
+}
+
+export async function readNoIndex(git, path, { maxBytes }) {
+  const none = { mode: null, bytes: null, linkTarget: null };
+  const entry = await worktreeEntry(git, path);
+  if (entry.kind === 'absent' || entry.kind === 'other') return { ...none, kind: entry.kind };
+  const { mode } = entry;
   let r;
   try {
     // Each content byte costs at most two output bytes ('+' and '\n' for an empty line); the header is bounded by the path.

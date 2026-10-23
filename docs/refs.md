@@ -96,7 +96,7 @@ In the UI, moving a cc-owned HEAD with an action that has no dialog (double-clic
 
 ### Undo record
 
-Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; shape in [protocol](protocol.md#branch-tag-and-head-ops-srcgitopsbranchjs-tagjs-headjs)). A tag's `old`/`new` is the tag object (unpeeled), so an annotated tag restores with its message; a deleted branch carries its `upstream`. Nothing in the UI reads it yet.
+Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; shape in [protocol](protocol.md#branch-tag-and-head-ops-srcgitopsbranchjs-tagjs-headjs)); the stash ops return the same record, filling its `stashes` and `worktreePatch` ([stash](stash.md#undo-record)). A tag's `old`/`new` is the tag object (unpeeled), so an annotated tag restores with its message; a deleted branch carries its `upstream`. Nothing in the UI reads it yet.
 
 | Op | Destroys | Recoverable |
 |---|---|---|

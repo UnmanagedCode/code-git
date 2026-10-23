@@ -92,6 +92,12 @@ const WRITES = [
   ['stage.stageLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
   ['stage.unstageLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
   ['stage.discardLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
+  ['stash.push', {}],
+  ['stash.apply', { oid: 'a'.repeat(40) }],
+  ['stash.pop', { oid: 'a'.repeat(40) }],
+  ['stash.applyFile', { oid: 'a'.repeat(40), path: 'HEAD' }],
+  ['stash.branch', { oid: 'a'.repeat(40), name: 'x' }],
+  ['stash.pushLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
 ];
 
 for (const bare of ['true', 'false', 'unset', 'include-false', 'newline-path']) {

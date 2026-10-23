@@ -15,6 +15,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Diff | A commit, unstaged or staged changes, two refs (`..` / `...`), a run of commits, or a commit vs the working directory. File list; Hunk, Inline and Split modes with word-level and syntax highlighting; File view; whitespace and context controls; wrap; change navigation and in-file search; binary, rename, LFS-pointer, submodule and oversized states; patch download/copy. Opened from the graph (a commit, a selection, a file in the details), the Changes panel's rows, or the Compare panel (left) |
 | Changes | Stage, unstage and discard files, hunks and lines; commit, amend, message-only amend, skip hooks, commit template; ignore; restore a file from a commit; apply a patch. Right slot (it gives way to the commit details while a commit is selected), opened from the graph's WIP row; the **Changes (n)** dialog on narrow screens |
 | Branches & tags | Create, checkout (double-click; a remote branch becomes a tracking branch), rename, delete (several at once, or on a remote), upstream and ahead/behind, fast-forward; tags create (annotated or not), push, delete; reset soft/mixed/hard, revert, cherry-pick; Fast-forward and Reset on a branch dropped onto another. Destructive actions confirm first; `code-conductor/*` branches warn. [docs/refs.md](docs/refs.md) |
+| Stash | Save all changes, selected files, staged only, or selected hunks and lines (with or without untracked files, optionally keeping the index); apply, apply with staged changes, pop, drop, rename, create a branch; a stash's All changes / Staged / Untracked diffs; one file applied alone. [docs/stash.md](docs/stash.md) |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
 
 Details: [docs/features.md](docs/features.md).
@@ -37,7 +38,7 @@ docs/                   features, protocol, architecture, GitKraken reference
 .wiki/                  gotchas, decisions, glossary
 ```
 
-Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md).
+Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md). Stash: [docs/stash.md](docs/stash.md).
 
 ## Run
 
@@ -60,7 +61,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 | `npm test` | typecheck, then backend, then UI tests |
 | `npm run test:server` | `node --test "tests/*.test.js"` |
 | `npm run test:ui` | `vitest run --config frontend/vitest.config.ts` |
-| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` | screenshots / golden path / the diff path / the staging path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
+| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `stash.mjs` | screenshots / golden path / the diff path / the staging path / the stash path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
 | `node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" baseline` | mutation trust gates ([harness/mutation/README.md](harness/mutation/README.md)) |
 
 ## Known limitations
@@ -83,3 +84,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **Ignore writes the root `.gitignore`** only, never `.git/info/exclude`.
 - **Ref writes need git ≥ 2.24** on the project's System; a remote whose fetch refspecs code-git cannot map refuses branch pushes and remote deletes; a remote ref's undo value is the best one known locally ([docs/refs.md → Known limitations](docs/refs.md#known-limitations)).
 - **Writes are not cancellable by default**: an op opts in only where aborting mid-command is safe; a closed browser tab does not abort a write.
+- **A renamed stash moves to the top** (`stash@{0}`): git can only store an entry there.
+- **Applying one file of a stash is worktree-only and patch-based**: a file that differs from the stash's base is refused, not merged. Pop is whole-stash only.
+- **Hunks and lines are stashed only from a file with nothing staged**, and such a stash pops only onto a clean file (git's merge refuses a file with any local change; apply its file instead).
+- **Stashing staged changes only needs git ≥ 2.35** on the project's System.

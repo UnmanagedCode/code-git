@@ -21,7 +21,8 @@ export interface WorkdirWorld {
 }
 
 const WRITES = ['stage.files', 'stage.unstageFiles', 'stage.discardFiles', 'stage.stageLines', 'stage.unstageLines', 'stage.discardLines',
-  'commit.create', 'ignore.add', 'files.restore', 'patch.check', 'patch.apply'];
+  'commit.create', 'ignore.add', 'files.restore', 'patch.check', 'patch.apply',
+  'stash.push', 'stash.pushLines', 'stash.apply', 'stash.pop', 'stash.applyFile', 'stash.drop', 'stash.rename', 'stash.branch'];
 
 export function workdirWorld(w: WorkdirWorld = {}) {
   const lists = { unstaged: w.unstaged ?? [], staged: w.staged ?? [] };

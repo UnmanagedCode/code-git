@@ -19,3 +19,7 @@
 - **Mutation harness isolation is `copy`**: tests never run git inside the project tree (only in temp repos), so the copy's missing `.git` doesn't matter.
 - **Every Shell render now mounts the Changes panel**, which lists through `diff.files` and reads `commit.*`: a test stubbing one `Response` object for every `diff.files` call must `clone()` it (a body reads once), and assertions about the diff's alerts or first list request must be scoped to the Diff region. `test/workdirWorld.ts` stubs the panel's routes.
 - **Playwright names match by substring**: the panel's reload button is "Reload changes" so the header's `getByRole('button', {name: 'Refresh'})` stays unique.
+- **Two op worlds in one test talk to the last fake cc**: each `fakeCc` takes over `process.env.CONDUCTOR_URL`, which every op reads per request. A differential test (stash vs stage the same selection) creates and uses one world at a time.
+- **The diff ignores Esc while focus is in a form field** (its key handler skips typing targets, radios included), and a dialog that closes after its trigger unmounted (a selection bar's button) leaves focus on `body`: harness steps close the diff with **Close diff**.
+- **sonner toasts stay on screen across steps**: a harness waiting for "Stashed as stash@{0}" twice must wait for a *new* one (`stash.mjs` counts matches before the action and waits for the next index).
+

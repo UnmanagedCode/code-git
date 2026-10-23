@@ -10,6 +10,7 @@ import { ops as patch } from './patch.js';
 import { ops as branch } from './branch.js';
 import { ops as tag } from './tag.js';
 import { ops as head } from './head.js';
+import { ops as stash } from './stash.js';
 
 // The op registry. A feature adds `ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run}]`
 // and one entry in the list below.
@@ -33,7 +34,7 @@ export function buildRegistry(lists) {
   return map;
 }
 
-export const OPS = buildRegistry([repo, diff, graph, stage, commit, ignore, files, patch, branch, tag, head]);
+export const OPS = buildRegistry([repo, diff, graph, stage, commit, ignore, files, patch, branch, tag, head, stash]);
 
 export function getOp(registry, name) {
   const op = registry.get(name);
