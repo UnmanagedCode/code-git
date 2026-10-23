@@ -36,7 +36,7 @@ for (const scheme of ['light', 'dark']) {
         if (m.type() === 'error' && !HOST_URLS.test(m.text()) && !/^Failed to load resource/.test(m.text())) errors.push(m.text());
       });
       // A known race (docs/submodules.md → Known limitations): a read the UI starts while a multi-command submodule write
-      // runs can find a submodule half-removed or half-cloned. Tolerated only for a repo.summary or graph.* read whose
+      // runs can find a submodule half-removed or half-cloned. Tolerated only for a repo.summary, graph.* or submodule.list read whose
       // request overlaps an in-flight submodule.remove or submodule.update and fails with git's error (GIT_FAILED, or
       // NOT_A_REPO as repo.summary words exit 128); `recovered()` then requires a clean, error-free page once the op ends.
       const started = new Map();
@@ -57,7 +57,7 @@ for (const scheme of ['light', 'dark']) {
         const text = await r.text().catch(() => '');
         let code = null;
         try { code = JSON.parse(text).code; } catch { /* not JSON */ }
-        const read = /\/api\/ops\/(repo\.summary|graph\.[a-zA-Z]+)$/.test(r.url());
+        const read = /\/api\/ops\/(repo\.summary|graph\.[a-zA-Z]+|submodule\.list)$/.test(r.url());
         const overlaps = writes.some((w) => w.start <= to && (w.end ?? Infinity) >= from);
         if (read && overlaps && (code === 'GIT_FAILED' || code === 'NOT_A_REPO')) {
           tolerated.push(r.url());
