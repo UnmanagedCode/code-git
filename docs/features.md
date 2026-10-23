@@ -67,10 +67,17 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 - **Refused, nothing changed**: a commit it would take back is already on a remote (any remote-tracking ref, as last fetched); something changed since (HEAD, a ref, a discarded file — then the entry is dropped); a merge / rebase / cherry-pick / revert or conflicts in progress (both buttons disabled with that reason); local changes in the way (stash them and retry); the branch is checked out in another worktree; a `code-conductor/*` branch, which asks first (**Review…**).
 - Keys are off while focus is in a text field (its own undo wins) or a dialog is open. Reference: [undo](undo.md).
 
+## File history, blame and the reflog
+
+- **File history** (a file's menu in the commit details, a diff's file list, a tracked Changes row, or the palette's **File history…**): the commits that changed the file, newest first, following renames ("renamed from ‹old›"). Click one to see its change to the file beside the list (Diff or File view). **Show in graph** jumps to it.
+- **Blame** (the same menus, the palette's **Blame…**, or the panel's **Blame** toggle): each line with the commit that last changed it; each run of lines starts with the commit's short SHA, author and date in the author's colour. Click it to see that commit in History. Lines load as you scroll. Binary files have no blame.
+- **Reflog** (a local branch's **Show reflog**, the palette's **Reflog**): where HEAD or a branch has been — selector, action, commit, subject, time — with View changes, Create branch here…, Reset HEAD to here (Soft / Mixed / Hard) and Copy SHA on each entry.
+- Reference: [history](history.md).
+
 ## Command palette and shortcuts
 
 - **Command palette**: Ctrl/⌘+P, or the header's **Commands** button. Type to filter (the letters in order, case-insensitive), ↑/↓ to move, Enter or a click to run, Esc to close. A command that picks (**Checkout branch…**, **Go to tab…**) opens a second list: type to filter it, Enter runs it with the highlighted item, Esc goes back to the commands. Each row shows its group and, when it has one, its shortcut.
-- Commands are offered only where they apply (no tab open: only **Show keyboard shortcuts**). They run what the rest of the UI runs, with the same confirmations and toasts: **Undo …** / **Redo …** (named after the entry), **Show changes**, **Stage all**, **Unstage all**, **Stash changes…**, **Create branch…**, **Checkout branch…** (local branches but HEAD's, then remote branches), **Fetch all remotes**, **Pull** (the project's default mode) and one per pull mode, **Push**, **Go to tab…** (more than one tab), **Close tab**, **Refresh** (the header summary and the graph), **Show keyboard shortcuts**.
+- Commands are offered only where they apply (no tab open: only **Show keyboard shortcuts**). They run what the rest of the UI runs, with the same confirmations and toasts: **Undo …** / **Redo …** (named after the entry), **File history…**, **Blame…** (a file of HEAD, or a typed path), **Reflog**, **Show changes**, **Stage all**, **Unstage all**, **Stash changes…**, **Create branch…**, **Checkout branch…** (local branches but HEAD's, then remote branches), **Fetch all remotes**, **Pull** (the project's default mode) and one per pull mode, **Push**, **Go to tab…** (more than one tab), **Close tab**, **Refresh** (the header summary and the graph), **Show keyboard shortcuts**.
 - **Keyboard shortcuts sheet**: Ctrl/⌘+/ (or the palette) lists every shortcut by where it acts, generated from the one catalog the key handlers use, so it is always complete.
 - Ctrl/⌘+P, Ctrl/⌘+/ and the undo keys do nothing while focus is in a text field or a dialog is open. Ctrl/⌘+P never opens the browser's print dialog from the app.
 

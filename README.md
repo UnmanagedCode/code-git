@@ -20,6 +20,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Remotes | Add, edit, rename, remove remotes; Fetch (all or one, prune behind a confirmation), auto-fetch (off by default); Pull (fast-forward if possible, fast-forward only, rebase; a per-project default); Push a branch (upstream, first push, a drop onto a remote branch, after a commit), force-with-lease behind a confirmation that checks the remote first. Credentials only from the System. [docs/remotes.md](docs/remotes.md) |
 | Submodules | Status of each submodule (uninitialised, not cloned, out of sync, modified, untracked, added, conflicted, blocked); add, initialize, update (recursive), sync, edit url, remove; open one as its own tab, with an offer to commit its new pointer in the parent on the way out. [docs/submodules.md](docs/submodules.md) |
 | Undo / redo | The checkout's last commit, checkout, branch / tag change, reset, cherry-pick, revert, merge, rebase or discard, undone and redone from the header, Ctrl/⌘+Z / Ctrl/⌘+Shift+Z or the palette; refused once a created commit is on a remote. [docs/undo.md](docs/undo.md) |
+| History | A file's history across renames with each commit's change, blame with author colours, and the reflog of HEAD or a branch. [docs/history.md](docs/history.md) |
 | Command palette | Ctrl/⌘+P: every command by name, with a second step to pick a branch, a tab or a file; Ctrl/⌘+/ lists every shortcut |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
 
@@ -82,7 +83,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **Worktree labels need git ≥ 2.36 and commit co-authors git ≥ 2.22** on the project's System ([docs/graph.md → Git versions](docs/graph.md#git-versions)).
 - **Below the `lg` breakpoint the side panels are dialogs**: refs, Compare and commit details open from the graph's toolbar or a commit click instead of beside the graph, and the Changes panel from the toolbar's **Changes (n)**.
 - **Untracked files are not in a work-in-progress patch** (`git diff` leaves them out).
-- **No image or binary preview** in the diff, and **File view has no blame**.
+- **No image or binary preview** in the diff; blame is its own view (of a commit, never of uncommitted lines), and file history is at most `HISTORY_LIMITS.followMaxCommits` commits deep ([docs/history.md → Known limitations](docs/history.md#known-limitations)).
 - **Non-UTF-8 text shows replacement characters** in the diff (hunk and line staging still writes the exact bytes).
 - **The Changes lists do not watch the disk**: they reload on first show, on Reload / Refresh and after every op.
 - **Hunk and line staging is for modified (`M`) text files only**, with whitespace shown; other files are staged whole.

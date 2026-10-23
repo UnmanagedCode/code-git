@@ -214,7 +214,7 @@ test('right-click: a commit row offers the commit menu, a branch chip the branch
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   fireEvent.contextMenu(screen.getByText('feat'));
   menu = await screen.findByRole('menu');
-  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent).slice(-5)).toEqual(['Jump to commit', 'Copy name', 'Hide', 'Solo', 'Pin to left']);
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent).slice(-6)).toEqual(['Jump to commit', 'Show reflog', 'Copy name', 'Hide', 'Solo', 'Pin to left']);
   fireEvent.keyDown(menu, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   fireEvent.click(rowEl(oid(5))!);

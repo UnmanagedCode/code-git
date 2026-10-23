@@ -1,4 +1,5 @@
 import { BRANCH_COMMANDS } from '@/features/branches/commands';
+import { HISTORY_COMMANDS } from '@/features/history/commands';
 import { REMOTE_COMMANDS } from '@/features/remotes/commands';
 import { STASH_COMMANDS } from '@/features/stash/commands';
 import { TAB_COMMANDS } from '@/features/tabs/commands';
@@ -45,7 +46,7 @@ const SHELL_COMMANDS: Command[] = [
   { id: 'shell.refresh', title: 'Refresh', group: 'View', run: (tab) => { void loadSummary(tab); void refreshGraph(tab, 'manual'); } },
 ];
 
-export const COMMANDS: Command[] = [...SHELL_COMMANDS, ...UNDO_COMMANDS, ...WORKDIR_COMMANDS, ...BRANCH_COMMANDS, ...REMOTE_COMMANDS, ...STASH_COMMANDS, ...TAB_COMMANDS];
+export const COMMANDS: Command[] = [...SHELL_COMMANDS, ...UNDO_COMMANDS, ...WORKDIR_COMMANDS, ...HISTORY_COMMANDS, ...BRANCH_COMMANDS, ...REMOTE_COMMANDS, ...STASH_COMMANDS, ...TAB_COMMANDS];
 
 /** Whether `query`'s characters appear in `text` in order (case-insensitive); the empty query matches everything. */
 export function subsequence(query: string, text: string): boolean {

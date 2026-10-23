@@ -18,6 +18,25 @@ A file's commits across renames, who last changed each line, and where HEAD and 
 - **A binary file has no blame** (`BINARY_FILE`: its numstat is `-`); a path that is not a file in `rev`: `PATH_NOT_IN_COMMIT`.
 - **The reflog's time** comes from `%gd` under `--date=unix` (`<ref>@{<unix time>}`); the selector is computed (`skip + i`), never read from git.
 
+## UI (`frontend/src/features/history/`)
+
+| Surface | What |
+|---|---|
+| **File history** panel (`HISTORY_PANEL`, center, on demand) | The file's path and the commit it starts from; **History** / **Blame** toggle; **Show in graph** (closes the panel and jumps to the picked commit). History: a list (short SHA, subject, author, date, "renamed from ‹old›") paged with **Load more**; the picked commit's change to the file in the viewer beside it, through the diff's own views with the shared **Diff / File** toggle and diff mode |
+| Blame (same panel) | Every line with its line number; at each run's first line the commit's short SHA, author and date, with the author's colour (the graph's lane palette, by first appearance); clicking it picks that commit in History. Pages of `BLAME_PAGE` lines load as the list scrolls near its end (or **Load more lines**) |
+| **Reflog** panel (`REFLOG_PANEL`, center, on demand) | **Reflog of** HEAD or a local branch; each entry's selector, action, short SHA, subject and time; **Load more**; **Reload reflog**. Row menu (⋮ or right-click; context `'reflog-entry'`, ctx `{tab, entry}`): **View changes**, **Create branch here…**, **Reset HEAD to here** › Soft / Mixed / Hard (hard through its confirmation dialog), **Copy SHA** |
+
+| Opened from | Item |
+|---|---|
+| A commit's file (details panel, context `'file'`) | **File history**, **Blame** (not for a file the commit deletes), at that commit |
+| A diff's file (`'diff-file'`, one file) | **File history**, **Blame**, at the diff's new commit, else HEAD |
+| A tracked Changes row (`'workdir-file'`) | **File history**, **Blame**, at HEAD (not for an untracked or added file) |
+| A local branch (`'branch'`) | **Show reflog** |
+| The palette | **File history…** / **Blame…** (pick one of HEAD's files, `history.paths`, or type a path), **Reflog** |
+
+- Entry points: `openFileHistory(tab, {path, rev})`, `openBlame(tab, {path, rev})`, `openReflog(tab, ref?)` (`open.ts`); state per `tabKey` in `state.ts`.
+- Everything from git (subjects, blame lines, reflog messages, ref and author names) is rendered as React text; no `href` or `style` is built from it.
+
 ## Known limitations
 
 - **History is at most `HISTORY_LIMITS.followMaxCommits` commits deep** (`truncated: true` past it), and each page re-walks from the start.
