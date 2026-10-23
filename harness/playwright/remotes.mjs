@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
 import { seedRemotes, XSS_BRANCH } from './remoteSeed.mjs';
+import { recordAlerts, recordReadsDuringWrites } from './settled.mjs';
 
 const { withPage } = await import(BROWSER);
 const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out', 'remotes');
@@ -34,6 +35,10 @@ try {
       errors.push(`${r.status()} ${r.url()}`);
     });
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    // The rebase pull (fetch, then rebase, and the reads around them) must never be read half-done: no watcher read may
+    // start while it is in flight, the header never shows a detached HEAD, and no alert shows in the header or main.
+    const alerts = await recordAlerts(page);
+    const pullReads = recordReadsDuringWrites(page, /\/api\/ops\/remote\.pull$/);
 
     const refs = page.getByRole('navigation', { name: 'Refs', exact: true });
     const toolbar = page.getByRole('group', { name: 'Remote', exact: true });
@@ -117,8 +122,22 @@ try {
     await toast('Diverged: pick Pull (fast-forward if possible) or Pull (rebase)').waitFor();
     check(git('rev-parse', 'HEAD') === o.mine, 'ff-only changed nothing');
     await shot('pull-diverged-light-desktop');
+    await alerts.reset();
+    pullReads.overlaps.length = 0;
+    // Hold the rebase alone: the fetch and the checks before it have closed, the run has not ended.
+    world.cc.state.execHook = (body) => (body.argv.includes('rebase') ? 'hold' : undefined);
     await tool('Pull').click();
+    const rebaseHeld = await world.cc.nextHeld();
+    world.cc.state.execHook = null;
+    // Once the activity panel shows the held rebase running, every earlier command's close has reached the UI.
+    await page.getByRole('region', { name: 'Activity', exact: true }).getByRole('listitem', { name: 'remote.pull running', exact: true }).waitFor();
+    check(pullReads.overlaps.length === 0, `no watcher read started while the rebase was held${pullReads.overlaps.length ? `: ${pullReads.overlaps.join('; ')}` : ''}`);
+    rebaseHeld.release();
     await toast('Rebased main onto origin/main').waitFor();
+    const during = await alerts.read();
+    check(pullReads.overlaps.length === 0, `no watcher read started during the rebase pull${pullReads.overlaps.length ? `: ${pullReads.overlaps.join('; ')}` : ''}`);
+    check(!during.detached, 'the header never showed a detached HEAD during the rebase pull');
+    check(during.alerts.length === 0, `no alert showed in the header or main during the rebase pull${during.alerts.length ? `: ${during.alerts.join(' | ')}` : ''}`);
     check(git('rev-parse', 'HEAD~1') === o.theirs && git('log', '-1', '--format=%s') === 'mine', 'git: main is rebased onto their commit');
     const theirs2 = world.pushElsewhere('main', { 'theirs2.txt': 't2\n' }, 'theirs 2');
     const mine2 = world.repo.commit({ 'mine2.txt': 'm2\n' }, 'mine 2');

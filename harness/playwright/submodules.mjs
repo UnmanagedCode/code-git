@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { hermeticEnv } from '../../tests/_git.js';
 import { BROWSER } from './resolve.mjs';
 import { seed } from './seed.mjs';
+import { recordAlerts, recordReadsDuringWrites } from './settled.mjs';
 
 const { withPage } = await import(BROWSER);
 const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out', 'submodules');
@@ -35,35 +36,14 @@ for (const scheme of ['light', 'dark']) {
       page.on('console', (m) => {
         if (m.type() === 'error' && !HOST_URLS.test(m.text()) && !/^Failed to load resource/.test(m.text())) errors.push(m.text());
       });
-      // A known race (docs/submodules.md → Known limitations): a read the UI starts while a multi-command submodule write
-      // runs can find a submodule half-removed or half-cloned. Tolerated only for a repo.summary, graph.* or submodule.list read whose
-      // request overlaps an in-flight submodule.remove or submodule.update and fails with git's error (GIT_FAILED, or
-      // NOT_A_REPO as repo.summary words exit 128); `recovered()` then requires a clean, error-free page once the op ends.
-      const started = new Map();
-      const writes = [];
-      const tolerated = [];
-      page.on('request', (q) => {
-        started.set(q, Date.now());
-        if (/\/api\/ops\/submodule\.(remove|update)$/.test(q.url())) writes.push({ q, start: Date.now(), end: null });
-      });
-      const ended = (q) => { const w = writes.find((x) => x.q === q); if (w) w.end = Date.now(); };
-      page.on('requestfinished', ended);
-      page.on('requestfailed', ended);
+      // The multi-command submodule writes (Update: init, clone, checkout; Remove: rm, deinit, …) must never be read
+      // half-done: no watcher read may start while one is in flight, and no alert may ever show in the header or main.
+      const alerts = await recordAlerts(page);
+      const reads = recordReadsDuringWrites(page, /\/api\/ops\/submodule\.(remove|update)$/);
       page.on('response', async (r) => {
         if (r.status() < 400 || HOST_URLS.test(r.url())) return;
         if (allowedRefusals > 0 && r.status() === 409 && r.url().endsWith('/api/ops/submodule.remove')) { allowedRefusals--; return; }
-        const from = started.get(r.request()) ?? 0;
-        const to = Date.now();
         const text = await r.text().catch(() => '');
-        let code = null;
-        try { code = JSON.parse(text).code; } catch { /* not JSON */ }
-        const read = /\/api\/ops\/(repo\.summary|graph\.[a-zA-Z]+|submodule\.list)$/.test(r.url());
-        const overlaps = writes.some((w) => w.start <= to && (w.end ?? Infinity) >= from);
-        if (read && overlaps && (code === 'GIT_FAILED' || code === 'NOT_A_REPO')) {
-          tolerated.push(r.url());
-          console.log(`tolerated: ${r.status()} ${code} ${r.url()} during a submodule write`);
-          return;
-        }
         errors.push(`${r.status()} ${r.url()} ${r.request().postData() ?? ''}\n  → ${text}`);
       });
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -99,11 +79,12 @@ for (const scheme of ['light', 'dark']) {
         await match.nth(n).waitFor({ timeout: 30_000 });
       };
 
-      /** After a submodule write: the header, every panel and slot are back to no error, the header showing its counts. */
-      const recovered = async (what) => {
-        await page.waitForFunction(() => document.querySelectorAll('header [role=alert], main [role=alert]').length === 0, null, { timeout: 15_000 });
-        await header.getByText(/^\d+ staged$/).waitFor();
-        check(true, `${scheme}: ${what}: the header and panels show no error`);
+      /** After a submodule write: no alert ever showed in the header or a panel, no watcher read overlapped a write, and the header shows its counts. */
+      const recovered = async (what, { counts = true } = {}) => {
+        const { alerts: shown } = await alerts.read();
+        check(shown.length === 0, `${scheme}: ${what}: no alert ever showed in the header or a panel${shown.length ? `: ${shown.join(' | ')}` : ''}`);
+        check(reads.overlaps.length === 0, `${scheme}: ${what}: no watcher read started during a submodule write${reads.overlaps.length ? `: ${reads.overlaps.join('; ')}` : ''}`);
+        if (counts) check(await header.getByText(/^\d+ staged$/).isVisible(), `${scheme}: ${what}: the header shows its counts`);
       };
 
       // 1. The panel and its badges.
@@ -222,7 +203,8 @@ for (const scheme of ['light', 'dark']) {
       check(JSON.stringify(items) === JSON.stringify(['Open', 'Update', 'Sync', 'Edit URL…', 'Remove…']), `${scheme}: the phone menu lists the submodule actions`);
       await shot('phone-menu');
       await page.keyboard.press('Escape');
-      console.log(`note: ${scheme}: ${tolerated.length} transient read failure(s) tolerated during submodule writes`);
+      // At phone width the header hides its counts.
+      await recovered('at the end', { counts: false });
       check(errors.length === 0, `${scheme}: no console errors or unexpected ≥400 responses${errors.length ? `:\n${errors.join('\n')}` : ''}`);
     });
   } finally {
