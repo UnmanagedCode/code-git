@@ -39,5 +39,5 @@ Code: `src/git/ops/submodule.js`, `src/git/submodule/`, `subArgs` in `src/git/ru
 
 ## UI
 
-- **Reads race multi-command writes**: the graph/summary watchers refresh after each finished write *command*, so a `git status` started mid-`deinit` or mid-clone can fail (`GIT_FAILED`, or `NOT_A_REPO` for exit 128) and the header flashes an error until the op's own refresh. The Submodules panel's own `submodule.list` refresh meets the same race (its `git status` on a half-made `.git/modules/<name>`). Known limitation; `submodules.mjs` tolerates only these reads (`repo.summary`, `graph.*`, `submodule.list`).
+- **Multi-command writes and reads**: between `deinit` and `rm`, or mid-clone, a `git status` fails (`GIT_FAILED`, or `NOT_A_REPO` for exit 128). The watchers (graph/summary, `submodule.list`, undo) therefore refresh only when the write's op run ends (`onSettledWrite`); `submodules.mjs` fails on any watched read started while a `submodule.update`/`remove` request is in flight. A read the user starts mid-write (Refresh, a new tab) can still meet the half-done state.
 - **The exit watcher starts when `SubmoduleDialogHost` mounts**, not at module load: `test/setup.ts`'s `tabsStore.set(EMPTY)` would otherwise read as every submodule tab closing and fire `submodule.list` after the test.

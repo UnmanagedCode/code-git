@@ -12,7 +12,7 @@ Shape: `server.js` → `src/app.js` (wiring) → `src/routes/*` → `src/git/ops
 | **sub chain** | A target's `sub`: submodule paths from the checkout down, each relative to the one before; the runner alone turns it into `-C <path> --git-dir=.git`, cc never sees it |
 | **form A** | cc exec addressing by `{project, worktree?}`; cc resolves the directory and the System. code-git uses only this form (never `system`/`cwd`, never `shell`) |
 | **op** | A named backend operation (`repo.summary`) with `kind` read/write, `cancellable`, `params`, `run`. The UI calls ops by name; no route takes argv |
-| **op run** | One call of an op; its commands share an `opRunId` |
+| **op run** | One call of an op; its commands share an `opRunId`. A write's run is also an `OpRun` record (`GET api/activity`'s `runs`, `event: run`): `running` until the op returned and every git call it made settled, then `ended` |
 | **activity entry** | One git command as logged: argv, target, status, exit code, stderr tail. Diagnostic only |
 | **tabKey** | `project + '\0' + (worktree ?? '')`, then `'\0' + path` per sub chain entry: the key of a checkout's UI state. `refsKey`/`prefsKey` share refs-derived state and graph prefs across a project's worktrees, but not into its submodules |
 | **diff source** | What a diff compares (`commit`, `unstaged`, `staged`, `compare`, `worktree`, `commits`, `pair`); resolved to a **pair** of pinned sides (`tree` oid / `index` / `worktree`) |
@@ -23,3 +23,4 @@ Shape: `server.js` → `src/app.js` (wiring) → `src/routes/*` → `src/git/ops
 - **Form A only.** Confining code-git to cc projects is the product's scope, and form A gets remote Systems for free: cc resolves where the checkout lives. A `system`/`cwd` can never be sent because `assertTarget` refuses extra keys and `exec` builds the body itself.
 - **Every cc project is listed in the picker**, unopenable ones disabled with cc's reason — never filtered, so "where is my project?" always has an answer on screen.
 - **The activity log is not a source of truth.** It is in memory and capped; undo/reflog features read git.
+- **Watchers refresh on a write's run end, not its commands' closes** (`state/settledWrites.ts`). Reads are never blocked by a write (no read lock): a long fetch/pull/clone would freeze every panel. The run, not the lock, marks a write in flight: the project lock (`createLocks`, taken in `runGit`) is held per command, so nothing holds it between two commands of a write.

@@ -51,7 +51,7 @@ A rejected push's toast offers **Force with lease…** (not after a rejected lea
 
 ### Auto-fetch
 
-Off by default (`autoFetchMinutes: 0`, per project, `code-git:remotes:<project>`). One timer per project with an open tab — fetching the project's checkout, never a submodule of a submodule tab (`features/remotes/autoFetch.ts`; `setRemoteClock` injects the timers in tests). A tick fetches every remote, never pruning, only when the page is visible, no write of that project is running (the activity log) and no remote op of it is in flight; it shows no running or success toast. The first failure of a streak (the op refused, or a remote's `error`) toasts once and sets the toolbar's warning dot; a success clears both.
+Off by default (`autoFetchMinutes: 0`, per project, `code-git:remotes:<project>`). One timer per project with an open tab — fetching the project's checkout, never a submodule of a submodule tab (`features/remotes/autoFetch.ts`; `setRemoteClock` injects the timers in tests). A tick fetches every remote, never pruning, only when the page is visible, no write op run of that project is in flight (`writeRunning`: the activity log's runs, so not between two commands of a write either) and no remote op of it is in flight; it shows no running or success toast. The first failure of a streak (the op refused, or a remote's `error`) toasts once and sets the toolbar's warning dot; a success clears both.
 
 ## Rules
 
