@@ -22,6 +22,7 @@ import { resetStashDialog } from '@/state/stashDialog';
 import { resetRemotes } from '@/state/remotes';
 import { resetRemotePrefs } from '@/state/remotePrefs';
 import { resetRemoteDialog } from '@/state/remoteDialog';
+import { resetAutoFetch } from '@/features/remotes/autoFetch';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
@@ -51,6 +52,7 @@ afterEach(() => {
   resetRemotes();
   resetRemotePrefs();
   resetRemoteDialog();
+  resetAutoFetch();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();

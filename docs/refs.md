@@ -10,12 +10,12 @@ Writing refs from the graph: branches (create, checkout, rename, delete, upstrea
 
 | Context (right-click) | Actions, in menu order |
 |---|---|
-| Local branch (chip or refs row) | **Checkout** (not the checked-out branch, not one checked out in another checkout) · Create branch here… · Create tag here… · Rename… (not checked out in another checkout; never a checked-out `code-conductor/*` branch) · Set upstream… · **Fast-forward to `<upstream>`** (only when strictly behind a present upstream) · Reset `<HEAD's branch>` to here › Soft / Mixed / Hard (not the HEAD branch; HEAD born) · Delete `<name>`… (not checked out anywhere) |
+| Local branch (chip or refs row) | **Checkout** (not the checked-out branch, not one checked out in another checkout) · Create branch here… · Create tag here… · Rename… (not checked out in another checkout; never a checked-out `code-conductor/*` branch) · Set upstream… · **Fast-forward to `<upstream>`** (only when strictly behind a present upstream) · Push · Push to `<remote>`… ([remotes](remotes.md)) · Reset `<HEAD's branch>` to here › Soft / Mixed / Hard (not the HEAD branch; HEAD born) · Delete `<name>`… (not checked out anywhere) |
 | Remote branch | **Checkout** · Create branch here… · Create tag here… · Reset `<HEAD>` to here › … · Delete `<branch>` from `<remote>`… |
 | Several selected branches (refs panel) | Delete N branches… — checked-out branches are left out of the selection and the count, and N is at most `NAMES_MAX` (`features/branches/api.ts`, equal to `REF_LIMITS.namesMax`); hidden when none remain |
 | Tag | Create branch here… · Push to `<remote>` (a **Push to** submenu with more than one remote) · Reset `<HEAD>` to here › … · Delete locally… · Delete from `<remote>`… (submenu likewise) · Jump to commit |
 | Commit | Create branch here… · Create tag here… · Reset `<HEAD>` to this commit › Soft / Mixed / Hard (not HEAD's commit) · **Revert commit** (a merge: **Revert merge (keep first parent)**, `mainline: 1`) · **Cherry-pick commit** (not HEAD's commit; a merge against its first parent) |
-| A branch dropped on another | **Fast-forward `<target>` to `<source>`** (target local, not checked out in another checkout) · **Reset `<target>` to `<source>`**: a Soft / Mixed / Hard submenu when the target is HEAD's branch, a force-move confirmation when the target is a local branch checked out nowhere, absent otherwise (a remote target) |
+| A branch dropped on another | **Fast-forward `<target>` to `<source>`** (target local, not checked out in another checkout) · **Push `<source>` to `<target>`** (a local source on a remote target: [remotes](remotes.md)) · **Reset `<target>` to `<source>`**: a Soft / Mixed / Hard submenu when the target is HEAD's branch, a force-move confirmation when the target is a local branch checked out nowhere, absent otherwise (a remote target) |
 
 - Remotes for the per-remote items: `git remote`'s list (`branch.tracking`), else the remotes the graph's remote refs name.
 - What is offered reads the graph's last refs answer (`features/branches/refInfo.ts`); the backend checks again. With `worktrees: null` (git < 2.36) "checked out elsewhere" is unknown: the item is offered and the backend refuses.
@@ -119,7 +119,7 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 
 ### Drag-menu orders
 
-The `branch-drop` menu's 100–199 are reserved for merge and rebase (Merge 100, Rebase 110, Interactive rebase 120); this card registers Fast-forward at 200 and Reset at 300.
+The `branch-drop` menu's 100–199 are reserved for merge and rebase (Merge 100, Rebase 110, Interactive rebase 120); Fast-forward is 200, the remotes' Push 250 (group `remote`), Reset 300.
 
 ### Git versions
 

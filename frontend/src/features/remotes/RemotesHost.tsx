@@ -1,4 +1,5 @@
 import { useRemoteDialog, type RemoteDialog } from '@/state/remoteDialog';
+import { useAutoFetch } from './autoFetch';
 import { AddRemoteDialog, EditRemoteDialog, PushDialog } from './RemoteDialog';
 
 const ids = new WeakMap<RemoteDialog, number>();
@@ -9,8 +10,9 @@ const idOf = (d: RemoteDialog) => {
   return ids.get(d)!;
 };
 
-/** The remotes feature's always-mounted part (mounted once by the shell): the open remote dialog. */
+/** The remotes feature's always-mounted part (mounted once by the shell): the open remote dialog and the auto-fetch timers. */
 export function RemotesHost() {
+  useAutoFetch();
   const d = useRemoteDialog();
   if (!d) return null;
   const key = idOf(d);

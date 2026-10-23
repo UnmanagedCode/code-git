@@ -2,7 +2,56 @@
 
 # Remotes
 
-Talking to other repositories: the remotes' config (add, edit, rename, remove), fetch, peek, pull. Ops and their wire shapes: [protocol](protocol.md#remote-ops-srcgitopsremotejs).
+Talking to other repositories: the remotes' config (add, edit, rename, remove), fetch (with prune and auto-fetch), pull in three modes, and branch push with force-with-lease. Ops and their wire shapes: [protocol](protocol.md#remote-ops-srcgitopsremotejs).
+
+## Using it
+
+### Where the actions are
+
+| Surface | Actions |
+|---|---|
+| Graph toolbar | **Fetch** (every remote; disabled with none; a warning dot after an auto-fetch failure, its reason in the button's label) · **Pull** (the default mode; disabled when HEAD has no upstream on a remote) with **Pull options** ▾ · **Push** (HEAD's branch: to its upstream at once, else the Push dialog; disabled on a detached or unborn HEAD). While its op runs a button shows a spinner and is disabled; the activity panel shows the elapsed time, and Cancel for fetch and push |
+| Pull options ▾ | Pull (fast-forward if possible) · Pull (fast-forward only) · Pull (rebase) — each runs once · **The Pull button runs** › a radio of the three, persisted per project · **Fetch all (prune)…** · **Auto-fetch: …** › Off / Every 1, 5, 15, 30, 60 min |
+| Refs panel → Remotes header | **Add remote** (+). Every remote `remote.list` names is listed, one with no fetched branch too |
+| Remote (right-click its row) | Fetch `<remote>` (150) · Fetch `<remote>` (prune)… (151) · Edit… (700) · Remove… (720, destructive) · Copy URL (900: the masked display url) — Edit and Remove not on a legacy remote; then the graph's Hide / Solo (950s) |
+| Local branch | **Push** (250, when it has an upstream on a remote) · **Push to `<remote>`…** (251; a **Push to remote** submenu with several remotes) → the Push dialog |
+| A local branch dropped on a remote branch | **Push `<source>` to `<target>`** (250): pushes to that remote branch, setting the upstream when the source has none |
+| Commit box | **Push after commit** (persisted per project; shown when HEAD is on a branch and a remote exists): after a commit that succeeded, Push as the toolbar does |
+
+### Dialogs
+
+`state/remoteDialog.ts`, rendered by `RemotesHost` (`features/remotes/`, mounted once by the shell). Add and edit stay open while their op runs and show a refusal inline (`role="alert"`: `BAD_URL`, `REMOTE_EXISTS`, `BAD_REF`).
+
+| Dialog | Content |
+|---|---|
+| Add remote | Name, Fetch URL, Push URL (optional); **Fetch after adding** (on) |
+| Edit remote | Name (a change renames first), Fetch URL and Push URL prefilled with the masked display urls. Only changed fields are sent; an emptied push url is removed; a list of several urls is shown disabled ("edit them with git") |
+| Push `<branch>` | Remote (select; preselected from the menu), Branch on the remote (prefilled: the same name), **Set as upstream** (on when the branch has no upstream). Push closes the dialog and runs the push flow |
+
+### Confirmations and toasts
+
+Every confirmation is the shared `confirm()`; nothing is sent unless it resolves true.
+
+| When | What |
+|---|---|
+| Fetch (prune) | "Deletes remote-tracking branches whose branch is gone from the remote; local branches and tags are untouched" |
+| Remove remote | Names the count of tracking branches it deletes and lists the local branches that lose their upstream |
+| A push of a `code-conductor/*` branch (source or destination) | The cc warning; **Push anyway** sends `ccOwned` |
+| A rebase pull on a `code-conductor/*` HEAD | The cc HEAD warning (`withCcHeadAck`, "Rebasing it"); **Rebase anyway** |
+| A fetch | "Fetched origin: 2 updated, 1 new, 1 pruned" (or "up to date"); a warning listing `remote: message` for each remote that failed, "partly fetched", and `ref → target` for each symbolic ref the fetch brought to life |
+| A pull | Up to date / Fast-forwarded / Merged / Rebased; `NOT_FAST_FORWARD`: "Diverged: pick Pull (fast-forward if possible) or Pull (rebase)"; `DIRTY_WORKTREE`: "Commit or stash first"; `PULL_CONFLICTS`: "The rebase would conflict; nothing changed" + the files; merge conflicts: a warning with the files and **Abort merge…** (confirms "discards the merge in progress and any conflict resolutions", then `head.abort {which: 'merge'}`) |
+| `REMOTE_AUTH_FAILED` / `REMOTE_UNREACHABLE` | The backend's message (what to set up on the System) with git's stderr |
+
+### Force with lease
+
+A rejected push's toast offers **Force with lease…** (not after a rejected lease). It asks the remote first (`remote.peek`):
+
+- **Not stale** (the remote branch is where the tracking ref says): a destructive confirmation — "Overwrite `<remote>/<to>` (at abc1234) with `<branch>` (def5678)? Commits only on the remote branch are lost. Uses --force-with-lease: refused if the remote moved." **Force push** re-pushes with `forceWithLease.expect` = the remote oid it showed.
+- **Stale** (the remote moved since the last fetch): "`<remote>/<to>` moved since the last fetch", offering **Fetch `<remote>`** instead. Force is not offered until a fetch and a fresh push attempt.
+
+### Auto-fetch
+
+Off by default (`autoFetchMinutes: 0`, per project, `code-git:remotes:<project>`). One timer per project with an open tab (`features/remotes/autoFetch.ts`; `setRemoteClock` injects the timers in tests). A tick fetches every remote, never pruning, only when the page is visible, no write of that project is running (the activity log) and no remote op of it is in flight; it shows no running or success toast. The first failure of a streak (the op refused, or a remote's `error`) toasts once and sets the toolbar's warning dot; a success clears both.
 
 ## Rules
 
