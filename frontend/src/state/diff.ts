@@ -92,6 +92,17 @@ function withFirstViewed(s: DiffTabState, path?: string | null): DiffTabState {
   return { ...s, viewed, selected: viewed ? [viewed] : [] };
 }
 
+/**
+ * A loaded list's viewed file and selection: a pick made while it loaded (a file list beside the diff stays live)
+ * wins when it is listed, with the listed part of its selection; else `keep`, else the first file.
+ */
+function withListedPick(s: DiffTabState, keep?: string | null): DiffTabState {
+  const listed = new Set((s.list.result?.files ?? []).map((f) => f.path));
+  if (s.viewed === null || !listed.has(s.viewed)) return withFirstViewed(s, keep);
+  const selected = s.selected.filter((p) => listed.has(p));
+  return { ...s, selected: selected.length ? selected : [s.viewed] };
+}
+
 export function endDiff(tab: Tab): void {
   diffStore.set((m) => {
     if (!m.has(tabKey(tab))) return m;
@@ -101,7 +112,7 @@ export function endDiff(tab: Tab): void {
   });
 }
 
-/** (Re)loads the file list for the tab's source; the viewed path is kept when it is still listed. */
+/** (Re)loads the file list for the tab's source; the viewed path (as picked by then, else as at the start) is kept when it is still listed. */
 export async function loadList(tab: Tab, keepPath?: string | null): Promise<void> {
   const cur = diffStore.get().get(tabKey(tab));
   if (!cur) return;
@@ -112,7 +123,7 @@ export async function loadList(tab: Tab, keepPath?: string | null): Promise<void
   const fresh = (s: DiffTabState) => s.generation === generation;
   try {
     const result = await listDiffFiles(tab, cur.source, ws);
-    put(tab, (s) => (fresh(s) ? withFirstViewed({ ...s, list: { loading: false, error: null, result, whitespace: ws } }, keep) : s));
+    put(tab, (s) => (fresh(s) ? withListedPick({ ...s, list: { loading: false, error: null, result, whitespace: ws } }, keep) : s));
   } catch (e) {
     put(tab, (s) => (fresh(s) ? { ...s, list: { loading: false, error: toError(e), result: null, whitespace: ws } } : s));
   }

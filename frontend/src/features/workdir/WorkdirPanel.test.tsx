@@ -105,6 +105,25 @@ test('Tree: folder buttons are disabled while an op runs', async () => {
   await waitFor(() => expect((within(section('Unstaged Files')).getByRole('button', { name: 'Stage folder src' }) as HTMLButtonElement).disabled).toBe(false));
 });
 
+test('a second row clicked before the unstaged diff\'s list answers is the one viewed once it does', async () => {
+  await show({ unstaged: [M, NEW, dfile({ path: 'z.ts' })] });
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  const stubbed = globalThis.fetch;
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/ops/diff.files')) await held;
+    return stubbed(input, init);
+  });
+  await userEvent.click(within(section('Unstaged Files')).getByText('src/a.ts'));
+  expect(diffStore.get().get(tabKey(APP))).toMatchObject({ viewed: 'src/a.ts', list: { loading: true } });
+  await userEvent.click(within(section('Unstaged Files')).getByText('z.ts'));
+  expect(diffStore.get().get(tabKey(APP))?.viewed).toBe('z.ts');
+  await act(async () => { release(); await held; });
+  await waitFor(() => expect(diffStore.get().get(tabKey(APP))?.list.loading).toBe(false));
+  expect(diffStore.get().get(tabKey(APP))).toMatchObject({ source: { kind: 'unstaged' }, viewed: 'z.ts', selected: ['z.ts'] });
+  expect(row('Unstaged Files', 'z.ts').getAttribute('aria-current')).toBe('true');
+});
+
 test('with the unstaged diff open its section drives it: viewed row current, a click or ↓ views a file without a new list; a staged row opens the staged diff', async () => {
   const w = await show({ unstaged: [M, NEW, dfile({ path: 'z.ts' })] });
   await userEvent.click(within(section('Unstaged Files')).getByText('src/a.ts'));

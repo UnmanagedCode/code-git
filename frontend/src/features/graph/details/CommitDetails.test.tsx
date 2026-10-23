@@ -145,6 +145,22 @@ test('while the bound diff list loads, the commit\'s own files stand in for the 
   await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Changed files' })).getAllByRole('option').map((o) => o.getAttribute('data-path'))).toEqual(['src/lib/a.ts']));
 });
 
+test('a file picked in the loading stand-in stays picked when the diff\'s list answers (View changes opens it at no file)', async () => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  await show({ files }, [A], {
+    'POST api/ops/diff.files': async () => { await held; return diffFiles['POST api/ops/diff.files']; },
+  });
+  fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
+  expect(diffStore.get().get('app\0')).toMatchObject({ viewed: null, list: { loading: true } });
+  fireEvent.click(fileRow('gone.txt'));
+  expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'gone.txt', selected: ['gone.txt'] });
+  await act(async () => { release(); await held; });
+  await waitFor(() => expect(diffStore.get().get('app\0')?.list.result).toBeTruthy());
+  expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'gone.txt', selected: ['gone.txt'] });
+  expect(fileRow('gone.txt').getAttribute('aria-current')).toBe('true');
+});
+
 test('unbound: the row menu is the commit file menu; a merge diffed against parent 2 says so and lists that diff\'s files', async () => {
   const merge = [cf('M', 'from-side.txt')];
   await show({ files, parents: [P, oid(9)] }, [A], {
