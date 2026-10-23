@@ -21,6 +21,7 @@ import { WIDE_GRAPH_QUERY } from './media';
 import { ownWorktree, worktreeName } from './labels';
 import type { Checkout, GitWorktree, Ref, Stash } from './types';
 import { resolveVisibility, sectionOf, type Visibility } from './visibility';
+import { pointerMods } from '@/shell/shortcuts';
 
 const HOST = 'refs';
 /** Rows a list shows before "Show more", and how many each click adds: the filter finds the rest. */
@@ -248,8 +249,9 @@ function RefRow({ tab, r, vis, prefs, all, indent = false, selected = false, ord
   const isBranch = r.kind !== 'tag';
   /** Ctrl/⌘ toggles the row into the selection, Shift selects the range; a plain click clears it and jumps. */
   const onNameClick = (e: MouseEvent) => {
-    if (isBranch && (e.ctrlKey || e.metaKey)) return dispatchRefSelection(tab, { type: 'toggle', name: r.name });
-    if (isBranch && e.shiftKey) return dispatchRefSelection(tab, { type: 'range', name: r.name, order });
+    const mods = pointerMods(e);
+    if (isBranch && mods.mod) return dispatchRefSelection(tab, { type: 'toggle', name: r.name });
+    if (isBranch && mods.shift) return dispatchRefSelection(tab, { type: 'range', name: r.name, order });
     dispatchRefSelection(tab, { type: 'clear' });
     jump();
   };

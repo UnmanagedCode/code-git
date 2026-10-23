@@ -17,6 +17,8 @@ import { closeRebaseEditor } from './open';
 import { RewordDialog } from './RewordDialog';
 import { editorTitle, startRebase } from './start';
 import { updateSession, useEditor } from './state';
+import { matchCombo, matches } from '@/shell/shortcuts';
+import { REBASE_ACTION_KEYS, REBASE_FOCUS_KEY, REBASE_MOVE_KEY } from './keys';
 
 const abbrev = (oid: string) => oid.slice(0, 7);
 
@@ -80,14 +82,16 @@ export function RebaseEditor({ tab }: { tab: Tab | null }) {
   };
   const onRowKey = (e: KeyboardEvent<HTMLLIElement>, i: number) => {
     if (e.target !== e.currentTarget) return;
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    const moving = matchCombo(e, REBASE_MOVE_KEY);
+    const focusing = matchCombo(e, REBASE_FOCUS_KEY);
+    if (moving || focusing) {
       e.preventDefault();
-      const to = i + (e.key === 'ArrowUp' ? -1 : 1);
-      if (e.altKey) moveRow(i, to); else focusRow(to);
+      const to = i + ((moving ?? focusing)!.key === 'ArrowUp' ? -1 : 1);
+      if (moving) moveRow(i, to); else focusRow(to);
       return;
     }
-    const action = !e.altKey && !e.ctrlKey && !e.metaKey ? ACTION_KEY[e.key.toLowerCase()] : undefined;
-    if (action) { e.preventDefault(); act(i, action); }
+    const hit = REBASE_ACTION_KEYS.find((k) => matches(e, k));
+    if (hit) { e.preventDefault(); act(i, ACTION_KEY[hit.combos[0].key]); }
   };
   const startDrag = (e: ReactPointerEvent, from: number) => {
     if (e.button !== 0) return;

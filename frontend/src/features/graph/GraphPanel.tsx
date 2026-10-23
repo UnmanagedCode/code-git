@@ -43,6 +43,8 @@ import { useGraphSearch } from './useGraphSearch';
 import { resolveVisibility, TIPS_MAX } from './visibility';
 import { ROW_H, windowFor } from './windowFor';
 import './graph.css';
+import { matchCombo, matches as pressed, pointerMods } from '@/shell/shortcuts';
+import { GRAPH_SEARCH_CLOSE_KEY, GRAPH_SEARCH_NEXT_KEY } from './keys';
 
 /** Load the next page when the viewport bottom is this many rows from the loaded end. */
 export const PREFETCH_ROWS = 100;
@@ -311,7 +313,8 @@ function GraphView({ tab }: { tab: Tab }) {
   }), [data.refs, data.checkouts, rows, index, resolveDrop]);
 
   const onRowClick = useCallback((e: MouseEvent, row: GraphRow) => {
-    const type = e.shiftKey ? 'range' : e.ctrlKey || e.metaKey ? 'toggle' : 'click';
+    const mods = pointerMods(e);
+    const type = mods.shift ? 'range' : mods.mod ? 'toggle' : 'click';
     dispatchSelection(tab, { type, id: row.id, rows });
     body.current?.focus({ preventScroll: true });
     if (type !== 'click' || getSelection(tab).ids.length !== 1) return;
@@ -358,8 +361,9 @@ function GraphView({ tab }: { tab: Tab }) {
             value={search.query}
             onChange={(e) => search.setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); nextMatch(e.shiftKey ? -1 : 1); }
-              if (e.key === 'Escape') { search.setQuery(''); body.current?.focus(); }
+              const next = matchCombo(e, GRAPH_SEARCH_NEXT_KEY);
+              if (next) { e.preventDefault(); nextMatch(next.shift === true ? -1 : 1); }
+              if (pressed(e, GRAPH_SEARCH_CLOSE_KEY)) { search.setQuery(''); body.current?.focus(); }
             }}
             placeholder={search.mode === 'path' ? 'Search commits touching a path' : 'Search commits'}
             aria-label="Search commits"

@@ -5,6 +5,8 @@ import { createStore, useStore } from '@/state/store';
 import type { Tab } from '@/state/tabs';
 import { CONTEXT, type BranchDropCtx, type DragRef } from './contexts';
 import type { Ref } from './types';
+import { matches } from '@/shell/shortcuts';
+import { DRAG_CANCEL_KEY } from './keys';
 
 // Dragging a branch chip onto another opens the 'branch-drop' menu (Merge, Rebase, … registered by later cards).
 // Pointer events, not HTML5 drag and drop: only this app's chips can be dragged, no foreign data can be dropped.
@@ -68,7 +70,7 @@ export function startBranchDrag(
     openContextMenu({ host, context: CONTEXT.branchDrop, ctx: { tab, source, target: over } satisfies BranchDropCtx, at });
   };
   const key = (ev: KeyboardEvent) => {
-    if (ev.key !== 'Escape') return;
+    if (!matches(ev, DRAG_CANCEL_KEY)) return;
     ev.stopPropagation();
     end();
   };

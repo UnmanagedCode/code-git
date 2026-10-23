@@ -1,4 +1,6 @@
 import type { KeyboardEvent } from 'react';
+import { matchCombo, matches } from '@/shell/shortcuts';
+import { DIFF_CHANGE_KEY, DIFF_ESCAPE_KEY, DIFF_FIND_KEY } from './keys';
 
 export interface DiffKeyHandlers {
   find: () => void;
@@ -12,14 +14,14 @@ export interface DiffKeyHandlers {
 export function useDiffKeys(h: DiffKeyHandlers) {
   return (e: KeyboardEvent) => {
     if (e.defaultPrevented) return;
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); h.find(); return; }
-    if (e.altKey && !mod && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    if (matches(e, DIFF_FIND_KEY)) { e.preventDefault(); h.find(); return; }
+    const change = matchCombo(e, DIFF_CHANGE_KEY);
+    if (change) {
       e.preventDefault();
-      if (e.key === 'ArrowDown') h.nextChange(); else h.prevChange();
+      if (change.key === 'ArrowDown') h.nextChange(); else h.prevChange();
       return;
     }
-    if (e.key === 'Escape' && !mod && !e.altKey) {
+    if (matches(e, DIFF_ESCAPE_KEY)) {
       // An open menu (portalled, but its events bubble through React) closes itself.
       if (e.target instanceof Element && e.target.closest('[role="menu"]')) return;
       e.preventDefault();

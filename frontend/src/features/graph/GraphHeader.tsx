@@ -6,6 +6,8 @@ import { setCssPx } from '@/lib/cssVars';
 import { cn } from '@/lib/utils';
 import { toggled, updatePrefs, type GraphPrefs } from '@/state/graphPrefs';
 import { CELL_CLASS, clampWidth, COLUMNS, OPTIONAL_COLUMNS, type ColumnId, type OptionalColumnId } from './columns';
+import { matches } from '@/shell/shortcuts';
+import { COLUMN_MENU_KEY } from './keys';
 
 /** Columns shown, in order. */
 export const shownColumns = (p: GraphPrefs): ColumnId[] => p.columns.order.filter((id) => !COLUMNS[id].optional || p.columns.visible.includes(id as OptionalColumnId));
@@ -102,7 +104,7 @@ export function GraphHeader({ prefsKey, prefs, root }: { prefsKey: string; prefs
               className={cn('relative flex h-full shrink-0 items-center px-2 select-none', CELL_CLASS[id], dragging === id && 'opacity-50')}
               onPointerDown={(e) => { if (e.button === 0) { e.preventDefault(); startReorder(e, id); } }}
               onContextMenu={(e) => { e.preventDefault(); setMenu(id); }}
-              onKeyDown={(e) => { if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); setMenu(id); } }}
+              onKeyDown={(e) => { if (matches(e, COLUMN_MENU_KEY)) { e.preventDefault(); setMenu(id); } }}
             >
               <span className="truncate">{COLUMNS[id].label}</span>
               {COLUMNS[id].resizable && (
