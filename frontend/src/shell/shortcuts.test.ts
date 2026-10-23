@@ -61,7 +61,7 @@ function presses(c: Combo) {
 // Invariant: within one scope no key press triggers two shortcuts — except pairs that act in different elements of it
 // (a search box's Enter/Esc beside the graph's own).
 test('no colliding combos within a scope', () => {
-  const ELEMENT = new Set(['graph.searchNext', 'graph.searchClose', 'graph.dragCancel', 'graph.columnMenu', 'diff.searchNext', 'diff.searchClose', 'diff.fileMove', 'workdir.open', 'workdir.move', 'workdir.stageFile', 'workdir.unstageFile']);
+  const ELEMENT = new Set(['graph.searchNext', 'graph.searchClose', 'graph.dragCancel', 'graph.columnMenu', 'diff.searchNext', 'diff.searchClose', 'workdir.open', 'workdir.move', 'workdir.stageFile', 'workdir.unstageFile']);
   for (const g of SHORTCUT_GROUPS) {
     const own = g.shortcuts.filter((x) => !ELEMENT.has(x.id));
     for (const a of own) for (const c of a.combos) for (const p of presses(c)) {

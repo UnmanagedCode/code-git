@@ -18,6 +18,7 @@ import { tabKey, type Tab } from '@/state/tabs';
 import { workdirOf, workdirStore } from '@/state/workdir';
 import type { Marks, StagingView } from './CodeLine';
 import { DiffHeader } from './DiffHeader';
+import type { DiffFileCtx } from './actions';
 import { FileList } from './FileList';
 import { FileView } from './FileView';
 import { languageFor } from './highlight';
@@ -163,15 +164,18 @@ function DiffView({ tab }: { tab: Tab }) {
         <p className="p-4 text-sm text-muted-foreground">No changes.</p>
       ) : (
         <div className="flex flex-1 flex-col md:min-h-0 md:flex-row">
-          <FileList
-            tab={tab}
-            files={files}
-            selected={state.selected}
-            viewed={state.viewed}
-            patchSource={psource}
-            onSelect={(sel, viewed) => setSelection(tab, sel, viewed)}
-            className="max-h-28 shrink-0 overflow-y-auto border-b md:max-h-none md:w-64 md:border-r md:border-b-0"
-          />
+          <div className="max-h-28 shrink-0 overflow-y-auto border-b md:max-h-none md:w-64 md:border-r md:border-b-0">
+            <FileList
+              label="Changed files"
+              files={files}
+              selected={state.selected}
+              viewed={state.viewed}
+              multi
+              followFocus
+              onSelect={(sel, f) => setSelection(tab, sel, f.path)}
+              menu={(_f, targets) => ({ context: 'diff-file', ctx: { tab, files: targets, source: psource } satisfies DiffFileCtx })}
+            />
+          </div>
           {file && (
             <FileView
               file={file}

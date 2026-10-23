@@ -1,6 +1,7 @@
 import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { resetDiff } from '@/state/diff';
+import { resetFileView } from '@/state/fileView';
 import { resetShownPanels } from '@/state/shownPanel';
 import { resetDrag } from '@/features/graph/drag';
 import { resetJump } from '@/features/graph/jump';
@@ -43,6 +44,7 @@ afterEach(() => {
   resetActivity();
   resetSummaries();
   resetDiff();
+  resetFileView();
   resetShownPanels();
   // The graph's triggers first: they read the prefs.
   resetGraph();

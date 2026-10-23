@@ -10,7 +10,7 @@ import { useStore } from '@/state/store';
 import { tabKey, type Tab } from '@/state/tabs';
 import { CONTEXT, type FileCtx } from '../contexts';
 import type { CommitFile } from '../types';
-import { buildFileTree, statusClass, type TreeNode } from './fileTree';
+import { buildFileTree, statusClass, type TreeNode } from '@/features/diff/fileTree';
 
 const VIEW_KEY = 'graph:fileView';
 type View = 'path' | 'tree';
@@ -45,7 +45,7 @@ export function FileList({ tab, commit, parent, files, host }: { tab: Tab; commi
       </button>
     </li>
   );
-  const tree = (nodes: TreeNode[], depth: number): ReactNode => nodes.map((n) => (n.kind === 'file' ? row(n.file, n.name, depth) : (
+  const tree = (nodes: TreeNode<CommitFile>[], depth: number): ReactNode => nodes.map((n) => (n.kind === 'file' ? row(n.file, n.name, depth) : (
     <li key={`d:${n.path}`}>
       <span className={cn('flex items-center gap-1 py-0.5 text-muted-foreground', depth === 0 ? 'ml-1' : depth === 1 ? 'ml-5' : depth === 2 ? 'ml-9' : 'ml-13')}>
         <FolderIcon className="size-3.5" />{clip(n.name)}
