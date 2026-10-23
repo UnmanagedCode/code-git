@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { splitRemoteRef } from '../src/git/parse/graph.js';
-import { classifyRemoteFailure, parsePushPorcelain, splitRequested } from '../src/git/parse/push.js';
+import { parsePushPorcelain, splitRequested } from '../src/git/parse/push.js';
 import { parseConflictFiles, parseTracking } from '../src/git/parse/refs.js';
 
 const rec = (...fields) => `${fields.join('\0')}\n`;
@@ -69,27 +69,6 @@ test('parsePushPorcelain sorts every flag: updated (fast-forward, forced, delete
     upToDate: ['refs/heads/main'],
   });
   assert.deepEqual(parsePushPorcelain('To x\nDone\n'), { updated: [], rejected: [], upToDate: [] });
-});
-
-test('classifyRemoteFailure: each auth pattern → REMOTE_AUTH_FAILED, each unreachable pattern → REMOTE_UNREACHABLE, else null', () => {
-  const auth = [
-    "fatal: could not read Username for 'https://h': terminal prompts disabled",
-    "fatal: could not read Password for 'https://u@h': No such device",
-    'fatal: Authentication failed for \'https://h/r.git/\'',
-    'git@h: Permission denied (publickey).',
-    'Host key verification failed.',
-    'remote: HTTP Basic: Access denied',
-  ];
-  for (const s of auth) assert.equal(classifyRemoteFailure(s), 'REMOTE_AUTH_FAILED', s);
-  const unreachable = [
-    'fatal: unable to access \'https://h/\': Could not resolve host: h',
-    'ssh: connect to host h port 22: Connection refused',
-    'ssh: connect to host h port 22: Connection timed out',
-    "fatal: 'nope' does not appear to be a git repository",
-    "fatal: unable to access 'https://h/': SSL certificate problem",
-  ];
-  for (const s of unreachable) assert.equal(classifyRemoteFailure(s), 'REMOTE_UNREACHABLE', s);
-  assert.equal(classifyRemoteFailure('error: failed to push some refs\npre-push hook said no'), null);
 });
 
 test('splitRequested keeps only the requested refs in updated/rejected/upToDate and reports every other line as unrequested', () => {

@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { push } from '../src/git/remote/push.js';
-import { fetchSpecs, hasUrl, legacyRemoteFile, parseFetchRefspec, trackingRefsFor } from '../src/git/remote/tracking.js';
+import {
+  assertFetchDestinations, assertNoTrackingSymrefs, destinationNamespaces, fetchSpecs, hasUrl, inDestinations, isHeadAlias, legacyRemoteFile,
+  newlyLiveSymrefs, parseFetchRefspec, trackedSnapshot, trackingRefsFor,
+} from '../src/git/remote/tracking.js';
 import { ctxFor, gitFor } from './_ctx.js';
 import { refsWorld, refused } from './_refsWorld.js';
 
@@ -207,4 +210,63 @@ test('an empty url with no legacy file and no fetch refspec maps nothing, as git
   assert.deepEqual(r.deleted, ['doomed']);
   intact();
   assert.equal(w.repo.git('symbolic-ref', 'refs/remotes/origin/doomed'), 'refs/heads/code-conductor/wt', 'git did not write through the unmapped ref');
+});
+
+test('assertFetchDestinations: a destination outside refs/remotes/ and refs/tags/ → REMOTE_CONFIG_UNSUPPORTED naming the refspec as configured; store-less and negative refspecs pass', () => {
+  assertFetchDestinations('origin', specs('+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*', 'refs/heads/x:refs/remotes/pin/x', 'refs/heads/main', '^refs/heads/secret'));
+  for (const bad of ['+refs/heads/*:refs/heads/*', 'refs/heads/x:refs/heads/code-conductor/x', '+refs/heads/*:refs/wip/*', 'refs/heads/a:refs/notes/a', '+refs/heads/*:refs/remotesx/*']) {
+    assert.throws(() => assertFetchDestinations('origin', specs('+refs/heads/*:refs/remotes/origin/*', bad)), refused('REMOTE_CONFIG_UNSUPPORTED', { remote: 'origin', refspec: bad }), bad);
+  }
+});
+
+test('destinationNamespaces cuts a wildcard destination after the last / before its *, keeps an exact one, and skips store-less and negative refspecs; inDestinations matches exactly', () => {
+  const s = specs('+refs/heads/*:refs/remotes/origin/*', 'refs/heads/*:refs/remotes/origin/pre-*', 'refs/heads/x:refs/remotes/pin/x', 'refs/heads/main', '^refs/heads/n*');
+  assert.deepEqual(destinationNamespaces(s), ['refs/remotes/origin/', 'refs/remotes/pin/x']);
+  assert.deepEqual(destinationNamespaces(specs('refs/heads/*-wip:refs/remotes/w/a/*-x')), ['refs/remotes/w/a/']);
+  assert.equal(inDestinations(s, 'refs/remotes/origin/a/b'), true);
+  assert.equal(inDestinations(s, 'refs/remotes/pin/x'), true);
+  assert.equal(inDestinations(s, 'refs/remotes/pin/x/y'), false);
+  assert.equal(inDestinations(s, 'refs/remotes/other/a'), false);
+  assert.equal(inDestinations(specs('refs/heads/*:refs/remotes/w/*-x'), 'refs/remotes/w/a'), false);
+});
+
+test('isHeadAlias: only <dst with * = HEAD> pointing into the same destination pattern', () => {
+  const s = specs('+refs/heads/*:refs/remotes/origin/*', 'refs/heads/x:refs/remotes/pin/x');
+  assert.equal(isHeadAlias(s, 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'), true);
+  assert.equal(isHeadAlias(s, 'refs/remotes/origin/HEAD', 'refs/heads/main'), false);
+  assert.equal(isHeadAlias(s, 'refs/remotes/origin/HEAD', 'refs/remotes/other/main'), false);
+  assert.equal(isHeadAlias(s, 'refs/remotes/origin/x', 'refs/remotes/origin/main'), false);
+  assert.equal(isHeadAlias(s, 'refs/remotes/pin/HEAD', 'refs/remotes/pin/x'), false, 'an exact refspec has no HEAD alias');
+});
+
+test('assertNoTrackingSymrefs refuses the first symbolic ref with its ref and target, except the HEAD alias; newlyLiveSymrefs lists symrefs not live before', () => {
+  const s = specs('+refs/heads/*:refs/remotes/origin/*');
+  const snap = (entries) => new Map(entries.map(([ref, symref]) => [ref, { oid: 'a'.repeat(40), symref }]));
+  assertNoTrackingSymrefs(snap([['refs/remotes/origin/main', null], ['refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], ['refs/tags/v1', null]]), s, 'origin');
+  assert.throws(() => assertNoTrackingSymrefs(snap([['refs/remotes/origin/x', 'refs/heads/victim']]), s, 'origin'),
+    refused('SYMBOLIC_REF', { ref: 'refs/remotes/origin/x', target: 'refs/heads/victim' }));
+  assert.throws(() => assertNoTrackingSymrefs(snap([['refs/remotes/origin/HEAD', 'refs/heads/main']]), s, 'origin'), refused('SYMBOLIC_REF', { ref: 'refs/remotes/origin/HEAD' }));
+  assert.throws(() => assertNoTrackingSymrefs(snap([['refs/tags/v1', 'refs/heads/main']]), s, 'origin'), refused('SYMBOLIC_REF', { ref: 'refs/tags/v1', target: 'refs/heads/main' }));
+  const before = snap([['refs/remotes/origin/a', 'refs/heads/t'], ['refs/remotes/origin/b', null]]);
+  const after = snap([['refs/remotes/origin/a', 'refs/heads/t'], ['refs/remotes/origin/b', 'refs/heads/u'], ['refs/remotes/origin/c', 'refs/heads/ghost'], ['refs/remotes/origin/d', null]]);
+  assert.deepEqual(newlyLiveSymrefs(before, after), [{ ref: 'refs/remotes/origin/b', target: 'refs/heads/u' }, { ref: 'refs/remotes/origin/c', target: 'refs/heads/ghost' }]);
+});
+
+test('trackedSnapshot: every destination ref and every tag, with symrefs; nothing outside the destinations, nothing dangling', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('fetch', '-q', 'origin');
+  w.repo.git('tag', 'v1');
+  w.repo.git('update-ref', 'refs/remotes/originx/a', w.base);
+  w.repo.git('update-ref', 'refs/remotes/other/a', w.base);
+  w.repo.git('symbolic-ref', 'refs/remotes/origin/alias', 'refs/heads/main');
+  w.repo.git('symbolic-ref', 'refs/remotes/origin/ghost', 'refs/heads/nowhere');
+  const git = gitFor(ctxFor({ project: 'repo' }, 'write', { op: 'test.snapshot' }));
+  const snap = await trackedSnapshot(git, await fetchSpecs(git, 'origin'));
+  assert.deepEqual(Object.fromEntries(snap), {
+    // git's own fetch created the HEAD alias (followRemoteHEAD).
+    'refs/remotes/origin/HEAD': { oid: w.base, symref: 'refs/remotes/origin/main' },
+    'refs/remotes/origin/alias': { oid: w.base, symref: 'refs/heads/main' },
+    'refs/remotes/origin/main': { oid: w.base, symref: null },
+    'refs/tags/v1': { oid: w.base, symref: null },
+  });
 });

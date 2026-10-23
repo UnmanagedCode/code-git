@@ -411,10 +411,10 @@ StashChange     { oid, old: {message}|null, new: {message}|null, restore: 'store
 **Remote names and pushes** (`src/git/remote/push.js`, shared with later remote ops):
 
 - `remote` is checked in `params` (non-empty, ≤ 200 characters, no leading `-`, whitespace or control character) and then must be one of `git remote`'s names; either failure is 404 `REMOTE_UNKNOWN`, the first before any exec.
-- A push is `push --porcelain --no-follow-tags --end-of-options <remote> <refspecs…>` (`--no-follow-tags`: a configured `push.followTags` never publishes a tag nobody selected), runs with `NETWORK_LIMITS` (`src/git/remote/limits.js`) and accepts exit 0, 1 and 128. No env is added: `BASE_ENV` already disables every prompt.
+- A push is `-c protocol.ext.allow=never -c protocol.fd.allow=never push --porcelain --no-follow-tags [--set-upstream] [--force-with-lease=<ref>:<expect>…] --end-of-options <remote> <refspecs…>` (`--no-follow-tags`: a configured `push.followTags` never publishes a tag nobody selected). Like every network command it runs through `netRun` (`src/git/remote/net.js`): `NET_CONFIG` first, `NETWORK_LIMITS` (`src/git/remote/limits.js`); it accepts exit 0, 1 and 128. No env is added: `BASE_ENV` already disables every prompt. Never `--force` and never a `+` refspec: a lease (`expect` empty = the ref must not exist on the remote) is the only overwrite.
 - Before a push, each `refs/heads/<b>` destination is mapped through the remote's configured fetch refspecs (`git config --get-all remote.<name>.fetch`; `src/git/remote/tracking.js`) to the tracking refs here git updates with it, and none may be a symbolic ref, live or dangling: git would follow it to its target. Else 409 `SYMBOLIC_REF` with `target`, and nothing runs. Accepted refspecs: `[+]refs/…:refs/…` (exact, or one `*` on each side), `[+]refs/…` (stores nothing) and `^refs/…`; negative refspecs exclude nothing, because git's push-time tracking update ignores them. Any other shape is 409 `REMOTE_CONFIG_UNSUPPORTED` with `remote` and `refspec`. So is a remote with no url (no non-empty `remote.<name>.url` after the last empty value, which clears the list; a `pushurl` does not count) **and** a legacy `.git/remotes/<name>` or `.git/branches/<name>` file, from which git would take refspecs (`refspec: null`; found with `rev-parse --git-path` and `hash-object --no-filters`). A push-only remote with no legacy file maps through its config. Tag destinations update no tracking ref and read no fetch config.
 - Results and undo lists come from the `--porcelain` ref lines for the refspecs' destinations only (`splitRequested` in `src/git/parse/push.js`); a line for any other ref is listed in `unrequested: [{ref, flag}]` (the porcelain flag), never dropped.
-- No ref line and a non-zero exit: 502 `REMOTE_AUTH_FAILED` or 502 `REMOTE_UNREACHABLE` (`classifyRemoteFailure` in `src/git/parse/push.js`), with `stderr`; anything else (a pre-push hook that refused) 422 `GIT_FAILED` with `stderr`. Hooks always run.
+- No ref line and a non-zero exit: 502 `REMOTE_AUTH_FAILED` or 502 `REMOTE_UNREACHABLE` (`remoteFailure` in `src/git/remote/net.js` over `classifyRemoteFailure` in `src/git/parse/push.js`), with `reason` and `stderr`; anything else (a pre-push hook that refused) 422 `GIT_FAILED` with `stderr`. Hooks always run.
 - Every ref rejected and none updated or up to date: 409 `PUSH_REJECTED` with `rejected: [{ref, reason}]`; the message names each `ref: reason` (the first five, then a count). A partly rejected push succeeds and lists `rejected`.
 
 ### Stash ops (`src/git/ops/stash.js`; all writes, not cancellable)
@@ -495,6 +495,11 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `REMOTE_CONFIG_UNSUPPORTED` | 409 | A fetch refspec of the remote code-git cannot map to the tracking refs a push updates, or a remote with no url whose config git reads from a legacy remote file; `remote`, `refspec` |
 | `REMOTE_UNKNOWN` | 404 | The remote name is malformed or not one of `git remote`'s |
 | `PUSH_REJECTED` | 409 | The remote rejected every ref of a push; `rejected` |
+| `BAD_URL` | 400 | A remote url refused (`remoteUrl` in `src/git/remote/url.js`): not an allowlisted shape, a `<transport>::` helper url, a leading `-`, whitespace or a control character, too long |
+| `REMOTE_EXISTS` | 409 | A remote of that name exists (`remote.add`, `remote.rename`) |
+| `NO_UPSTREAM` | 409 | Pull or push without a remote, and HEAD's branch (or the branch) has no remote upstream; detached HEAD |
+| `DIRTY_WORKTREE` | 409 | A rebase pull with tracked changes in the working tree or the index |
+| `PULL_CONFLICTS` | 409 | A rebase pull would conflict: it was aborted, nothing changed; `files` |
 | `PICK_EMPTY` | 409 | A revert or cherry-pick would commit nothing; nothing is left in progress |
 | `NOTHING_IN_PROGRESS` | 409 | `head.abort` with no revert or cherry-pick in progress |
 | `STASH_UNKNOWN` | 404 | The oid is not in the stash list ([stash](stash.md)) |
@@ -509,8 +514,8 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `INTERNAL` | 500 | A code-git bug (logged) |
 | `SYSTEM_UNREACHABLE` | 502 | The project's System cannot be asked; `detail` = cc's code |
 | `GIT_UNAVAILABLE` | 502 | git could not start on the System; `errno` |
-| `REMOTE_AUTH_FAILED` | 502 | The remote refused the credentials, or would have prompted for them; `stderr` |
-| `REMOTE_UNREACHABLE` | 502 | The remote could not be reached; `stderr` |
+| `REMOTE_AUTH_FAILED` | 502 | The remote refused the credentials, or would have prompted for them; `reason` (`credentials` — refused, or an http 401/403 · `prompt` — git needed to ask · `ssh-key` · `ssh-host-key`), `stderr`. The message says what to set up on the System |
+| `REMOTE_UNREACHABLE` | 502 | The remote could not be reached; `reason` (`dns` · `refused` · `timeout` · `not-found` — no repository at the url · `unavailable`), `stderr` |
 | `CONDUCTOR_UNAVAILABLE` | 503 | No `CONDUCTOR_URL`, cc did not answer, or answered without a usable body |
 | `GIT_TIMEOUT` | 504 | The command passed its deadline and was killed; partial `stderr` |
 

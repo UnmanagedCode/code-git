@@ -38,17 +38,28 @@ export function splitRequested(result, requested) {
   return { updated: mine(result.updated), rejected: mine(result.rejected), upToDate: mine(result.upToDate), unrequested };
 }
 
-const AUTH = [
-  'could not read Username', 'could not read Password', 'terminal prompts disabled', 'Authentication failed',
-  'Permission denied (publickey', 'Host key verification failed', 'HTTP Basic: Access denied',
-];
-const UNREACHABLE = [
-  'Could not resolve host', 'Connection refused', 'Connection timed out', 'does not appear to be a git repository', 'unable to access',
+// Patterns of git's (and ssh's, curl's) stderr, LC_ALL=C, checked in this order: the first matching rule wins. A helper's
+// rejected credentials also print git's "could not read Username" line, and a 403 is also "unable to access", so the
+// credential rules come before the prompt and unreachable ones.
+const RULES = [
+  { code: 'REMOTE_AUTH_FAILED', reason: 'credentials', patterns: ['Authentication failed', 'HTTP Basic: Access denied', 'The requested URL returned error: 401', 'The requested URL returned error: 403'] },
+  { code: 'REMOTE_AUTH_FAILED', reason: 'prompt', patterns: ['terminal prompts disabled', 'could not read Username', 'could not read Password'] },
+  { code: 'REMOTE_AUTH_FAILED', reason: 'ssh-key', patterns: ['Permission denied (publickey'] },
+  { code: 'REMOTE_AUTH_FAILED', reason: 'ssh-host-key', patterns: ['Host key verification failed'] },
+  { code: 'REMOTE_UNREACHABLE', reason: 'dns', patterns: ['Could not resolve host'] },
+  { code: 'REMOTE_UNREACHABLE', reason: 'refused', patterns: ['Connection refused', 'Failed to connect to'] },
+  { code: 'REMOTE_UNREACHABLE', reason: 'timeout', patterns: ['Connection timed out', 'Operation timed out'] },
+  { code: 'REMOTE_UNREACHABLE', reason: 'not-found', patterns: ['does not appear to be a git repository', "' not found"] },
+  { code: 'REMOTE_UNREACHABLE', reason: 'unavailable', patterns: ['unable to access'] },
 ];
 
-/** git's stderr of a failed remote command → 'REMOTE_AUTH_FAILED' | 'REMOTE_UNREACHABLE' | null (anything else). */
+/**
+ * git's stderr of a remote command that failed as a whole → {code: 'REMOTE_AUTH_FAILED' | 'REMOTE_UNREACHABLE', reason}
+ * | null (anything else: a hook, a git error). Auth reasons: `credentials` (the remote refused what the helper gave, or
+ * a 401/403), `prompt` (git needed to ask), `ssh-key`, `ssh-host-key`; unreachable: `dns`, `refused`, `timeout`,
+ * `not-found`, `unavailable`.
+ */
 export function classifyRemoteFailure(stderr) {
-  if (AUTH.some((p) => stderr.includes(p))) return 'REMOTE_AUTH_FAILED';
-  if (UNREACHABLE.some((p) => stderr.includes(p))) return 'REMOTE_UNREACHABLE';
-  return null;
+  const rule = RULES.find((r) => r.patterns.some((p) => stderr.includes(p)));
+  return rule ? { code: rule.code, reason: rule.reason } : null;
 }

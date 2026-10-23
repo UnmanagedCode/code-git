@@ -1,12 +1,12 @@
 import { Refusal } from '../../refusals.js';
 import { parseRemotes } from '../parse/graph.js';
-import { classifyRemoteFailure, parsePushPorcelain, splitRequested } from '../parse/push.js';
+import { parsePushPorcelain, splitRequested } from '../parse/push.js';
 import { assertNoSymref } from '../refs/resolve.js';
-import { NETWORK_LIMITS } from './limits.js';
+import { netRun, remoteFailure } from './net.js';
 import { fetchSpecs, trackingRefsFor } from './tracking.js';
 
-// The commands that talk to a remote. Credentials come only from the System's helper or agent: BASE_ENV turns every
-// prompt off, so an op that would prompt fails (REMOTE_AUTH_FAILED). Hooks (pre-push) always run.
+// Pushing, and the remote-name checks every remote op shares. The push runs through netRun (net.js): no prompt, no
+// `ext::`/`fd::` transport. Hooks (pre-push) always run.
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const hasControlOrSpace = (s) => [...s].some((c) => c.charCodeAt(0) < 0x21 || c.charCodeAt(0) === 0x7f);
@@ -32,25 +32,24 @@ export async function knownRemote(git, name) {
  * `--no-follow-tags` keeps a configured `push.followTags` from publishing tags nobody selected. A branch destination whose
  * remote-tracking ref here (per the remote's fetch refspecs) is symbolic, live or dangling, refuses SYMBOLIC_REF, and
  * a fetch config code-git cannot map refuses REMOTE_CONFIG_UNSUPPORTED, before anything runs. A push that reports no
- * ref at all failed as a whole: REMOTE_AUTH_FAILED / REMOTE_UNREACHABLE, or GIT_FAILED with git's stderr (a pre-push
- * hook that refused lands here). Rejected refs are the caller's to judge.
+ * ref at all failed as a whole: remoteFailure (REMOTE_AUTH_FAILED / REMOTE_UNREACHABLE with a reason, or GIT_FAILED with
+ * git's stderr: a pre-push hook that refused lands here). Rejected refs are the caller's to judge.
+ * `setUpstream` adds `--set-upstream`; each lease `{ref, expect}` adds `--force-with-lease=<ref>:<expect>` (expect null:
+ * the ref must not exist on the remote). Never `--force` and never a `+` refspec: a lease is the only way to overwrite.
  */
-export async function push(git, remote, refspecs) {
+export async function push(git, remote, refspecs, { setUpstream = false, leases = [] } = {}) {
   // git updates the remote-tracking ref of every branch it pushes or deletes, following a symbolic one: an alias
   // → refs/heads/victim would move or delete `victim` past every guard. Which ref that is comes from the remote's
   // configured fetch refspecs (tracking.js); tags update no tracking ref.
   for (const ref of await trackingRefsOfPush(git, remote, refspecs)) await assertNoSymref(git, ref);
-  const r = await git(['push', '--porcelain', '--no-follow-tags', '--end-of-options', remote, ...refspecs], {
-    timeoutMs: NETWORK_LIMITS.timeoutMs, maxOutputBytes: NETWORK_LIMITS.maxOutputBytes, okExit: [0, 1, 128],
-  });
+  const options = [
+    ...(setUpstream ? ['--set-upstream'] : []),
+    ...leases.map((l) => `--force-with-lease=${l.ref}:${l.expect ?? ''}`),
+  ];
+  const r = await netRun(git, ['push', '--porcelain', '--no-follow-tags', ...options, '--end-of-options', remote, ...refspecs], { okExit: [0, 1, 128] });
   const parsed = parsePushPorcelain(decoder.decode(r.stdout));
   const reported = parsed.updated.length + parsed.rejected.length + parsed.upToDate.length;
-  if (r.exitCode !== 0 && !reported) {
-    const stderr = decoder.decode(r.stderr);
-    const code = classifyRemoteFailure(stderr);
-    if (code) throw new Refusal(code, code === 'REMOTE_AUTH_FAILED' ? `${remote} refused the credentials (or would have prompted)` : `${remote} could not be reached`, { stderr });
-    throw new Refusal('GIT_FAILED', `git push exited with ${r.exitCode}`, { exitCode: r.exitCode, stderr });
-  }
+  if (r.exitCode !== 0 && !reported) throw remoteFailure(remote, r, 'push');
   return splitRequested(parsed, refspecs.map((s) => s.slice(s.indexOf(':') + 1)));
 }
 

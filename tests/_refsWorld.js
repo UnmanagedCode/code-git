@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { getOp, OPS } from '../src/git/ops/index.js';
+import { NET_CONFIG } from '../src/git/remote/net.js';
 import { BASE_ARGS } from '../src/git/runner.js';
 import { ctxFor, gitFor } from './_ctx.js';
 import { fakeCc } from './_fakeCc.js';
@@ -34,8 +35,8 @@ export async function refsWorld(t) {
     project.worktrees[name] = wt.dir;
     return wt;
   };
-  /** Every exec's argv after `git` and BASE_ARGS, in order. */
-  const argvs = () => cc.state.execCalls.map((b) => b.argv.slice(1 + BASE_ARGS.length));
+  /** Every exec's argv after `git`, BASE_ARGS and (a network command's) NET_CONFIG, in order. */
+  const argvs = () => cc.state.execCalls.map((b) => stripNet(b.argv.slice(1 + BASE_ARGS.length)));
   /** Subcommands that change refs, the index or the worktree, from the exec log. */
   const writes = () => argvs().filter((a) => WRITE_SUBCOMMANDS.has(a[0]));
   const oid = (rev, dir = repo.dir) => repo.git('-C', dir, 'rev-parse', rev);
@@ -43,7 +44,10 @@ export async function refsWorld(t) {
   return { repo, origin, base, cc, op, worktree, argvs, writes, oid, exists };
 }
 
-const WRITE_SUBCOMMANDS = new Set(['switch', 'checkout', 'branch', 'update-ref', 'merge', 'reset', 'stash', 'tag', 'push', 'revert', 'cherry-pick']);
+const WRITE_SUBCOMMANDS = new Set(['switch', 'checkout', 'branch', 'update-ref', 'merge', 'reset', 'stash', 'tag', 'push', 'revert', 'cherry-pick', 'fetch', 'rebase']);
+
+/** `argv` without a leading NET_CONFIG (netRun's prefix). */
+export const stripNet = (argv) => (NET_CONFIG.every((a, i) => argv[i] === a) ? argv.slice(NET_CONFIG.length) : argv);
 
 export const refused = (code, extra = {}) => (e) => {
   assert.equal(e.code, code, e.message);

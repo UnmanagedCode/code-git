@@ -11,6 +11,8 @@ export interface RemoteRefChange { remote: string; ref: string; old: string | nu
 export interface HeadState { branch: string | null; oid: string | null }
 /** A stash entry an op added or removed, and how an undo puts it back (docs/stash.md → Undo record). */
 export interface StashChange { oid: string; old: { message: string } | null; new: { message: string } | null; restore: 'store' | 'pop' | 'drop' }
+/** A remote's config before an op changed or removed it (docs/remotes.md → Undo). */
+export interface RemoteConfigChange { name: string; urls: string[]; pushUrls: string[]; fetch: string[]; upstreams: { branch: string; merge: string }[] }
 /** What an op created, moved or deleted (docs/refs.md → Undo record). */
 export interface UndoRecord {
   refs: RefChange[];
@@ -20,6 +22,7 @@ export interface UndoRecord {
   stashes: StashChange[];
   /** base64 bytes `git apply -R` takes back out of the worktree. */
   worktreePatch: string | null;
+  remotes: RemoteConfigChange[];
 }
 export interface Rejected { ref: string; reason: string }
 /** A ref the remote reported that the push did not ask for (`flag`: git's porcelain flag). */
