@@ -42,7 +42,9 @@ export function CommitBox({ tab, state, summary, instance }: { tab: Tab; state: 
   }, [state.focus]);
 
   const pushAfter = useRemotePrefs(tab.project).pushAfterCommit;
-  const canPushAfter = !!summary?.head.branch && (useRemotes(tab).data?.length ?? 0) > 0;
+  // Every hook unconditionally, before any condition: the summary's HEAD flips (a rebase reports it detached).
+  const remoteCount = useRemotes(tab).data?.length ?? 0;
+  const canPushAfter = !!summary?.head.branch && remoteCount > 0;
   const run = (mode: CommitMode, stageAll = false) => void commitDraft(tab, mode, { stageAll }).then((ok) => {
     // The push goes through the shared flow: its cc warning and rejected-push handling.
     if (ok && pushAfter && canPushAfter) pushHead(tab);
