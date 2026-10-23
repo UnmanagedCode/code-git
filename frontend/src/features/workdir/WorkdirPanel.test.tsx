@@ -265,7 +265,7 @@ test('untracked rows offer Ignore by name, extension and folder; each sends igno
     await userEvent.click(screen.getByRole('button', { name: 'Actions for logs/debug.log' }));
     return screen.getAllByRole('menuitem').map((m) => m.textContent);
   };
-  expect(await menu()).toEqual(['Stage', 'Discard…', 'Copy path', "Ignore 'debug.log'", "Ignore all '*.log' files", "Ignore folder 'logs/'"]);
+  expect(await menu()).toEqual(['Stash this file…', 'Stage', 'Discard…', 'Copy path', "Ignore 'debug.log'", "Ignore all '*.log' files", "Ignore folder 'logs/'"]);
   await userEvent.click(screen.getByRole('menuitem', { name: "Ignore all '*.log' files" }));
   await waitFor(() => expect(w.posts('ignore.add')).toEqual([{ kind: 'ext', value: 'log' }]));
   await menu();

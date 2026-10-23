@@ -3,6 +3,8 @@ import { FolderGit2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RefDialogHost } from '@/features/branches/RefDialogHost';
 import { RepoPicker } from '@/features/repos/RepoPicker';
+import { StashDialogHost } from '@/features/stash/StashDialogHost';
+import { StashToaster } from '@/features/stash/StashToaster';
 import { RepoHeader } from '@/features/repo/RepoHeader';
 import { TabBar } from '@/features/tabs/TabBar';
 import { useTabShortcuts } from '@/features/tabs/useTabShortcuts';
@@ -56,6 +58,8 @@ export function Shell() {
       <Slot slot="bottom" tab={tab} />
       <RepoPicker open={pickerOpen} onOpenChange={setPickerOpen} onOpen={(t) => dispatchTabs({ type: 'open', tab: t })} />
       <RefDialogHost />
+      <StashDialogHost />
+      <StashToaster />
     </div>
   );
 }

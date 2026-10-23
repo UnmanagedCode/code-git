@@ -133,7 +133,8 @@ test('the WIP row menu offers Show changes; for another checkout it opens that c
   await show(true);
   fireEvent.contextMenu(row('wip:')!);
   const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
-  expect(items[0]).toBe('Show changes');
+  // Stash's write action (order 400) comes first, then the views.
+  expect(items.slice(0, 2)).toEqual(['Stash changes…', 'Show changes']);
   const { openWip } = await import('./entry');
   act(() => openWip(APP, { project: 'app', worktree: 'wt' }));
   expect(tabsStore.get().open.map((t) => t.worktree)).toEqual([null, 'wt']);

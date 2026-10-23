@@ -18,6 +18,7 @@ import { resetLineSelection } from '@/state/lineSelection';
 import { resetRefDialog } from '@/state/refDialog';
 import { resetRefSelection } from '@/state/refSelection';
 import { resetTracking } from '@/state/branchTracking';
+import { resetStashDialog } from '@/state/stashDialog';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
@@ -43,6 +44,7 @@ afterEach(() => {
   resetRefDialog();
   resetRefSelection();
   resetTracking();
+  resetStashDialog();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();

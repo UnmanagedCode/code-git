@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { EllipsisVerticalIcon, RefreshCwIcon, XIcon } from 'lucide-react';
+import { ArchiveIcon, EllipsisVerticalIcon, RefreshCwIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { openStashSave } from '@/features/stash/actions';
 import { useStore } from '@/state/store';
 import { tabKey, type Tab } from '@/state/tabs';
 import { useRepoSummary } from '@/state/useRepoSummary';
@@ -21,10 +22,14 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
   const ready = !!summary;
   useEffect(() => { if (ready) void ensureWorkdir(tab); }, [tabKey(tab), ready]);
   if (!ready) return null;
+  const changed = !!state.unstaged?.files.length || !!state.staged?.files.length;
   return (
     <div className="flex flex-col text-sm" aria-busy={state.busy || state.loading}>
       <div className="flex items-center gap-1 border-b px-3 py-1.5">
         <h2 className="flex-1 text-sm font-semibold">Changes</h2>
+        <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Stash changes…" disabled={!changed || state.busy} onClick={() => openStashSave(tab, { mode: 'all' })}>
+          <ArchiveIcon />
+        </Button>
         <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Reload changes" disabled={state.loading} onClick={() => void refreshWorkdir(tab)}>
           <RefreshCwIcon className={state.loading ? 'animate-spin' : undefined} />
         </Button>

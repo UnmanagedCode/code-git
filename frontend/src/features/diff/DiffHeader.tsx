@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ChevronDownIcon, FileDiffIcon, RefreshCwIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,20 +35,22 @@ interface Props {
   loading: boolean;
   selectedCount: number;
   notice: string | null;
+  /** Shown in place of the parent select (a stash's view switch). */
+  parentControl?: ReactNode;
   onParent: (n: number) => void;
   onRefresh: () => void;
   onPatch: (how: 'download' | 'copy', selectedOnly: boolean) => void;
   onClose: () => void;
 }
 
-export function DiffHeader({ source, result, loading, selectedCount, notice, onParent, onRefresh, onPatch, onClose }: Props) {
+export function DiffHeader({ source, result, loading, selectedCount, notice, parentControl, onParent, onRefresh, onPatch, onClose }: Props) {
   const parents = result?.commit?.parents ?? [];
   const parent = source.kind === 'commit' ? source.parent ?? 1 : 1;
   return (
     <div className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5">
       <FileDiffIcon className="size-4 text-muted-foreground" />
       <h2 className="min-w-0 truncate font-mono text-sm" aria-label="Diff source">{sourceLabel(source, result)}</h2>
-      {parents.length > 1 && (
+      {parentControl ?? (parents.length > 1 && (
         <select
           aria-label="Compare with parent"
           className="h-7 rounded-md border bg-background px-1 text-xs"
@@ -56,7 +59,7 @@ export function DiffHeader({ source, result, loading, selectedCount, notice, onP
         >
           {parents.map((p, i) => <option key={p} value={i + 1}>vs parent {i + 1} ({short(p)})</option>)}
         </select>
-      )}
+      ))}
       <div className="ml-auto flex items-center gap-1">
         <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Refresh diff" disabled={loading} onClick={onRefresh}>
           <RefreshCwIcon className={loading ? 'animate-spin' : undefined} />

@@ -3,13 +3,19 @@ import { applyLines, type LineAction } from '@/features/staging/actions';
 import { HunkActions } from '@/features/staging/HunkActions';
 import { canPartial } from '@/features/staging/partial';
 import { SelectionBar } from '@/features/staging/SelectionBar';
+import { openStashSave } from '@/features/stash/actions';
+import { StashViewSwitch } from '@/features/stash/StashViewSwitch';
+import { stashViewOf } from '@/features/stash/views';
+import type { LineSelection } from '@/features/workdir/api';
 import { extendRange, hunkRequest, lineKey, toggle, toRequest } from '@/features/staging/selection';
+import { useGraphData } from '@/state/graph';
 import { clearLineSelection, setLineSelection, useLineSelection } from '@/state/lineSelection';
 import { useStore } from '@/state/store';
 import {
   contextFor, diffStore, fileKey, forceFile, loadFile, loadList, prefsStore, setSelection,
 } from '@/state/diff';
 import { tabKey, type Tab } from '@/state/tabs';
+import { workdirOf, workdirStore } from '@/state/workdir';
 import type { Marks, StagingView } from './CodeLine';
 import { DiffHeader } from './DiffHeader';
 import { FileList } from './FileList';
@@ -84,6 +90,13 @@ function DiffView({ tab }: { tab: Tab }) {
     setLinesBusy(true);
     void applyLines(tab, action, diff, context, req).finally(() => setLinesBusy(false));
   };
+  // Lines are stashed only from a file with nothing staged (stash.pushLines refuses it otherwise).
+  useStore(workdirStore);
+  const stagedFiles = workdirOf(tab).staged?.files;
+  const stashable = section === 'unstaged' && !!file && !!stagedFiles && !stagedFiles.some((f) => f.path === file.path);
+  const stashLines = (req: LineSelection[]) => {
+    if (diff && req.length) openStashSave(tab, { mode: 'lines', request: { path: diff.path, context, hunks: req }, count: req.reduce((n, h) => n + h.lines.length, 0) });
+  };
   const staging = useMemo<StagingView | undefined>(() => (partial && diff && key ? {
     selected: sel.keys,
     onToggle: (h, i, shift) => {
@@ -91,8 +104,12 @@ function DiffView({ tab }: { tab: Tab }) {
       const keys = shift && sel.anchor ? new Set([...sel.keys, ...extendRange(diff, sel.anchor, k)]) : toggle(sel.keys, k);
       setLineSelection(tab, { fileKey: key, generation, keys, anchor: shift && sel.anchor ? sel.anchor : k });
     },
-    hunkActions: (h) => <HunkActions section={section} busy={linesBusy} onAction={(a) => runLines(a, hunkRequest(diff, h))} />,
-  } : undefined), [partial, diff, key, sel, generation, section, linesBusy]);
+    hunkActions: (h) => (
+      <HunkActions section={section} busy={linesBusy} onAction={(a) => runLines(a, hunkRequest(diff, h))} onStash={stashable ? () => stashLines(hunkRequest(diff, h)) : undefined} />
+    ),
+  } : undefined), [partial, diff, key, sel, generation, section, linesBusy, stashable]);
+  const stashes = useGraphData(tab).refs?.stashes;
+  const stashView = result?.commit && stashes ? stashViewOf(stashes, result.commit.oid) : null;
   useEffect(() => {
     if (current !== -1) rootRef.current?.querySelector('[data-match-current]')?.scrollIntoView({ block: 'center' });
   }, [current, matches]);
@@ -125,6 +142,7 @@ function DiffView({ tab }: { tab: Tab }) {
         loading={!!list?.loading}
         selectedCount={state.selected.length}
         notice={state.notice}
+        parentControl={stashView && <StashViewSwitch tab={tab} stash={stashView.stash} view={stashView.view} path={state.viewed} />}
         onParent={(parent) => state.source.kind === 'commit' && openDiff(tab, { ...state.source, parent }, state.viewed ? { path: state.viewed } : {})}
         onRefresh={() => void loadList(tab)}
         onPatch={(how, selectedOnly) => void (how === 'download' ? downloadPatch : copyPatch)(tab, psource, selectedOnly ? patchPaths(files.filter((f) => state.selected.includes(f.path))) : undefined)}
@@ -170,7 +188,10 @@ function DiffView({ tab }: { tab: Tab }) {
               onForce={() => forceFile(tab, file.path)}
               staging={staging}
               selectionBar={staging && diff && (
-                <SelectionBar count={sel.keys.size} section={section} busy={linesBusy} onAction={(a) => runLines(a, toRequest(diff, sel.keys))} onClear={() => clearLineSelection(tab)} />
+                <SelectionBar
+                  count={sel.keys.size} section={section} busy={linesBusy} onAction={(a) => runLines(a, toRequest(diff, sel.keys))}
+                  onStash={stashable ? () => stashLines(toRequest(diff, sel.keys)) : undefined} onClear={() => clearLineSelection(tab)}
+                />
               )}
               search={searchOpen && (
                 <SearchBar query={query} onQuery={setQuery} index={current} count={matches.length} onNext={() => step(1)} onPrev={() => step(-1)} onClose={closeSearch} inputRef={inputRef} />
