@@ -3,16 +3,17 @@ import { optBool, paramsObject } from '../params.js';
 import { parseRecords } from '../parse/graph.js';
 import { parseStatus } from '../parse/status.js';
 import { shortBranch } from '../refs/check.js';
-import { assertCcHeadAck, ownHead } from '../refs/heads.js';
-import { refEntries } from '../refs/resolve.js';
+import { assertCcAck, assertCcHeadAck, assertNotSymbolic, ownHead, readHeads } from '../refs/heads.js';
+import { assertNoSymref, refEntries } from '../refs/resolve.js';
 import { undoRecord } from '../refs/undo.js';
 import { assertNotLegacy, listRemotes, remoteNames, remoteSnapshot } from '../remote/config.js';
 import { fetchRemote } from '../remote/fetch.js';
 import { fastForward, merge, rebase } from '../remote/integrate.js';
 import { netRun, remoteFailure } from '../remote/net.js';
-import { knownRemote, remoteName } from '../remote/push.js';
+import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
 import { assertNoTrackingSymrefs, fetchSpecs, trackedSnapshot, trackingRefsFor } from '../remote/tracking.js';
 import { newRemoteName, remoteUrl } from '../remote/url.js';
+import { assertOid } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
 
 // Remote ops (docs/remotes.md, docs/protocol.md → Remote ops): the remotes' config, fetch, pull and branch push. Every
@@ -52,6 +53,34 @@ async function assertClean(git) {
   const r = await git(['status', '--porcelain=v2', '-z', '--untracked-files=no']);
   const { counts } = parseStatus(decoder.decode(r.stdout));
   if (counts.staged + counts.unstaged + counts.conflicted) throw new Refusal('DIRTY_WORKTREE', 'commit or stash the local changes first: a rebase needs a clean working tree');
+}
+
+/** `forceWithLease` → {expect: oid | null} (null: the branch must not exist on the remote), or null when absent. */
+function leaseOf(v) {
+  if (v === undefined) return null;
+  if (v === null || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).join() !== 'expect') throw new Refusal('BAD_PARAMS', 'forceWithLease must be {expect: oid | null}');
+  return { expect: v.expect === null ? null : assertOid(v.expect) };
+}
+
+/**
+ * Where a push of local `branch` (short) goes: `remote` and `to` when given (`to` defaulting to `branch`), else the
+ * branch's upstream (`branch.<b>.remote` / `.merge`, a branch on a configured remote) or NO_UPSTREAM.
+ */
+async function pushDestination(git, branch, remote, to) {
+  if (remote) return { remote: await knownRemote(git, remote), to: to ?? branch };
+  const r = await git(['for-each-ref', '--format=%(upstream:remotename)%00%(upstream:remoteref)', `${HEADS}${branch}`]);
+  const [up = '', merge = ''] = parseRecords(decoder.decode(r.stdout), 2)[0] ?? [];
+  if (!up || up === '.' || !merge.startsWith(HEADS) || !(await remoteNames(git)).includes(up)) {
+    throw new Refusal('NO_UPSTREAM', `${branch} has no upstream branch on a remote: name the remote to push to`);
+  }
+  return { remote: up, to: merge.slice(HEADS.length) };
+}
+
+/** The tracking ref here for branch `to` on `remote` and its oid (what the UI leases against), or null. */
+async function trackingOf(git, remote, to) {
+  const ref = trackingRefsFor(await fetchSpecs(git, remote), `${HEADS}${to}`)[0];
+  const e = ref ? (await refEntries(git, [ref])).get(ref) : undefined;
+  return e ? { ref, oid: e.oid } : null;
 }
 
 const errorOf = (e) => ({ code: e.code, message: e.message, ...(e.extra.reason ? { reason: e.extra.reason } : {}), stderr: e.extra.stderr ?? null });
@@ -274,6 +303,53 @@ export const ops = [
       }
       const merged = await merge(git, oid, `Merge remote-tracking branch '${upstream.slice(REMOTES.length)}'`);
       return merged.conflicts ? result('conflicts', { files: merged.files }) : moved('merged');
+    },
+  },
+  {
+    name: 'remote.push',
+    kind: 'write',
+    // As branch.deleteRemote: each remote ref update is atomic, so an abort leaves at most a stale tracking ref here.
+    cancellable: true,
+    params(raw) {
+      const p = paramsObject(raw, ['branch', 'remote', 'to', 'setUpstream', 'forceWithLease', 'ccOwned'], 'remote.push');
+      if (p.to !== undefined && p.remote === undefined) throw new Refusal('BAD_PARAMS', 'to needs remote');
+      return {
+        branch: shortBranch(p.branch),
+        remote: p.remote === undefined ? null : remoteName(p.remote),
+        to: p.to === undefined ? null : shortBranch(p.to),
+        setUpstream: optBool(p.setUpstream, 'setUpstream'),
+        lease: leaseOf(p.forceWithLease),
+        ccOwned: optBool(p.ccOwned, 'ccOwned'),
+      };
+    },
+    async run(git, { branch, remote: asked, to: askedTo, setUpstream, lease, ccOwned }) {
+      const ref = `${HEADS}${branch}`;
+      const heads = await readHeads(git);
+      // A dangling symbolic ref is not listed; a live one would push its target under this name.
+      if (!heads.has(ref)) await assertNoSymref(git, ref);
+      if (!heads.has(ref)) throw new Refusal('REF_UNKNOWN', `no branch ${branch}`);
+      assertNotSymbolic(ref, heads.get(ref));
+      const { remote, to } = await pushDestination(git, branch, asked, askedTo);
+      assertCcAck([...new Set([branch, to])], ccOwned);
+      const dst = `${HEADS}${to}`;
+      const result = await push(git, remote, [`${ref}:${dst}`], { setUpstream, leases: lease ? [{ ref: dst, expect: lease.expect }] : [] });
+      try {
+        assertSomethingPushed(result, remote);
+      } catch (e) {
+        // What the UI's force-with-lease confirmation shows and leases against.
+        if (e.code === 'PUSH_REJECTED') e.extra.tracking = await trackingOf(git, remote, to);
+        throw e;
+      }
+      const done = result.updated.find((u) => u.ref === dst);
+      const upToDate = result.upToDate.includes(dst);
+      return {
+        remote, branch, to,
+        created: done?.flag === '*', forced: done?.flag === '+', upToDate,
+        upstreamSet: setUpstream && (Boolean(done) || upToDate),
+        unrequested: result.unrequested,
+        // A push is never undone: the remote's previous value is not ours to restore.
+        undo: undoRecord(),
+      };
     },
   },
 ];

@@ -17,6 +17,7 @@ const CALLERS = {
   'tag.push': { setup: (w) => w.repo.git('tag', 'v1', w.base), run: (w) => w.op('tag.push', { remote: 'locked', names: ['v1'] }) },
   'remote.fetch': { setup: () => {}, run: (w) => w.op('remote.fetch', { remote: 'locked' }) },
   'remote.peek': { setup: () => {}, run: (w) => w.op('remote.peek', { remote: 'locked', branch: 'main' }) },
+  'remote.push': { setup: () => {}, run: (w) => w.op('remote.push', { branch: 'main', remote: 'locked' }) },
   'remote.pull': { setup: (w) => w.repo.git('config', 'branch.main.remote', 'locked'), run: (w) => w.op('remote.pull', { mode: 'ff' }) },
 };
 

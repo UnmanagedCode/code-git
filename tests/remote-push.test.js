@@ -11,7 +11,7 @@ import { BASE_ENV } from '../src/git/runner.js';
 import { startApp } from './_app.js';
 import { refsWorld, refused } from './_refsWorld.js';
 
-const NETWORK_OPS = ['branch.deleteRemote', 'tag.push', 'tag.deleteRemote', 'remote.fetch'];
+const NETWORK_OPS = ['branch.deleteRemote', 'tag.push', 'tag.deleteRemote', 'remote.fetch', 'remote.push'];
 const hasHttp = (() => {
   try { return fs.existsSync(path.join(execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim(), 'git-remote-http')); } catch { return false; }
 })();

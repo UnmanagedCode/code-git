@@ -19,6 +19,7 @@ const NETWORK_OPS = {
     throw Object.assign(new Error('per remote'), { extra: { stderr: r.remotes.find((x) => x.remote === 'evil').error.stderr } });
   },
   'remote.peek': (w) => w.op('remote.peek', { remote: 'evil', branch: 'x' }),
+  'remote.push': (w) => w.op('remote.push', { branch: 'x', remote: 'evil' }),
   'remote.pull': (w) => {
     w.repo.git('config', 'branch.main.remote', 'evil');
     return w.op('remote.pull', { mode: 'ff' });
