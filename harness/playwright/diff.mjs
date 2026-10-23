@@ -1,6 +1,6 @@
 // The diff viewer, asserted on the seeded `diffs` project (tests/_diffRepo.js): sources from the Compare panel, the
-// three modes, File view, search and change navigation, every file-state placeholder, a patch download, untrusted text,
-// and Esc. Runs in light then dark; screenshots go to out/diff-*.png (desktop, plus phone for Hunk and Split).
+// file list that drives it from the right slot (counts, Tree, the phone's Files (n) dialog), the three modes, File
+// view, search and change navigation, every file-state placeholder, a patch download, untrusted text, and Esc. Runs in light then dark; screenshots go to out/diff-*.png (desktop, plus phone for Hunk and Split).
 // Run: node harness/playwright/diff.mjs   (needs `npm run prepare` first, for frontend/dist)
 import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -34,7 +34,10 @@ try {
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 
     const diff = page.getByRole('region', { name: 'Diff' });
-    const files = diff.getByRole('listbox', { name: 'Changed files' });
+    const right = page.locator('[data-slot-name=right]');
+    // A Compare-panel diff's list: the right slot's Changed files panel.
+    const filesPanel = right.getByRole('complementary', { name: 'Changed files panel', exact: true });
+    const files = filesPanel.getByRole('listbox', { name: 'Changed files', exact: true });
     const option = (name) => files.getByRole('option', { name });
     const body = diff.locator('[data-diff-body]');
     const mode = (name) => diff.getByRole('group', { name: 'Diff mode' }).getByRole('button', { name, exact: true });
@@ -75,6 +78,18 @@ try {
       for (const p of [/src\/app\.ts/, /bin\.dat/, /old\/name\.js → new\/name\.js/, /big\.bin/, /huge\.txt/]) {
         check(await option(p).count() === 1, `${scheme}: the file list shows ${p.source}`);
       }
+      check(await diff.getByRole('listbox').count() === 0, `${scheme}: the diff has no file list of its own`);
+      check(/\+\d+ −\d+/.test(await option(/src\/app\.ts/).textContent()), `${scheme}: a text file shows its +added −deleted`);
+      check((await option(/bin\.dat/).textContent()).includes('binary') && !/[+−]\d/.test(await option(/bin\.dat/).textContent()), `${scheme}: a binary file says binary, no numbers`);
+      check((await option(/vendor\/lib/).textContent()).includes('submodule'), `${scheme}: a gitlink says submodule`);
+      // Tree: the panel's toggle nests the files, and a tree row still drives the diff.
+      await filesPanel.getByRole('group', { name: 'File view', exact: true }).getByRole('button', { name: 'Tree', exact: true }).click();
+      await files.getByRole('group', { name: 'src', exact: true }).waitFor();
+      await files.getByRole('group', { name: 'src', exact: true }).getByRole('option', { name: /app\.ts/ }).click();
+      await page.waitForFunction(() => document.querySelector('[aria-label="Viewed file"]')?.textContent?.includes('src/app.ts'));
+      check(await files.locator('[data-path="src/app.ts"][aria-current="true"]').count() === 1, `${scheme}: Tree nests the files and a tree row views its file`);
+      await shot('tree');
+      await filesPanel.getByRole('group', { name: 'File view', exact: true }).getByRole('button', { name: 'Path', exact: true }).click();
 
       // 2. Hunk: syntax tokens, word emphasis on a del and an add row, hunk headers.
       await option(/src\/app\.ts/).click();
@@ -162,6 +177,18 @@ try {
       check((await body.textContent()).includes('1111111 → 2222222'), `${scheme}: a gitlink shows its submodule pointers`);
       await shot('submodule');
 
+      // Phone (no right slot): the diff header's Files (n) opens the list as a dialog; a plain click views the file and closes it.
+      await page.setViewportSize(PHONE);
+      await diff.getByRole('button', { name: /^Files \(\d+\)$/ }).click();
+      const filesDialog = page.getByRole('dialog', { name: 'Changed files', exact: true });
+      await filesDialog.getByRole('option', { name: /huge\.txt/ }).waitFor();
+      await shot('files-dialog-phone');
+      await filesDialog.getByRole('option', { name: /huge\.txt/ }).click();
+      await filesDialog.waitFor({ state: 'hidden' });
+      await diff.getByText(/^Large diff \(\d+ changed lines\)$/).waitFor();
+      check(await diff.getByLabel('Viewed file').textContent().then((t) => t.includes('huge.txt')), `${scheme}: phone: Files (n) picks huge.txt and closes`);
+      await page.setViewportSize(DESKTOP);
+
       // 10. Untrusted text renders as text; Prism ran in manual mode in the built bundle.
       await option(/xss\.html/).click();
       await body.getByText('<img src=x onerror=alert(1)>').first().waitFor();
@@ -182,14 +209,18 @@ try {
       check(readFileSync(saved, 'utf8').startsWith(`From ${oids.change} `), `${scheme}: the downloaded patch is a mailbox patch of the commit`);
 
       // 8. Work in progress and two refs.
+      // Their lists are the Changes panel's sections.
+      const unstaged = right.getByRole('region', { name: 'Unstaged Files', exact: true });
+      const staged = right.getByRole('region', { name: 'Staged Files', exact: true });
       await page.getByRole('button', { name: /^Unstaged changes/ }).click();
-      await option(/notes\.txt/).waitFor();
-      check(await option(/notes\.txt/).count() === 1, `${scheme}: unstaged lists the untracked file`);
-      await option(/notes\.txt/).click();
+      await unstaged.getByRole('option', { name: /notes\.txt/ }).waitFor();
+      check(await unstaged.getByRole('option', { name: /notes\.txt/ }).count() === 1, `${scheme}: unstaged lists the untracked file`);
+      await unstaged.getByRole('option', { name: /notes\.txt/ }).click();
       await body.locator('[data-row=add]').first().waitFor();
+      check(await unstaged.locator('[data-path="notes.txt"][aria-current="true"]').count() === 1, `${scheme}: the unstaged section marks the viewed file`);
       await page.getByRole('button', { name: /^Staged changes/ }).click();
-      await option(/tail\.txt/).waitFor();
-      check(await files.getByRole('option').count() === 1, `${scheme}: staged lists the staged file`);
+      await staged.getByRole('option', { name: /tail\.txt/ }).waitFor();
+      check(await staged.getByRole('option').count() === 1, `${scheme}: staged lists the staged file`);
       const compare = async (range) => {
         await page.getByRole('textbox', { name: 'From' }).fill('main');
         await page.getByRole('textbox', { name: 'To' }).fill('side');

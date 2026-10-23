@@ -170,9 +170,11 @@ try {
     await left.getByRole('textbox', { name: 'Commit (sha or ref)' }).scrollIntoViewIfNeeded();
     await shot('left-slot-light-desktop');
     // A file in the details opens that commit's diff at the file; Esc brings the graph back.
-    await details.getByRole('button', { name: /guide\.md/ }).click();
+    await details.getByRole('option', { name: /guide\.md/ }).click();
     const diff = page.getByRole('region', { name: 'Diff' });
-    await diff.getByRole('option', { name: /docs\/guide\.md/ }).waitFor();
+    // The details' list is now the diff's: it marks the viewed file.
+    await details.locator('[data-path="docs/guide.md"][aria-current="true"]').waitFor();
+    check(await diff.getByRole('listbox').count() === 0, 'the diff has no file list of its own: the details drive it');
     check(await diff.getByLabel('Diff source').textContent().then((t) => t.includes(o.C.slice(0, 7))), 'a file click opens that commit’s diff');
     await shot('file-diff-light-desktop');
     await diff.locator('[data-diff-body]').click();

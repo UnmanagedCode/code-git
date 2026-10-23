@@ -1,10 +1,11 @@
-// The staging path, asserted on the seeded `stage` and `detached` projects (seed.mjs): the Changes panel lists, a hunk and
-// two lines staged from the diff, lines discarded after a confirmation, the Discard all dialog cancelled, a commit with the
-// template pre-filled, a message-only amend, the detached banner, and the Changes dialog on a phone. Each step is checked
+// The staging path, asserted on the seeded `stage` and `detached` projects (seed.mjs): the Changes panel lists (line
+// counts; the open diff's row marked, ↓ viewing the next file), a hunk and two lines staged from the diff, lines
+// discarded after a confirmation, the Discard all dialog cancelled, a commit with the template pre-filled, a message-only
+// amend, Tree with a folder staged and unstaged and a row staged, the detached banner, and the Changes dialog on a phone. Each step is checked
 // against git itself. Runs in light then dark, each on a fresh seed; screenshots go to out/staging-*.png.
 // Run: node harness/playwright/staging.mjs   (needs `npm run prepare` first, for frontend/dist)
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hermeticEnv } from '../../tests/_git.js';
@@ -68,7 +69,19 @@ for (const scheme of ['light', 'dark']) {
       await body.locator('[data-hunk-header]').nth(1).waitFor();
       check(await diff.getByRole('button', { name: 'Stage hunk', exact: true }).count() === 2, `${scheme}: each hunk header offers Stage hunk`);
       check(await body.getByRole('button', { name: /^Select (added|removed) line/ }).count() === 5, `${scheme}: a toggle per added/removed line (2 + 3)`);
+      const appRow = unstaged.locator('[data-path="src/app.js"]');
+      check((await appRow.textContent()).includes('+3 −2'), `${scheme}: the unstaged row shows its line counts`);
+      check(!/[+−]\d/.test(await unstaged.locator('[data-path="notes.md"]').textContent()), `${scheme}: an untracked row shows no counts`);
+      check(await appRow.getAttribute('aria-current') === 'true', `${scheme}: the open diff's row is marked in the Changes list`);
       await shot('diff');
+      // The section drives its open diff: ↓ views the next file, ↑ comes back.
+      await appRow.focus();
+      await page.keyboard.press('ArrowDown');
+      await page.waitForFunction(() => document.querySelector('[aria-label="Viewed file"]')?.textContent?.includes('notes.md'));
+      check(await unstaged.locator('[data-path="notes.md"]').getAttribute('aria-current') === 'true', `${scheme}: ↓ in the section views the next file`);
+      await page.keyboard.press('ArrowUp');
+      await page.waitForFunction(() => document.querySelector('[aria-label="Viewed file"]')?.textContent?.includes('src/app.js'));
+      await body.locator('[data-hunk-header]').nth(1).waitFor();
 
       // 3. Stage the first hunk: the index gets line 3's change only.
       await diff.getByRole('button', { name: 'Stage hunk', exact: true }).first().click();
@@ -132,6 +145,32 @@ for (const scheme of ['light', 'dark']) {
       await page.waitForFunction(() => !document.querySelector('[data-slot-name=right] input[type=checkbox]')?.checked);
       check(git('log', '-1', '--format=%s').trim() === 'feat: stage hunks and lines from the diff' && git('rev-parse', 'HEAD^{tree}') === tree, `${scheme}: Update message only rewrote the message and kept the tree`);
       check(git('rev-list', '--count', 'HEAD').trim() === '2', `${scheme}: the amend replaced HEAD (still 2 commits)`);
+
+      // 8b. Tree: Stage folder and Unstage folder move the section's files beneath a directory in one op; a row's Stage
+      // still works in Tree.
+      mkdirSync(path.join(stage.dir, 'docs'));
+      writeFileSync(path.join(stage.dir, 'docs/a.md'), 'a\n');
+      writeFileSync(path.join(stage.dir, 'docs/b.md'), 'b\n');
+      await panel.getByRole('button', { name: 'Reload changes', exact: true }).click();
+      await unstaged.getByRole('option', { name: /docs\/b\.md/ }).waitFor();
+      const viewToggle = panel.getByRole('group', { name: 'File view', exact: true });
+      await viewToggle.getByRole('button', { name: 'Tree', exact: true }).click();
+      await unstaged.getByRole('group', { name: 'docs', exact: true }).waitFor();
+      check(await unstaged.getByRole('group', { name: 'docs', exact: true }).getByRole('option').count() === 2, `${scheme}: Tree nests the folder's files`);
+      await shot('tree');
+      const cachedDocs = () => git('diff', '--cached', '--name-only').split('\n').filter((l) => l.startsWith('docs/'));
+      await unstaged.getByRole('button', { name: 'Stage folder docs', exact: true }).click();
+      await staged.getByRole('group', { name: 'docs', exact: true }).waitFor();
+      check(JSON.stringify(cachedDocs()) === '["docs/a.md","docs/b.md"]', `${scheme}: Stage folder staged both files`);
+      await shot('tree-staged');
+      await staged.getByRole('button', { name: 'Unstage folder docs', exact: true }).click();
+      await unstaged.getByRole('group', { name: 'docs', exact: true }).waitFor();
+      await staged.getByRole('group', { name: 'docs', exact: true }).waitFor({ state: 'detached' });
+      check(cachedDocs().length === 0, `${scheme}: Unstage folder unstaged both`);
+      await unstaged.getByRole('button', { name: 'Stage docs/a.md', exact: true }).click();
+      await staged.getByRole('option', { name: /a\.md/ }).waitFor();
+      check(JSON.stringify(cachedDocs()) === '["docs/a.md"]', `${scheme}: a row's Stage in Tree staged that file only`);
+      await viewToggle.getByRole('button', { name: 'Path', exact: true }).click();
 
       // 9. The detached project shows the banner and says so on the button.
       await page.goto(`${world.url}/?project=detached`);
