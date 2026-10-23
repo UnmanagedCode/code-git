@@ -4,9 +4,11 @@ import { commitOid, DIFF_CONFIG, DIFF_FLAGS, emptyTree } from '../diff/source.js
 import { bad, filePath, nulPaths, optBool, paramsObject, pathList } from '../params.js';
 import { parseRecords } from '../parse/graph.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
+import { readSelectionPatch, selectionParams } from '../stage/readSelection.js';
 import { assertCcHeadAck, guardOverwrite, ownHead, parseConflictFiles, shortBranch } from '../stash/branch.js';
 import { assertNoUnmerged, assertNotBlocked, assertNoUntrackedCollision } from '../stash/guard.js';
-import { checkMessage, reMessage } from '../stash/message.js';
+import { identEnv } from '../stash/ident.js';
+import { branchLabel, checkMessage, reMessage, wMessage } from '../stash/message.js';
 import { dropVerified, namesOf, resolveStash, stashPaths } from '../stash/resolve.js';
 import { stashUndo } from '../stash/undo.js';
 import { assertGitAtLeast } from '../stash/version.js';
@@ -138,6 +140,51 @@ export const ops = [
       if (after === before) throw new Refusal('NOTHING_TO_STASH', 'there are no local changes to stash');
       const { message } = await resolveStash(git, after);
       return { oid: after, selector: 'stash@{0}', undo: stashUndo({ stashes: [{ oid: after, old: null, new: { message }, restore: 'pop' }] }) };
+    },
+  },
+  {
+    // Selected lines of one file, as `git stash -p` does it: the stash is built on a temporary index (I = HEAD's tree,
+    // W = HEAD + the selection), stored, and only then the lines are taken out of the worktree with `apply -R`. Never
+    // `apply --index` (wiki: gotchas/staging-patches). The file's index entry must be HEAD's, so the selection read
+    // index → worktree is the one HEAD → worktree would give. Two patches from one selection, both built before anything
+    // is written: forward (fits HEAD: what stage.stageLines applies) and reverse (fits the worktree, which still has the
+    // unselected changes: what stage.discardLines applies).
+    name: 'stash.pushLines',
+    kind: 'write',
+    params(raw) {
+      const { message, ...selection } = paramsObject(raw, ['message', 'path', 'context', 'hunks'], 'stash.pushLines');
+      return { ...selectionParams(selection, 'stash.pushLines'), message: checkMessage(message) };
+    },
+    async run(git, p) {
+      await assertWorktree(git);
+      const head = await assertBornHead(git);
+      const staged = await git(['diff', '--cached', '--quiet', '--no-ext-diff', '--no-textconv', '--end-of-options', head, '--', p.path], { okExit: [0, 1] });
+      if (staged.exitCode === 1) throw new Refusal('PARTIAL_UNSUPPORTED', `${p.path} has staged changes: stash it whole`);
+      await assertNotBlocked(git, [p.path]);
+      const patch = await readSelectionPatch(git, p, { revs: [], direction: 'forward' });
+      const removal = await readSelectionPatch(git, p, { revs: [], direction: 'reverse' });
+      const index = text(await git(['rev-parse', '--git-path', 'code-git-stash-index'])).replace(/\n$/, '');
+      const tmp = { env: { GIT_INDEX_FILE: index } };
+      await git(['read-tree', head], tmp);
+      await git(['apply', '--cached', '--whitespace=nowarn', '--no-ignore-whitespace', '-'], { ...tmp, stdin: patch });
+      const tree = text(await git(['write-tree'], tmp)).trim();
+      const [[short, subject]] = parseRecords(text(await git(['log', '-1', '--no-show-signature', '--format=%h%x00%s', head])), 2);
+      const branch = branchLabel(await ownHead(git));
+      const env = await identEnv(git);
+      const commit = async (args, msg) => text(await git(['commit-tree', '--no-gpg-sign', ...args, '-F', '-'], { stdin: `${msg}\n`, env })).trim();
+      const i = await commit(['-p', head, `${head}^{tree}`], `index on ${branch}: ${short} ${subject}`);
+      const message = wMessage(branch, p.message, `${short} ${subject}`);
+      const w = await commit(['-p', head, '-p', i, tree], message);
+      await git(['stash', 'store', `--message=${message}`, w]);
+      const undo = stashUndo({ stashes: [{ oid: w, old: null, new: { message }, restore: 'pop' }] });
+      try {
+        await git(['apply', '-R', '--whitespace=nowarn', '--no-ignore-whitespace', '-'], { stdin: removal });
+      } catch (e) {
+        if (!(e instanceof Refusal)) throw e;
+        // The stash holds the lines; the worktree still has them too.
+        throw new Refusal(e.code, `the lines were stashed but not taken out of ${p.path}: ${e.message}`, { ...e.extra, step: 'removeFromWorktree', oid: w, undo });
+      }
+      return { oid: w, selector: 'stash@{0}', undo };
     },
   },
   {
