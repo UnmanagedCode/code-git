@@ -136,28 +136,33 @@ const KEY_EVENT_NAMES = [
   /\bonKey(?:Down|Up|Press)(?:Capture)?=\{\s*\(?\s*(\w+)/g, // onKeyDown={(k) => …}
   /addEventListener\(\s*['"`]key(?:down|up|press)['"`]\s*,\s*\(?\s*(\w+)/g, // addEventListener('keydown', (k) => …)
 ];
-const KEY_CAST = new RegExp(String.raw`\bas\s+${KEYBOARD_EVENT}\s*\)\s*\.key\b`); // (x as KeyboardEvent).key
+/** A read of `key` after an expression: `.key`, `?.key`, `['key']` (any quote), `?.['key']`. */
+const KEY_READ = String.raw`\s*(?:\??\.\s*key\b|(?:\?\.)?\[\s*['"\`]key['"\`]\s*\])`;
+const KEY_CAST = new RegExp(String.raw`\bas\s+${KEYBOARD_EVENT}\s*\)${KEY_READ}`); // (x as KeyboardEvent).key
 
 function readsKeyField(text: string): boolean {
   if (MODIFIER_FIELD.test(text) || KEY_CAST.test(text)) return true;
   const names = new Set(['e', 'ev', 'evt', 'event']);
   for (const re of KEY_EVENT_NAMES) for (const m of text.matchAll(re)) names.add(m[1]);
-  return [...names].some((n) => new RegExp(String.raw`(?<![\w.])${n}\.key\b`).test(text));
+  return [...names].some((n) => new RegExp(String.raw`(?<![\w.])${n}${KEY_READ}`).test(text));
 }
 
 // Invariant: the key-field check flags event key/modifier reads — the usual names, any identifier typed, bound or cast
-// as a keyboard event — and not lookalike fields (row.key, details.key, keyCode).
+// as a keyboard event, through `.key`, `?.key` or `['key']` — and not lookalike fields (row.key, details.key, keyCode).
 test('the key-field check catches what it claims to', () => {
   for (const bad of [
     'e.key === "Enter"', 'if (ev.key !== "Escape")', 'e.ctrlKey || e.metaKey', 'event.shiftKey', 'x.altKey',
     'function f(press: KeyboardEvent) { return press.key; }', 'const h = (press: React.KeyboardEvent) => press.key === "a";',
     'const h = (k: React.KeyboardEvent<HTMLInputElement>) => k.key;', '(x as KeyboardEvent).key', '(x as React.KeyboardEvent<HTMLElement>).key',
-    'onKeyDown={(k) => k.key === "a"}', "window.addEventListener('keydown', (k) => k.key)", 'function g(kb?: KeyboardEvent) { kb?.key; kb.key; }',
+    'onKeyDown={(k) => k.key === "a"}', "window.addEventListener('keydown', (k) => k.key)", 'function g(kb?: KeyboardEvent) { kb.key; }',
+    // Only an optional-chained or bracket read in each:
+    'e?.key', 'function g(kb?: KeyboardEvent) { return kb?.key; }', 'onKeyDown={(k) => k?.key === "a"}', '(x as KeyboardEvent)?.key',
+    "e['key']", 'function h(press: KeyboardEvent) { return press["key"]; }', "(x as React.KeyboardEvent)['key']", "ev?.['key']",
   ]) expect(readsKeyField(bad), bad).toBe(true);
   for (const ok of [
     'details.key !== key', 'j.key', 'checked.key === key', 'matches(e, KEY)', 'keyId={k}', 'e.keyCode', 'row.key',
     '(x as Item).key', 'function f(item: Row) { return item.key; }', 'function f(press: KeyboardEvent) { return row.key; }',
-    'onClick={(k) => k.key}', 'const press = 1; matches(e, PRESS)',
+    'onClick={(k) => k.key}', 'const press = 1; matches(e, PRESS)', 'row?.key', "row['key']", "(x as Item)?.['key']", 'e.keys', "e['keys']",
   ]) expect(readsKeyField(ok), ok).toBe(false);
 });
 
