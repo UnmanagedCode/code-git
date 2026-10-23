@@ -74,7 +74,8 @@ interface Props<F extends ListFile> {
   multi?: boolean;
   /** ↑/↓ also select the row they move to. */
   followFocus?: boolean;
-  onSelect: (selected: string[], viewed: F) => void;
+  /** `plain`: a plain click or Enter (not a toggle, an extend or a move that follows the focus). */
+  onSelect: (selected: string[], viewed: F, plain: boolean) => void;
   /** Row buttons, revealed on hover and focus; their clicks must stop propagating. */
   actions?: (f: F) => ReactNode;
   /** A Tree directory's buttons, given the files listed beneath it. */
@@ -160,16 +161,16 @@ export function FileList<F extends ListFile>({
       const from = ordered.findIndex((x) => x.path === (anchor ?? viewed));
       const to = ordered.indexOf(f);
       const [a, b] = from === -1 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
-      onSelect(ordered.slice(a, b + 1).map((x) => x.path), f);
+      onSelect(ordered.slice(a, b + 1).map((x) => x.path), f, false);
       return;
     }
     setAnchor(f.path);
     if (mods.mod) {
       const next = sel.includes(f.path) ? sel.filter((p) => p !== f.path) : [...sel, f.path];
-      onSelect(next.length ? next : [f.path], f);
+      onSelect(next.length ? next : [f.path], f, false);
       return;
     }
-    onSelect([f.path], f);
+    onSelect([f.path], f, true);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLUListElement>) => {
@@ -185,13 +186,13 @@ export function FileList<F extends ListFile>({
       const next = rows[Math.max(0, Math.min(rows.length - 1, i + (move.key === 'ArrowDown' ? 1 : -1)))];
       next?.focus();
       const f = next && byPath.get(next.dataset.path ?? '');
-      if (followFocus && f && next !== row) onSelect([f.path], f);
+      if (followFocus && f && next !== row) onSelect([f.path], f, false);
       return;
     }
     // The rest act on the row itself, not on a button inside it.
     const f = row && row === target ? byPath.get(row.dataset.path ?? '') : undefined;
     if (!f) return;
-    if (matches(e, FILE_OPEN_KEY)) { e.preventDefault(); onSelect([f.path], f); return; }
+    if (matches(e, FILE_OPEN_KEY)) { e.preventDefault(); onSelect([f.path], f, true); return; }
     onRowKeyDown?.(e, f);
   };
 

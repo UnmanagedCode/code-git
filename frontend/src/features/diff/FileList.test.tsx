@@ -74,35 +74,35 @@ test('counts: +added −deleted for text; "binary" and "submodule" instead of nu
   expect(within(option('mv.txt')).getByLabelText('0 added, 0 deleted')).toBeTruthy();
 });
 
-test('multi: a click selects one, Ctrl/⌘-click toggles, Shift-click extends over the displayed (Tree) order', () => {
+test('multi: a click selects one (plain), Ctrl/⌘-click toggles, Shift-click extends over the displayed (Tree) order (not plain)', () => {
   setFileView('tree');
   const onSelect = vi.fn();
   const { rerender } = render(<FileList label="L" files={FILES} multi selected={[]} onSelect={onSelect} />);
   // Tree order: docs/z.md, src/a/x.ts, src/b.ts, README.md.
   fireEvent.click(option('docs/z.md'));
-  expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md'], FILES[3]);
+  expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md'], FILES[3], true);
   rerender(<FileList label="L" files={FILES} multi selected={['docs/z.md']} viewed="docs/z.md" onSelect={onSelect} />);
   fireEvent.click(option('src/b.ts'), { ctrlKey: true });
-  expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md', 'src/b.ts'], FILES[0]);
+  expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md', 'src/b.ts'], FILES[0], false);
   rerender(<FileList label="L" files={FILES} multi selected={['docs/z.md', 'src/b.ts']} viewed="src/b.ts" onSelect={onSelect} />);
   fireEvent.click(option('docs/z.md'), { metaKey: true });
-  expect(onSelect).toHaveBeenLastCalledWith(['src/b.ts'], FILES[3]);
+  expect(onSelect).toHaveBeenLastCalledWith(['src/b.ts'], FILES[3], false);
   // The anchor is the last plain or toggled row (docs/z.md); Shift extends to README.md over the tree order.
   fireEvent.click(option('README.md'), { shiftKey: true });
-  expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md', 'src/a/x.ts', 'src/b.ts', 'README.md'], FILES[1]);
+  expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md', 'src/a/x.ts', 'src/b.ts', 'README.md'], FILES[1], false);
 });
 
 test('without multi, modified clicks are plain clicks', () => {
   const onSelect = vi.fn();
   render(<FileList label="L" files={FILES} selected={['src/b.ts']} viewed="src/b.ts" onSelect={onSelect} />);
   fireEvent.click(option('README.md'), { ctrlKey: true });
-  expect(onSelect).toHaveBeenLastCalledWith(['README.md'], FILES[1]);
+  expect(onSelect).toHaveBeenLastCalledWith(['README.md'], FILES[1], true);
   fireEvent.click(option('docs/z.md'), { shiftKey: true });
-  expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md'], FILES[3]);
+  expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md'], FILES[3], true);
   expect(screen.getByRole('listbox').getAttribute('aria-multiselectable')).toBeNull();
 });
 
-test('↑/↓ move the focus over file rows in displayed order, skipping directories; followFocus also selects; Enter selects the focused row', () => {
+test('↑/↓ move the focus over file rows in displayed order, skipping directories; followFocus also selects (not plain); Enter selects the focused row (plain)', () => {
   setFileView('tree');
   const onSelect = vi.fn();
   const { rerender } = render(<FileList label="L" files={FILES} onSelect={onSelect} />);
@@ -115,11 +115,11 @@ test('↑/↓ move the focus over file rows in displayed order, skipping directo
   expect(document.activeElement).toBe(option('src/a/x.ts'));
   expect(onSelect).not.toHaveBeenCalled();
   fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
-  expect(onSelect).toHaveBeenLastCalledWith(['src/a/x.ts'], FILES[2]);
+  expect(onSelect).toHaveBeenLastCalledWith(['src/a/x.ts'], FILES[2], true);
   rerender(<FileList label="L" files={FILES} followFocus onSelect={onSelect} />);
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
   expect(document.activeElement).toBe(option('src/b.ts'));
-  expect(onSelect).toHaveBeenLastCalledWith(['src/b.ts'], FILES[0]);
+  expect(onSelect).toHaveBeenLastCalledWith(['src/b.ts'], FILES[0], false);
   // Clamped at the ends.
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });

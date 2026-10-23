@@ -37,13 +37,15 @@ interface Props {
   notice: string | null;
   /** Shown in place of the parent select (a stash's view switch). */
   parentControl?: ReactNode;
+  /** Shown before the header's buttons (the narrow Files (n)). */
+  filesControl?: ReactNode;
   onParent: (n: number) => void;
   onRefresh: () => void;
   onPatch: (how: 'download' | 'copy', selectedOnly: boolean) => void;
   onClose: () => void;
 }
 
-export function DiffHeader({ source, result, loading, selectedCount, notice, parentControl, onParent, onRefresh, onPatch, onClose }: Props) {
+export function DiffHeader({ source, result, loading, selectedCount, notice, parentControl, filesControl, onParent, onRefresh, onPatch, onClose }: Props) {
   const parents = result?.commit?.parents ?? [];
   const parent = source.kind === 'commit' ? source.parent ?? 1 : 1;
   return (
@@ -61,6 +63,7 @@ export function DiffHeader({ source, result, loading, selectedCount, notice, par
         </select>
       ))}
       <div className="ml-auto flex items-center gap-1">
+        {filesControl}
         <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Refresh diff" disabled={loading} onClick={onRefresh}>
           <RefreshCwIcon className={loading ? 'animate-spin' : undefined} />
         </Button>

@@ -27,6 +27,7 @@ async function show(source: DiffSource, file: DiffFile = M, w: WorkdirWorld = {}
 /** The viewed file's rows are on screen. */
 const rendered = () => waitFor(() => expect(diff().querySelectorAll('[data-diff-body] [data-row], [data-diff-body] [data-side]').length).toBeGreaterThan(0));
 const diff = () => screen.getByRole('region', { name: 'Diff' });
+const slot = () => document.querySelector<HTMLElement>('[data-slot-name=right]')!;
 const toggles = () => within(diff()).queryAllByRole('button', { name: /^Select (added|removed) line/ });
 const btn = (name: string | RegExp) => within(diff()).getByRole('button', { name });
 
@@ -142,7 +143,8 @@ test('no affordances with whitespace ignored or in File view', async () => {
 
 test('Restore file to this version… (a commit diff) asks, then resets the file to the diff\'s new commit', async () => {
   const w = await show({ kind: 'commit', rev: 'HEAD' }, M, { answers: { 'diff.files': (p: { source: { kind: string } }) => (p.source.kind === 'commit' ? filesResult([M, dfile({ path: 'gone.ts', status: 'D' })]) : filesResult([], { commit: null })) } });
-  const list = within(diff()).getByRole('listbox', { name: 'Changed files' });
+  // The commit is not the graph's selection: its list is the right slot's Changed files panel.
+  const list = within(slot()).getByRole('listbox', { name: 'Changed files' });
   await userEvent.click(within(list).getByRole('button', { name: 'Actions for gone.ts' }));
   expect(screen.queryByRole('menuitem', { name: 'Restore file to this version…' })).toBeNull();
   await userEvent.keyboard('{Escape}');
@@ -157,7 +159,8 @@ test('Restore file to this version… (a commit diff) asks, then resets the file
 
 test('no Restore on an unstaged diff (its new side is the working tree)', async () => {
   await show({ kind: 'unstaged' });
-  await userEvent.click(within(within(diff()).getByRole('listbox', { name: 'Changed files' })).getByRole('button', { name: 'Actions for src/a.ts' }));
+  // The unstaged diff's list is the Changes panel's Unstaged section.
+  await userEvent.click(within(within(slot()).getByRole('region', { name: 'Unstaged Files' })).getByRole('button', { name: 'Actions for src/a.ts' }));
   expect(screen.getByRole('menuitem', { name: 'Copy path' })).toBeTruthy();
   expect(screen.queryByRole('menuitem', { name: 'Restore file to this version…' })).toBeNull();
 });

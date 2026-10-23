@@ -10,6 +10,8 @@ import { json, summary } from '@/test/fixtures';
 import { refsResult } from '@/test/graphData';
 import { stubFetch } from '@/test/stubFetch';
 import type { DiffFile, DiffFilesResult, FileDiff } from './api';
+import { LG_QUERY } from '@/lib/useMediaQuery';
+import { setFileView } from '@/state/fileView';
 import { openDiff } from './openDiff';
 
 const APP = { project: 'app', worktree: null };
@@ -62,7 +64,73 @@ async function openA(files: DiffFile[] = [dfile()], byPath: Record<string, FileD
   return w;
 }
 
+async function openANarrow(files: DiffFile[], byPath: Record<string, FileDiff | Response>) {
+  const w = world(filesResult(files), byPath);
+  show();
+  act(() => openDiff(APP, { kind: 'commit', rev: 'HEAD' }));
+  await within(await screen.findByRole('region', { name: 'Diff' })).findByRole('button', { name: `Files (${files.length})` });
+  return w;
+}
+
 const panel = () => screen.getByRole('region', { name: 'Diff' });
+const viewed = () => diffStore.get().get(tabKey(APP))?.viewed;
+
+function screenWidth(wide: boolean) {
+  vi.stubGlobal('matchMedia', (q: string) => ({
+    matches: q === LG_QUERY ? wide : false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
+  }));
+}
+
+test('the diff holds no file list of its own: the right slot\'s list drives it', async () => {
+  await openA([dfile(), dfile({ path: 'src/b.ts' })], { 'src/a.ts': A_DIFF, 'src/b.ts': A_DIFF });
+  expect(within(panel()).queryByRole('listbox')).toBeNull();
+  const list = within(document.querySelector<HTMLElement>('[data-slot-name=right]')!).getByRole('listbox', { name: 'Changed files' });
+  await userEvent.click(within(list).getByRole('option', { name: /src\/b\.ts/ }));
+  expect(viewed()).toBe('src/b.ts');
+  expect(screen.getByLabelText('Viewed file').textContent).toContain('src/b.ts');
+});
+
+test('Previous / Next file follow the displayed order: the tree\'s when Tree is chosen', async () => {
+  // Path order: b.ts, a/x.ts; Tree order: a/x.ts, b.ts.
+  await openA([dfile({ path: 'b.ts' }), dfile({ path: 'a/x.ts' })], { 'b.ts': A_DIFF, 'a/x.ts': A_DIFF });
+  await waitFor(() => expect(viewed()).toBe('b.ts'));
+  expect((screen.getByRole('button', { name: 'Previous file' }) as HTMLButtonElement).disabled).toBe(true);
+  await userEvent.click(screen.getByRole('button', { name: 'Next file' }));
+  expect(viewed()).toBe('a/x.ts');
+  await userEvent.click(screen.getByRole('button', { name: 'Previous file' }));
+  expect(viewed()).toBe('b.ts');
+  act(() => setFileView('tree'));
+  expect((screen.getByRole('button', { name: 'Next file' }) as HTMLButtonElement).disabled).toBe(true);
+  await userEvent.click(screen.getByRole('button', { name: 'Previous file' }));
+  expect(viewed()).toBe('a/x.ts');
+  expect((screen.getByRole('button', { name: 'Previous file' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('narrow: Files (n) in the diff header opens the list as a dialog; a plain click views a file and closes it, Ctrl-click keeps it open', async () => {
+  screenWidth(false);
+  await openANarrow([dfile(), dfile({ path: 'src/b.ts' }), dfile({ path: 'src/c.ts' })], { 'src/a.ts': A_DIFF, 'src/b.ts': A_DIFF, 'src/c.ts': A_DIFF });
+  expect(screen.queryByRole('listbox')).toBeNull();
+  await userEvent.click(within(panel()).getByRole('button', { name: 'Files (3)' }));
+  let dialog = await screen.findByRole('dialog', { name: 'Changed files' });
+  expect(within(dialog).getAllByRole('option')).toHaveLength(3);
+  expect(within(dialog).getByRole('group', { name: 'File view' })).toBeTruthy();
+  await userEvent.click(within(dialog).getByRole('option', { name: /src\/b\.ts/ }));
+  expect(viewed()).toBe('src/b.ts');
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Changed files' })).toBeNull());
+  await userEvent.click(within(panel()).getByRole('button', { name: 'Files (3)' }));
+  dialog = await screen.findByRole('dialog', { name: 'Changed files' });
+  fireEvent.click(within(dialog).getByRole('option', { name: /src\/c\.ts/ }), { ctrlKey: true });
+  expect(diffStore.get().get(tabKey(APP))?.selected).toEqual(['src/b.ts', 'src/c.ts']);
+  expect(screen.getByRole('dialog', { name: 'Changed files' })).toBeTruthy();
+  // ↓ in the dialog moves without closing it; Esc closes the dialog, not the diff.
+  fireEvent.keyDown(within(screen.getByRole('dialog', { name: 'Changed files' })).getByRole('option', { name: /src\/b\.ts/ }), { key: 'ArrowDown' });
+  expect(viewed()).toBe('src/c.ts');
+  expect(screen.getByRole('dialog', { name: 'Changed files' })).toBeTruthy();
+  await userEvent.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Changed files' })).toBeNull());
+  expect(panel()).toBeTruthy();
+  expect(shownPanelStore.get().get(tabKey(APP))).toBe('diff');
+});
 
 test('openDiff shows the diff instead of the commit graph; Close diff restores it, and so does Esc', async () => {
   world(filesResult([dfile()]), { 'src/a.ts': A_DIFF });
@@ -88,11 +156,11 @@ test('each tab keeps its own diff; closing a tab prunes its diff and shown-panel
     'app.ts': fdiff([hunk(1, 1, ['+app'])]), 'other.ts': fdiff([hunk(1, 1, ['+other'])]),
   });
   show();
-  act(() => openDiff(APP, { kind: 'unstaged' }));
+  act(() => openDiff(APP, { kind: 'commit', rev: 'HEAD' }));
   await screen.findByRole('option', { name: /app\.ts/ });
   act(() => dispatchTabs({ type: 'open', tab: OTHER }));
   expect(screen.queryByRole('region', { name: 'Diff' })).toBeNull();
-  act(() => openDiff(OTHER, { kind: 'staged' }));
+  act(() => openDiff(OTHER, { kind: 'commit', rev: 'HEAD~1' }));
   await screen.findByRole('option', { name: /other\.ts/ });
   act(() => dispatchTabs({ type: 'activateIndex', index: 0 }));
   expect(await screen.findByRole('option', { name: /app\.ts/ })).toBeTruthy();
