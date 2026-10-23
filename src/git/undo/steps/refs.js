@@ -9,13 +9,13 @@ import { shortRef, stale } from './shared.js';
 
 const HEADS = 'refs/heads/';
 
-const UPSTREAM_PREFIXES = ['refs/heads/', 'refs/remotes/'];
-
-/** A branch upstream as git itself tracks one: a valid ref name under refs/heads/ or refs/remotes/. */
-function isBranchUpstream(ref) {
-  const prefix = typeof ref === 'string' ? UPSTREAM_PREFIXES.find((p) => ref.startsWith(p)) : undefined;
-  if (!prefix) return false;
-  try { assertRefName(ref.slice(prefix.length)); return true; } catch { return false; }
+/**
+ * A full refname (`refs/<valid name>`): what an upstream must be before it reaches git. Any namespace — a remote's fetch
+ * refspec may map its branches anywhere (`refs/other/*`); git itself refuses one it will not track (a tag).
+ */
+function isFullRef(ref) {
+  if (typeof ref !== 'string' || !ref.startsWith('refs/')) return false;
+  try { assertRefName(ref.slice('refs/'.length)); return true; } catch { return false; }
 }
 /** git's words when a transaction's compare-and-swap misses (LC_ALL=C). */
 const CAS_RE = /but expected|reference already exists|unable to resolve reference|reference is missing/;
@@ -96,13 +96,13 @@ async function apply(git, step, dir, ctx) {
 }
 
 /**
- * Sets a restored branch's upstream again. The value is repo config (`%(upstream)`), so only a branch upstream reaches
- * git; and the ref is already restored by now, so anything that keeps the upstream from being set is a warning, never
- * a failure of the undo.
+ * Sets a restored branch's upstream again. The value is repo config (`%(upstream)`), so only a full refname reaches
+ * git; and the ref is already restored by now, so anything that keeps the upstream from being set — gone, or refused
+ * by `--set-upstream-to` (a tag, a remote no longer configured) — is a warning, never a failure of the undo.
  */
 async function restoreUpstream(git, name, upstream, ctx) {
-  if (!isBranchUpstream(upstream)) {
-    ctx.warnings.push(`${name}'s upstream ${upstream} is not a branch upstream (refs/heads/ or refs/remotes/): not set`);
+  if (!isFullRef(upstream)) {
+    ctx.warnings.push(`${name}'s upstream ${upstream} is not a ref name: not set`);
     return;
   }
   if (!(await refObjects(git, [upstream])).has(upstream)) {

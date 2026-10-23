@@ -215,8 +215,9 @@ test('a failure after a step wrote: appliedSteps on the refusal, the slots clear
 });
 
 /** A branch `gone` at base whose configured upstream reads `merge` (remote "."), deleted; the undo's result and execs. */
-async function deletedWithUpstream(t, merge) {
+async function deletedWithUpstream(t, merge, setup = () => {}) {
   const w = await undoWorld(t);
+  setup(w.repo);
   w.repo.git('branch', 'gone');
   fs.appendFileSync(path.join(w.repo.dir, '.git', 'config'), `[branch "gone"]\n\tremote = .\n\tmerge = ${merge}\n`);
   assert.equal(w.repo.git('for-each-ref', '--format=%(upstream)', 'refs/heads/gone'), merge);
@@ -227,17 +228,58 @@ async function deletedWithUpstream(t, merge) {
   return { w, r, argvs };
 }
 
-// Invariant: an upstream read from repo config that is not a branch upstream (`--help`, `refs/tags/v1`) is never looked
-// up or set: the undo of a delete restores the branch and warns, in its own words, that the upstream was not set.
-for (const merge of ['--help', 'refs/tags/v1', 'refs/foo']) {
-  test(`undo of a branch delete whose configured upstream is "${merge}": the branch back, a not-a-branch-upstream warning, no lookup`, async (t) => {
-    const { w, r, argvs } = await deletedWithUpstream(t, merge);
-    assert.equal(w.oid('gone'), w.base);
-    assert.deepEqual(r.warnings, [`gone's upstream ${merge} is not a branch upstream (refs/heads/ or refs/remotes/): not set`]);
-    assert.deepEqual(argvs.filter((a) => a.includes(merge)), [], 'no command named it');
-    assert.throws(() => w.repo.git('config', '--get-regexp', '^branch\\.gone\\.'), 'no branch.gone.* config was written');
-  });
-}
+/** The commands of `argvs` that name `value` as an argument of their own. */
+const naming = (argvs, value) => argvs.filter((a) => a.includes(value) || a.some((x) => x.endsWith(`=${value}`)));
+
+// Invariant: an upstream read from repo config that is not a full refname (`--help`) is never looked up or set: the
+// undo of a delete restores the branch and warns that it is not a ref name.
+test('undo of a branch delete whose configured upstream is "--help": the branch back, a not-a-ref-name warning, no lookup', async (t) => {
+  const { w, r, argvs } = await deletedWithUpstream(t, '--help');
+  assert.equal(w.oid('gone'), w.base);
+  assert.deepEqual(r.warnings, ["gone's upstream --help is not a ref name: not set"]);
+  assert.deepEqual(naming(argvs, '--help'), [], 'no command named it');
+  assert.throws(() => w.repo.git('config', '--get-regexp', '^branch\\.gone\\.'), 'no branch.gone.* config was written');
+});
+
+// Invariant: a full-refname upstream git will not track (a tag) is looked up, its `--set-upstream-to` refusal becomes a
+// "could not be set" warning, and the undo still succeeds (the ref was already restored).
+test('undo of a branch delete whose configured upstream is a tag: looked up, set refused, a could-not-be-set warning', async (t) => {
+  const { w, r, argvs } = await deletedWithUpstream(t, 'refs/tags/v1', (repo) => repo.git('tag', 'v1'));
+  assert.equal(w.oid('gone'), w.base);
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /^gone's upstream refs\/tags\/v1 could not be set: .*not a branch/);
+  assert.equal(naming(argvs, 'refs/tags/v1').filter((a) => a[0] === 'for-each-ref').length, 1, 'looked up once');
+  assert.equal(naming(argvs, 'refs/tags/v1').filter((a) => a[0] === 'branch').length, 1, 'set attempted once');
+  assert.ok((await w.state()).redo, 'the undo succeeded');
+});
+
+// Invariant: a full-refname upstream that does not exist (`refs/foo`) is looked up, not set, and warned as gone.
+test('undo of a branch delete whose configured upstream "refs/foo" does not exist: a no-longer-exists warning, not set', async (t) => {
+  const { w, r, argvs } = await deletedWithUpstream(t, 'refs/foo');
+  assert.equal(w.oid('gone'), w.base);
+  assert.deepEqual(r.warnings, ["gone's upstream refs/foo no longer exists: not set"]);
+  assert.equal(naming(argvs, 'refs/foo').filter((a) => a[0] === 'for-each-ref').length, 1, 'looked up once');
+  assert.deepEqual(naming(argvs, 'refs/foo').filter((a) => a[0] === 'branch'), [], 'never set');
+});
+
+// Invariant: an upstream in a custom tracking namespace (fetch refspec `+refs/heads/*:refs/other/*`) is restored by the
+// undo of a delete: branch.<b>.remote and .merge come back as they were.
+test('undo of a branch delete restores an upstream in a custom tracking namespace (refs/other/main)', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('remote', 'add', 'other', path.join(w.repo.root, 'origin.git'));
+  w.repo.git('config', '--replace-all', 'remote.other.fetch', '+refs/heads/*:refs/other/*');
+  w.repo.git('fetch', '-q', 'other');
+  w.repo.git('branch', 'gone');
+  w.repo.git('branch', '--set-upstream-to=refs/other/main', 'gone');
+  assert.equal(w.repo.git('for-each-ref', '--format=%(upstream)', 'refs/heads/gone'), 'refs/other/main');
+  const config = () => w.repo.git('config', '--get-regexp', '^branch\\.gone\\.');
+  const before = config();
+  await w.op('branch.delete', { names: ['gone'], force: true });
+  const r = await w.undo();
+  assert.deepEqual(r.warnings, []);
+  assert.equal(config(), before);
+  assert.equal(w.repo.git('for-each-ref', '--format=%(upstream)', 'refs/heads/gone'), 'refs/other/main');
+});
 
 // Invariant: a failure of `branch --set-upstream-to` itself (an upstream git will not track: refs/remotes/<r>/… with no
 // remote <r>) is a warning, not a failure — the ref was already restored, and the entry moves to the redo slot.
