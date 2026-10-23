@@ -1,0 +1,33 @@
+# Gotcha: stash
+
+Code: `src/git/ops/stash.js`, `src/git/stash/`. Reference: `docs/stash.md`. Raw git behaviour is pinned by `tests/stash-git-probes.test.js`.
+
+## Addressing
+
+- **Oids, never `stash@{n}`, on the wire.** Every checkout of a project and every other session share one stash stack; an index read by the UI may name another stash by the time the op runs. `resolveStash` re-reads the list and finds the oid.
+- **`git stash drop` takes only `stash@{n}`**, so a drop re-resolves `n` and then checks git's `Dropped stash@{n} (<oid>)` line (`dropVerified`). A mismatch means the list moved in between: the wrong entry is stored back at once (it lands at the top) and `STASH_MOVED` refuses.
+- **Rename is store-then-drop.** git can only store at the top, so a renamed stash becomes `stash@{0}`; storing the copy before dropping the original means a failure leaves two entries, never zero.
+- **A stash's message lives twice**: the reflog subject (`%gs`, what `stash store --message` writes) and W's commit subject (`%s`, what `graph.refs` shows). Rename re-commits W with the new subject (same tree, parents, identities, dates via `--date=raw` env) so both agree.
+
+## `GIT_LITERAL_PATHSPECS=1` breaks git's own `:/`
+
+- `git stash push -u` without a pathspec cleans untracked files with `git clean … -- :/`, and `--keep-index` restores the index with `git checkout … -- :/`. Under code-git's literal pathspecs `:/` matches nothing: `-u` exits 0 having stashed the untracked files **and left them in place**; `--keep-index` fails ("pathspec ':/' did not match"). `stash.push` passes the pathspec `.` instead whenever it has no paths and either flag is set.
+
+## Symlinks (the `--index` lesson)
+
+- **`stash push -- <paths>` and `--staged` run `apply --index -R` inside git** (`diff-index -p --cached HEAD | apply --index -R`), the command that writes through an untracked symlinked directory (gotchas/staging-patches). git 2.55 happened to refuse every case the probes try, but differently each time — and `--staged` fails *after* creating the stash, so the stash exists while the worktree is untouched.
+- **`stash apply` with the path still in the index and its directory replaced by an untracked symlink replaces the link with a real directory** (exit 0): nothing outside, but the link is gone.
+- **The guard (`assertNotBlocked`)**: every proper leading directory of the paths through `ls-files --others --directory -z -- <dirs>` without `--exclude-standard`. An untracked symlink or file at a prefix is listed as the prefix itself, an untracked directory as `prefix/`, a tracked directory not at all (its untracked contents are listed instead). "Listed entry == a prefix" is exactly "something not a directory git can descend stands there". Ignored entries count.
+- **The untracked part is restored non-atomically**: after the tracked merge, a checkout that skips an existing file ("already exists, no checkout") and writes the rest. `assertNoUntrackedCollision` (`ls-files -c -o` over U's paths) refuses first.
+
+## Line stashes
+
+- **I = HEAD's tree, W = HEAD + the selection**, both built with `commit-tree` on a temporary index (`GIT_INDEX_FILE` = `rev-parse --git-path code-git-stash-index`); the real index is never touched. The file must have nothing staged, so its index → worktree diff is the HEAD → worktree one.
+- **Two patches from one selection.** The forward patch (stageLines') fits HEAD and builds W; taking the lines out of the worktree needs the reverse patch (discardLines'), which fits the worktree with its unselected changes. Reversing the forward patch fails as soon as anything unselected sits near the selection.
+- **commit-tree needs an identity; git stash has a fallback.** When `git var GIT_COMMITTER_IDENT` fails, `git stash <git@stash>` is set as author and committer, as git stash does.
+- **A line stash pops only onto a clean file**: git's merge refuses a file with any local change ("would be overwritten by merge") even when the result would be clean. `stash.applyFile` (a patch) applies it into the edited file.
+
+## UI
+
+- **One sonner Toaster, beside `<App/>` in `main.tsx`.** Inside `Shell` it re-renders with every Shell render and delayed a tab switch's panels by ~200 ms (`golden.mjs`'s instant activity count failed). C5 mounts its own at the same spot; two Toasters show every toast twice — the second card to land deletes `features/stash/StashToaster.tsx` and `toast.ts`.
+- **The branch dialog closes before the code-conductor confirmation opens**: two Radix modals at once fight over focus and outside clicks.

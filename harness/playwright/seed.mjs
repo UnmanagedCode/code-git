@@ -54,6 +54,23 @@ export async function seed() {
     fs.writeFileSync(template, '# Summary in the imperative\nfeat:\n\n# Why?\n');
     stage.git('config', 'commit.template', template);
 
+    // stash: the stash path (stash.mjs). Two stashes made beforehand ("earlier experiment": README.md + an untracked
+    // scratch/notes.txt; "docs draft": docs/guide.md), then src/app.js with two unstaged hunks, a staged lib/util.js and
+    // an untracked todo.txt.
+    const stash = makeRepo(t, { name: 'stash' });
+    stash.commit({
+      'src/app.js': STAGE_BASE.join('\n') + '\n', 'README.md': '# stash demo\n', 'docs/guide.md': '# Guide\n', 'lib/util.js': 'export const util = 1;\n',
+    }, 'initial');
+    stash.write('README.md', '# stash demo\n\nAn earlier experiment.\n');
+    stash.write('scratch/notes.txt', 'scratch\n');
+    stash.git('stash', 'push', '-q', '-u', '-m', 'earlier experiment');
+    stash.write('docs/guide.md', '# Guide\n\nA draft section.\n');
+    stash.git('stash', 'push', '-q', '-m', 'docs draft');
+    stash.write('src/app.js', STAGE_EDITED.join('\n') + '\n');
+    stash.write('lib/util.js', 'export const util = 2;\n');
+    stash.git('add', 'lib/util.js');
+    stash.write('todo.txt', 'todo\n');
+
     // detached: HEAD detached at the second commit.
     const detached = makeRepo(t, { name: 'detached' });
     detached.commit({ 'a.txt': 'a\n' }, 'one');
@@ -73,6 +90,7 @@ export async function seed() {
         notes: { dir: plain, workspace: null, isGitRepo: true },
         diffs: { dir: diffs.repo.dir, workspace: 'Web', isGitRepo: true },
         stage: { dir: stage.dir, workspace: 'Web', isGitRepo: true },
+        stash: { dir: stash.dir, workspace: 'Web', isGitRepo: true },
         detached: { dir: detached.dir, workspace: 'Web', isGitRepo: true },
       },
     });
@@ -83,6 +101,7 @@ export async function seed() {
       url: srv.url,
       diffs,
       stage,
+      stash,
       /** While on, every exec is held by the fake cc (until cancelled or released). */
       hold(on) { cc.state.execHook = on ? () => 'hold' : null; },
       nextHeld: () => cc.nextHeld(),

@@ -38,7 +38,7 @@ test('an unstaged file with nothing staged: "Stash hunk…" on each header and "
   expect(btn('Stash lines…')).toBeTruthy();
 });
 
-test('a file that also has staged changes, and a staged diff, offer neither', async () => {
+test('an unstaged file that also has staged changes offers neither', async () => {
   await show('unstaged', { unstaged: [M], staged: [M] });
   expect(within(diff()).queryAllByRole('button', { name: 'Stash hunk…' })).toEqual([]);
   await userEvent.click(btn('Select added line 2'));
