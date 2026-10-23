@@ -549,7 +549,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `FILE_CHANGED` | 409 | `conflict.save`: the worktree file is no longer what was read; `expect`, `actual` |
 | `TOO_MANY_COMMITS` | 409 | A rebase plan or an interactive rebase over `REBASE_LIMITS.maxCommits` commits; `{count, max}` |
 | `HAS_MERGES` | 409 | A rebase's range (`upstream..HEAD`) holds a merge commit: it is not flattened; rebase it with git |
-| `OPERATION_IN_PROGRESS` | 409 | A merge, rebase, cherry-pick or revert is in progress where an op would start another; `operation` = its kind |
+| `OPERATION_IN_PROGRESS` | 409 | A merge, rebase, cherry-pick or revert is in progress where an op would start another, or — `submodule.commitPointer` — where a commit would conclude it or land in its middle; `operation` = its kind (`merge` \| `rebase` \| `cherry-pick` \| `revert`). "Finish or abort it first" |
 | `PICK_EMPTY` | 409 | A revert or cherry-pick would commit nothing; nothing is left in progress |
 | `NOTHING_IN_PROGRESS` | 409 | `head.abort` / `head.continue` / `head.skip` whose `which` is not the operation in progress (or none is) |
 | `STASH_UNKNOWN` | 404 | The oid is not in the stash list ([stash](stash.md)) |
@@ -564,7 +564,6 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `SUBMODULE_DIRTY` | 409 | `submodule.remove` without `discard`: `{path, modified, untracked, orphaned, staged, gitmodules}`; or an update's checkout over local changes (`stderr`) |
 | `SUBMODULE_COMMITS_AT_RISK` | 409 | `submodule.update` without `discardCommits` would leave commits on no branch; `paths: [{path, count}]` |
 | `SUBMODULE_POINTER_MOVED` | 409 | `submodule.commitPointer`: the submodule's HEAD is not `expect`; `path`, `head` |
-| `OPERATION_IN_PROGRESS` | 409 | A merge, cherry-pick or revert is stopped, or a rebase is going, in the repo: `submodule.commitPointer` would conclude it or commit in its middle; `operation` (`merge` \| `rebase` \| `cherry-pick` \| `revert`). "Finish or abort it first" |
 | `SUBMODULE_CONFLICTED` | 409 | `submodule.update` of a gitlink in conflict (git would skip it and exit 0); `paths` |
 | `SUBMODULE_NOT_RECORDED` | 409 | `.gitmodules` declares it but its gitlink is not in the index: `submodule.init` / `update` / `sync`, and `submodule.remove` of such an entry whose directory holds a clone; `paths`. `reason: 'typechange'`: `submodule.remove` where a file or a directory is staged in the gitlink's place |
 | `SUBMODULE_TRANSPORT_BLOCKED` | 409 | git's protocol policy refused the url's transport; `transport`, `stderr` (for `file`: the System's `protocol.file.allow` does not allow it) |
