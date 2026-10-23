@@ -7,6 +7,7 @@ import { EMPTY_GRAPH, graphStore } from '@/state/graph';
 import { shownPanelStore } from '@/state/shownPanel';
 import { tabKey } from '@/state/tabs';
 import { workdirOf, workdirStore } from '@/state/workdir';
+import { json } from '@/test/fixtures';
 import { linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
 import { ref, refsResult } from '@/test/graphData';
 import { ConflictTool } from './ConflictTool';
@@ -152,4 +153,11 @@ test('Close with unsaved changes asks; confirmed, the tool closes and the graph 
   act(() => settleConfirm(true));
   await waitFor(() => expect(toolOf(T)).toBeNull());
   expect(shownPanelStore.get().has(tabKey(T))).toBe(false);
+});
+
+test('a refused read (PATH_BLOCKED) shows the refusal and Close, no panes', async () => {
+  await show(TEXT, { 'POST api/ops/conflict.read': json({ error: 'd is not a directory git can write into (an untracked symlink or file?): move it first', code: 'PATH_BLOCKED' }, 409) });
+  expect(screen.getByRole('alert').textContent).toContain('d is not a directory git can write into');
+  expect(screen.queryByRole('textbox', { name: 'Output' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
 });

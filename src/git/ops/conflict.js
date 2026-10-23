@@ -114,6 +114,9 @@ export const ops = [
     },
     async run(git, { path }) {
       const c = await conflictOf(git, path);
+      // The worktree file is read through `diff --no-index`, which follows an untracked symlinked leading directory to a
+      // file outside the repo: refuse rather than show (or hash) that file. save and take refuse the same path.
+      await assertNotBlocked(git, [path]);
       const read = await sideBytes(git, c);
       const content = contentOf(c, read);
       // Text is sent only for the text case; the other cases need the oids alone (and a symlink its targets).

@@ -246,3 +246,13 @@ test('take refuses PATH_BLOCKED when the path itself is now a directory (a file 
   await assert.rejects(w.op('conflict.take', { paths: ['gone.txt'], side: 'theirs' }), refused('PATH_BLOCKED'));
   assert.equal(fs.readFileSync(path.join(w.repo.dir, 'gone.txt', 'inner'), 'utf8'), 'keep\n');
 });
+
+test('read refuses PATH_BLOCKED behind an untracked symlinked leading directory: nothing outside is read or sent', async (t) => {
+  const w = await world(t);
+  linkDOutside(w);
+  const before = w.argvs().length;
+  let err;
+  await assert.rejects(w.read('d/x.txt'), (e) => { err = e; return refused('PATH_BLOCKED')(e); });
+  assert.ok(!JSON.stringify(err.toBody()).includes('outside x'), 'the outside content is not in the answer');
+  assert.ok(!w.argvs().slice(before).some((a) => a.includes('hash-object') || (a.includes('--no-index') && a.includes('d/x.txt'))), 'the worktree file was never read');
+});
