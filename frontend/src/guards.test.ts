@@ -128,11 +128,13 @@ test('no .style access outside lib/cssVars.ts and components/ui', () => {
 // Every key binding goes through the shortcut catalog: only shell/shortcuts.ts reads an event's key or modifier fields.
 const KEY_FIELD = /\.(?:ctrlKey|metaKey|shiftKey|altKey)\b|\b(?:e|ev|evt|event)\.key\b/;
 
+// Invariant: the key-field pattern matches event key/modifier reads and not lookalike fields (details.key, keyCode).
 test('the key-field pattern catches what it claims to', () => {
   for (const bad of ['e.key === "Enter"', 'if (ev.key !== "Escape")', 'e.ctrlKey || e.metaKey', 'event.shiftKey', 'x.altKey']) expect(KEY_FIELD.test(bad), bad).toBe(true);
   for (const ok of ['details.key !== key', 'j.key', 'checked.key === key', 'matches(e, KEY)', 'keyId={k}', 'e.keyCode']) expect(KEY_FIELD.test(ok), ok).toBe(false);
 });
 
+// Invariant: no handler outside shell/shortcuts.ts reads e.key or a modifier: every binding goes through the catalog.
 test('only shell/shortcuts.ts reads key and modifier fields (components/ui aside)', () => {
   const own = all.filter((f) => !f.includes(`${path.sep}components${path.sep}ui${path.sep}`));
   expect(offenders(KEY_FIELD, own)).toEqual([path.join('src', 'shell', 'shortcuts.ts')]);

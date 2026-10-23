@@ -157,6 +157,7 @@ test('an option-looking revision is refused before anything reaches exec', async
   assert.ok(cc.state.execCalls[0].argv.includes('--end-of-options'));
 });
 
+// Invariant: the ops route passes run() the validated target and the undo journal.
 test("an op's run receives {target, journal} as its third argument: the validated target (worktree null for the main checkout) and the undo journal", async (t) => {
   const { call } = await world(t);
   const wt = await call('POST', '/api/ops/test.target', { target: { project: 'app', worktree: 'feat' } });
