@@ -13,6 +13,12 @@ const NETWORK_OPS = {
   'tag.push': (w) => w.op('tag.push', { remote: 'evil', names: ['x'] }),
   'tag.deleteRemote': (w) => w.op('tag.deleteRemote', { remote: 'evil', names: ['x'] }),
   'branch.deleteRemote': (w) => w.op('branch.deleteRemote', { remote: 'evil', branches: ['x'] }),
+  'remote.fetch': (w) => w.op('remote.fetch', { remote: 'evil' }),
+  'remote.fetch (every remote)': async (w) => {
+    const r = await w.op('remote.fetch', { remote: null });
+    throw Object.assign(new Error('per remote'), { extra: { stderr: r.remotes.find((x) => x.remote === 'evil').error.stderr } });
+  },
+  'remote.peek': (w) => w.op('remote.peek', { remote: 'evil', branch: 'x' }),
 };
 
 /** refsWorld with remote `evil` whose url the repo's config rewrites to `ext::sh -c touch <marker>`; branch and tag `x`. */

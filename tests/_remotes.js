@@ -5,6 +5,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { NET_CONFIG } from '../src/git/remote/net.js';
 import { BASE_ARGS } from '../src/git/runner.js';
+import { bindRepo, hermeticEnv } from './_git.js';
 
 // Helpers the remote op tests share: credential-demanding http servers and the NET_CONFIG scan.
 
@@ -41,4 +42,20 @@ export function within(promise, ms, what) {
   let timer;
   const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${what} still pending after ${ms} ms`)), ms); });
   return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * A second clone of `w`'s origin (created once, at `<root>/elsewhere`): commits `files` on `branch` (based on origin's
+ * `branch`, else origin's main) and pushes it to origin, as another user would. → the pushed commit.
+ */
+export function pushFromElsewhere(w, branch, files, msg = `elsewhere ${branch}`) {
+  const dir = path.join(w.repo.root, 'elsewhere');
+  if (!fs.existsSync(dir)) execFileSync('git', ['clone', '-q', w.origin.dir, dir], { env: hermeticEnv(w.repo.home) });
+  const other = bindRepo(dir, w.repo.home);
+  other.git('fetch', '-q', 'origin');
+  const base = (() => { try { return other.git('rev-parse', '--verify', '-q', `origin/${branch}`); } catch { return other.git('rev-parse', 'origin/main'); } })();
+  other.git('checkout', '-q', '-B', branch, base);
+  const oid = other.commit(files, msg);
+  other.git('push', '-q', 'origin', `${branch}:${branch}`);
+  return oid;
 }

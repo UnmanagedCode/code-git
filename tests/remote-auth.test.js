@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { BASE_ENV } from '../src/git/runner.js';
+import { OPS } from '../src/git/ops/index.js';
+import { BASE_ENV, READ_ENV } from '../src/git/runner.js';
 import { refsWorld, refused } from './_refsWorld.js';
 import { authServer, NO_HTTP, netCalls, within } from './_remotes.js';
 
@@ -14,6 +15,8 @@ const FAST_MS = 15_000;
 /** Each network op against remote `locked`: `setup(w)` once the remote exists, `run(w)` the op. */
 const CALLERS = {
   'tag.push': { setup: (w) => w.repo.git('tag', 'v1', w.base), run: (w) => w.op('tag.push', { remote: 'locked', names: ['v1'] }) },
+  'remote.fetch': { setup: () => {}, run: (w) => w.op('remote.fetch', { remote: 'locked' }) },
+  'remote.peek': { setup: () => {}, run: (w) => w.op('remote.peek', { remote: 'locked', branch: 'main' }) },
 };
 
 async function lockedWorld(t, url) {
@@ -23,11 +26,12 @@ async function lockedWorld(t, url) {
 }
 
 for (const [name, { setup, run }] of Object.entries(CALLERS)) {
-  test(`${name}: a 401 with no credential helper → REMOTE_AUTH_FAILED (prompt) at once; the env is exactly BASE_ENV`, { skip: NO_HTTP }, async (t) => {
+  test(`${name}: a 401 with no credential helper → REMOTE_AUTH_FAILED (prompt) at once; the env is exactly BASE_ENV (+ READ_ENV for a read)`, { skip: NO_HTTP }, async (t) => {
     const w = await lockedWorld(t, `${await authServer(t, 401)}/r.git`);
     await setup(w);
     await assert.rejects(within(run(w), FAST_MS, name), refused('REMOTE_AUTH_FAILED', { reason: 'prompt' }));
-    for (const b of netCalls(w.cc.state.execCalls)) assert.deepEqual(b.env, BASE_ENV);
+    const env = OPS.get(name.split(' ')[0]).kind === 'read' ? { ...BASE_ENV, ...READ_ENV } : BASE_ENV;
+    for (const b of netCalls(w.cc.state.execCalls)) assert.deepEqual(b.env, env);
   });
 
   test(`${name}: a 403 → REMOTE_AUTH_FAILED (credentials), not unreachable`, { skip: NO_HTTP }, async (t) => {
