@@ -23,6 +23,7 @@ import { resetRemotes } from '@/state/remotes';
 import { resetRemotePrefs } from '@/state/remotePrefs';
 import { resetRemoteDialog } from '@/state/remoteDialog';
 import { resetAutoFetch } from '@/features/remotes/autoFetch';
+import { resetSequenceDialog } from '@/state/sequenceDialog';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
@@ -53,6 +54,7 @@ afterEach(() => {
   resetRemotePrefs();
   resetRemoteDialog();
   resetAutoFetch();
+  resetSequenceDialog();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();

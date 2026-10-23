@@ -1,8 +1,23 @@
 # Merge, rebase and conflicts
 
-What is in progress in a checkout, and continuing, skipping or aborting it. Wire shapes: [protocol → Merge, rebase and conflict ops](protocol.md#merge-rebase-and-conflict-ops). The ref and HEAD rules these ops share (the cc HEAD gate, undo records): [refs](refs.md).
+Merging and rebasing a checkout's branch, what is in progress in it, and continuing, skipping or aborting it. Wire shapes: [protocol → Merge, rebase and conflict ops](protocol.md#merge-rebase-and-conflict-ops). The ref and HEAD rules these ops share (the cc HEAD gate, undo records): [refs](refs.md).
 
 ## Using it
+
+### Where the actions are
+
+HEAD (its branch and commit) is read from the graph's refs answer; the backend checks again. Group `rewrite` beside reset (300), revert (310) and cherry-pick (311).
+
+| Context | Item (order) | Offered when |
+|---|---|---|
+| A branch dropped on HEAD's branch | **Merge `<S>` into `<T>`** (100) · **Merge `<S>` into `<T>` (no fast-forward)** (101) · **Squash `<S>` into `<T>`** (102) | the target is HEAD's branch and the two commits differ |
+| A branch dropped on another | **Rebase `<X>` onto `<Y>`** (110) | one side is HEAD's branch (`X`), the commits differ: HEAD's branch dragged onto `Y`, or `Y` dropped on HEAD's branch |
+| Branch (local or remote) | **Merge `<b>` into `<HEAD>`** (330) · **Rebase `<HEAD>` onto `<b>`** (331) | not HEAD's branch, not at HEAD's commit; HEAD born. `<HEAD>` is HEAD's branch, or `HEAD` when detached |
+| Commit | **Rebase `<HEAD>` onto this commit** (312) | not HEAD's commit and not an ancestor of HEAD among the loaded rows; HEAD born |
+| Several commits | **Rebase N commits onto…** (322) | the selection is one first-parent run (each commit the parent of the one above it, none a merge or a root) whose newest commit is HEAD's: the dialog below |
+
+- **Rebase N commits onto…** opens a dialog (`state/sequenceDialog.ts`, rendered by `SequenceDialogHost`, mounted by the shell) listing every other local and remote branch; **Rebase** replays the N commits onto the picked branch (`upstream` = the oldest's parent, so older commits leave the branch). On a `code-conductor/*` HEAD the dialog shows the cc warning inline and sends `ccOwned`. A refusal stays inline.
+- **Merge** (any mode) runs at once: it only adds commits. A **rebase** of a `code-conductor/*` HEAD asks first (the cc HEAD gate, `withCcHeadAck`, "Rebasing it"), and a stale-refs `CC_OWNED_BRANCH` reopens that confirmation from the toast.
 
 ### The operation banner
 
@@ -23,14 +38,36 @@ The Changes panel (and the **Changes (n)** dialog below `lg`) shows a banner, un
 
 | Action | Confirmation | Outcome toast |
 |---|---|---|
+| A merge | none | "`<T>` is already up to date with `<S>`" / "Fast-forwarded `<T>` to `<S>`" / "Merged `<S>` into `<T>`"; conflicts: "The merge stopped on conflicts" with **Resolve…** and **Abort…** |
+| A squash | none | "Squashed `<S>` into the index" — the commit box is filled with git's prepared message (`SQUASH_MSG`, comments stripped: summary + description) and Changes opens, where the staged result is committed; conflicts: "The squash stopped on conflicts" with **Resolve…** only (a squash leaves no operation to abort) |
+| A rebase | the cc HEAD gate only | "Rebased `<X>` onto `<Y>`" / "`<X>` is already up to date with `<Y>`"; conflicts as for a merge |
 | **Continue** | none (it only adds commits) | done: "Merge committed" / "Rebase finished" / "Cherry-pick committed" / "Revert committed"; new conflicts: a warning "The `<kind>` stopped on conflicts" with the files, **Resolve…** (opens Changes) and **Abort…**; an `edit` stop: "Stopped to edit `<oid7>`" |
 | **Skip** | "Skip this commit?" (**Skip commit**) — the commit's changes and any resolutions made for it are left out | as Continue |
 | **Abort…** | "Abort the `<kind>`?" (**Abort `<kind>`**, irreversible) — discards the operation and its resolutions; HEAD (a rebase: the branch) goes back | "`<Kind>` aborted" |
 | A pull that stops on conflicts (merge or rebase) | — | "The pull stopped on conflicts" with the files and **Abort merge…** / **Abort rebase…** (the Abort confirmation above) |
 
-Refusals with a toast of their own: `CONFLICTED` "Resolve the conflicts first" (the files still unmerged), `NOTHING_TO_COMMIT` "Nothing to commit here: skip this commit, or abort", `DIRTY_WORKTREE` "Stage or discard the unstaged changes first".
+Start refusals with a toast of their own: `OPERATION_IN_PROGRESS` "Something is already in progress: continue or abort it first", `CONFLICTED`, `DIRTY_WORKTREE` "Commit or stash first", `HAS_MERGES` "The commits to rebase include a merge: rebase them with git", `REF_MOVED` "The branch moved: refresh and try again". Continue refusals: `CONFLICTED` "Resolve the conflicts first" (the files still unmerged), `NOTHING_TO_COMMIT` "Nothing to commit here: skip this commit, or abort", `DIRTY_WORKTREE` "Stage or discard the unstaged changes first".
 
 ## Rules
+
+### Merge
+
+`merge.start {ref, oid, mode, expect}` (`src/git/ops/merge.js`):
+
+1. Gates, in order: `assertWorktree` (`BARE_REPO`), `assertNoOperation`, HEAD born (`NO_HEAD`) and at `expect` (`REF_MOVED`), `oid` a commit (`REV_UNKNOWN`), `ref` (when given) still at `oid` (`REF_MOVED`). No cc acknowledgement: a merge only adds.
+2. `oid` is HEAD or an ancestor of it (`merge-base --is-ancestor`) → `upToDate`, nothing runs.
+3. `merge()` (`src/git/remote/integrate.js`): `-c merge.autoStash=false merge <mode flags> --no-stat --end-of-options <oid>`, exit 0 or 1, `SEQUENCE_LIMITS.timeoutMs`. Mode flags: `ff` → `--ff --no-edit -m <message>`, `noFf` → `--no-ff --no-edit -m <message>`, `squash` → `--squash`. Exit 2 (local changes in the way) → `CHECKOUT_CONFLICT` with the files.
+4. **Message** (git's own style, from the validated `ref`): `Merge branch '<b>'` (`refs/heads/`), `Merge remote-tracking branch '<r>/<b>'` (`refs/remotes/`), `Merge tag '<t>'` (`refs/tags/`), `Merge commit '<oid7>'` (no `ref`).
+5. **Outcome**: `fastForward` (mode `ff` and HEAD was an ancestor), `merged`, `squashed` (`message` = `$GIT_DIR/SQUASH_MSG` read with `readNoIndex`, through `git stripspace -s`), or `conflicts` with the files — a merge left in progress; a squash's conflicts have no `MERGE_HEAD`, so they show as conflicts with no operation.
+6. **Undo** (fast-forward, merged): the branch from HEAD before to HEAD after; `undo.head`. A squash only stages: no undo.
+
+### Rebase
+
+`rebase.start {onto, upstream, expect, ccOwned?}` (`src/git/ops/rebase.js`) replays `upstream..HEAD` onto `onto` — `git rebase --onto=<onto> <upstream>`. The menus pass `upstream = onto` (rebase onto a branch or commit) or the oldest selected commit's parent (N commits).
+
+1. Gates (`rebaseGates`), in order: `assertWorktree`; git ≥ 2.26 (`assertGitAtLeast`, `GIT_TOO_OLD`: `--empty` arrived then); `assertNoOperation`; HEAD born and at `expect`; `assertCcHeadAck` (`CC_OWNED_BRANCH`, `head: true`); `assertClean` (`DIRTY_WORKTREE`); `upstream` a commit; `rev-list --merges --count <upstream>..HEAD` > 0 → `HAS_MERGES` (a rebase would flatten merges; `rebase.rebaseMerges` is pinned off); then `onto` a commit.
+2. Runs `rebase(git, ['--onto=<onto>', '--end-of-options', <upstream>])` with `SEQUENCE_LIMITS.timeoutMs` (600 000 ms, cc's maximum). Every rebase passes `REBASE`'s pins: `rebase.autoStash`, `rebase.updateRefs`, `rebase.autoSquash` false; `rebase.backend=merge`; `rebase.rebaseMerges=false`.
+3. **Outcome**: `upToDate` (exit 0, HEAD unchanged, nothing in progress), `done` (undo: the branch from its old tip to the new one, `undo.head`), `conflicts` (left in progress: the stop rule below), `stopped`.
 
 ### State detection
 
@@ -70,7 +107,7 @@ Refusals with a toast of their own: `CONFLICTED` "Resolve the conflicts first" (
 
 ### Starts refuse while something is in progress
 
-`assertNoOperation` (`src/git/sequence/guard.js`) runs before `head.revert`, `head.cherryPick` and `remote.pull` start anything: `OPERATION_IN_PROGRESS` (`operation`: the kind) while an operation is in progress, else `CONFLICTED` (`files`) while any path is unmerged. `assertClean` (`DIRTY_WORKTREE`: a staged or unstaged tracked change; untracked files do not count) lives beside it.
+`assertNoOperation` (`src/git/sequence/guard.js`) runs before `merge.start`, `rebase.start`, `head.revert`, `head.cherryPick` and `remote.pull` start anything: `OPERATION_IN_PROGRESS` (`operation`: the kind) while an operation is in progress, else `CONFLICTED` (`files`) while any path is unmerged. `assertClean` (`DIRTY_WORKTREE`: a staged or unstaged tracked change; untracked files do not count) lives beside it.
 
 ### Continue, skip and abort
 

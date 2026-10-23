@@ -295,7 +295,7 @@ export const ops = [
         const r = await rebase(git, ['--end-of-options', oid]);
         return r.outcome === 'conflicts' ? result('conflicts', { files: r.files }) : moved('rebased');
       }
-      const merged = await merge(git, oid, `Merge remote-tracking branch '${upstream.slice(REMOTES.length)}'`);
+      const merged = await merge(git, oid, { mode: 'ff', message: `Merge remote-tracking branch '${upstream.slice(REMOTES.length)}'` });
       return merged.conflicts ? result('conflicts', { files: merged.files }) : moved('merged');
     },
   },

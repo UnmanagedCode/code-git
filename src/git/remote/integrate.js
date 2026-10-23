@@ -3,8 +3,9 @@ import { parseConflictFiles } from '../parse/refs.js';
 import { guardOverwrite } from '../refs/write.js';
 import { operationState } from '../sequence/state.js';
 
-// Integrating a fetched upstream into this checkout's branch: the second half of remote.pull. Pull is never `git pull`:
-// a fetch (fetch.js) and then one of these, each with the config that would reshape it overridden on the command line.
+// Integrating a commit into this checkout's branch: the second half of remote.pull (never `git pull`: a fetch, fetch.js,
+// and then one of these) and every merge and rebase op. Each runs with the config that would reshape it overridden on the
+// command line.
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -12,10 +13,16 @@ const decoder = new TextDecoder('utf-8', { fatal: false });
 const MERGE = ['-c', 'merge.autoStash=false', 'merge'];
 /**
  * `git rebase` with the config that would widen it off: `rebase.autoStash` (a hidden stash), `rebase.updateRefs` (it
- * would move every other branch pointing into the rebased range, code-conductor/* ones included) and
- * `rebase.autoSquash` (it would reorder commits).
+ * would move every other branch pointing into the rebased range, code-conductor/* ones included), `rebase.autoSquash`
+ * (it would reorder commits); and pinned: `rebase.backend=merge` (the state lives in `rebase-merge/`, the interactive
+ * todo is git's), `rebase.rebaseMerges=false` (merge commits are refused before a rebase starts, never recreated).
  */
-export const REBASE = ['-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false', 'rebase'];
+export const REBASE = [
+  '-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false',
+  '-c', 'rebase.backend=merge', '-c', 'rebase.rebaseMerges=false', 'rebase',
+];
+/** How each merge mode runs: `--ff` / `--no-ff` make a commit with the given message, `--squash` only stages. */
+const MERGE_MODE = { ff: ['--ff'], noFf: ['--no-ff'], squash: ['--squash'] };
 
 const unmergedFiles = async (git) => decoder.decode((await git(['diff', '--name-only', '--diff-filter=U', '-z'])).stdout).split('\0').filter(Boolean);
 
@@ -25,12 +32,15 @@ export async function fastForward(git, oid) {
 }
 
 /**
- * Merges `oid` into this checkout's branch with a merge commit `message` → {conflicts: false} | {conflicts: true,
- * files}: a conflicted merge stays in progress (`head.abort` `merge` undoes it). CHECKOUT_CONFLICT when local changes
- * are in the way (nothing starts).
+ * Merges `oid` into this checkout: `mode` `ff` (fast-forward when possible, else a merge commit `message`), `noFf`
+ * (always a merge commit) or `squash` (the changes staged, no commit, no MERGE_HEAD) → {conflicts: false} |
+ * {conflicts: true, files}: a conflicted merge stays in progress (`head.abort` `merge` undoes it; a squash's conflicts
+ * have no operation). CHECKOUT_CONFLICT when local changes are in the way (nothing starts).
  */
-export async function merge(git, oid, message) {
-  const r = await guardOverwrite(git, [...MERGE, '--ff', '--no-edit', '-m', message, '--end-of-options', oid], { okExit: [0, 1] });
+export async function merge(git, oid, { mode, message, timeoutMs }) {
+  const commit = mode === 'squash' ? [] : ['--no-edit', '-m', message];
+  const args = [...MERGE, ...MERGE_MODE[mode], ...commit, '--no-stat', '--end-of-options', oid];
+  const r = await guardOverwrite(git, args, { okExit: [0, 1], timeoutMs });
   if (r.exitCode === 0) return { conflicts: false, files: [] };
   const files = await unmergedFiles(git);
   if (files.length) return { conflicts: true, files };

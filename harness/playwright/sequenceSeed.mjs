@@ -12,6 +12,7 @@
 //      picks: base ← p1 ← p2 ← p3 (p1.txt … p3.txt): cherry-picked onto main without conflict.
 //      conflict: base ← conflicting change (L10 "L10 conflict"): a cherry-pick of it onto main stops on L10.
 //      feature/bin: base ← binary change (data.bin other bytes): merging it into main stops on a binary file.
+//      side: base ← side (side.txt): any branch rebases onto it without conflict.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
@@ -56,6 +57,8 @@ export async function seedSequence() {
     o.conflict = repo.commit({ 'app.txt': appWith([10, 'L10 conflict']) }, 'conflicting change');
     repo.git('checkout', '-q', '-b', 'feature/bin', o.base);
     o.bin = repo.commit({ 'data.bin': bin(3) }, 'binary change');
+    repo.git('checkout', '-q', '-b', 'side', o.base);
+    o.side = repo.commit({ 'side.txt': 'side\n' }, 'side');
 
     repo.checkout('main');
     o.mine = repo.commit({ 'app.txt': appWith([1, 'L1 mine']) }, 'mine');

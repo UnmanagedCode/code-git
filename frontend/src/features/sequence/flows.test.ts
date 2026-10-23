@@ -7,8 +7,11 @@ import { confirmStore, settleConfirm } from '@/lib/confirm';
 import { Toasts } from '@/shell/Toasts';
 import { json } from '@/test/fixtures';
 import { linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
+import { EMPTY_GRAPH, graphStore } from '@/state/graph';
+import { tabKey } from '@/state/tabs';
 import { workdirOf } from '@/state/workdir';
-import { abortFlow, continueFlow, skipFlow } from './flows';
+import { ref, refsResult } from '@/test/graphData';
+import { abortFlow, continueFlow, mergeFlow, rebaseFlow, skipFlow } from './flows';
 
 const T = { project: 'app', worktree: null };
 afterEach(() => { toast.dismiss(); });
@@ -88,4 +91,73 @@ test('skip and abort ask first: Cancel posts nothing', async () => {
   act(() => settleConfirm(false));
   await aborting;
   expect([w.posts('head.skip'), w.posts('head.abort')]).toEqual([[], []]);
+});
+
+const A = 'a'.repeat(40);
+const B = 'b'.repeat(40);
+/** HEAD on `head` (a code-conductor/* one needs the acknowledgement for a rebase). */
+const setHead = (head: string) => graphStore.set(new Map([[tabKey(T), {
+  ...EMPTY_GRAPH, status: 'ready', refs: refsResult({ head: { oid: A, branch: `refs/heads/${head}`, detached: false, unborn: false }, refs: [ref(`refs/heads/${head}`, A, { isHead: true })] }),
+}]]));
+
+test.each([
+  ['upToDate', 'main is already up to date with feature'], ['fastForward', 'Fast-forwarded main to feature'], ['merged', 'Merged feature into main'],
+])('merge outcome %s toasts "%s"', async (outcome, text) => {
+  world({ 'merge.start': { outcome, files: [], oid: B, message: null, undo } });
+  await mergeFlow(T, { ref: 'refs/heads/feature', oid: B, label: 'feature', into: 'main', expect: A, mode: 'ff' });
+  await waitFor(() => expect(toastText()).toContain(text));
+});
+
+test('a merge that stops on conflicts warns with the files and Abort…; a squash\'s conflicts offer Resolve… only (nothing to abort)', async () => {
+  world({ 'merge.start': { outcome: 'conflicts', files: ['m.txt'], oid: A, message: null, undo } });
+  await mergeFlow(T, { ref: null, oid: B, label: 'bbbbbbb', into: 'main', expect: A, mode: 'noFf' });
+  await waitFor(() => expect(toastText()).toContain('The merge stopped on conflicts'));
+  expect(screen.getAllByRole('button', { name: 'Abort…' }).length).toBe(1);
+  toast.dismiss();
+  await waitFor(() => expect(toastText()).toBe(''));
+  await mergeFlow(T, { ref: null, oid: B, label: 'bbbbbbb', into: 'main', expect: A, mode: 'squash' });
+  await waitFor(() => expect(toastText()).toContain('The squash stopped on conflicts'));
+  expect(screen.queryByRole('button', { name: 'Abort…' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Resolve…' })).toBeTruthy();
+});
+
+test('a squash pre-fills the commit box with git\'s prepared message (summary and description) and opens Changes', async () => {
+  world({ 'merge.start': { outcome: 'squashed', files: [], oid: A, message: 'Squashed commit of the following:\n\ncommit b\n    feature change\n', undo } });
+  await mergeFlow(T, { ref: 'refs/heads/feature', oid: B, label: 'feature', into: 'main', expect: A, mode: 'squash' });
+  expect(workdirOf(T).draft).toEqual({ summary: 'Squashed commit of the following:', description: 'commit b\n    feature change' });
+  expect(workdirOf(T).focus).toBe('slot');
+  await waitFor(() => expect(toastText()).toContain('Squashed feature into the index'));
+});
+
+test('a rebase of a plain HEAD runs at once; of a code-conductor/* HEAD only after the warning, then with ccOwned', async () => {
+  setHead('main');
+  const w = world({ 'rebase.start': { outcome: 'done', files: [], oid: B, undo } });
+  rebaseFlow(T, { onto: B, upstream: B, expect: A, branch: 'main', ontoLabel: 'feature' });
+  await waitFor(() => expect(w.posts('rebase.start')).toEqual([{ onto: B, upstream: B, expect: A }]));
+  await waitFor(() => expect(toastText()).toContain('Rebased main onto feature'));
+  setHead('code-conductor/wt');
+  rebaseFlow(T, { onto: B, upstream: B, expect: A, branch: 'code-conductor/wt', ontoLabel: 'feature' });
+  await waitFor(() => expect(confirmStore.get()?.opts.confirmLabel).toBe('Rebase anyway'));
+  expect(w.posts('rebase.start')).toHaveLength(1);
+  act(() => settleConfirm(true));
+  await waitFor(() => expect(w.posts('rebase.start')[1]).toEqual({ onto: B, upstream: B, expect: A, ccOwned: true }));
+});
+
+test('rebase refusals say what to do: HAS_MERGES, DIRTY_WORKTREE, OPERATION_IN_PROGRESS', async () => {
+  setHead('main');
+  let code = 'HAS_MERGES';
+  stubGraph(linearWorld(2), {
+    'POST api/ops/commit.state': { ok: true, result: { merging: false } },
+    'POST api/ops/rebase.start': () => json({ error: 'x', code }, 409),
+  });
+  render(createElement(Toasts));
+  const expected: Record<string, string> = {
+    HAS_MERGES: 'The commits to rebase include a merge: rebase them with git', DIRTY_WORKTREE: 'Commit or stash first',
+    OPERATION_IN_PROGRESS: 'Something is already in progress: continue or abort it first',
+  };
+  for (const c of Object.keys(expected)) {
+    code = c;
+    rebaseFlow(T, { onto: B, upstream: B, expect: A, branch: 'main', ontoLabel: 'feature' });
+    await waitFor(() => expect(toastText()).toContain(expected[c]));
+  }
 });

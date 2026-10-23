@@ -51,7 +51,7 @@ test('ff, diverged → a merge commit of HEAD and the upstream with the remote-t
   assert.deepEqual(parents(w), [local, remote]);
   assert.equal(w.repo.git('log', '-1', '--format=%s'), "Merge remote-tracking branch 'origin/main'");
   assert.deepEqual([read(w, 'r.txt'), read(w, 'l.txt'), r.oid], ['r\n', 'l\n', w.oid('HEAD')]);
-  assert.deepEqual(ran(w, 'merge').at(-1), ['-c', 'merge.autoStash=false', 'merge', '--ff', '--no-edit', '-m', "Merge remote-tracking branch 'origin/main'", '--end-of-options', remote]);
+  assert.deepEqual(ran(w, 'merge').at(-1), ['-c', 'merge.autoStash=false', 'merge', '--ff', '--no-edit', '-m', "Merge remote-tracking branch 'origin/main'", '--no-stat', '--end-of-options', remote]);
 });
 
 test('ffOnly, diverged → NOT_FAST_FORWARD: HEAD unchanged, the upstream fetched', async (t) => {
@@ -70,7 +70,10 @@ test('rebase, diverged → the local commit replayed on the upstream: linear, co
   assert.deepEqual(parents(w), [remote]);
   assert.equal(w.repo.git('log', '-1', '--format=%s'), 'local');
   assert.deepEqual([read(w, 'r.txt'), read(w, 'l.txt'), r.oid], ['r\n', 'l\n', w.oid('HEAD')]);
-  assert.deepEqual(ran(w, 'rebase'), [['-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false', 'rebase', '--end-of-options', remote]]);
+  assert.deepEqual(ran(w, 'rebase'), [[
+    '-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false', '-c', 'rebase.backend=merge', '-c', 'rebase.rebaseMerges=false',
+    'rebase', '--end-of-options', remote,
+  ]]);
   assert.equal(ran(w, 'pull').length, 0, 'never git pull');
 });
 
