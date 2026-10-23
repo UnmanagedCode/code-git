@@ -25,6 +25,7 @@
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
 | `src/git/undo/` | Undo and redo ([undo](undo.md)): `journal.js` (`createJournal`, `targetKey`: the per-checkout undo and redo slots), `record.js` (`journalAround`: what the ops route does around every op), `plans.js` (`plans`: the registered ops' builders), `engine.js` (`runPlan`: preflight every step over a projection, then apply), `pushed.js` (`assertNotPushed`), `steps/` (`head`, `refs`, `rename`, `discard`, `patch`; `STEPS`) |
 | `src/git/ops/undo.js` | `undo.state`, `undo.undo`, `undo.redo` |
+| `src/git/ops/history.js`, `src/git/parse/history.js`, `src/git/history/limits.js` | `history.file`, `history.blame`, `history.reflog`, `history.paths` ([history](history.md)); their pure parsers (`parseFileHistory`, `parseBlame`, `parseReflog`); `HISTORY_LIMITS` |
 | `src/git/ops/repo.js` | `repo.summary` |
 | `src/git/ops/diff.js` | `diff.files`, `diff.file`, `diff.patch`; `patchFilename` |
 | `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`, `commitOid`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS`; `parseContext` / `contextArg` / `FULL_CONTEXT` |

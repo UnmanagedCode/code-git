@@ -470,6 +470,17 @@ Confirm  {kind: 'deletesRefs', refs: refname[]} | {kind: 'discards', paths: path
 | `undo.undo` | write, **not** cancellable | `{id /* the slot's UndoSlot.id */, ccOwned?}` | `assertNoOperation`; the pushed rule; every step's preflight, then every apply ([undo → Steps](undo.md#steps)) | `{entry: UndoSlot /* confirm for undo */, warnings: string[] /* an upstream not restored */}` | `NOTHING_TO_UNDO`; `UNDO_STALE`; `UNDO_PUSHED` (`oid`, `refs`); `OPERATION_IN_PROGRESS`; `CONFLICTED`; `BARE_REPO`; `DIRTY_WORKTREE`; `CHECKOUT_CONFLICT`; `BRANCH_CHECKED_OUT`; `CC_OWNED_BRANCH` (`head: true` for this HEAD); `SYMBOLIC_REF`; `PATH_BLOCKED`; a failure after a step wrote carries `appliedSteps` |
 | `undo.redo` | write, **not** cancellable | as `undo.undo` | as `undo.undo`, no pushed rule | as `undo.undo` | as `undo.undo` with `NOTHING_TO_REDO`, no `UNDO_PUSHED` |
 
+### History ops (`src/git/ops/history.js`; all reads, cancellable)
+
+Behaviour and UI: [history](history.md). Every log-family command takes `LOG_SAFE` (`--no-show-signature --no-ext-diff --no-textconv`, exported by `graph.js`). `rev` is a full oid the client froze (never `HEAD`): pages stay stable while refs move. Caps: `HISTORY_LIMITS` (`src/git/history/limits.js`).
+
+| Op | `params` | Runs | `result` | Refusals |
+|---|---|---|---|---|
+| `history.file` | `{rev, path, skip?: 0…followMaxCommits−1 (0), limit?: 1…pageMax (pageMax)}` | `rev-parse` (a commit); `log --follow -M --name-status -z <LOG_SAFE> --format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%s --max-count=<min(skip+limit+1, followMaxCommits)> --end-of-options <rev> -- <path>` (the paging exception above) | `{items: [{oid, parents, author, email, time, subject, status /* R100, M, A, … */, path /* the name at that commit */, oldPath /* a rename's or copy's old name, else null */}], nextCursor: skip \| null, truncated}` | `REV_UNKNOWN`; `OUTPUT_TOO_LARGE` |
+| `history.blame` | `{rev, path, start?: ≥ 1 (1), count?: 1…blameLinesMax}` | `cat-file -t <rev>:<path>` (a blob); `diff --numstat -z --no-ext-diff --no-textconv --no-renames --end-of-options <empty tree> <rev> -- <path>` (the line total; `-` = binary); `blame --porcelain --no-textconv --no-ignore-revs-file -L <start>,+<n> <rev> -- <path>` (no `--end-of-options`: blame reads it as a revision; `rev` is a full oid) | `{total, lines: [{n, oid, origLine, text}], commits: {[oid]: {author, mail, time, summary, filename, previous: oid \| null}}}`; `start` past the end: `lines: []` | `PATH_NOT_IN_COMMIT`; `BINARY_FILE`; `OUTPUT_TOO_LARGE` |
+| `history.reflog` | `{ref: 'HEAD' \| 'refs/heads/<b>', skip?: ≥ 0, limit?: 1…pageMax}` | `log -g -z --date=unix <LOG_SAFE> --format=%H%x00%gd%x00%gs%x00%gn%x00%ge%x00%s --skip=<skip> --max-count=<limit+1> --end-of-options <ref> --` (`%gd` is `<ref>@{<unix time>}` under `--date=unix`) | `{items: [{selector: '<HEAD \| b>@{skip+i}', oid, time, action /* %gs */, who: {name, email}, subject}], nextCursor}`; no such ref or no reflog: `items: []` | `BAD_REF` (anything else, before any exec) |
+| `history.paths` | `{rev}` | `ls-tree -r -z --name-only --full-tree --end-of-options <rev>` under `pathsMaxOutputBytes` | `{paths}` | `REV_UNKNOWN`; `OUTPUT_TOO_LARGE` (the palette then takes a typed path) |
+
 ### Merge, rebase and conflict ops
 
 Behaviour, the stop rule and the state detection: [merge](merge.md). The continue, skip and abort ops are `head.*` (the table above); `commit.state` reports what is in progress. Every write here is not cancellable; params are a plain object (an unknown key → `BAD_PARAMS`), oids full hex.
@@ -490,7 +501,9 @@ Behaviour, the stop rule and the state detection: [merge](merge.md). The continu
 
 ### Paging convention (for ops that list)
 
-An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b`, blobs by `cat-file -s` before reading.
+An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b` (`history.blame`), the reflog by `--skip` (`history.reflog`), blobs by `cat-file -s` before reading.
+
+**The one exception: `history.file`.** `git log --follow` applies `--skip` to the unfiltered walk and loses the rename when it skips one (a four-commit history with `--skip=2` comes back empty; `tests/history-git-probes.test.js` pins it), while `--max-count` counts the shown commits correctly. So each page re-walks from the frozen `rev` with `--max-count=skip+limit+1` and drops the first `skip` records. The walk never exceeds `HISTORY_LIMITS.followMaxCommits` commits, sized so that many records at `followRecordBudgetBytes` fit `fileMaxOutputBytes` (a test pins it); a page that reaches the cap answers `truncated: true` with `nextCursor: null`, and a longer record makes it refuse `OUTPUT_TOO_LARGE`, never a clipped page.
 
 
 ## Activity
@@ -578,6 +591,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `NOTHING_TO_STASH` | 409 | A save had nothing to stash: git printed "No local changes to save" on stdout (decided from that line, not from whether `refs/stash` moved) |
 | `PATH_BLOCKED` | 409 | A stash op (or `conflict.save`, or `conflict.take` for any path it names, before it writes anything; `conflict.read`, which would read through it) would write through something git cannot write into: a leading directory of a path it writes is an untracked (or ignored) symlink or file (`assertNotBlocked`), or — for `stash.applyFile`, `stash.pushLines`, `conflict.save`, and `conflict.take` on every path where no stage is a gitlink — the file itself is a directory or a link to a directory (`assertFileTarget`); `paths` ([stash → Gates](stash.md#gates)) |
 | `STASH_MOVED` | 409 | The stash list changed while dropping; the entry dropped by mistake was stored back; `{oid, restored}` |
+| `BINARY_FILE` | 409 | `history.blame` of a binary file (its numstat is `-`) |
 | `NOTHING_TO_UNDO`, `NOTHING_TO_REDO` | 409 | The checkout's undo (redo) slot is empty ([undo](undo.md)) |
 | `UNDO_STALE` | 409 | The slot no longer holds that `id`; or the checkout changed since the op (HEAD, a ref, the index or a file is not what the plan expects) — the slots are then cleared |
 | `UNDO_PUSHED` | 409 | A commit the op created is reachable from a remote-tracking ref; `oid`, `refs`; the slots are cleared |
