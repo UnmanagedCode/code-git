@@ -46,6 +46,29 @@ test('a push to a remote asking for credentials fails fast with REMOTE_AUTH_FAIL
   assert.equal(push.maxOutputBytes, NETWORK_LIMITS.maxOutputBytes);
 });
 
+test('an askpass program inherited from the System\'s environment never runs: a push to a credential-demanding remote fails fast', { skip: !hasHttp && 'this git has no git-remote-http' }, async (t) => {
+  const w = await refsWorld(t);
+  const server = http.createServer((req, res) => {
+    res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="x"' });
+    res.end();
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => new Promise((r) => server.close(r)));
+  // A hanging askpass, as a desktop session or credential manager may export: it marks that it ran, then waits.
+  const marker = path.join(w.repo.root, 'askpass-ran');
+  const askpass = path.join(w.repo.root, 'askpass.sh');
+  fs.writeFileSync(askpass, `#!/bin/sh\ntouch '${marker}'\nexec sleep 60\n`, { mode: 0o755 });
+  w.cc.state.inheritedEnv = { GIT_ASKPASS: askpass, SSH_ASKPASS: askpass, SSH_ASKPASS_REQUIRE: 'force' };
+  w.repo.git('remote', 'add', 'locked', `http://127.0.0.1:${server.address().port}/r.git`);
+  w.repo.git('tag', 'v1', w.base);
+  let timer;
+  const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('the push waited on the inherited askpass')), 15_000); });
+  await assert.rejects(Promise.race([w.op('tag.push', { remote: 'locked', names: ['v1'] }), late]).finally(() => clearTimeout(timer)), refused('REMOTE_AUTH_FAILED'));
+  assert.equal(fs.existsSync(marker), false, 'the inherited askpass never ran');
+  const push = w.cc.state.execCalls.find((b) => b.argv.includes('push'));
+  assert.deepEqual([push.env.GIT_ASKPASS, push.env.SSH_ASKPASS, push.env.SSH_ASKPASS_REQUIRE], ['false', 'false', 'never']);
+});
+
 test('an unreachable remote → REMOTE_UNREACHABLE', async (t) => {
   const w = await refsWorld(t);
   w.repo.git('remote', 'add', 'nowhere', path.join(w.repo.root, 'missing.git'));
