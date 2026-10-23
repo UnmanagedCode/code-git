@@ -1,0 +1,20 @@
+# File lists
+
+One component (`FileList`, `frontend/src/features/diff/FileList.tsx`) renders every file list: the commit details', the Changes panel's sections, an open diff's. User-facing behaviour: `docs/features.md` → File lists.
+
+## Decisions
+
+- **The diff has no list of its own; the right slot's list drives it.** Which list that is comes from `rightSlotFor` (`features/workdir/rightSlot.ts`): the Changes section for an unstaged / staged diff, the details when `diffOwnerCommit` (`features/diff/binding.ts`) is the single selected commit or stash, else the `DiffFilesPanel`. Below `lg` (right slot hidden) the diff header's **Files (n)** dialog holds the same `DiffFileList`.
+- **Bound vs unbound.** A list is *bound* while the open diff is its own (`useOpenDiff`): picking calls `setSelection` (no list refetch), `multi` and `followFocus` are on. Unbound, a pick opens the diff (details: `requestFileOpen`; Changes: `openDiff` / `openConflict`), and the list becomes bound on the next render. The Changes section stays bound to `workdirStore`'s rows (their counts); only `viewed` / `selected` come from the diff.
+- **`onSelect`'s `plain` flag** says a plain click or Enter, not a toggle, an extend or a focus-following move: the narrow dialogs (Files, Changes) close only on a plain pick, so ↑/↓ and Ctrl-click work inside them.
+- **Displayed order is the one order**: Shift-click ranges, ↑/↓ and the viewer's Previous / Next file all use `orderedFiles` (path order, or the tree's depth-first order), so Tree never jumps around.
+- **One persisted Path / Tree choice** (`state/fileView.ts`, key `graph:fileView`, the details' original key so a user's choice survives).
+- **Folder staging is stage / unstage only, one op** (`stageFilesOf` / `unstageFilesOf`, `patchPaths`): no N+1, reversible. A folder Stage leaves conflicted (`U`) files out (`git add` would mark them resolved). No folder Discard: bulk destruction stays behind **Discard all…**'s confirmation.
+- **Counts never cost a command per file.** Lists show numstat already fetched (`diff.files`, `graph.commit`'s one `diff-tree --raw --numstat`). An untracked file has no numstat (counting it would take one `--no-index` diff per file), so it shows none; a gitlink shows "submodule" (its numstat counts the `Subproject commit` line).
+
+## Gotchas
+
+- **A row's menu is portalled, but its key and click events still bubble through React** to the list and the row. The list's `onKeyDown` ignores events whose target is outside its DOM (`currentTarget.contains(target)`), and the menu content stops click propagation, or ↑/↓ in an open menu would move the list and a menu click would pick the row.
+- **Enter and S / U act only when the row itself has focus**, not a button inside it: a row button's Enter must activate the button.
+- **The Files dialog lives inside the diff's `<section>`**: its keys would reach `useDiffKeys` through React (Esc would close the diff, not the dialog). `DialogContent` stops key propagation; Radix's own Esc listener is a document capture listener, so the dialog still closes.
+- **Directory rows are not options** (`li role="presentation"` holding a `ul role="group"` named by the directory path): ↑/↓ query `li[role="option"]` in DOM order, which is the displayed order.

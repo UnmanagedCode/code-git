@@ -29,7 +29,7 @@ A file's commits across renames, who last changed each line, and where HEAD and 
 | Opened from | Item |
 |---|---|
 | A commit's file (details panel, context `'file'`) | **File history**, **Blame** (not for a file the commit deletes), at that commit |
-| A diff's file (`'diff-file'`, one file) | **File history**, **Blame**, at the diff's new commit, else HEAD |
+| A diff's file (`'diff-file'`, one file: the file list bound to an open diff — the details, the Changed files panel, the narrow Files dialog) | **File history**, **Blame**, at the diff's new commit, else HEAD |
 | A tracked Changes row (`'workdir-file'`) | **File history**, **Blame**, at HEAD (not for an untracked or added file) |
 | A local branch (`'branch'`) | **Show reflog** |
 | The palette | **File history…** / **Blame…** (pick one of HEAD's files, `history.paths`, or type a path), **Reflog** |
