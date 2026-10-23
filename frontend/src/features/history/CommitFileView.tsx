@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 import { loadFileDiff, type FileDiff } from '@/features/diff/api';
 import type { Marks } from '@/features/diff/CodeLine';
 import { FileContentView } from '@/features/diff/FileContentView';
+import { FileCounts } from '@/features/diff/FileList';
+import { lineCounts } from '@/features/diff/model';
 import { languageFor } from '@/features/diff/highlight';
 import { useTokenizer } from '@/features/diff/highlight/useTokenizer';
 import { SplitView } from '@/features/diff/SplitView';
@@ -34,6 +36,7 @@ export function CommitFileView({ tab, picked }: { tab: Tab; picked: Picked }) {
   const layout = prefs.view === 'file' ? 'file' : prefs.mode;
   const segs = useMemo(() => (diff && prefs.syntax ? highlightSides(diff.hunks, languageFor(picked.path), tokenize) : null), [diff, tokenize, prefs.syntax]);
   const rows = useMemo(() => (diff ? buildRows(diff, layout, segs) : []), [diff, layout, segs]);
+  const counts = useMemo(() => (diff ? lineCounts(diff) : null), [diff]);
   let body;
   if (!state || state.key !== key) body = <p className="p-3 text-sm text-muted-foreground">Loading…</p>;
   else if (state.error) body = <p role="alert" className="p-3 text-sm text-destructive">{state.error}</p>;
@@ -45,6 +48,7 @@ export function CommitFileView({ tab, picked }: { tab: Tab; picked: Picked }) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Commit change">
       <div className="flex items-center gap-2 border-b px-2 py-1" role="toolbar" aria-label="Change view">
         <span className="min-w-0 truncate font-mono text-xs">{picked.oldPath ? `${picked.oldPath} → ${picked.path}` : picked.path} @ {picked.oid.slice(0, 7)}</span>
+        {diff && counts && <FileCounts file={{ status: 'M', ...counts, binary: diff.binary, submodule: !!diff.submodule }} />}
         <div className="ml-auto flex rounded-md border p-0.5" role="group" aria-label="View">
           {(['diff', 'file'] as const).map((v) => (
             <Button key={v} variant={prefs.view === v ? 'secondary' : 'ghost'} size="sm" className="h-6 px-2 text-xs" aria-pressed={prefs.view === v} onClick={() => setPrefs({ view: v })}>

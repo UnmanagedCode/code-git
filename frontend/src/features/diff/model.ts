@@ -90,6 +90,14 @@ export const sideLines = (hunk: Hunk, side: 'old' | 'new'): DiffLine[] =>
 export const sideText = (hunk: Hunk, side: 'old' | 'new'): string => sideLines(hunk, side).map((l) => l.text).join('\n');
 
 /** A deleted file: no hunk has a new side. */
+/** A file diff's added and deleted lines: exact whatever the context, since every changed line is in a hunk. */
+export function lineCounts(fd: FileDiff): { added: number; deleted: number } {
+  let added = 0;
+  let deleted = 0;
+  for (const h of fd.hunks) for (const l of h.lines) { if (l.kind === 'add') added++; else if (l.kind === 'del') deleted++; }
+  return { added, deleted };
+}
+
 export const isDeletion = (fd: FileDiff): boolean => fd.hunks.length > 0 && fd.hunks.every((h) => h.newLines === 0);
 
 /**
