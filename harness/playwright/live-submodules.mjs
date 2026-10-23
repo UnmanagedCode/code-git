@@ -2,7 +2,9 @@
 // it and opens one checkout (default `test`) by URL. Asserts its Submodules panel renders from `submodule.list`, and that
 // a submodule tab naming a path that is not a cloned submodule (`sub=no-such-sub`) reaches the project's System through
 // cc's form-A exec as `-C no-such-sub --git-dir=.git` and is refused SUBMODULE_NOT_POPULATED. When the checkout has a
-// cloned, unblocked submodule it also opens it as its own repo view; otherwise it prints a SKIP line.
+// cloned, unblocked submodule it also opens it as its own repo view, then lists that submodule's own submodules and opens
+// the first cloned, unblocked one two levels deep (the containment preflight's git-dir check passing at both levels);
+// each level it cannot reach prints its own SKIP line.
 // It never calls a write op (it fails if the page does), never registers, rescans or enables the plugin, never seeds.
 // Run: CONDUCTOR_URL=http://127.0.0.1:<cc port> node harness/playwright/live-submodules.mjs [project[/worktree]]
 import { mkdirSync } from 'node:fs';
@@ -40,15 +42,33 @@ try {
   await withPage(async (page) => {
     const writes = [];
     const lists = [];
+    /** The last submodule.list answer per chain (JSON of target.sub, `[]` for the checkout), and each read's status per chain. */
+    const listsBy = new Map();
+    const reads = new Map();
+    const chainOf = (q) => JSON.stringify(JSON.parse(q.postData() ?? '{}').target?.sub ?? []);
     page.on('request', (q) => {
       const m = /\/api\/ops\/([^/?]+)$/.exec(new URL(q.url()).pathname);
       if (m && OPS.get(decodeURIComponent(m[1]))?.kind !== 'read') writes.push(m[1]);
     });
     page.on('response', async (r) => {
-      if (!r.url().endsWith('/api/ops/submodule.list') || r.status() !== 200) return;
+      const m = /\/api\/ops\/(repo\.summary|commit\.state|submodule\.list)$/.exec(r.url());
+      if (!m) return;
+      const chain = chainOf(r.request());
+      reads.set(`${m[1]} ${chain}`, r.status());
+      if (m[1] !== 'submodule.list' || r.status() !== 200) return;
       const body = await r.json().catch(() => null);
-      if (body?.ok && !JSON.parse(r.request().postData() ?? '{}').target?.sub) lists.push(body.result);
+      if (!body?.ok) return;
+      listsBy.set(chain, body.result);
+      if (chain === '[]') lists.push(body.result);
     });
+    /** Waits until `fn()` is truthy (a response may land after the page shows its result). */
+    const until = async (fn, what, ms = 60_000) => {
+      for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 250))) if (fn()) return;
+      throw new Error(`live-submodules: ${what} never happened`);
+    };
+    /** The backend's activity log (this script's own backend: a read). */
+    const activityLog = async () => (await (await fetch(`${srv.url}/api/activity`)).json()).entries;
+    const afterBase = (argv) => argv.slice(argv.indexOf('--work-tree=.') + 1).join(' ');
     const shot = async (name) => {
       const file = path.join(outDir, `submodules-${name}.png`);
       await page.screenshot({ path: file, animations: 'disabled' });
@@ -98,6 +118,37 @@ try {
       await page.getByText(/^\d+ commits loaded/).waitFor({ timeout: 60_000 });
       check(true, `${label} › ${open.path}: the graph's first page loaded`);
       await shot('open');
+
+      // 4. Its own submodules, listed in its tab; the first cloned, unblocked one opened two levels deep.
+      const first = JSON.stringify([open.path]);
+      await until(() => listsBy.has(first), `${label} › ${open.path}: submodule.list`);
+      check(await panel.getByRole('alert').count() === 0, `${label} › ${open.path}: its Submodules panel rendered without an error`);
+      const nested = listsBy.get(first).submodules.find((e) => e.populated && !e.blocked);
+      if (!nested) {
+        console.log(`SKIP: ${label} › ${open.path} has no populated submodule — the two-level chain not checked on a non-local System`);
+      } else {
+        const chain = [open.path, nested.path];
+        const key = JSON.stringify(chain);
+        const tabLabel = [label, ...chain].join(' › ');
+        await page.goto(`${srv.url}/${route(chain)}`);
+        await page.getByRole('heading', { level: 1, name: nested.path, exact: true }).waitFor({ timeout: 60_000 });
+        const trail = page.getByRole('navigation', { name: 'Submodule path', exact: true });
+        check(JSON.stringify(await trail.getByRole('button').allTextContents()) === JSON.stringify([label, open.path]), `${tabLabel}: the breadcrumb names ${label} and ${open.path}`);
+        await header.getByRole('group', { name: 'HEAD' }).waitFor({ timeout: 60_000 });
+        check(await header.getByRole('alert').count() === 0, `${tabLabel}: repo.summary loaded without an error`);
+        await page.getByText(/^\d+ commits loaded/).waitFor({ timeout: 60_000 });
+        check(true, `${tabLabel}: the graph's first page loaded`);
+        await until(() => reads.has(`commit.state ${key}`), `${tabLabel}: commit.state`);
+        check(reads.get(`repo.summary ${key}`) === 200 && reads.get(`commit.state ${key}`) === 200, `${tabLabel}: repo.summary and commit.state answered 200`);
+        // The containment preflight on the System: each chain level's git dir read, through cc, with exit 0.
+        // A preflight logs each level under its own chain: match the op runs of the nested tab's repo.summary instead.
+        const log = await activityLog();
+        const runs = new Set(log.filter((e) => e.op === 'repo.summary' && JSON.stringify(e.target.sub ?? []) === key).map((e) => e.opRunId));
+        const ran = log.filter((e) => runs.has(e.opRunId));
+        const level = (p) => ran.some((e) => afterBase(e.argv) === `-C ${p} --git-dir=.git rev-parse --absolute-git-dir` && e.exitCode === 0);
+        check(level(open.path) && level(chain.join('/')), `${tabLabel}: the git-dir check ran at both levels (-C ${open.path}, -C ${chain.join('/')}) with exit 0`);
+        await shot('nested');
+      }
     }
     check(writes.length === 0, `no write op was called${writes.length ? `: ${writes.join(', ')}` : ''}`);
   });

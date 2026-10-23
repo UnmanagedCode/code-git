@@ -115,6 +115,10 @@ Every op acts on the target's repo (the checkout or the chain's submodule) with 
 
 **Tab state**: `tabKey` appends `\0<path>` per chain entry (a checkout's key is unchanged); `refsKey(tab)` (branch tracking) is the project for a checkout and the tab key for a submodule; `prefsKey(tab)` (graph prefs, `code-git:graph:<prefsKey>`) is the bare project name for a checkout, else the project then `\0<path>` per chain entry (NUL is in no validated path, so `['a/b']` and `['a', 'b']` differ). Panel rows are keyed by entry name (unique per `.gitmodules` section; two sections may declare one path). A submodule tab's graph lists itself as its only checkout (no cc worktree list). The route carries the chain as repeated `sub` params.
 
+## Live check (`harness/playwright/live-submodules.mjs`)
+
+Read-only against a live cc, default project `test`: the checkout's list, a refused `sub=no-such-sub`, and — when the System has them — a first-level submodule opened as its own tab, then a submodule of it opened two levels deep (both chain levels' git-dir checks passing through cc's exec). The seed shape on cc-box: `/app/vendor/live-sub` (name `live-sub`, url `/srv/git/live-sub.git`) holding `deps/inner` (name `inner`, url `/srv/git/inner.git`), both committed and cloned with `submodule update --init --recursive`, inner's git dir at `/app/.git/modules/live-sub/modules/inner`. Details and the exact SKIP lines: [harness/playwright/README.md](../harness/playwright/README.md). **Update** of a submodule whose url is a local path needs `protocol.file.allow=always` in the System's global git config (git's default refuses local-path submodule clones; code-git never sets it, and refuses it in the repository's own config); the live check does not need it.
+
 ## Known limitations
 
 - **Remove keeps `.git/modules/<name>`** (git has no command that deletes it), so adding a submodule with the same name again is refused (`SUBMODULE_EXISTS {reason: 'gitdir'}`).
