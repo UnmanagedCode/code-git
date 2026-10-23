@@ -49,22 +49,25 @@ function matchPattern(pattern, ref) {
 }
 
 /**
- * Every tracking ref the parsed refspecs map `ref` (a branch on the remote, `refs/heads/<b>`) to, in refspec order
- * (git writes the first; all are checked). Negative refspecs exclude nothing here: git's push-time tracking update
+ * Every local ref the parsed refspecs map `ref` (a ref on the remote: a branch or a tag) to → [{refspec, dst}], in
+ * refspec order, each dst once (git writes the first; all are checked). Negative refspecs exclude nothing here: git's push-time tracking update
  * ignores them (verified with git 2.55: `^refs/heads/b` does not stop `push :refs/heads/b` writing through a symbolic
  * tracking ref), so honouring them would hide the very ref git writes.
  */
-export function trackingRefsFor(specs, ref) {
+export function trackingMapFor(specs, ref) {
   const out = [];
   for (const s of specs) {
     if (s.negative || s.dst === null) continue;
     const m = matchPattern(s.src, ref);
     if (m === null) continue;
     const dst = s.dst.includes('*') ? s.dst.replace('*', m) : s.dst;
-    if (!out.includes(dst)) out.push(dst);
+    if (!out.some((x) => x.dst === dst)) out.push({ refspec: s.refspec, dst });
   }
   return out;
 }
+
+/** trackingMapFor's refnames only. */
+export const trackingRefsFor = (specs, ref) => trackingMapFor(specs, ref).map((x) => x.dst);
 
 /** `--get-all` output → its values, empty ones kept (each value ends with a newline). */
 const values = (r) => {
@@ -120,20 +123,33 @@ export async function fetchSpecs(git, remote) {
   return values(fetch).filter(Boolean).map((s) => parseFetchRefspec(remote, s));
 }
 
-/** The namespaces a fetch may write besides its refspecs' destinations: tags it follows or a refspec names. */
+/** Where a fetch may write: its refspecs' destinations must lie here. */
 const FETCH_DST_ROOTS = ['refs/remotes/', 'refs/tags/'];
+/** Where a push may update a local ref through the fetch refspecs (git's remote-tracking update). */
+const PUSH_TRACKING_ROOTS = ['refs/remotes/'];
+
+/** THE destination rule fetch and push share: each mapped {refspec, dst} under one of `roots`, else REMOTE_CONFIG_UNSUPPORTED naming the refspec. */
+function assertUnder(remote, mapped, roots, why) {
+  for (const { refspec, dst } of mapped) {
+    if (!roots.some((root) => dst.startsWith(root))) throw unsupported(remote, refspec, why);
+  }
+}
 
 /**
  * Refuses REMOTE_CONFIG_UNSUPPORTED when a refspec of `remote` would make a fetch write outside `refs/remotes/` or
  * `refs/tags/`: a `+refs/heads/*:refs/heads/*` mirror would move local branches, `code-conductor/*` ones included.
  */
 export function assertFetchDestinations(remote, specs) {
-  for (const s of specs) {
-    if (s.negative || s.dst === null) continue;
-    if (!FETCH_DST_ROOTS.some((root) => s.dst.startsWith(root))) {
-      throw unsupported(remote, s.refspec, 'a fetch would write outside refs/remotes/ and refs/tags/');
-    }
-  }
+  assertUnder(remote, storing(specs).map((s) => ({ refspec: s.refspec, dst: s.dst })), FETCH_DST_ROOTS, 'a fetch would write outside refs/remotes/ and refs/tags/');
+}
+
+/**
+ * Refuses REMOTE_CONFIG_UNSUPPORTED when a push would update (or, pushing a delete, delete) a local ref outside
+ * `refs/remotes/` through `mapped` (trackingMapFor of a pushed destination): `+refs/heads/main:refs/heads/code-conductor/wt`
+ * would move a cc branch, or one checked out elsewhere, with no acknowledgement.
+ */
+export function assertPushTracking(remote, mapped) {
+  assertUnder(remote, mapped, PUSH_TRACKING_ROOTS, 'a push would update a local ref outside refs/remotes/ through it');
 }
 
 const storing = (specs) => specs.filter((s) => !s.negative && s.dst !== null);

@@ -3,7 +3,7 @@ import { parseRemotes } from '../parse/graph.js';
 import { parsePushPorcelain, splitRequested } from '../parse/push.js';
 import { assertNoSymref } from '../refs/resolve.js';
 import { netRun, remoteFailure } from './net.js';
-import { fetchSpecs, trackingRefsFor } from './tracking.js';
+import { assertPushTracking, fetchSpecs, trackingMapFor } from './tracking.js';
 
 // Pushing, and the remote-name checks every remote op shares. The push runs through netRun (net.js): no prompt, no
 // `ext::`/`fd::` transport. Hooks (pre-push) always run.
@@ -29,18 +29,18 @@ export async function knownRemote(git, name) {
 /**
  * `git push --porcelain --no-follow-tags` of `refspecs` (`src:dst`) to `remote` → {updated, rejected, upToDate,
  * unrequested} (splitRequested over parsePushPorcelain): the first three hold only the refspecs' destinations.
- * `--no-follow-tags` keeps a configured `push.followTags` from publishing tags nobody selected. A branch destination whose
- * remote-tracking ref here (per the remote's fetch refspecs) is symbolic, live or dangling, refuses SYMBOLIC_REF, and
- * a fetch config code-git cannot map refuses REMOTE_CONFIG_UNSUPPORTED, before anything runs. A push that reports no
+ * `--no-follow-tags` keeps a configured `push.followTags` from publishing tags nobody selected. Before anything runs: a
+ * destination whose mapped local ref (per the remote's fetch refspecs) is symbolic, live or dangling, refuses
+ * SYMBOLIC_REF; one mapped outside refs/remotes/, or a fetch config code-git cannot map, REMOTE_CONFIG_UNSUPPORTED. A push that reports no
  * ref at all failed as a whole: remoteFailure (REMOTE_AUTH_FAILED / REMOTE_UNREACHABLE with a reason, or GIT_FAILED with
  * git's stderr: a pre-push hook that refused lands here). Rejected refs are the caller's to judge.
  * `setUpstream` adds `--set-upstream`; each lease `{ref, expect}` adds `--force-with-lease=<ref>:<expect>` (expect null:
  * the ref must not exist on the remote). Never `--force` and never a `+` refspec: a lease is the only way to overwrite.
  */
 export async function push(git, remote, refspecs, { setUpstream = false, leases = [] } = {}) {
-  // git updates the remote-tracking ref of every branch it pushes or deletes, following a symbolic one: an alias
+  // git updates the remote-tracking ref of every ref it pushes or deletes, following a symbolic one: an alias
   // → refs/heads/victim would move or delete `victim` past every guard. Which ref that is comes from the remote's
-  // configured fetch refspecs (tracking.js); tags update no tracking ref.
+  // configured fetch refspecs (tracking.js), and it must lie under refs/remotes/.
   for (const ref of await trackingRefsOfPush(git, remote, refspecs)) await assertNoSymref(git, ref);
   const options = [
     ...(setUpstream ? ['--set-upstream'] : []),
@@ -56,12 +56,23 @@ export async function push(git, remote, refspecs, { setUpstream = false, leases 
 /** Rejected refs named in a PUSH_REJECTED message; the rest are counted (all are in `rejected`). */
 const REJECTED_NAMED = 5;
 
-/** Every tracking ref here a push of `refspecs` to `remote` may update: its branch destinations mapped through the fetch config. */
+/**
+ * Every local ref a push of `refspecs` to `remote` may update: each destination (branch or tag: git updates either)
+ * mapped through the fetch config (tracking.js), all of them under refs/remotes/ (assertPushTracking). A ref mapped to
+ * the refspec's own source is left out: git writes it the value it just pushed from it (a tag pushed under
+ * `+refs/tags/*:refs/tags/*`), never another ref's.
+ */
 async function trackingRefsOfPush(git, remote, refspecs) {
-  const branches = refspecs.map((s) => s.slice(s.indexOf(':') + 1)).filter((d) => d.startsWith('refs/heads/'));
-  if (!branches.length) return [];
   const specs = await fetchSpecs(git, remote);
-  return [...new Set(branches.flatMap((b) => trackingRefsFor(specs, b)))];
+  const out = new Set();
+  for (const spec of refspecs) {
+    const i = spec.indexOf(':');
+    const src = spec.slice(0, i);
+    const mapped = trackingMapFor(specs, spec.slice(i + 1)).filter((m) => m.dst !== src);
+    assertPushTracking(remote, mapped);
+    for (const m of mapped) out.add(m.dst);
+  }
+  return [...out];
 }
 
 /** PUSH_REJECTED with the rejected refs when a push changed nothing and refused something; the message names each ref and why. */

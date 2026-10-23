@@ -97,7 +97,7 @@ test('a fetch refspec that stores nothing for the branch maps nothing: the delet
   assert.deepEqual(r.undo.remoteRefs, [{ remote: 'origin', ref: 'refs/heads/doomed', old: null, new: null, tracking: null }]);
 });
 
-test('an unparseable fetch refspec: REMOTE_CONFIG_UNSUPPORTED and no push; tag pushes do not read it', async (t) => {
+test('an unparseable fetch refspec: REMOTE_CONFIG_UNSUPPORTED and no push, for a tag push too (git maps tags through it as well)', async (t) => {
   const { w, pushed } = await aliasWorld(t, ['+refs/heads/*:refs/remotes/origin/*'], null);
   // A refspec git accepts (a short source, DWIM-expanded by fetch) but code-git does not map with confidence. One git
   // itself refuses (two stars) fails earlier, in `git remote`, as GIT_FAILED.
@@ -106,7 +106,8 @@ test('an unparseable fetch refspec: REMOTE_CONFIG_UNSUPPORTED and no push; tag p
     refused('REMOTE_CONFIG_UNSUPPORTED', { remote: 'origin', refspec: 'doomed:refs/remotes/short/doomed' }));
   assert.equal(pushed(), false);
   w.repo.git('tag', 'v1', w.base);
-  assert.deepEqual((await w.op('tag.push', { remote: 'origin', names: ['v1'] })).pushed, ['v1']);
+  await assert.rejects(w.op('tag.push', { remote: 'origin', names: ['v1'] }), refused('REMOTE_CONFIG_UNSUPPORTED', { refspec: 'doomed:refs/remotes/short/doomed' }));
+  assert.equal(pushed(), false);
 });
 
 test('the default fetch refspec behaves as before: a plain delete runs and its undo names origin/<b>; a symbolic origin/<b> refuses', async (t) => {
