@@ -16,6 +16,9 @@ export function parseConfigZ(out) {
   });
 }
 
+/** A raw url list `remote set-url` cannot replace as one value (an empty reset counts): remote.edit refuses it. */
+export const multiValued = (values) => values.length > 1;
+
 /** git's url list semantics (hasUrl): an empty value clears what came before it. */
 const effective = (values) => values.slice(values.lastIndexOf('') + 1);
 
@@ -44,10 +47,11 @@ export async function remoteNames(git) {
 }
 
 /**
- * Every remote: [{name, urls, pushUrls, fetch, displayUrl, displayPushUrl, legacy}] in `git remote` order. `urls` /
- * `pushUrls` as git counts them (after the last empty value); `fetch` as configured; `displayUrl` the first url (else
+ * Every remote: [{name, urls, pushUrls, fetch, displayUrl, displayPushUrl, legacy, multiUrl, multiPushUrl}] in `git remote`
+ * order. `urls` / `pushUrls` as git counts them (after the last empty value); `fetch` as configured; `displayUrl` the first url (else
  * push url) and `displayPushUrl` the first push url, a password masked, or null; `legacy` true when git reads the remote from a legacy `.git/remotes` / `.git/branches` file
- * (no url in config and such a file exists).
+ * (no url in config and such a file exists); `multiUrl` / `multiPushUrl` when that raw list holds more than one value
+ * (remote.edit refuses to replace it).
  */
 export async function listRemotes(git) {
   const names = await remoteNames(git);
@@ -59,7 +63,11 @@ export async function listRemotes(git) {
     const pushUrls = effective(c.pushUrls);
     const legacy = !hasUrl(c.urls) && (await legacyRemoteFile(git, name)) !== null;
     const masked = (u) => (u === undefined ? null : maskUrl(u));
-    out.push({ name, urls, pushUrls, fetch: c.fetch, displayUrl: masked(urls[0] ?? pushUrls[0]), displayPushUrl: masked(pushUrls[0]), legacy });
+    out.push({
+      name, urls, pushUrls, fetch: c.fetch, displayUrl: masked(urls[0] ?? pushUrls[0]), displayPushUrl: masked(pushUrls[0]), legacy,
+      // What remote.edit's single-value check counts: raw config values, an empty reset included.
+      multiUrl: multiValued(c.urls), multiPushUrl: multiValued(c.pushUrls),
+    });
   }
   return out;
 }

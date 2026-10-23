@@ -10,7 +10,7 @@ import { fetchFlow } from './run';
 
 // The add / edit remote dialogs and the push dialog (a branch with no upstream, or "Push to <remote>…"). Add and edit
 // keep the dialog open while the op runs and show a refusal (BAD_URL, REMOTE_EXISTS, BAD_REF) inline; edit sends only
-// what changed, so a masked url is never written back.
+// what changed, and never a field still holding the mask, so a masked url is never written back.
 
 type Of<K extends RemoteDialog['kind']> = Extract<RemoteDialog, { kind: K }>;
 
@@ -52,6 +52,9 @@ export function AddRemoteDialog({ d }: { d: Of<'add'> }) {
   );
 }
 
+/** The mark maskUrl puts where a url's password was: a field still holding it must be retyped, never sent. */
+const MASK = ':***@';
+
 export function EditRemoteDialog({ d }: { d: Of<'edit'> }) {
   // The remote as listed when the dialog opened: what "changed" is measured against.
   const [info] = useState(() => remoteInfo(d.tab.project, d.remote));
@@ -64,21 +67,25 @@ export function EditRemoteDialog({ d }: { d: Of<'edit'> }) {
   const n = name.trim();
   const u = url.trim();
   const p = pushUrl.trim();
-  const multiUrl = (info?.urls.length ?? 0) > 1;
-  const multiPush = (info?.pushUrls.length ?? 0) > 1;
+  // From the raw config lists (remote.list): what remote.edit's single-value check counts.
+  const multiUrl = info?.multiUrl ?? false;
+  const multiPush = info?.multiPushUrl ?? false;
   const change: { url?: string; pushUrl?: string | null } = {
     ...(!multiUrl && u !== shownUrl ? { url: u } : {}),
     ...(!multiPush && p !== shownPush ? { pushUrl: p || null } : {}),
   };
+  const masked = [change.url, change.pushUrl].some((v) => v?.includes(MASK));
   const renamed = n !== d.remote;
   const changed = renamed || Object.keys(change).length > 0;
   return (
     <RefDialogFrame
       title={`Edit remote ${d.remote}`} submit="Save" busyLabel="Saving…" busy={busy} error={error} onClose={closeRemoteDialog}
-      canSubmit={changed && n !== '' && (change.url === undefined || u !== '')}
+      canSubmit={changed && !masked && n !== '' && (change.url === undefined || u !== '')}
+      // The field edits run against the remote's current name first and the rename last: a retry after a failed
+      // rename repeats both (an edit to the same value is a no-op), and never names a remote that no longer exists.
       onSubmit={() => void run(d.tab, { running: `Saving ${d.remote}…`, done: () => `Saved remote ${n}` }, async () => {
+        if (Object.keys(change).length) await editRemote(d.tab, d.remote, change);
         if (renamed) await renameRemote(d.tab, d.remote, n);
-        if (Object.keys(change).length) await editRemote(d.tab, n, change);
       }, () => { closeRemoteDialog(); void refreshRemotes(d.tab); })}
     >
       <label className={fieldClass}>
@@ -93,6 +100,7 @@ export function EditRemoteDialog({ d }: { d: Of<'edit'> }) {
         Push URL (empty: the fetch URL)
         <Input value={pushUrl} disabled={multiPush} onChange={(e) => setPushUrl(e.target.value)} spellCheck={false} autoComplete="off" />
       </label>
+      {masked && <p role="alert" className="text-sm text-destructive">The password is hidden as ***: retype the whole URL, password included.</p>}
       {(multiUrl || multiPush) && <p role="note" className="text-sm text-muted-foreground">This remote has several {multiUrl ? 'fetch' : 'push'} URLs: edit them with git.</p>}
     </RefDialogFrame>
   );

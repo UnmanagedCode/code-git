@@ -25,7 +25,7 @@ Talking to other repositories: the remotes' config (add, edit, rename, remove), 
 | Dialog | Content |
 |---|---|
 | Add remote | Name, Fetch URL, Push URL (optional); **Fetch after adding** (on) |
-| Edit remote | Name (a change renames first), Fetch URL and Push URL prefilled with the masked display urls. Only changed fields are sent; an emptied push url is removed; a list of several urls is shown disabled ("edit them with git") |
+| Edit remote | Name, Fetch URL and Push URL prefilled with the masked display urls. Only changed fields are sent, against the current name, and a rename runs last (a retry after a failed rename repeats both, never naming a remote that is gone); an emptied push url is removed. A changed field still holding the mask (`:***@`) cannot be saved ("retype the whole URL, password included"), so a masked password is never written back. A field whose raw config list holds several values (`multiUrl` / `multiPushUrl`, an empty reset counting) is shown disabled ("edit them with git") |
 | Push `<branch>` | Remote (select; preselected from the menu), Branch on the remote (prefilled: the same name), **Set as upstream** (on when the branch has no upstream). Push closes the dialog and runs the push flow |
 
 ### Confirmations and toasts
@@ -78,7 +78,7 @@ Off by default (`autoFetchMinutes: 0`, per project, `code-git:remotes:<project>`
 - **Passwords in urls** are never shown: `remote.list`'s `displayUrl` / `displayPushUrl` and the activity log's argv (so `/api/activity`, its events and the Activity panel) go through `maskUrl` (`src/mask.js`), which hides everything from the userinfo's first `:` to the authority's last `@` (a password may hold `/` and `@`; a path holding `@` after a `user:` prefix is masked too). Git config keeps the real url.
 - **Urls** typed in the UI pass `remoteUrl` (`src/git/remote/url.js`) or are refused `BAD_URL`: `http(s)://`, `ssh://`, `git+ssh://`, `ssh+git://`, `git://`, `file://`, an absolute path, scp-like `[user@]host:path`. Never a `<transport>::` url (a remote helper; `ext::` runs a command), a leading `-`, a host starting with `-`, whitespace or control characters, or more than `URL_MAX` characters.
 - **New names** pass `newRemoteName`: git's own rule (a valid `refs/remotes/<name>/…`), else `BAD_REF`.
-- **Edit** writes only the fields sent; the UI sends only what changed, so a masked `displayUrl` is never written back. A url list with several values is refused (`REMOTE_CONFIG_UNSUPPORTED`).
+- **Edit** writes only the fields sent; the UI sends only what changed, and never a field still holding the mask. A raw url list with several values (an empty reset counts) is refused (`REMOTE_CONFIG_UNSUPPORTED`); `remote.list` reports the same count as `multiUrl` / `multiPushUrl` (`multiValued` in `src/git/remote/config.js`), so the UI disables that field.
 - **Rename** only for the default refspec `+refs/heads/*:refs/remotes/<name>/*`, the one shape git rewrites; git moves the tracking refs (HEAD alias included) and rewrites `branch.<b>.remote`.
 - **Remove**: git deletes the remote's `refs/remotes/` refs its fetch refspecs map (except those another remote also maps) and every `branch.<b>.remote` / `.merge` naming it. Local branches and tags stay.
 - **Legacy remotes** (no url in config, read from `.git/remotes/<name>` or `.git/branches/<name>`): listed (`legacy: true`), never edited, renamed or removed.

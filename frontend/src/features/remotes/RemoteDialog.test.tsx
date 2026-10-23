@@ -48,7 +48,7 @@ test('add with "Fetch after adding" off fetches nothing', async () => {
   expect(w.posts('remote.fetch')).toEqual([]);
 });
 
-test('edit sends only what changed: the masked url is never written back; an emptied push url is removed; a rename runs first', async () => {
+test('edit sends only what changed: the masked url is never written back; an emptied push url is removed; the field edits run before a rename', async () => {
   const origin = remote('origin', { urls: ['https://u:secret@h/r.git'], displayUrl: 'https://u:***@h/r.git', pushUrls: ['git@h:p.git'], displayPushUrl: 'git@h:p.git' });
   const w = remotesWorld({ remotes: [origin] });
   render(<RemotesHost />);
@@ -64,21 +64,70 @@ test('edit sends only what changed: the masked url is never written back; an emp
   await type('Fetch URL', 'https://h/new.git');
   await submit('Save');
   await waitFor(() => expect(remoteDialogStore.get()).toBeNull());
+  expect(w.posts('remote.edit').at(-1)).toEqual({ name: 'origin', url: 'https://h/new.git' });
   expect(w.posts('remote.rename')).toEqual([{ name: 'origin', newName: 'mirror' }]);
-  expect(w.posts('remote.edit').at(-1)).toEqual({ name: 'mirror', url: 'https://h/new.git' });
   const order = w.fetch.calls.map((c) => c.url.pathname).filter((p) => /remote\.(rename|edit)$/.test(p));
-  expect(order.slice(-2)).toEqual(['/api/ops/remote.rename', '/api/ops/remote.edit']);
+  expect(order.slice(-2)).toEqual(['/api/ops/remote.edit', '/api/ops/remote.rename']);
 });
 
-test('edit of a remote with several urls disables that field and never sends it', async () => {
-  const w = remotesWorld({ remotes: [remote('origin', { urls: ['/a.git', '/b.git'], displayUrl: '/a.git' })] });
+test('a rename that fails after the field edit: a retry edits the same remote again and renames, never a name that no longer exists', async () => {
+  let renames = 0;
+  const w = remotesWorld({ answers: { 'remote.rename': () => (renames++ === 0 ? refusal('REMOTE_EXISTS', 'a remote mirror already exists') : { name: 'mirror', undo: {} }) } });
+  render(<RemotesHost />);
+  act(() => openRemoteDialog({ kind: 'edit', tab: T, remote: 'origin' }));
+  await type('Name', 'mirror');
+  await type('Fetch URL', 'https://h/new.git');
+  await submit('Save');
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('a remote mirror already exists'));
+  expect(remoteDialogStore.get()?.kind).toBe('edit');
+  await submit('Save');
+  await waitFor(() => expect(remoteDialogStore.get()).toBeNull());
+  expect(w.posts('remote.edit')).toEqual([{ name: 'origin', url: 'https://h/new.git' }, { name: 'origin', url: 'https://h/new.git' }]);
+  expect(w.posts('remote.rename')).toEqual([{ name: 'origin', newName: 'mirror' }, { name: 'origin', newName: 'mirror' }]);
+});
+
+test('a field still holding the mask is never submitted: Save is refused inline until the whole url is retyped', async () => {
+  const origin = remote('origin', { urls: ['https://u:secret@h/r.git'], displayUrl: 'https://u:***@h/r.git', pushUrls: ['https://u:tok@h/p.git'], displayPushUrl: 'https://u:***@h/p.git' });
+  const w = remotesWorld({ remotes: [origin] });
+  render(<RemotesHost />);
+  act(() => openRemoteDialog({ kind: 'edit', tab: T, remote: 'origin' }));
+  const save = () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+  await userEvent.type(field('Fetch URL'), '2');
+  expect(field('Fetch URL').value).toBe('https://u:***@h/r.git2');
+  expect(save().disabled).toBe(true);
+  expect(screen.getByRole('alert').textContent).toContain('retype the whole URL');
+  await submit('Save');
+  await type('Fetch URL', 'https://u:new@h/r.git');
+  expect(save().disabled).toBe(false);
+  await userEvent.type(field('Push URL (empty: the fetch URL)'), 'x');
+  expect(save().disabled).toBe(true);
+  await type('Push URL (empty: the fetch URL)', 'https://u:***@h/other.git');
+  expect(save().disabled).toBe(true);
+  await type('Push URL (empty: the fetch URL)', '');
+  await submit('Save');
+  await waitFor(() => expect(remoteDialogStore.get()).toBeNull());
+  expect(w.posts('remote.edit')).toEqual([{ name: 'origin', url: 'https://u:new@h/r.git', pushUrl: null }]);
+  expect(JSON.stringify(w.posts('remote.edit'))).not.toContain('***');
+});
+
+test('edit of a remote whose raw url list holds several values (an empty reset too) disables that field and never sends it', async () => {
+  const w = remotesWorld({ remotes: [remote('origin', { urls: ['/second.git'], displayUrl: '/second.git', multiUrl: true })] });
   render(<RemotesHost />);
   act(() => openRemoteDialog({ kind: 'edit', tab: T, remote: 'origin' }));
   expect(field('Fetch URL').disabled).toBe(true);
+  expect(field('Push URL (empty: the fetch URL)').disabled).toBe(false);
   expect(screen.getByRole('note').textContent).toContain('several fetch URLs');
   await type('Push URL (empty: the fetch URL)', '/p.git');
   await submit('Save');
   await waitFor(() => expect(w.posts('remote.edit')).toEqual([{ name: 'origin', pushUrl: '/p.git' }]));
+});
+
+test('a raw push url list of several values disables the push url field only', async () => {
+  remotesWorld({ remotes: [remote('origin', { pushUrls: ['/p2.git'], displayPushUrl: '/p2.git', multiPushUrl: true })] });
+  render(<RemotesHost />);
+  act(() => openRemoteDialog({ kind: 'edit', tab: T, remote: 'origin' }));
+  expect([field('Fetch URL').disabled, field('Push URL (empty: the fetch URL)').disabled]).toEqual([false, true]);
+  expect(screen.getByRole('note').textContent).toContain('several push URLs');
 });
 
 test('the Push dialog pushes the branch to the chosen remote under the typed name, setting the upstream by default', async () => {

@@ -6,7 +6,7 @@ import { shortBranch } from '../refs/check.js';
 import { assertCcAck, assertCcHeadAck, assertNotSymbolic, ownHead, readHeads } from '../refs/heads.js';
 import { assertNoSymref, refEntries } from '../refs/resolve.js';
 import { undoRecord } from '../refs/undo.js';
-import { assertNotLegacy, listRemotes, remoteNames, remoteSnapshot } from '../remote/config.js';
+import { assertNotLegacy, listRemotes, multiValued, remoteNames, remoteSnapshot } from '../remote/config.js';
 import { fetchRemote } from '../remote/fetch.js';
 import { fastForward, merge, rebase } from '../remote/integrate.js';
 import { netRun, remoteFailure } from '../remote/net.js';
@@ -107,7 +107,7 @@ async function trackingRefsOf(git, name) {
 
 /** The single value of a url list an edit replaces; a remote with several (or a legacy file) is not one code-git edits. */
 function assertSingle(name, values, what) {
-  if (values.length > 1) {
+  if (multiValued(values)) {
     throw new Refusal('REMOTE_CONFIG_UNSUPPORTED', `${name} has ${values.length} ${what} values: edit them with git`, { remote: name, refspec: null });
   }
 }

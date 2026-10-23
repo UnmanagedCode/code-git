@@ -6,6 +6,8 @@ import type { UndoRecord, Unrequested } from '@/features/branches/api';
 /** `displayUrl` (the first url, else push url) and `displayPushUrl`, any password shown as ***: the only urls the UI renders. */
 export interface RemoteInfo {
   name: string; urls: string[]; pushUrls: string[]; fetch: string[]; displayUrl: string | null; displayPushUrl: string | null; legacy: boolean;
+  /** The raw url / push url list holds several values (an empty reset counts): remote.edit refuses to replace it. */
+  multiUrl: boolean; multiPushUrl: boolean;
 }
 export interface RefMove { ref: string; old: string | null; new: string | null }
 export interface FetchedRemote { remote: string; changes: RefMove[]; pruned: string[]; symrefsResolved: { ref: string; target: string }[]; partial: string | null }

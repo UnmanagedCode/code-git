@@ -15,7 +15,7 @@ export const HEAD_OID = oid(9);
 export const ORIGIN_MAIN = oid(8);
 
 export const remote = (name: string, over: Partial<RemoteInfo> = {}): RemoteInfo => ({
-  name, urls: [`https://h/${name}.git`], pushUrls: [], fetch: [`+refs/heads/*:refs/remotes/${name}/*`], displayUrl: `https://h/${name}.git`, displayPushUrl: null, legacy: false, ...over,
+  name, urls: [`https://h/${name}.git`], pushUrls: [], fetch: [`+refs/heads/*:refs/remotes/${name}/*`], displayUrl: `https://h/${name}.git`, displayPushUrl: null, legacy: false, multiUrl: false, multiPushUrl: false, ...over,
 });
 
 const emptyUndo = { refs: [], remoteRefs: [], head: null, worktreeSnapshot: null, remotes: [] };
