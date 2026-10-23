@@ -63,6 +63,9 @@ test('blocked: ..-name, .git-alias path, symlink escape (probe); no blocked path
   gm('submodule.alias.path', 'x/.GIT');
   gm('submodule.dash.path', '-oops');
   gm('submodule.dup.path', 'libA');
+  // A bad name and a bad path: reported as the path, which never reaches argv.
+  gm('submodule.../both.path', '-both');
+  gm('submodule.../abs.path', '/abs/x');
   fs.symlinkSync(path.join(w.root, 'libA-work'), w.file('sym'));
   gm('submodule.sym.path', 'sym');
   gm('submodule.sym.url', w.urls.libA);
@@ -76,7 +79,11 @@ test('blocked: ..-name, .git-alias path, symlink escape (probe); no blocked path
   // Two entries declaring libA: neither can be told apart, both blocked.
   assert.equal(by.dup.blocked, 'path');
   assert.equal(by.libA.blocked, 'path');
-  for (const a of w.execArgv()) for (const bad of ['x/.GIT', '-oops']) assert.equal(a.includes(bad), false, `${bad} in ${a}`);
+  assert.equal(by['../both'].blocked, 'path');
+  assert.equal(by['../abs'].blocked, 'path');
+  const blockedPaths = list.submodules.filter((e) => e.blocked === 'path' && e.path !== 'libA').map((e) => e.path);
+  assert.deepEqual(blockedPaths.sort(), ['-both', '-oops', '/abs/x', 'x/.GIT']);
+  for (const a of w.execArgv()) for (const bad of blockedPaths) assert.equal(a.some((x) => x === bad || x.includes(bad)), false, `${bad} in ${a}`);
 });
 
 test('.gitmodules absent → [] with one exec beyond toplevel', async (t) => {
@@ -140,7 +147,7 @@ test('nested list in a sub tab', async (t) => {
   const list = await w.ok('submodule.list', undefined, ['libA']);
   assert.deepEqual(list.submodules.map((e) => [e.name, e.path, e.populated, e.url]), [['libB', 'libB', true, w.urls.libB]]);
   assert.equal(list.submodules[0].head, w.repo.git('-C', 'libA/libB', 'rev-parse', 'HEAD'));
-  assert.ok(w.execArgv().some((a) => afterBase(a).join(' ') === '-C libA --git-dir=.git -C libB --git-dir=.git rev-parse --show-toplevel HEAD'));
+  assert.ok(w.execArgv().some((a) => afterBase(a).join(' ') === '-C libA --git-dir=.git -C libB --git-dir=.git rev-parse --show-toplevel --absolute-git-dir HEAD'));
   assert.deepEqual((await w.ok('submodule.list', undefined, ['libA', 'libB'])).submodules, []);
 });
 

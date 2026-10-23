@@ -1,5 +1,6 @@
 import { Refusal } from '../../refusals.js';
 import { joinMessage, messageParams } from '../commit/message.js';
+import { worktreeEntry } from '../diff/noIndex.js';
 import { bad, optBool, paramsObject } from '../params.js';
 import { netRun } from '../remote/net.js';
 import { submoduleFailure } from '../submodule/failure.js';
@@ -83,6 +84,10 @@ export const ops = [
       const declared = await readGitmodules(git);
       if (inIndex.stdout.length || declared.some((e) => e.path === p.path || e.name === name)) {
         throw new Refusal('SUBMODULE_EXISTS', `${p.path} or the name ${name} is already in use`, { reason: 'exists', path: p.path, name });
+      }
+      // git would adopt whatever is there instead of cloning (an existing repository, or the one a `.git` gitfile names).
+      if ((await worktreeEntry(git, p.path)).kind !== 'absent') {
+        throw new Refusal('SUBMODULE_EXISTS', `${p.path} already exists in the working tree: choose an empty path`, { reason: 'exists', path: p.path, name });
       }
       await assertNoRepoProtocolConfig(git);
       if (isRelativeUrl(p.url)) await assertDefaultRemoteUrl(git);

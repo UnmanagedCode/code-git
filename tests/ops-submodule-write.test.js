@@ -44,6 +44,12 @@ test('add refuses SUBMODULE_EXISTS for an existing path, name or kept gitdir; a 
   w.repo.write('tracked/x.txt', 'x\n');
   w.repo.git('add', 'tracked');
   await refusal(w, 'submodule.add', { url: w.urls.libA, path: 'tracked/x.txt' }, 'SUBMODULE_EXISTS');
+  // On disk but not in the index: git would adopt it (a gitfile's repository included) instead of cloning.
+  fs.mkdirSync(w.file('there'));
+  fs.writeFileSync(w.file('there/.git'), `gitdir: ${path.join(w.root, 'libA-work', '.git')}\n`);
+  w.repo.write('loose.txt', 'x\n');
+  for (const p of ['there', 'loose.txt']) assert.equal((await refusal(w, 'submodule.add', { url: w.urls.libA, path: p }, 'SUBMODULE_EXISTS')).reason, 'exists', p);
+  assert.equal(w.repo.git('ls-files', '--', 'there'), '');
   await w.ok('submodule.remove', { path: 'libA' });
   w.repo.git('commit', '-qm', 'rm libA');
   const kept = await refusal(w, 'submodule.add', { url: w.urls.libA, path: 'libA' }, 'SUBMODULE_EXISTS');

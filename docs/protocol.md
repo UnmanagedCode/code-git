@@ -48,7 +48,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | `target` is `{project, worktree?, sub?}` and nothing else; names non-empty, ≤ 200 chars, not `.` or `..`, no NUL or `/`; `sub`, when present, an array of 1…`SUBMODULE_LIMITS.maxDepth` `submodulePath` entries (`assertTarget`, `submoduleChain`) | 400 `BAD_TARGET` |
 | `:name` is a registered op | 404 `UNKNOWN_OP` |
 | The op's own `params` check | 400 `BAD_PARAMS`, `BAD_REF`, `BAD_PATH`, `BAD_URL` |
-| With `sub`: the chain is a cloned submodule whose real path is inside the checkout (`assertInsideCheckout`: two reads under the op run) | 409 `SUBMODULE_NOT_POPULATED` `{path}`, 409 `SUBMODULE_UNSAFE` `{reason: 'escapes', path}` |
+| With `sub`: the chain is a cloned submodule whose real path is inside the checkout and whose git dir, at every level, is the one git gives it (`assertInsideCheckout`: reads under the op run) | 409 `SUBMODULE_NOT_POPULATED` `{path}`, 409 `SUBMODULE_UNSAFE` `{reason: 'escapes' \| 'gitdir', path}` |
 | Running it | the op's refusals, plus the exec refusals below |
 
 **Cancel and disconnect.** An op is `cancellable` when its definition says so; the default is `true` for `kind: 'read'` and `false` for `kind: 'write'`. A cancellable op is aborted by `POST api/activity/:id/cancel` on the entry of its **currently running** command (an entry of one of its already-finished commands answers 409 `NOT_RUNNING`), after which the op's request answers 409 `CANCELLED`; or by its HTTP client going away, in which case nobody receives an answer and the outcome is only in the activity log (the entry ends `cancelled`). A non-cancellable op is aborted by neither: it runs to completion and its outcome lands in the activity log.
@@ -558,7 +558,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `STASH_MOVED` | 409 | The stash list changed while dropping; the entry dropped by mistake was stored back; `{oid, restored}` |
 | `GIT_TOO_OLD` | 409 | The project's System runs a git below the feature's floor (a rebase: 2.26); `{feature, need, have}` |
 | `SUBMODULE_UNKNOWN` | 404 | No `.gitmodules` entry declares that path; `path` |
-| `SUBMODULE_UNSAFE` | 409 | Not acted on: `reason` `name` / `path` / `escapes` (the entry, or a chain resolving outside the checkout; `path`), `url` (a url git would clone or resolve against is refused; `names`), `config` (the repo's own config sets `protocol.*`; `keys`), `gitmodules` (`.gitmodules` is a symlink) |
+| `SUBMODULE_UNSAFE` | 409 | Not acted on: `reason` `name` / `path` / `escapes` (the entry, or a chain resolving outside the checkout; `path`), `gitdir` (a chain level's `.git` names another repository's git dir; `path`), `url` (a url git would clone or resolve against is refused; `names`), `config` (the repo's own config sets `protocol.*`; `keys`), `gitmodules` (`.gitmodules` is a symlink) |
 | `SUBMODULE_NOT_POPULATED` | 409 | The submodule is not cloned (or the chain's directory does not exist); `path` |
 | `SUBMODULE_EXISTS` | 409 | `submodule.add`: `reason` `exists` (the path is in the index, or an entry has that path or name) or `gitdir` (a removed submodule of that name kept `.git/modules/<name>`); `path`, `name` |
 | `SUBMODULE_DIRTY` | 409 | `submodule.remove` without `discard`: `{path, modified, untracked, orphaned, staged, gitmodules}`; or an update's checkout over local changes (`stderr`) |

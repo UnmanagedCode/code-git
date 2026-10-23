@@ -57,16 +57,21 @@ test('argv is BASE_ARGS, -C <joined>, --git-dir=.git, op args', async (t) => {
   assert.deepEqual(w.execArgv().at(-1), ['git', ...BASE_ARGS, 'rev-parse', 'HEAD']);
 });
 
-test('the preflight: the checkout top level, then the submodule top level, under the op run, before the op', async (t) => {
+test('the preflight: checkout and submodule top levels, then per chain level its git dir and its parent\'s .gitmodules names, under the op run, before the op', async (t) => {
   const w = await subWorld(t, { ops: TEST_OPS });
-  await w.ok('test.write', undefined, ['libA']);
+  await w.ok('test.write', undefined, ['libA', 'libB']);
+  const C = (p) => ['-C', p, '--git-dir=.git'];
+  const GM = ['config', '-f', '.gitmodules', '-z', '--get-regexp', '^submodule\\..*\\.(path|url|branch)$'];
   assert.deepEqual(w.execArgv().map(afterBase), [
-    ['rev-parse', '--show-toplevel'], ['-C', 'libA', '--git-dir=.git', 'rev-parse', '--show-toplevel'], ['-C', 'libA', '--git-dir=.git', 'add', '-A'],
+    ['rev-parse', '--show-toplevel'], [...C('libA/libB'), 'rev-parse', '--show-toplevel'], ['rev-parse', '--absolute-git-dir'],
+    [...C('libA'), 'rev-parse', '--absolute-git-dir'], GM,
+    [...C('libA/libB'), 'rev-parse', '--absolute-git-dir'], [...C('libA'), ...GM],
+    [...C('libA/libB'), 'add', '-A'],
   ]);
   const entries = await w.activity();
   assert.equal(new Set(entries.map((e) => e.opRunId)).size, 1);
-  assert.deepEqual(entries.map((e) => e.kind), ['read', 'read', 'write']);
-  assert.equal('sub' in entries[0].target, false, 'the checkout read runs at the root');
+  assert.deepEqual(entries.map((e) => e.kind), [...Array(7).fill('read'), 'write']);
+  for (const i of [0, 2, 4]) assert.equal('sub' in entries[i].target, false, 'the checkout reads run at the root');
 });
 
 test('a symlinked submodule path is refused SUBMODULE_UNSAFE escapes before the op runs', async (t) => {
@@ -110,15 +115,18 @@ test('nested chain [libA, libB] runs -C libA/libB', async (t) => {
   const w = await subWorld(t, { ops: TEST_OPS });
   assert.equal(await w.ok('test.read', undefined, ['libA', 'libB']), w.repo.git('-C', 'libA/libB', 'rev-parse', 'HEAD'));
   assert.deepEqual(afterBase(w.execArgv().at(-1)), ['-C', 'libA/libB', '--git-dir=.git', 'rev-parse', 'HEAD']);
-  assert.equal(w.execArgv().at(-2).at(-1), '--show-toplevel');
+  assert.deepEqual(afterBase(w.execArgv().at(-3)), ['-C', 'libA/libB', '--git-dir=.git', 'rev-parse', '--absolute-git-dir']);
 });
 
 test('activity entries carry sub (a copy), root entries none', async (t) => {
   const w = await subWorld(t, { ops: TEST_OPS });
   await w.ok('test.read', undefined, ['libA', 'libB']);
-  const [rootRead, subTop, op] = await w.activity();
+  const entries = await w.activity();
+  const [rootRead, subTop, , levelA] = entries;
+  const op = entries.at(-1);
   assert.deepEqual(rootRead.target, { project: PROJECT, worktree: null });
   assert.deepEqual(subTop.target, { project: PROJECT, worktree: null, sub: ['libA', 'libB'] });
+  assert.deepEqual(levelA.target, { project: PROJECT, worktree: null, sub: ['libA'] });
   assert.deepEqual(op.target, { project: PROJECT, worktree: null, sub: ['libA', 'libB'] });
   const log = createActivityLog();
   const sub = ['a'];
@@ -184,6 +192,79 @@ test('system: docker project: every submodule op, nested included, is form A wit
   }
   // Every command but each op run's checkout read runs under the submodule prefix.
   const rootReads = w.execArgv().filter((a) => !a.includes('-C'));
-  assert.equal(rootReads.length, new Set(entries.map((e) => e.opRunId)).size);
-  assert.ok(rootReads.every((a) => afterBase(a).join(' ') === 'rev-parse --show-toplevel'));
+  // Per op run: the checkout's top level, its git dir, and its .gitmodules (libA's name).
+  assert.equal(rootReads.length, 3 * new Set(entries.map((e) => e.opRunId)).size);
+  assert.ok(rootReads.every((a) => /^rev-parse --(show-toplevel|absolute-git-dir)$|^config -f \.gitmodules /.test(afterBase(a).join(' '))));
+});
+
+/** A declared, cloned-looking submodule `evil` whose `.git` gitfile names `gitdir`. */
+function craftedGitfile(w, gitdir, name = 'evil') {
+  w.repo.git('config', '-f', '.gitmodules', `submodule.${name}.path`, name);
+  w.repo.git('config', '-f', '.gitmodules', `submodule.${name}.url`, w.urls.libA);
+  fs.mkdirSync(w.file(name), { recursive: true });
+  fs.writeFileSync(w.file(`${name}/.git`), `gitdir: ${gitdir}\n`);
+}
+
+test('a crafted gitfile (another submodule\'s git dir, the parent\'s .git, a repo outside the project) is refused SUBMODULE_UNSAFE gitdir before the op; the list shows it blocked', async (t) => {
+  for (const [what, gitdir] of [['sibling', (w) => w.file('.git/modules/libA')], ['parent', (w) => w.file('.git')], ['outside', (w) => path.join(w.root, 'libA-work', '.git')]]) {
+    const w = await subWorld(t, { nested: false, ops: TEST_OPS });
+    craftedGitfile(w, gitdir(w));
+    const victimIndex = () => fs.readFileSync(path.join(gitdir(w), 'index'));
+    const before = victimIndex();
+    RAN.length = 0;
+    const r = await w.op('test.write', undefined, ['evil']);
+    assert.equal(r.status, 409, what);
+    assert.deepEqual([r.body.code, r.body.reason, r.body.path], ['SUBMODULE_UNSAFE', 'gitdir', 'evil'], what);
+    assert.deepEqual(RAN, [], what);
+    assert.equal(w.execArgv().some((a) => a.includes('add')), false, what);
+    assert.deepEqual(victimIndex(), before, what);
+    const e = (await w.ok('submodule.list')).submodules.find((x) => x.path === 'evil');
+    assert.deepEqual([e.blocked, e.populated], ['escapes', false], what);
+    assert.equal((await w.op('submodule.update', { paths: ['evil'] })).body.reason, 'escapes', what);
+  }
+});
+
+test('an undeclared path, or a gitfile naming modules/<another name>, is refused; an embedded .git directory is accepted', async (t) => {
+  const w = await subWorld(t, { nested: false, ops: TEST_OPS });
+  // Not in .gitmodules: no name to match.
+  fs.mkdirSync(w.file('stray'));
+  fs.writeFileSync(w.file('stray/.git'), `gitdir: ${w.file('.git/modules/libA')}\n`);
+  assert.equal((await w.op('test.read', undefined, ['stray'])).body.reason, 'gitdir');
+  // Declared as "other", pointing at libA's modules dir.
+  craftedGitfile(w, w.file('.git/modules/libA'), 'other');
+  assert.equal((await w.op('test.read', undefined, ['other'])).body.reason, 'gitdir');
+  // A repository cloned in place (its own .git directory) is its own: accepted, and listed populated.
+  w.fx('.', 'clone', '-q', w.urls.libA, 'emb');
+  assert.equal(await w.ok('test.read', undefined, ['emb']), w.repo.git('-C', 'emb', 'rev-parse', 'HEAD'));
+});
+
+test('nested chains: each level must be <its parent\'s git dir>/modules/<name>; a nested gitfile naming its parent\'s git dir or a top-level modules dir is refused', async (t) => {
+  const w = await subWorld(t, { ops: TEST_OPS });
+  // The real layout passes: libB's git dir is libA's git dir + /modules/libB.
+  assert.equal(await w.ok('test.read', undefined, ['libA', 'libB']), w.repo.git('-C', 'libA/libB', 'rev-parse', 'HEAD'));
+  const realLibB = fs.readFileSync(w.file('libA/libB/.git'), 'utf8');
+  for (const gitdir of [w.file('.git/modules/libA'), w.file('.git')]) {
+    fs.writeFileSync(w.file('libA/libB/.git'), `gitdir: ${gitdir}\n`);
+    const r = await w.op('test.read', undefined, ['libA', 'libB']);
+    assert.deepEqual([r.body.code, r.body.reason, r.body.path], ['SUBMODULE_UNSAFE', 'gitdir', 'libA/libB'], gitdir);
+  }
+  // A top-level modules dir that exists for a submodule named libB: under the checkout's modules, not under libA's.
+  w.fx('.', 'clone', '-q', '--bare', w.urls.libB, w.file('.git/modules/libB'));
+  fs.writeFileSync(w.file('libA/libB/.git'), `gitdir: ${w.file('.git/modules/libB')}\n`);
+  assert.equal((await w.op('test.read', undefined, ['libA', 'libB'])).body.reason, 'gitdir');
+  fs.writeFileSync(w.file('libA/libB/.git'), realLibB);
+  assert.equal((await w.op('test.read', undefined, ['libA', 'libB'])).status, 200);
+});
+
+test("a cc worktree's submodule (git dir under the worktree's own git dir, not the common dir) passes the preflight", async (t) => {
+  const w = await subWorld(t, { nested: false, ops: TEST_OPS });
+  const wt = w.repo.worktreeAdd(path.join(w.root, 'wt'), 'wtb');
+  w.fx(wt.dir, 'submodule', 'update', '-q', '--init');
+  assert.match(fs.readFileSync(path.join(wt.dir, 'libA/.git'), 'utf8'), /worktrees\/wt\/modules\/libA/);
+  w.cc.state.projects[PROJECT].worktrees = { wt: wt.dir };
+  const r = await w.app.call('POST', '/api/ops/test.read', { target: { project: PROJECT, worktree: 'wt', sub: ['libA'] } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.result, wt.git('-C', 'libA', 'rev-parse', 'HEAD'));
+  const list = await w.app.call('POST', '/api/ops/submodule.list', { target: { project: PROJECT, worktree: 'wt' } });
+  assert.deepEqual([list.body.result.submodules[0].blocked, list.body.result.submodules[0].populated], [null, true]);
 });

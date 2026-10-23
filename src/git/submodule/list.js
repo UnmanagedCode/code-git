@@ -1,6 +1,7 @@
 import { commitOid } from '../diff/source.js';
 import { perChunk } from '../stage/paths.js';
 import { OID_RE } from '../validate.js';
+import { gitDirMatches } from './gitdir.js';
 import { remoteUrl } from '../remote/url.js';
 import { SUBMODULE_LIMITS } from './limits.js';
 import { isRelativeUrl } from './url.js';
@@ -49,10 +50,13 @@ export async function readGitmodules(git) {
   return [...by.values()].filter((e) => typeof e.path === 'string' && e.path !== '');
 }
 
-/** Why an entry may not be acted on: its name or path fails the checks, or another entry declares the same path. */
+/**
+ * Why an entry may not be acted on: its path fails the checks (checked first: only a `submodulePath` ever reaches argv),
+ * its name does, or another entry declares the same path.
+ */
 function blockedBy(e, dupPaths) {
-  try { submoduleName(e.name); } catch { return 'name'; }
   try { submodulePath(e.path); } catch { return 'path'; }
+  try { submoduleName(e.name); } catch { return 'name'; }
   return dupPaths.has(e.path) ? 'path' : null;
 }
 
@@ -117,17 +121,22 @@ async function statusState(git, paths) {
 
 /**
  * One submodule directory: `{populated, head, escapes}`. Populated when git, run in it with its own `.git`, reports it
- * as its own top level (`top/path`); `head` is its HEAD oid, null when unborn. A top level elsewhere (a symlink) escapes.
+ * as its own top level (`top/path`) and its git dir is the one git gives it (`gitDirMatches`: `<gitDir>/modules/<name>`,
+ * `gitDir` the listing repo's, or an embedded `.git`);
+ * `head` is its HEAD oid, null when unborn. A top level elsewhere (a symlink) or a gitfile naming another repository's
+ * git dir escapes. The output is `top\ngitdir\nHEAD-or-oid\n`: the HEAD line (no newline in it) is split off the end.
  */
-async function probe(git, top, path) {
-  const r = await git(['-C', path, '--git-dir=.git', 'rev-parse', '--show-toplevel', 'HEAD'], { okExit: [0, 128] });
+async function probe(git, top, gitDir, path, name) {
+  const r = await git(['-C', path, '--git-dir=.git', 'rev-parse', '--show-toplevel', '--absolute-git-dir', 'HEAD'], { okExit: [0, 128] });
   const out = text(r);
   const prefix = `${top}/${path}\n`;
-  if (out.startsWith(prefix)) {
-    const rest = out.slice(prefix.length);
-    return { populated: true, head: HEX_HEAD.test(rest) ? rest.slice(0, -1) : null, escapes: false };
-  }
-  return { populated: false, head: null, escapes: out !== '' };
+  if (!out.startsWith(prefix)) return { populated: false, head: null, escapes: out !== '' };
+  const rest = out.slice(prefix.length);
+  const last = rest.lastIndexOf('\n', rest.length - 2);
+  const dirLine = last === -1 ? rest : rest.slice(0, last + 1);
+  const headLine = last === -1 ? '' : rest.slice(last + 1);
+  if (!gitDirMatches(dirLine, gitDir, `${top}/${path}`, [name])) return { populated: false, head: null, escapes: true };
+  return { populated: true, head: HEX_HEAD.test(headLine) ? headLine.slice(0, -1) : null, escapes: false };
 }
 
 /** Runs `fn` over `items`, at most `n` at a time, in order. */
@@ -153,6 +162,7 @@ export async function listSubmodules(git) {
   const top = text(await git(['rev-parse', '--show-toplevel'])).replace(/\n$/, '');
   const declared = await readGitmodules(git);
   if (!declared.length) return { submodules: [], truncated: false };
+  const gitDir = text(await git(['rev-parse', '--absolute-git-dir'])).replace(/\n$/, '');
   declared.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const truncated = declared.length > SUBMODULE_LIMITS.maxListed;
   const entries = declared.slice(0, SUBMODULE_LIMITS.maxListed);
@@ -170,7 +180,7 @@ export async function listSubmodules(git) {
   const [index, committed, status] = paths.length
     ? [await indexState(git, paths), await committedState(git, paths), await statusState(git, paths)]
     : [new Map(), new Map(), new Map()];
-  const probes = await mapLimited(entries, SUBMODULE_LIMITS.probeConcurrency, (e) => (e.blocked === 'path' ? null : probe(git, top, e.path)));
+  const probes = await mapLimited(entries, SUBMODULE_LIMITS.probeConcurrency, (e) => (e.blocked === 'path' ? null : probe(git, top, gitDir, e.path, e.name)));
 
   const submodules = entries.map((e, i) => {
     const p = probes[i] ?? { populated: false, head: null, escapes: false };
