@@ -42,7 +42,8 @@ export function remoteUrl(s) {
 
 /**
  * A name for a new (or renamed) remote, else BAD_REF: remoteName's shape (no leading `-`, whitespace or control
- * character) and git's own rule, a valid `refs/remotes/<name>/…` (assertRefName).
+ * character), git's own rule, a valid `refs/remotes/<name>/…` (assertRefName), and no `=`: a push pins
+ * `-c remote.<name>.mirror=false` (pushConfig), which git splits at the first `=`, so such a name would pin nothing.
  */
 export function newRemoteName(s) {
   try {
@@ -50,5 +51,7 @@ export function newRemoteName(s) {
   } catch {
     throw new Refusal('BAD_REF', 'invalid remote name: empty, too long, or starts with - or holds whitespace');
   }
-  return assertRefName(s);
+  assertRefName(s);
+  if (s.includes('=')) throw new Refusal('BAD_REF', 'invalid remote name: contains =');
+  return s;
 }

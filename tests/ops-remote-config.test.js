@@ -199,3 +199,22 @@ test('every user-named remote argument follows --end-of-options', async (t) => {
   assert.equal(writes.length, 6);
   for (const a of writes) endOfOptionsBefore(a, a.at(-1));
 });
+
+test('a new remote name holding `=` is refused (BAD_REF) by add and by rename, before any exec', async (t) => {
+  const w = await refsWorld(t);
+  const execs = w.cc.state.execCalls.length;
+  await assert.rejects(w.op('remote.add', { name: 'a=b', url: '/x.git' }), refused('BAD_REF'));
+  await assert.rejects(w.op('remote.rename', { name: 'origin', newName: 'or=igin' }), refused('BAD_REF'));
+  assert.equal(w.cc.state.execCalls.length, execs, 'nothing ran');
+  assert.deepEqual(config(w, 'remote.origin.url'), [w.origin.dir]);
+});
+
+test('the residual: an existing remote named with `=` and mirror=true defeats the pin, and its push fails closed', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('remote', 'add', 'a=b', w.origin.dir);
+  w.repo.git('config', 'remote.a=b.mirror', 'true');
+  w.repo.git('branch', 'side');
+  assert.ok((await w.op('remote.list', undefined)).remotes.some((r) => r.name === 'a=b' && r.urls[0] === w.origin.dir), 'listed through positional config keys');
+  await assert.rejects(w.op('remote.push', { branch: 'side', remote: 'a=b' }), (e) => e.code === 'GIT_FAILED' && /--mirror can't be combined with refspecs/.test(e.extra.stderr));
+  assert.equal(w.origin.git('for-each-ref', 'refs/heads/side'), '', 'nothing was pushed');
+});

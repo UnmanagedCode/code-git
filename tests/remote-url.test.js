@@ -27,3 +27,7 @@ test('newRemoteName: git\'s refs/remotes/<name>/… rule; a bad name is BAD_REF,
     assert.throws(() => newRemoteName(name), refused('BAD_REF'), JSON.stringify(name));
   }
 });
+
+test('newRemoteName refuses `=` (BAD_REF): `-c remote.<name>.mirror=false` would split there and pin nothing', () => {
+  for (const name of ['a=b', '=x', 'x=', 'team/a=b', 'a==b']) assert.throws(() => newRemoteName(name), refused('BAD_REF'), name);
+});

@@ -28,7 +28,9 @@ export async function knownRemote(git, name) {
 
 /**
  * Config pinned on every push: `remote.<name>.mirror=true` would make git refuse any refspec ("--mirror can't be
- * combined with refspecs"), and a push here always names its refspecs. `-c` beats the repo's value (a boolean: last wins).
+ * combined with refspecs"), and a push here always names its refspecs. `-c` beats the repo's value (a boolean: last
+ * wins). git splits a `-c` pair at its first `=`, so a remote named with `=` (refused for new names: newRemoteName) pins
+ * nothing; its push then fails closed if mirror is set.
  */
 export const pushConfig = (remote) => ['-c', `remote.${remote}.mirror=false`];
 

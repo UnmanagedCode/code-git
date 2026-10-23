@@ -425,7 +425,7 @@ StashChange     { oid, old: {message}|null, new: {message}|null, restore: 'store
 
 Behaviour, the rules and what each op destroys: [remotes](remotes.md). Common rules (beside the branch ops' above):
 
-- An existing remote's `name` passes `remoteName` (404 `REMOTE_UNKNOWN`, before any exec) and must be one of `git remote`'s. A **new** name (`remote.add`, `remote.rename`'s `newName`) passes `newRemoteName` (`src/git/remote/url.js`): the same shape, plus git's own rule (`refs/remotes/<name>/…` must be a valid ref, `assertRefName`); else 400 `BAD_REF`. A **url** passes `remoteUrl`: else 400 `BAD_URL`.
+- An existing remote's `name` passes `remoteName` (404 `REMOTE_UNKNOWN`, before any exec) and must be one of `git remote`'s. A **new** name (`remote.add`, `remote.rename`'s `newName`) passes `newRemoteName` (`src/git/remote/url.js`): the same shape, plus git's own rule (`refs/remotes/<name>/…` must be a valid ref, `assertRefName`) and no `=` (a push's `-c remote.<name>.mirror=false` would split there); else 400 `BAD_REF`. A **url** passes `remoteUrl`: else 400 `BAD_URL`.
 - A remote git reads from a legacy `.git/remotes` / `.git/branches` file (no url in config, the file exists): 409 `REMOTE_CONFIG_UNSUPPORTED` with `remote`, `refspec: null`, for every op that changes or removes it.
 - `undo.remotes`: `[{name, old: RemoteConfig | null, new: RemoteConfig | null}]` (old null = created, new null = removed); `RemoteConfig = {urls, pushUrls, fetch /* raw config values, in order, empty ones kept */, upstreams: [{branch /* short */, merge: refname | null}] /* branch.<b>.remote = this remote */}`.
 
