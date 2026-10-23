@@ -120,7 +120,7 @@ export const SUBMODULE_ACTIONS: MenuAction<SubmoduleCtx>[] = [
     when: (c) => usable(c) && c.entry.populated, run: (c) => openSubmodule(c.tab, c.entry),
   },
   { id: 'submodule.init', context: SUBMODULE_CONTEXT, label: 'Initialize', order: 200, when: (c) => addressable(c) && !c.entry.initialized, run: (c) => void initialize(c.tab, c.entry) },
-  { id: 'submodule.update', context: SUBMODULE_CONTEXT, label: 'Update', order: 210, when: addressable, run: (c) => void update(c.tab, [c.entry.path]) },
+  { id: 'submodule.update', context: SUBMODULE_CONTEXT, label: 'Update', order: 210, when: (c) => addressable(c) && !c.entry.conflicted, run: (c) => void update(c.tab, [c.entry.path]) },
   { id: 'submodule.sync', context: SUBMODULE_CONTEXT, label: 'Sync', order: 220, when: (c) => addressable(c) && c.entry.initialized, run: (c) => void sync(c.tab, c.entry) },
   { id: 'submodule.editUrl', context: SUBMODULE_CONTEXT, label: 'Edit URL…', order: 300, group: 'edit', when: usable, run: (c) => openSubmoduleDialog({ kind: 'editUrl', tab: c.tab, entry: c.entry }) },
   { id: 'submodule.remove', context: SUBMODULE_CONTEXT, label: 'Remove…', order: 310, group: 'edit', destructive: true, when: (c) => usable(c) && !c.entry.typeChanged, run: (c) => remove(c.tab, c.entry) },

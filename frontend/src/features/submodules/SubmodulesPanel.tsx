@@ -69,7 +69,7 @@ function Row({ tab, entry }: { tab: Tab; entry: SubmoduleEntry }) {
 function SubmodulesView({ tab }: { tab: Tab }) {
   const s = useSubmodules(tab);
   const list = s.list?.submodules ?? [];
-  const usable = list.filter((e) => !e.blocked && recorded(e)).map((e) => e.path);
+  const usable = list.filter((e) => !e.blocked && recorded(e) && !e.conflicted).map((e) => e.path);
   return (
     <section className="flex flex-col border-b pb-2 text-sm" aria-label="Submodules">
       <div className="flex flex-wrap items-center gap-x-1 px-2 pt-2 pb-0.5">

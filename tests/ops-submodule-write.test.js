@@ -249,6 +249,23 @@ test('an entry with no gitlink in the index: init, update and sync refuse SUBMOD
   assert.deepEqual([list.ghost.recorded, list.ghost.committed, list.libA.recorded, list.libA.committed !== null], [null, null, null, true]);
 });
 
+test('a conflicted gitlink (stages 1-3, no stage 0) counts as recorded: init and sync run; update refuses SUBMODULE_CONFLICTED before any submodule command', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const head = headOf(w, 'libA');
+  w.repo.git('update-index', '--force-remove', 'libA');
+  execFileSync('git', ['-C', w.repo.dir, 'update-index', '--index-info'], { input: [1, 2, 3].map((n) => `160000 ${head} ${n}\tlibA\n`).join(''), env: w.env });
+  const e = byPathOf(await w.ok('submodule.list')).libA;
+  assert.deepEqual([e.conflicted, e.recorded], [true, null]);
+  assert.deepEqual(await w.ok('submodule.init', { paths: ['libA'] }), { submodules: [{ path: 'libA', resolvedUrl: w.urls.libA, urlProblem: null }] });
+  assert.deepEqual(await w.ok('submodule.sync', { paths: ['libA'] }), { paths: ['libA'] });
+  assert.equal(sub(w, ['submodule', 'init']).length, 1);
+  assert.equal(sub(w, ['submodule', 'sync']).length, 1);
+  const b = await refusal(w, 'submodule.update', { paths: ['libA'] }, 'SUBMODULE_CONFLICTED');
+  assert.deepEqual(b.paths, ['libA']);
+  assert.equal(sub(w, ['submodule', 'update']).length, 0);
+  assert.equal(sub(w, ['submodule', 'init']).length, 1, 'update ran no init of its own');
+});
+
 test('remove of a declared-only entry drops its .gitmodules section (and the config init wrote), stages .gitmodules, runs no deinit or rm', async (t) => {
   const w = await subWorld(t, { nested: false });
   declareOnly(w, 'ghost');

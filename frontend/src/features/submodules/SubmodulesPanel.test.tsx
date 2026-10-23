@@ -92,8 +92,8 @@ test('an Add refusal stays in the dialog with git\'s stderr as text', async () =
   expect(w.posts('submodule.add')).toHaveLength(1);
 });
 
-test('Update all sends every unblocked, recorded path', async () => {
-  const { w, panel } = await show([subEntry({ path: 'a' }), subEntry({ path: 'b', blocked: 'escapes' }), subEntry({ path: 'c' }), subEntry({ path: 'd', recorded: null, committed: null })]);
+test('Update all sends every unblocked, recorded, unconflicted path', async () => {
+  const { w, panel } = await show([subEntry({ path: 'a' }), subEntry({ path: 'b', blocked: 'escapes' }), subEntry({ path: 'c' }), subEntry({ path: 'd', recorded: null, committed: null }), subEntry({ path: 'e', recorded: null, conflicted: true })]);
   await userEvent.click(await within(panel).findByRole('button', { name: 'Update all' }));
   await waitFor(() => expect(w.posts('submodule.update')).toEqual([{ paths: ['a', 'c'] }]));
 });

@@ -41,7 +41,9 @@ test('menu items by state: Open only when cloned, Initialize only when not, Sync
   // Not recorded (no gitlink in the index): git's submodule commands cannot address it; a conflicted gitlink still can.
   expect(labels(subEntry({ recorded: null, committed: null }))).toEqual(['Open', 'Edit URL…', 'Remove…']);
   expect(labels(subEntry({ recorded: null, committed: null, populated: false, initialized: false, head: null }))).toEqual(['Edit URL…', 'Remove…']);
-  expect(labels(subEntry({ recorded: null, conflicted: true }))).toEqual(['Open', 'Update', 'Sync', 'Edit URL…', 'Remove…']);
+  // Conflicted: Initialize and Sync stay (it counts as recorded); Update does not (git skips it and exits 0).
+  expect(labels(subEntry({ recorded: null, conflicted: true }))).toEqual(['Open', 'Sync', 'Edit URL…', 'Remove…']);
+  expect(labels(subEntry({ recorded: null, conflicted: true, initialized: false }))).toEqual(['Open', 'Initialize', 'Edit URL…', 'Remove…']);
   // A file or directory staged in the gitlink's place: no Remove (the server refuses typechange).
   expect(labels(subEntry({ recorded: null, typeChanged: true }))).toEqual(['Open', 'Edit URL…']);
   const c: SubmoduleCtx = { tab: APP, entry: subEntry() };

@@ -72,6 +72,14 @@ function assertRecorded(entries) {
   }
 }
 
+/** Refuses SUBMODULE_CONFLICTED for a conflicted gitlink: git skips it ("Skipping unmerged submodule") and exits 0. */
+function assertNotConflicted(entries) {
+  const conflicted = entries.filter((e) => e.conflicted).map((e) => e.path);
+  if (conflicted.length) {
+    throw new Refusal('SUBMODULE_CONFLICTED', `${conflicted.join(', ')}: the pointer is in conflict — resolve it (pick a commit and stage it) before updating`, { paths: conflicted });
+  }
+}
+
 /** Refuses SUBMODULE_COMMITS_AT_RISK `{paths: [{path, count}]}` when updating `entries` would leave commits behind. */
 async function assertNoCommitsAtRisk(git, entries) {
   const at = [];
@@ -156,6 +164,7 @@ export const ops = [
       await assertWorktree(git);
       const entries = await knownEntries(git, p.paths);
       assertRecorded(entries);
+      assertNotConflicted(entries);
       await assertNoRepoProtocolConfig(git);
       // init resolves relative urls into the local config; what git will clone is checked after it.
       await run(git, ['submodule', 'init', '--', ...p.paths]);
