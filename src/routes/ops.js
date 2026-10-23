@@ -1,5 +1,6 @@
 import { getOp } from '../git/ops/index.js';
 import { runGit } from '../git/runner.js';
+import { assertInsideCheckout } from '../git/submodule/target.js';
 import { assertTarget } from '../git/validate.js';
 import { route } from '../http/route.js';
 import { Refusal } from '../refusals.js';
@@ -22,6 +23,7 @@ export function mount(router, { ops, activity, locks }) {
       target, op: op.name, kind: op.kind, cancellable: op.cancellable, signal: controller.signal,
       opRunId: activity.newRunId(), activity, locks,
     };
+    if (target.sub) await assertInsideCheckout(ctx);
     const result = await op.run((args, opts) => runGit(ctx, args, opts), params, { target });
     res.json({ ok: true, result });
   }));

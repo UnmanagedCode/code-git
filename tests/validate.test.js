@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { isDotGitAlias, submoduleName, submodulePath } from '../src/git/submodule/validate.js';
 import { assertOid, assertPath, assertRefName, assertRev, assertSubpath, assertTarget } from '../src/git/validate.js';
 
 const refused = (fn, code) => assert.throws(fn, (e) => e.code === code, `expected ${code}`);
@@ -66,5 +67,25 @@ test('assertOid: 40 or 64 lowercase hex only', () => {
   for (const ok of ['a'.repeat(40), '0123456789abcdef'.repeat(4)]) assert.equal(assertOid(ok), ok);
   for (const bad of ['a'.repeat(39), 'a'.repeat(41), 'a'.repeat(63), 'a'.repeat(65), 'A'.repeat(40), 'g'.repeat(40), `-${'a'.repeat(39)}`, `${'a'.repeat(40)}\n`, 'HEAD', '', null, 40]) {
     assert.throws(() => assertOid(bad), (e) => e.code === 'BAD_REF', String(bad));
+  }
+});
+
+test('submodulePath: assertSubpath plus no empty/. segment, no trailing /, no segment aliasing .git', () => {
+  for (const ok of ['libs/a', 'a b/c', '.github', 'x.git', 'git~', 'a-b/-c', '.gitmodules-x']) assert.equal(submodulePath(ok), ok);
+  for (const bad of ['', '-a', 'a/../b', '/a', 'a/', 'a//b', './a', 'a/.', 'a\\b', '.git', 'a/.GIT/b', '.git.', '.git. .', 'GIT~1', 'a/git~2',
+    '.g‍it', '‪.git', '.git⁯', null]) {
+    refused(() => submodulePath(bad), 'BAD_PATH');
+  }
+});
+
+test('isDotGitAlias: case, HFS-ignorable code points, trailing dots and spaces, NTFS short names', () => {
+  for (const s of ['.git', '.Git', '.git.', '.git  ', '.g‌it', '﻿.git', 'git~1', 'Git~9']) assert.equal(isDotGitAlias(s), true, s);
+  for (const s of ['git', '.gitx', 'x.git', 'git~', 'git~a', '.git~1']) assert.equal(isDotGitAlias(s), false, s);
+});
+
+test("submoduleName: git's check_submodule_name, plus no control, backslash, leading - or .git segment", () => {
+  for (const ok of ['libA', 'libs/a', 'a.b c', 'vendor/live-sub', 'x'.repeat(1024)]) assert.equal(submoduleName(ok), ok);
+  for (const bad of ['', '..', 'a/../b', '../x', 'a/..', '/abs', '-x', 'a\\b', 'a\nb', 'a\x7f', '.git', 'a/.GIT', 'x'.repeat(1025), 'é'.repeat(513), 7]) {
+    refused(() => submoduleName(bad), 'BAD_PARAMS');
   }
 });

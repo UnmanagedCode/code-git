@@ -1,4 +1,5 @@
 import { Refusal } from '../refusals.js';
+import { submoduleChain } from './submodule/validate.js';
 
 // Pure input checks for everything a route lets the user name. Each throws a Refusal (BAD_TARGET, BAD_REF, BAD_PATH).
 
@@ -8,17 +9,18 @@ const isName = (s) => typeof s === 'string' && s !== '' && s !== '.' && s !== '.
 const hasControl = (s) => [...s].some((c) => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f);
 
 /**
- * A cc checkout: `{project, worktree?}`, worktree absent/null = the main checkout. Any other key is refused,
- * which is what keeps `system`/`cwd` (exec form B) out of every request.
+ * A cc checkout, or a submodule inside one: `{project, worktree?, sub?}`, worktree absent/null = the main checkout, `sub`
+ * the chain of submodule paths (submoduleChain) — absent for the checkout itself, and returned only when given. Any
+ * other key is refused, which is what keeps `system`/`cwd` (exec form B) out of every request.
  */
 export function assertTarget(t) {
-  if (!t || typeof t !== 'object' || Array.isArray(t)) throw new Refusal('BAD_TARGET', 'target must be an object {project, worktree?}');
+  if (!t || typeof t !== 'object' || Array.isArray(t)) throw new Refusal('BAD_TARGET', 'target must be an object {project, worktree?, sub?}');
   for (const k of Object.keys(t)) {
-    if (k !== 'project' && k !== 'worktree') throw new Refusal('BAD_TARGET', `target: unknown key ${JSON.stringify(k)}`);
+    if (k !== 'project' && k !== 'worktree' && k !== 'sub') throw new Refusal('BAD_TARGET', `target: unknown key ${JSON.stringify(k)}`);
   }
   if (!isName(t.project)) throw new Refusal('BAD_TARGET', 'target.project must be a project name');
   if (t.worktree !== undefined && t.worktree !== null && !isName(t.worktree)) throw new Refusal('BAD_TARGET', 'target.worktree must be a worktree name');
-  return { project: t.project, worktree: t.worktree ?? null };
+  return { project: t.project, worktree: t.worktree ?? null, ...(t.sub === undefined ? {} : { sub: submoduleChain(t.sub) }) };
 }
 
 /** A ref to create or name: `git check-ref-format --allow-onelevel` rules. */

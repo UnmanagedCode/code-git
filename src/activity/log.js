@@ -15,6 +15,9 @@ export const redactEnv = (env) => Object.fromEntries(Object.entries(env).map(([k
 /** Argv as recorded: an argument that is a url with a password is masked (maskUrl); git itself gets the real argv. */
 export const redactArgv = (argv) => argv.map(maskUrl);
 
+/** A target as an entry records it: `sub` only when the command ran in a submodule. */
+const copyTarget = (t) => ({ project: t.project, worktree: t.worktree ?? null, ...(t.sub ? { sub: [...t.sub] } : {}) });
+
 /** The tail of `buf` (git's verdict comes last), decoded without trusting it to be UTF-8. */
 export function capStderr(buf, cap = LIMITS.stderrCap) {
   const b = buf ?? Buffer.alloc(0);
@@ -32,7 +35,7 @@ export function createActivityLog({ ring = LIMITS.activityRing } = {}) {
   const live = new Map(); // id → {entry, controller}, while running
   let nextId = 1;
   let nextRun = 1;
-  const snapshot = (e) => ({ ...e, target: { ...e.target }, argv: [...e.argv], env: { ...e.env } });
+  const snapshot = (e) => ({ ...e, target: copyTarget(e.target), argv: [...e.argv], env: { ...e.env } });
 
   return {
     events,
@@ -46,7 +49,7 @@ export function createActivityLog({ ring = LIMITS.activityRing } = {}) {
     open({ opRunId, op, kind, target, argv, env = {}, stdinBytes = 0, cancellable, signal }) {
       const controller = new AbortController();
       const entry = {
-        id: nextId++, opRunId, op, kind, target: { project: target.project, worktree: target.worktree ?? null }, argv: redactArgv(argv),
+        id: nextId++, opRunId, op, kind, target: copyTarget(target), argv: redactArgv(argv),
         env: redactEnv(env), stdinBytes, cancellable, startedAt: new Date().toISOString(),
         durationMs: null, exitCode: null, stderr: '', stderrTruncated: false, status: 'running', code: null,
       };
