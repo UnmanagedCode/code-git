@@ -421,6 +421,22 @@ StashChange     { oid, old: {message}|null, new: {message}|null, restore: 'store
 
 `stash.push`, `stash.pushLines`, `stash.apply`, `stash.pop`, `stash.applyFile`, `stash.drop`, `stash.rename`, `stash.branch`. A stash is always named by its W commit's full oid (`{oid}`), never `stash@{n}`. A `stash.push` `GIT_FAILED` may carry `{oid, selector}`: git stored the stash before failing. Params, argv, gates, refusals, results and the undo record: [stash](stash.md).
 
+### Remote ops (`src/git/ops/remote.js`)
+
+Behaviour, the rules and what each op destroys: [remotes](remotes.md). Common rules (beside the branch ops' above):
+
+- An existing remote's `name` passes `remoteName` (404 `REMOTE_UNKNOWN`, before any exec) and must be one of `git remote`'s. A **new** name (`remote.add`, `remote.rename`'s `newName`) passes `newRemoteName` (`src/git/remote/url.js`): the same shape, plus git's own rule (`refs/remotes/<name>/…` must be a valid ref, `assertRefName`); else 400 `BAD_REF`. A **url** passes `remoteUrl`: else 400 `BAD_URL`.
+- A remote git reads from a legacy `.git/remotes` / `.git/branches` file (no url in config, the file exists): 409 `REMOTE_CONFIG_UNSUPPORTED` with `remote`, `refspec: null`, for every op that changes or removes it.
+- `undo.remotes`: `[{name, old: RemoteConfig | null, new: RemoteConfig | null}]` (old null = created, new null = removed); `RemoteConfig = {urls, pushUrls, fetch /* raw config values, in order, empty ones kept */, upstreams: [{branch /* short */, merge: refname | null}] /* branch.<b>.remote = this remote */}`.
+
+| Op | kind | `params` | Runs | `result` | Refusals |
+|---|---|---|---|---|---|
+| `remote.list` | read | none | `remote`; `config -z --get-regexp ^remote\.` (a key's remote is the longest listed name it starts with: names may hold dots); for a url-less remote the legacy-file check | `{remotes: [{name, urls, pushUrls /* after the last empty value, as git counts them */, fetch /* as configured */, displayUrl /* the first url, else push url, a userinfo password shown as *** */ \| null, legacy}]}` | — |
+| `remote.add` | write | `{name, url, pushUrl?}` | `remote add --end-of-options <name> <url>`; with `pushUrl`: `remote set-url --push --end-of-options <name> <pushUrl>` | `{name, undo}` | `BAD_REF`, `BAD_URL`, `REMOTE_EXISTS` (from `git remote`, before any write) |
+| `remote.edit` | write | `{name, url?, pushUrl?: string \| null}` (at least one; the UI sends only what changed) | `remote set-url --end-of-options <name> <url>`; `remote set-url --push --end-of-options <name> <pushUrl>`; `pushUrl: null`: `config --unset-all remote.<name>.pushurl` (exit 0 or 5) | `{name, undo}` (`old` and `new`) | `REMOTE_UNKNOWN`; `BAD_URL`; `REMOTE_CONFIG_UNSUPPORTED` (the list it would replace — `url` or `pushurl` — holds more than one value, or a legacy remote) |
+| `remote.rename` | write | `{name, newName}` | `remote rename --end-of-options <name> <newName>` (git moves `refs/remotes/<name>/*`, the HEAD alias with it, and rewrites `branch.<b>.remote`) | `{name: newName, undo}` | `REMOTE_UNKNOWN`; `BAD_REF`; `REMOTE_EXISTS`; `REMOTE_CONFIG_UNSUPPORTED` unless the fetch refspecs are exactly `+refs/heads/*:refs/remotes/<name>/*` (the one shape git rewrites); `SYMBOLIC_REF` (`ref`, `target`): a live symbolic ref among its tracking refs other than its HEAD alias |
+| `remote.remove` | write | `{name}` | the tracking refs (`for-each-ref` over its fetch destinations, `refs/remotes/` only) and its config first; `remote remove --end-of-options <name>`; the refs again | `{name, deletedRefs: refname[], clearedUpstreams: [{branch, merge}], undo}` (`undo.refs`: the deleted tracking refs with their oids, a symbolic one with `symref`; `undo.remotes`: its config) | `REMOTE_UNKNOWN`; `SYMBOLIC_REF` (as rename); `REMOTE_CONFIG_UNSUPPORTED` (legacy, or a fetch refspec code-git cannot map) |
+
 ### Paging convention (for ops that list)
 
 An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b`, blobs by `cat-file -s` before reading.
