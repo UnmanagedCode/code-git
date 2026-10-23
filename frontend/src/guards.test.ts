@@ -126,16 +126,43 @@ test('no .style access outside lib/cssVars.ts and components/ui', () => {
 });
 
 // Every key binding goes through the shortcut catalog: only shell/shortcuts.ts reads an event's key or modifier fields.
-const KEY_FIELD = /\.(?:ctrlKey|metaKey|shiftKey|altKey)\b|\b(?:e|ev|evt|event)\.key\b/;
+// Modifier fields have names of their own; `.key` is too common a name (`row.key`), so it counts only on an identifier
+// that is a keyboard event: the usual names, one typed `KeyboardEvent` (DOM or React), a key handler's parameter, or a
+// cast to one.
+const MODIFIER_FIELD = /\.(?:ctrlKey|metaKey|shiftKey|altKey)\b/;
+const KEYBOARD_EVENT = String.raw`(?:React\.)?KeyboardEvent\b(?:<[^>]*>)?`;
+const KEY_EVENT_NAMES = [
+  new RegExp(String.raw`\b(\w+)\s*\??:\s*${KEYBOARD_EVENT}`, 'g'), // (press: KeyboardEvent), (e: React.KeyboardEvent<…>)
+  /\bonKey(?:Down|Up|Press)(?:Capture)?=\{\s*\(?\s*(\w+)/g, // onKeyDown={(k) => …}
+  /addEventListener\(\s*['"`]key(?:down|up|press)['"`]\s*,\s*\(?\s*(\w+)/g, // addEventListener('keydown', (k) => …)
+];
+const KEY_CAST = new RegExp(String.raw`\bas\s+${KEYBOARD_EVENT}\s*\)\s*\.key\b`); // (x as KeyboardEvent).key
 
-// Invariant: the key-field pattern matches event key/modifier reads and not lookalike fields (details.key, keyCode).
-test('the key-field pattern catches what it claims to', () => {
-  for (const bad of ['e.key === "Enter"', 'if (ev.key !== "Escape")', 'e.ctrlKey || e.metaKey', 'event.shiftKey', 'x.altKey']) expect(KEY_FIELD.test(bad), bad).toBe(true);
-  for (const ok of ['details.key !== key', 'j.key', 'checked.key === key', 'matches(e, KEY)', 'keyId={k}', 'e.keyCode']) expect(KEY_FIELD.test(ok), ok).toBe(false);
+function readsKeyField(text: string): boolean {
+  if (MODIFIER_FIELD.test(text) || KEY_CAST.test(text)) return true;
+  const names = new Set(['e', 'ev', 'evt', 'event']);
+  for (const re of KEY_EVENT_NAMES) for (const m of text.matchAll(re)) names.add(m[1]);
+  return [...names].some((n) => new RegExp(String.raw`(?<![\w.])${n}\.key\b`).test(text));
+}
+
+// Invariant: the key-field check flags event key/modifier reads — the usual names, any identifier typed, bound or cast
+// as a keyboard event — and not lookalike fields (row.key, details.key, keyCode).
+test('the key-field check catches what it claims to', () => {
+  for (const bad of [
+    'e.key === "Enter"', 'if (ev.key !== "Escape")', 'e.ctrlKey || e.metaKey', 'event.shiftKey', 'x.altKey',
+    'function f(press: KeyboardEvent) { return press.key; }', 'const h = (press: React.KeyboardEvent) => press.key === "a";',
+    'const h = (k: React.KeyboardEvent<HTMLInputElement>) => k.key;', '(x as KeyboardEvent).key', '(x as React.KeyboardEvent<HTMLElement>).key',
+    'onKeyDown={(k) => k.key === "a"}', "window.addEventListener('keydown', (k) => k.key)", 'function g(kb?: KeyboardEvent) { kb?.key; kb.key; }',
+  ]) expect(readsKeyField(bad), bad).toBe(true);
+  for (const ok of [
+    'details.key !== key', 'j.key', 'checked.key === key', 'matches(e, KEY)', 'keyId={k}', 'e.keyCode', 'row.key',
+    '(x as Item).key', 'function f(item: Row) { return item.key; }', 'function f(press: KeyboardEvent) { return row.key; }',
+    'onClick={(k) => k.key}', 'const press = 1; matches(e, PRESS)',
+  ]) expect(readsKeyField(ok), ok).toBe(false);
 });
 
-// Invariant: no handler outside shell/shortcuts.ts reads e.key or a modifier: every binding goes through the catalog.
+// Invariant: no handler outside shell/shortcuts.ts reads a key or modifier field: every binding goes through the catalog.
 test('only shell/shortcuts.ts reads key and modifier fields (components/ui aside)', () => {
   const own = all.filter((f) => !f.includes(`${path.sep}components${path.sep}ui${path.sep}`));
-  expect(offenders(KEY_FIELD, own)).toEqual([path.join('src', 'shell', 'shortcuts.ts')]);
+  expect(own.filter((f) => readsKeyField(readFileSync(f, 'utf8'))).map((f) => path.relative(frontend, f))).toEqual([path.join('src', 'shell', 'shortcuts.ts')]);
 });
