@@ -198,6 +198,38 @@ try {
     await dialog.waitFor({ state: 'detached' });
     check(git('-C', path.join(world.repo.root, 'wt'), 'rev-parse', 'HEAD') === o.tip, 'nothing moved code-conductor/wt');
 
+    // 14. a right-press at real speed in the phone Refs dialog: the menu opens over the pointer, and the release that
+    //     ends the press runs nothing (no Hide on a branch row, no Copy name on a tag row)
+    await page.setViewportSize(VIEWPORTS.phone);
+    await open('project=refs&worktree=wt');
+    await page.getByRole('button', { name: 'Refs', exact: true }).click();
+    const phoneRefs = page.getByRole('dialog').getByRole('navigation', { name: 'Refs', exact: true });
+    await phoneRefs.waitFor();
+    await page.waitForTimeout(1500); // the dialog settles, as a user's hand would let it
+    const hidden = () => page.evaluate(() => JSON.parse(localStorage.getItem('code-git:graph:refs') ?? '{}').hidden ?? []);
+    // Rows whose menu opens with an item under the pointer here (Hide; Copy name): the release would hit it.
+    for (const name of ['refs/heads/feature/a', 'refs/tags/v1.0']) {
+      const box = await refRow(name).boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down({ button: 'right' });
+      await menu.waitFor();
+      await page.waitForTimeout(150);
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      const under = await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.closest('[role=menuitem]')?.textContent ?? null, [x, y]);
+      check(under !== null, `${name}: the opened menu lies under the pointer (on "${under}"), so the release would hit an item`);
+      await page.mouse.up({ button: 'right' });
+      await page.waitForTimeout(300);
+      // An activated item closes the menu: still open = nothing ran (Copy name leaves no other trace).
+      check(await menu.isVisible(), `${name}: the menu is still open after the right-press is released`);
+      check(!(await hidden()).includes(name), `${name}: the release ran no menu item (nothing hidden)`);
+      await page.keyboard.press('Escape');
+      await menu.waitFor({ state: 'detached' });
+    }
+    await page.keyboard.press('Escape');
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.setViewportSize(VIEWPORTS.desktop);
+
     // ---- every scheme and viewport: the dialogs and a toast ----
     for (const scheme of ['light', 'dark']) {
       await page.emulateMedia({ colorScheme: scheme });

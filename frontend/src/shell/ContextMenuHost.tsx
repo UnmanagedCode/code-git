@@ -13,9 +13,45 @@ export interface ContextMenuRequest { host: string; context: string; ctx: unknow
 export const contextMenuStore = createStore<(ContextMenuRequest & { seq: number }) | null>(null);
 let seq = 0;
 
+/** Pointers pressed and not yet released, tracked before any React handler sees them (window, capture phase). */
+const pressed = new Set<number>();
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', (e) => pressed.add(e.pointerId), true);
+  window.addEventListener('pointerup', (e) => pressed.delete(e.pointerId), true);
+  window.addEventListener('pointercancel', (e) => pressed.delete(e.pointerId), true);
+}
+
+/**
+ * A menu opened during a press (a right-press, a touch long-press) can be placed under that pointer, and a Radix menu
+ * item activates on a pointerup whose pointerdown it did not see: the release would run the item. So the release that
+ * ends each press held at opening — and a click it produces — is stopped before it reaches the menu. A menu opened
+ * with no press held (keyboard, after a drop) keeps every later click.
+ */
+function swallowOpeningPress(): void {
+  for (const id of pressed) {
+    const onUp = (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      e.stopPropagation();
+      const swallow = (c: Event) => { c.stopPropagation(); c.preventDefault(); };
+      window.addEventListener('click', swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0);
+    };
+    const onCancel = (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+    };
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onCancel, true);
+  }
+}
+
 /** Opens the context's menu at `at` in host `host`; nothing opens (and false is returned) when no action applies. */
 export function openContextMenu(req: ContextMenuRequest): boolean {
   if (!actionsFor(req.context, req.ctx).length) return false;
+  swallowOpeningPress();
   contextMenuStore.set({ ...req, seq: ++seq });
   return true;
 }
