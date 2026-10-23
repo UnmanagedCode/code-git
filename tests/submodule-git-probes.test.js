@@ -16,12 +16,6 @@ function codeGit(w, sub, args, { pre = [] } = {}) {
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 const indexBytes = (w) => fs.readFileSync(path.join(w.repo.dir, '.git', 'index'));
-/** Empties libA's directory and forgets its clone: as a fresh clone of the parent would have it. */
-function unclone(w, name = 'libA') {
-  w.fx('.', 'submodule', 'deinit', '-q', '-f', name);
-  fs.rmSync(path.join(w.repo.dir, '.git', 'modules', name), { recursive: true, force: true });
-}
-
 test('probe: --work-tree=. resolves after -C (the submodule is the working tree)', async (t) => {
   const w = await subWorld(t, { nested: false });
   const r = codeGit(w, ['libA'], ['ls-files']);
@@ -31,7 +25,7 @@ test('probe: --work-tree=. resolves after -C (the submodule is the working tree)
 
 test('probe: --git-dir=.git after -C does not walk up from an unpopulated submodule (exit 128, parent index untouched)', async (t) => {
   const w = await subWorld(t, { nested: false });
-  unclone(w);
+  w.unclone();
   w.repo.write('libA/x.txt', 'x\n');
   const before = indexBytes(w);
   const r = codeGit(w, ['libA'], ['add', '-A']);
@@ -66,7 +60,7 @@ test('probe: -c config reaches submodule update children (core.fsmonitor marker 
 test('probe: update --checkout overrides update=!cmd at top level and under --recursive (control: without it both run)', async (t) => {
   const w = await subWorld(t);
   const arm = () => {
-    unclone(w);
+    w.unclone();
     w.fx('.', 'submodule', 'init', '-q');
     w.repo.git('config', 'submodule.libA.update', `!${w.markerScript('top')}`);
   };
@@ -98,7 +92,7 @@ test('probe: -c protocol.ext.allow=never reaches the clone child; a parent repo-
   const w = await subWorld(t, { nested: false });
   const extUrl = (m) => `ext::sh -c touch% ${w.marker(m)}`;
   const tryClone = (m, pre) => {
-    unclone(w);
+    w.unclone();
     w.fx('.', 'submodule', 'init', '-q');
     w.repo.git('config', 'submodule.libA.url', extUrl(m));
     return codeGit(w, undefined, ['submodule', 'update', '--checkout', '--', 'libA'], { pre });
@@ -115,7 +109,7 @@ test('probe: -c protocol.ext.allow=never reaches the clone child; a parent repo-
 
 test('probe: submodule add/update of a file URL fails without a System opt-in (protocol.file default user)', async (t) => {
   const w = await subWorld(t, { nested: false, allowFile: false });
-  unclone(w);
+  w.unclone();
   const up = codeGit(w, undefined, ['submodule', 'update', '--checkout', '--init', '--', 'libA']);
   assert.notEqual(up.status, 0);
   assert.match(up.stderr, /transport 'file' not allowed/);
@@ -124,7 +118,7 @@ test('probe: submodule add/update of a file URL fails without a System opt-in (p
   assert.match(add.stderr, /transport 'file' not allowed/);
   // Control: the System user's global opt-in (hermeticEnv's) lets the same update clone.
   const opted = await subWorld(t, { nested: false });
-  unclone(opted);
+  opted.unclone();
   assert.equal(codeGit(opted, undefined, ['submodule', 'update', '--checkout', '--init', '--', 'libA']).status, 0);
 });
 

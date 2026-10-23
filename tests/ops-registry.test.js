@@ -108,3 +108,11 @@ test('the submodule ops: list is a cancellable read', () => {
   assert.equal(OPS.get('submodule.list')?.kind, 'read');
   assert.equal(OPS.get('submodule.list').cancellable, true);
 });
+
+test('write ops are non-cancellable: every submodule write', () => {
+  for (const name of ['submodule.add', 'submodule.init', 'submodule.update', 'submodule.sync', 'submodule.setUrl', 'submodule.remove', 'submodule.commitPointer']) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'write', name);
+    assert.equal(d.cancellable, false, name);
+  }
+});

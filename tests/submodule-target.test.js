@@ -161,3 +161,29 @@ test('system: docker project: every exec is form A with -C in argv', async (t) =
   assert.ok(subCalls.length >= 4);
   assert.ok(subCalls.every((a) => ['libA', 'libA/libB'].includes(a[a.indexOf('-C') + 1]) && a[a.indexOf('-C') + 2] === '--git-dir=.git'));
 });
+
+test('system: docker project: every submodule op, nested included, is form A with -C in argv', async (t) => {
+  const w = await subWorld(t, { systemRemote: true });
+  const inA = ['libA'];
+  await w.ok('submodule.list', undefined, inA);
+  await w.ok('submodule.init', { paths: ['libB'] }, inA);
+  await w.ok('submodule.update', { paths: ['libB'] }, inA);
+  await w.ok('submodule.sync', { paths: ['libB'] }, inA);
+  await w.ok('submodule.setUrl', { path: 'libB', url: w.urls.libB }, inA);
+  w.fx('libA/libB', 'commit', '-q', '--allow-empty', '-m', 'moved');
+  await w.ok('submodule.commitPointer', { path: 'libB', expect: w.repo.git('-C', 'libA/libB', 'rev-parse', 'HEAD'), summary: 's' }, inA);
+  await w.ok('submodule.add', { url: w.urls.libB, path: 'libC' }, inA);
+  await w.ok('submodule.remove', { path: 'libC', discard: true }, inA);
+  await w.ok('repo.summary', undefined, ['libA', 'libB']);
+  assert.deepEqual(w.cc.state.violations, []);
+  const entries = await w.activity();
+  assert.ok(new Set(entries.map((e) => e.op)).size >= 9);
+  for (const b of w.execCalls()) {
+    assert.equal(b.project, PROJECT);
+    for (const k of ['system', 'remoteId', 'cwd', 'shell', 'worktree']) assert.equal(k in b, false, k);
+  }
+  // Every command but each op run's checkout read runs under the submodule prefix.
+  const rootReads = w.execArgv().filter((a) => !a.includes('-C'));
+  assert.equal(rootReads.length, new Set(entries.map((e) => e.opRunId)).size);
+  assert.ok(rootReads.every((a) => afterBase(a).join(' ') === 'rev-parse --show-toplevel'));
+});

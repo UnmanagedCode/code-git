@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { Refusal } from '../../refusals.js';
-import { joinMessage, splitMessage, templateDraft } from '../commit/message.js';
+import { joinMessage, messageParams, splitMessage, templateDraft } from '../commit/message.js';
 import { readNoIndex } from '../diff/noIndex.js';
 import { commitOid } from '../diff/source.js';
 import { bad, optBool, paramsObject } from '../params.js';
@@ -72,15 +72,11 @@ export const ops = [
     kind: 'write',
     params(raw) {
       const p = paramsObject(raw, ['summary', 'description', 'amend', 'messageOnly', 'noVerify'], 'commit.create');
-      if (typeof p.summary !== 'string' || !p.summary.trim()) throw bad('summary must be a non-empty string');
-      if (/[\r\n]/.test(p.summary)) throw bad('summary must be one line');
-      if (p.description !== undefined && typeof p.description !== 'string') throw bad('description must be a string');
-      const description = p.description ?? '';
-      if (p.summary.includes('\0') || description.includes('\0')) throw bad('a commit message cannot contain NUL');
+      const { summary, description } = messageParams(p);
       const amend = optBool(p.amend, 'amend');
       const messageOnly = optBool(p.messageOnly, 'messageOnly');
       if (messageOnly && !amend) throw bad('messageOnly needs amend');
-      return { summary: p.summary, description, amend, messageOnly, noVerify: optBool(p.noVerify, 'noVerify') };
+      return { summary, description, amend, messageOnly, noVerify: optBool(p.noVerify, 'noVerify') };
     },
     async run(git, p) {
       await assertWorktree(git);

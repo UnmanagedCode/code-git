@@ -89,6 +89,20 @@ export async function subWorld(t, { nested = true, populated = true, systemRemot
       return p;
     },
     activity: async () => (await app.call('GET', '/api/activity')).body.entries,
+    /** Deinitializes submodule `name` of the parent and forgets its clone: as a fresh clone of the parent has it. */
+    unclone(name = 'libA') {
+      fx('.', 'submodule', 'deinit', '-q', '-f', '--', name);
+      fs.rmSync(path.join(repo.dir, '.git', 'modules', name), { recursive: true, force: true });
+    },
+    /** A new commit of `files` on `<lib>.git`'s main (pushed from its work clone); its oid. */
+    advance(lib, files, msg = `${lib} next`) {
+      const work = path.join(root, `${lib}-work`);
+      for (const [rel, c] of Object.entries(files)) fs.writeFileSync(path.join(work, rel), c);
+      fx(work, 'add', '-A');
+      fx(work, 'commit', '-qm', msg);
+      fx(work, 'push', '-q', 'origin', 'HEAD:main');
+      return fx(work, 'rev-parse', 'HEAD');
+    },
     file: (rel) => path.join(repo.dir, rel),
   };
 }

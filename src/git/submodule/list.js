@@ -57,7 +57,7 @@ function blockedBy(e, dupPaths) {
 }
 
 /** `remoteUrl`'s refusal message for the url git would clone, or null (fine, absent, or relative and not resolved yet). */
-function urlProblem(url) {
+export function urlProblem(url) {
   if (url === null || isRelativeUrl(url)) return null;
   try {
     remoteUrl(url);

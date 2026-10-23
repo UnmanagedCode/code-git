@@ -1,0 +1,251 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { test } from 'node:test';
+import { LIMITS } from '../src/git/limits.js';
+import { NET_CONFIG } from '../src/git/submodule/copied/net.js';
+import { SUBMODULE_LIMITS } from '../src/git/submodule/limits.js';
+import { afterBase, subWorld } from './_submodules.js';
+
+// The submodule writes against real repos: what each changes, and what each refuses to change.
+
+const gm = (w, key) => { const r = w.git('.', 'config', '-f', '.gitmodules', '--get', key); return r.status === 0 ? r.stdout.trim() : null; };
+const local = (w, key, dir = '.') => { const r = w.git(dir, 'config', '--get', key); return r.status === 0 ? r.stdout.trim() : null; };
+const headOf = (w, dir) => w.repo.git('-C', dir, 'rev-parse', 'HEAD');
+const gitlink = (w, rev, p) => w.repo.git('rev-parse', `${rev}:${p}`);
+const sub = (w, words) => w.execArgv().map(afterBase).filter((a) => words.every((x, i) => a[a.indexOf('submodule') + i] === x) && a.includes('submodule'));
+const refusal = async (w, name, params, code, s) => {
+  const r = await w.op(name, params, s);
+  assert.equal(r.body.code, code, JSON.stringify(r.body));
+  return r.body;
+};
+
+test('add writes .gitmodules and stages the gitlink (name, branch; a relative url against the default remote)', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  assert.deepEqual(await w.ok('submodule.add', { url: w.urls.libA, path: 'libs/second', name: 'second', branch: 'main' }), { path: 'libs/second', name: 'second' });
+  assert.equal(gm(w, 'submodule.second.path'), 'libs/second');
+  assert.equal(gm(w, 'submodule.second.url'), w.urls.libA);
+  assert.equal(gm(w, 'submodule.second.branch'), 'main');
+  assert.match(w.repo.git('ls-files', '-s', '--', 'libs/second'), /^160000 /);
+  assert.deepEqual(w.repo.git('diff', '--cached', '--name-only').split('\n'), ['.gitmodules', 'libs/second']);
+  assert.ok(fs.existsSync(w.file('libs/second/a.txt')));
+  const [add] = sub(w, ['submodule', 'add']);
+  assert.deepEqual(add, [...NET_CONFIG, 'submodule', 'add', '--name', 'second', '-b', 'main', '--', w.urls.libA, 'libs/second']);
+  // Relative: resolved by git against origin's url.
+  w.repo.git('remote', 'add', 'origin', path.join(w.root, 'parent.git'));
+  assert.deepEqual(await w.ok('submodule.add', { url: '../libA.git', path: 'rel' }), { path: 'rel', name: 'rel' });
+  assert.equal(local(w, 'submodule.rel.url'), w.urls.libA);
+});
+
+test('add refuses SUBMODULE_EXISTS for an existing path, name or kept gitdir; a bad url, path or name before any exec', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  assert.equal((await refusal(w, 'submodule.add', { url: w.urls.libA, path: 'libA' }, 'SUBMODULE_EXISTS')).reason, 'exists');
+  await refusal(w, 'submodule.add', { url: w.urls.libA, path: 'other', name: 'libA' }, 'SUBMODULE_EXISTS');
+  w.repo.write('tracked/x.txt', 'x\n');
+  w.repo.git('add', 'tracked');
+  await refusal(w, 'submodule.add', { url: w.urls.libA, path: 'tracked/x.txt' }, 'SUBMODULE_EXISTS');
+  await w.ok('submodule.remove', { path: 'libA' });
+  w.repo.git('commit', '-qm', 'rm libA');
+  const kept = await refusal(w, 'submodule.add', { url: w.urls.libA, path: 'libA' }, 'SUBMODULE_EXISTS');
+  assert.equal(kept.reason, 'gitdir');
+  const before = w.execCalls().length;
+  for (const [params, code] of [
+    [{ url: 'ext::sh -c x', path: 'p' }, 'BAD_URL'], [{ url: '-oProxyCommand=x', path: 'p' }, 'BAD_URL'], [{ url: w.urls.libA, path: '../p' }, 'BAD_PATH'],
+    [{ url: w.urls.libA, path: '.git/x' }, 'BAD_PATH'], [{ url: w.urls.libA, path: 'p', name: '../n' }, 'BAD_PARAMS'], [{ url: w.urls.libA, path: 'p', branch: '-b' }, 'BAD_REF'],
+    [{ url: w.urls.libA, path: 'p', extra: 1 }, 'BAD_PARAMS'],
+  ]) await refusal(w, 'submodule.add', params, code);
+  assert.equal(w.execCalls().length, before);
+});
+
+test('init registers the URL without network', async (t) => {
+  // No System file-transport opt-in: init would fail if it cloned.
+  const w = await subWorld(t, { nested: false, populated: false, allowFile: false });
+  assert.deepEqual(await w.ok('submodule.init', { paths: ['libA'] }), { submodules: [{ path: 'libA', resolvedUrl: w.urls.libA, urlProblem: null }] });
+  assert.equal(local(w, 'submodule.libA.url'), w.urls.libA);
+  assert.deepEqual(fs.readdirSync(w.file('libA')), []);
+  assert.equal(w.execArgv().some((a) => a.includes('protocol.ext.allow=never')), false);
+});
+
+test('every write names a known, unblocked entry: SUBMODULE_UNKNOWN, SUBMODULE_UNSAFE', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  w.repo.git('config', '-f', '.gitmodules', 'submodule.../evil.path', 'evil');
+  for (const [name, params] of [['submodule.init', { paths: ['nope'] }], ['submodule.update', { paths: ['libA', 'nope'] }], ['submodule.sync', { paths: ['nope'] }],
+    ['submodule.setUrl', { path: 'nope', url: w.urls.libA }], ['submodule.remove', { path: 'nope' }], ['submodule.commitPointer', { path: 'nope', expect: 'a'.repeat(40), summary: 's' }]]) {
+    const b = await refusal(w, name, params, 'SUBMODULE_UNKNOWN');
+    assert.equal(b.path, 'nope');
+  }
+  const b = await refusal(w, 'submodule.update', { paths: ['evil'] }, 'SUBMODULE_UNSAFE');
+  assert.equal(b.reason, 'name');
+  assert.equal(sub(w, ['submodule', 'update']).length, 0);
+  assert.equal(sub(w, ['submodule', 'init']).length, 0);
+});
+
+test('update --recursive clones nested and checks out the recorded commit', async (t) => {
+  const w = await subWorld(t, { populated: false });
+  assert.deepEqual(await w.ok('submodule.update', { paths: ['libA'] }), { paths: ['libA'] });
+  assert.equal(fs.readFileSync(w.file('libA/libB/b.txt'), 'utf8'), 'b\n');
+  assert.equal(headOf(w, 'libA'), gitlink(w, 'HEAD', 'libA'));
+  assert.equal(headOf(w, 'libA/libB'), w.repo.git('-C', 'libA', 'rev-parse', 'HEAD:libB'));
+  const [up] = sub(w, ['submodule', 'update']);
+  assert.deepEqual(up, [...NET_CONFIG, 'submodule', 'update', '--checkout', '--init', '--recursive', '--', 'libA']);
+  assert.equal(sub(w, ['submodule']).some((a) => a.includes('--force') || a.includes('-f')), false);
+});
+
+test('update refuses SUBMODULE_COMMITS_AT_RISK for detached commits, succeeds with discardCommits; a branch commit is not at risk', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const recorded = gitlink(w, 'HEAD', 'libA');
+  // As `submodule update` leaves it (`submodule add` leaves the clone on its branch).
+  w.fx('libA', 'checkout', '-q', '--detach');
+  w.repo.write('libA/a.txt', 'local\n');
+  w.fx('libA', 'commit', '-qam', 'detached work');
+  const moved = headOf(w, 'libA');
+  const b = await refusal(w, 'submodule.update', { paths: ['libA'] }, 'SUBMODULE_COMMITS_AT_RISK');
+  assert.deepEqual(b.paths, [{ path: 'libA', count: 1 }]);
+  assert.equal(headOf(w, 'libA'), moved);
+  assert.equal(sub(w, ['submodule', 'update']).length, 0);
+  await w.ok('submodule.update', { paths: ['libA'], discardCommits: true });
+  assert.equal(headOf(w, 'libA'), recorded);
+  // On a branch the commit stays reachable: no refusal, the branch keeps it.
+  w.fx('libA', 'checkout', '-q', '-b', 'work');
+  w.repo.write('libA/a.txt', 'branch\n');
+  w.fx('libA', 'commit', '-qam', 'branch work');
+  const onBranch = headOf(w, 'libA');
+  await w.ok('submodule.update', { paths: ['libA'] });
+  assert.equal(headOf(w, 'libA'), recorded);
+  assert.equal(w.repo.git('-C', 'libA', 'rev-parse', 'work'), onBranch);
+});
+
+test('update over a conflicting local change → SUBMODULE_DIRTY, changes intact', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const old = headOf(w, 'libA');
+  const next = w.advance('libA', { 'a.txt': 'upstream\n' });
+  // The parent records `next`; libA is still at `old`, with a local change to the file `next` changes.
+  w.fx('libA', 'fetch', '-q');
+  w.fx('libA', 'checkout', '-q', next);
+  w.repo.git('add', 'libA');
+  w.repo.git('commit', '-qm', 'bump libA');
+  w.fx('libA', 'checkout', '-q', old);
+  w.repo.write('libA/a.txt', 'mine\n');
+  const b = await refusal(w, 'submodule.update', { paths: ['libA'] }, 'SUBMODULE_DIRTY');
+  assert.match(b.stderr, /overwritten by checkout/);
+  assert.equal(fs.readFileSync(w.file('libA/a.txt'), 'utf8'), 'mine\n');
+  assert.equal(headOf(w, 'libA'), old);
+});
+
+test('sync rewrites the URL (and refuses a .gitmodules url code-git does not clone from)', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const mirror = path.join(w.root, 'mirror.git');
+  w.fx(w.root, 'clone', '-q', '--bare', w.urls.libA, mirror);
+  w.repo.git('config', '-f', '.gitmodules', 'submodule.libA.url', mirror);
+  await w.ok('submodule.sync', { paths: ['libA'] });
+  assert.equal(local(w, 'submodule.libA.url'), mirror);
+  assert.equal(local(w, 'remote.origin.url', 'libA'), mirror);
+  assert.deepEqual(sub(w, ['submodule', 'sync'])[0], ['submodule', 'sync', '--recursive', '--', 'libA']);
+  w.repo.git('config', '-f', '.gitmodules', 'submodule.libA.url', 'ext::sh -c x');
+  const b = await refusal(w, 'submodule.sync', { paths: ['libA'] }, 'SUBMODULE_UNSAFE');
+  assert.deepEqual([b.reason, b.names], ['url', ['libA']]);
+  assert.equal(local(w, 'submodule.libA.url'), mirror);
+});
+
+test('setUrl edits .gitmodules and syncs; a bad url is refused before any exec', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const mirror = path.join(w.root, 'mirror.git');
+  w.fx(w.root, 'clone', '-q', '--bare', w.urls.libA, mirror);
+  assert.deepEqual(await w.ok('submodule.setUrl', { path: 'libA', url: mirror }), { path: 'libA', url: mirror });
+  assert.equal(gm(w, 'submodule.libA.url'), mirror);
+  assert.equal(local(w, 'submodule.libA.url'), mirror);
+  assert.equal(local(w, 'remote.origin.url', 'libA'), mirror);
+  assert.equal(w.repo.git('diff', '--name-only', '--', '.gitmodules'), '.gitmodules');
+  const before = w.execCalls().length;
+  await refusal(w, 'submodule.setUrl', { path: 'libA', url: 'fd::3' }, 'BAD_URL');
+  assert.equal(w.execCalls().length, before);
+  // Not initialized: .gitmodules only.
+  w.unclone();
+  await w.ok('submodule.setUrl', { path: 'libA', url: '../elsewhere.git' });
+  assert.equal(gm(w, 'submodule.libA.url'), '../elsewhere.git');
+  assert.equal(local(w, 'submodule.libA.url'), null);
+});
+
+test('a symlinked .gitmodules is refused before add, setUrl or remove writes through it', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const outside = path.join(w.root, 'outside-gitmodules');
+  fs.renameSync(w.file('.gitmodules'), outside);
+  fs.symlinkSync(outside, w.file('.gitmodules'));
+  const before = fs.readFileSync(outside, 'utf8');
+  for (const [name, params] of [['submodule.add', { url: w.urls.libA, path: 'x' }], ['submodule.setUrl', { path: 'libA', url: w.urls.libA }], ['submodule.remove', { path: 'libA' }]]) {
+    assert.equal((await refusal(w, name, params, 'SUBMODULE_UNSAFE')).reason, 'gitmodules');
+  }
+  assert.equal(fs.readFileSync(outside, 'utf8'), before);
+});
+
+test('remove refuses SUBMODULE_DIRTY when modified/untracked/orphaned/staged; discard removes; keeps .git/modules', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const facts = async () => {
+    const b = await refusal(w, 'submodule.remove', { path: 'libA' }, 'SUBMODULE_DIRTY');
+    return { modified: b.modified, untracked: b.untracked, orphaned: b.orphaned, staged: b.staged };
+  };
+  const none = { modified: false, untracked: false, orphaned: 0, staged: false };
+  w.repo.write('libA/a.txt', 'changed\n');
+  assert.deepEqual(await facts(), { ...none, modified: true });
+  w.fx('libA', 'checkout', '-q', '--', 'a.txt');
+  w.repo.write('libA/new.txt', 'n\n');
+  assert.deepEqual(await facts(), { ...none, untracked: true });
+  fs.rmSync(w.file('libA/new.txt'));
+  w.fx('libA', 'checkout', '-q', '--detach');
+  w.fx('libA', 'commit', '-q', '--allow-empty', '-m', 'detached');
+  assert.deepEqual(await facts(), { ...none, orphaned: 1 });
+  w.repo.git('add', 'libA');
+  assert.deepEqual(await facts(), { ...none, orphaned: 0, staged: true });
+  assert.equal(sub(w, ['submodule', 'deinit']).length, 0);
+  assert.ok(fs.existsSync(w.file('libA/a.txt')));
+  assert.deepEqual(await w.ok('submodule.remove', { path: 'libA', discard: true }), { path: 'libA', name: 'libA' });
+  assert.equal(fs.existsSync(w.file('libA')), false);
+  assert.equal(w.repo.git('ls-files', '--', 'libA'), '');
+  assert.equal(gm(w, 'submodule.libA.path'), null);
+  assert.match(w.repo.git('diff', '--cached', '--name-only'), /^\.gitmodules$/m);
+  assert.ok(fs.existsSync(w.file('.git/modules/libA')));
+  assert.deepEqual(sub(w, ['submodule', 'deinit']), [['submodule', 'deinit', '-f', '--', 'libA']]);
+});
+
+test('remove of a clean submodule needs no discard and passes no -f', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  await w.ok('submodule.remove', { path: 'libA' });
+  assert.equal(w.repo.git('ls-files', '--', 'libA'), '');
+  assert.equal(w.execArgv().map(afterBase).some((a) => (a[0] === 'rm' || a[1] === 'deinit') && a.includes('-f')), false);
+});
+
+test('commitPointer commits only the gitlink, leaves other staged changes staged, refuses SUBMODULE_POINTER_MOVED', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const parentHead = w.repo.git('rev-parse', 'HEAD');
+  w.fx('libA', 'commit', '-q', '--allow-empty', '-m', 'moved');
+  const head = headOf(w, 'libA');
+  w.repo.write('staged.txt', 's\n');
+  w.repo.git('add', 'staged.txt');
+  await refusal(w, 'submodule.commitPointer', { path: 'libA', expect: parentHead, summary: 'x' }, 'SUBMODULE_POINTER_MOVED');
+  assert.equal(w.repo.git('rev-parse', 'HEAD'), parentHead);
+  const { oid } = await w.ok('submodule.commitPointer', { path: 'libA', expect: head, summary: 'Update submodule libA', description: 'why' });
+  assert.equal(oid, w.repo.git('rev-parse', 'HEAD'));
+  assert.equal(w.repo.git('show', '--format=', '--name-only', 'HEAD'), 'libA');
+  assert.equal(w.repo.git('log', '-1', '--format=%B'), 'Update submodule libA\n\nwhy');
+  assert.equal(gitlink(w, 'HEAD', 'libA'), head);
+  assert.equal(w.repo.git('diff', '--cached', '--name-only'), 'staged.txt');
+  // Already committed: nothing to do.
+  await refusal(w, 'submodule.commitPointer', { path: 'libA', expect: head, summary: 'x' }, 'NOTHING_TO_COMMIT');
+  for (const params of [{ path: 'libA', expect: 'HEAD', summary: 's' }, { path: 'libA', expect: head, summary: '' }, { path: 'libA', expect: head, summary: 'a\nb' }]) {
+    assert.equal((await w.op('submodule.commitPointer', params)).status, 400);
+  }
+});
+
+test('long ops use cloneTimeoutMs; the others the write default', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  await w.ok('submodule.add', { url: w.urls.libA, path: 'two' });
+  await w.ok('submodule.update', { paths: ['libA'] });
+  await w.ok('submodule.sync', { paths: ['libA'] });
+  await w.ok('submodule.init', { paths: ['libA'] });
+  const of = (words) => w.execCalls().find((b) => words.every((x, i) => afterBase(b.argv)[afterBase(b.argv).indexOf('submodule') + i] === x));
+  for (const words of [['submodule', 'add'], ['submodule', 'update']]) {
+    assert.equal(of(words).timeoutMs, SUBMODULE_LIMITS.cloneTimeoutMs, words.join(' '));
+    assert.equal(of(words).maxOutputBytes, SUBMODULE_LIMITS.cloneMaxOutputBytes, words.join(' '));
+  }
+  for (const words of [['submodule', 'sync'], ['submodule', 'init']]) assert.equal(of(words).timeoutMs, LIMITS.write.timeoutMs, words.join(' '));
+});
