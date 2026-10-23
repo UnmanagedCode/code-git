@@ -7,6 +7,7 @@ import { fullRef, nameList, shortBranch } from '../refs/check.js';
 import { assertCcAck, assertCcHeadAck, assertNotCheckedOut, assertNotSymbolic, isCcOwned, ownHead, readHeads } from '../refs/heads.js';
 import { assertNoSymref, refEntries, refObjects } from '../refs/resolve.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
+import { fetchSpecs, trackingRefsFor } from '../remote/tracking.js';
 import { undoRecord } from '../refs/undo.js';
 import { casUpdate, guardOverwrite } from '../refs/write.js';
 import { assertOid } from '../validate.js';
@@ -251,14 +252,21 @@ export const ops = [
     async run(git, { remote, branches, ccOwned }) {
       await knownRemote(git, remote);
       assertCcAck(branches, ccOwned);
-      // Assumes the default fetch refspec: refs/heads/<b> on the remote ↔ refs/remotes/<remote>/<b> here.
-      const tracking = await refObjects(git, branches.map((b) => `refs/remotes/${remote}/${b}`));
+      // The tracking ref git deletes with each branch: the first the remote's fetch refspecs map it to (tracking.js).
+      const specs = await fetchSpecs(git, remote);
+      const trackingOf = new Map(branches.map((b) => [b, trackingRefsFor(specs, local(b))[0] ?? null]));
+      const before = await refObjects(git, [...trackingOf.values()].filter(Boolean));
       const result = await push(git, remote, branches.map((b) => `:${HEADS}${b}`));
       assertSomethingPushed(result, remote);
       const deleted = result.updated.filter((u) => u.flag === '-').map((u) => shortOf(u.ref));
       return {
         deleted, rejected: result.rejected, unrequested: result.unrequested,
-        undo: undoRecord({ remoteRefs: deleted.map((b) => ({ remote, ref: local(b), old: tracking.get(`refs/remotes/${remote}/${b}`) ?? null, new: null })) }),
+        undo: undoRecord({
+          remoteRefs: deleted.map((b) => {
+            const tracking = trackingOf.get(b);
+            return { remote, ref: local(b), old: tracking ? before.get(tracking) ?? null : null, new: null, tracking };
+          }),
+        }),
       };
     },
   },

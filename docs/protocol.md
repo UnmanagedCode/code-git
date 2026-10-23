@@ -379,7 +379,8 @@ UndoRecord      { refs: RefChange[], remoteRefs: RemoteRefChange[],
 RefChange       { ref /* refs/heads/… | refs/tags/… */, old: oid|null /* null = created */, new: oid|null /* null = deleted */,
                   upstream?: refname|null /* a deleted branch's upstream */,
                   symref?: refname /* a deleted symbolic ref's target: restore with symbolic-ref; old and new are null */ }
-RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */, old: oid|null /* best known */, new: oid|null }
+RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */, old: oid|null /* best known */, new: oid|null,
+                  tracking?: refname|null /* branch.deleteRemote: the tracking ref here git deleted with it (old is its value) */ }
 ```
 
 | Op | kind | `params` | Runs (after the reads `for-each-ref refs/heads` with `%(worktreepath)`, `symbolic-ref -q HEAD`, `rev-parse --verify -q HEAD`) | `result` | Refusals |
@@ -408,7 +409,7 @@ RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */
 
 - `remote` is checked in `params` (non-empty, ≤ 200 characters, no leading `-`, whitespace or control character) and then must be one of `git remote`'s names; either failure is 404 `REMOTE_UNKNOWN`, the first before any exec.
 - A push is `push --porcelain --no-follow-tags --end-of-options <remote> <refspecs…>` (`--no-follow-tags`: a configured `push.followTags` never publishes a tag nobody selected), runs with `NETWORK_LIMITS` (`src/git/remote/limits.js`) and accepts exit 0, 1 and 128. No env is added: `BASE_ENV` already disables every prompt.
-- Before a push, each `refs/heads/<b>` destination's remote-tracking ref here, `refs/remotes/<remote>/<b>` (the default fetch refspec assumed), must not be a symbolic ref, live or dangling: git updates it with the push and would follow it to its target. Else 409 `SYMBOLIC_REF` with `target`, and nothing runs. Tag destinations update no tracking ref.
+- Before a push, each `refs/heads/<b>` destination is mapped through the remote's configured fetch refspecs (`git config --get-all remote.<name>.fetch`; `src/git/remote/tracking.js`) to the tracking refs here git updates with it, and none may be a symbolic ref, live or dangling: git would follow it to its target. Else 409 `SYMBOLIC_REF` with `target`, and nothing runs. Accepted refspecs: `[+]refs/…:refs/…` (exact, or one `*` on each side), `[+]refs/…` (stores nothing) and `^refs/…`; negative refspecs exclude nothing, because git's push-time tracking update ignores them. Any other shape, or a remote with no `url` in config (git would read legacy remote files), is 409 `REMOTE_CONFIG_UNSUPPORTED` with `remote` and `refspec`. Tag destinations update no tracking ref and read no fetch config.
 - Results and undo lists come from the `--porcelain` ref lines for the refspecs' destinations only (`splitRequested` in `src/git/parse/push.js`); a line for any other ref is listed in `unrequested: [{ref, flag}]` (the porcelain flag), never dropped.
 - No ref line and a non-zero exit: 502 `REMOTE_AUTH_FAILED` or 502 `REMOTE_UNREACHABLE` (`classifyRemoteFailure` in `src/git/parse/push.js`), with `stderr`; anything else (a pre-push hook that refused) 422 `GIT_FAILED` with `stderr`. Hooks always run.
 - Every ref rejected and none updated or up to date: 409 `PUSH_REJECTED` with `rejected: [{ref, reason}]`; the message names each `ref: reason` (the first five, then a count). A partly rejected push succeeds and lists `rejected`.
@@ -484,6 +485,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `NOT_FAST_FORWARD` | 409 | The target is not a descendant of the branch |
 | `CHECKOUT_CONFLICT` | 409 | Local changes would be overwritten; `files`, `stderr` |
 | `SYMBOLIC_REF` | 409 | The branch named is a symbolic ref; `target` = the ref it points at |
+| `REMOTE_CONFIG_UNSUPPORTED` | 409 | A fetch refspec of the remote code-git cannot map to the tracking refs a push updates, or a remote with no `url` in config; `remote`, `refspec` |
 | `REMOTE_UNKNOWN` | 404 | The remote name is malformed or not one of `git remote`'s |
 | `PUSH_REJECTED` | 409 | The remote rejected every ref of a push; `rejected` |
 | `PICK_EMPTY` | 409 | A revert or cherry-pick would commit nothing; nothing is left in progress |

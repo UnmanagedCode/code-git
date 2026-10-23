@@ -19,7 +19,7 @@ test('deleteRemote removes the branch on the remote and its tracking ref here; u
   assert.equal(onOrigin(w, 'refs/heads/feat'), null);
   assert.equal(w.exists('refs/remotes/origin/feat'), false);
   assert.equal(w.oid('feat'), f, 'the local branch stays');
-  assert.deepEqual(r.undo.remoteRefs, [{ remote: 'origin', ref: 'refs/heads/feat', old: f, new: null }]);
+  assert.deepEqual(r.undo.remoteRefs, [{ remote: 'origin', ref: 'refs/heads/feat', old: f, new: null, tracking: 'refs/remotes/origin/feat' }]);
   const pushArgv = w.argvs().find((a) => a[0] === 'push');
   assert.deepEqual(pushArgv, ['push', '--porcelain', '--no-follow-tags', '--end-of-options', 'origin', ':refs/heads/feat']);
 });

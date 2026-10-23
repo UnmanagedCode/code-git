@@ -44,7 +44,7 @@
 | `src/git/parse/graph.js` | The graph ops' parsers: NUL-field records, refs, stashes, worktrees, shortstats, commit metadata, name-status |
 | `src/git/ops/branch.js`, `tag.js`, `head.js` | The ref-writing ops `branch.*`, `tag.*`, `head.*` ([refs](refs.md)) |
 | `src/git/refs/` | What those ops share: `check.js` (ref-name checks: `shortBranch`, `fullRef`, `nameList`; the generic `paramsObject` / `optBool` are `src/git/params.js`), `heads.js` (`readHeads` with `%(worktreepath)`, `ownHead`, the checked-out and `code-conductor/*` asserts), `resolve.js` (`refEntries` with `%(symref)`, `refObjects`, `tagObjects`: unpeeled ids), `write.js` (`guardOverwrite` → `CHECKOUT_CONFLICT`, `casUpdate` → `REF_MOVED`), `undo.js` (`undoRecord`), `limits.js` (`REF_LIMITS`) |
-| `src/git/remote/` | Commands that talk to a remote: `push.js` (`remoteName`, `knownRemote`, `push`, `assertSomethingPushed`), `limits.js` (`NETWORK_LIMITS`) |
+| `src/git/remote/` | Commands that talk to a remote: `push.js` (`remoteName`, `knownRemote`, `push`, `assertSomethingPushed`), `tracking.js` (`fetchSpecs`, `parseFetchRefspec`, `trackingRefsFor`: the tracking refs a push updates, from the remote's fetch config), `limits.js` (`NETWORK_LIMITS`) |
 | `src/git/parse/refs.js`, `parse/push.js` | `parseTracking`, `parseConflictFiles`; `parsePushPorcelain`, `classifyRemoteFailure` — pure |
 | `src/activity/log.js` | `createActivityLog()`: the ring, its events, cancel |
 | `src/routes/*.js` | One file per feature, each `mount(router, deps)`; `index.js` mounts them |

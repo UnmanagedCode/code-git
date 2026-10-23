@@ -81,5 +81,5 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **Hunk and line staging is for modified (`M`) text files only**, with whitespace shown; other files are staged whole.
 - **A patch applies to the working tree or the index, never both at once** (`git apply --index` writes through untracked symlinks); apply, then stage.
 - **Ignore writes the root `.gitignore`** only, never `.git/info/exclude`.
-- **Ref writes need git ≥ 2.24** on the project's System; remote branch delete assumes the default fetch refspec; a remote ref's undo value is the best one known locally ([docs/refs.md → Known limitations](docs/refs.md#known-limitations)).
+- **Ref writes need git ≥ 2.24** on the project's System; a remote whose fetch refspecs code-git cannot map refuses branch pushes and remote deletes; a remote ref's undo value is the best one known locally ([docs/refs.md → Known limitations](docs/refs.md#known-limitations)).
 - **Writes are not cancellable by default**: an op opts in only where aborting mid-command is safe; a closed browser tab does not abort a write.
