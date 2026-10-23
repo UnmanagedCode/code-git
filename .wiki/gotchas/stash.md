@@ -9,6 +9,17 @@ Code: `src/git/ops/stash.js`, `src/git/stash/`. Reference: `docs/stash.md`. Raw 
 - **Rename is store-then-drop.** git can only store at the top, so a renamed stash becomes `stash@{0}`; storing the copy before dropping the original means a failure leaves two entries, never zero.
 - **A stash's message lives twice**: the reflog subject (`%gs`, what `stash store --message` writes) and W's commit subject (`%s`, what `graph.refs` shows). Rename re-commits W with the new subject (same tree, parents, identities, dates via `--date=raw` env) so both agree.
 
+## Saves on a shared stack
+
+- **A no-op save is read from git's output** ("No local changes to save", so no `-q`), never from `refs/stash` before/after: another session's push in between would look like this save.
+- **The new tip may not be ours.** `ownNewStash` looks among the entries newer than the pre-push tip for the one with this HEAD as base and the subject git writes for this message and branch; zero or several → `unverified`, no undo.
+- **git can fail after storing the stash**: `--staged` with a file staged and then changed again (exit 1, "patch does not apply", the stash already stored), `--keep-index` likewise and with the index reset. The refusal names the stash (`oid`, `selector`, `undo`) rather than dropping it: it may be the only copy of what git took out of the index.
+
+## `stash apply --index`
+
+- **Its overwrite list is indented with two spaces** and ends with "Index was not unstashed." — not the tab list of checkout and merge. `parseConflictFiles` reads both (C5's copy only read tabs).
+- **git resets the index to HEAD before the merge**; when the merge refuses, every staged change — even one the stash never touches, and a staged file the stash doesn't touch is itself enough to make it refuse — is left unstaged. `applyStash` saves the index tree first and reads it back in that case.
+
 ## `GIT_LITERAL_PATHSPECS=1` breaks git's own `:/`
 
 - `git stash push -u` without a pathspec cleans untracked files with `git clean … -- :/`, and `--keep-index` restores the index with `git checkout … -- :/`. Under code-git's literal pathspecs `:/` matches nothing: `-u` exits 0 having stashed the untracked files **and left them in place**; `--keep-index` fails ("pathspec ':/' did not match"). `stash.push` passes the pathspec `.` instead whenever it has no paths and either flag is set.
@@ -17,6 +28,9 @@ Code: `src/git/ops/stash.js`, `src/git/stash/`. Reference: `docs/stash.md`. Raw 
 
 - **`stash push -- <paths>` and `--staged` run `apply --index -R` inside git** (`diff-index -p --cached HEAD | apply --index -R`), the command that writes through an untracked symlinked directory (gotchas/staging-patches). git 2.55 happened to refuse every case the probes try, but differently each time — and `--staged` fails *after* creating the stash, so the stash exists while the worktree is untouched.
 - **`stash apply` with the path still in the index and its directory replaced by an untracked symlink replaces the link with a real directory** (exit 0): nothing outside, but the link is gone.
+- **`GIT_LITERAL_PATHSPECS` and `GIT_ICASE_PATHSPECS` cannot be combined** (git dies: "global 'literal' pathspec setting is incompatible"), and `core.ignorecase` alone does not fold pathspec matching. With `core.ignorecase` the guard lists each leading directory's parent and compares case-folded.
+- **A directory pathspec has no leading directory of its own**: a save of `paths: ['d']` guards what `diff-index HEAD -- d` (and, with `-u`, `ls-files --others -- d`) expands it to.
+- **The final component**: `diff --no-index /dev/null <path>` names a symlink by mode 120000 without following it, and a link to a directory as an inaccessible `<path>/null`; `assertFileTarget` refuses both for the ops that write one named file.
 - **The guard (`assertNotBlocked`)**: every proper leading directory of the paths through `ls-files --others --directory -z -- <dirs>` without `--exclude-standard`. An untracked symlink or file at a prefix is listed as the prefix itself, an untracked directory as `prefix/`, a tracked directory not at all (its untracked contents are listed instead). "Listed entry == a prefix" is exactly "something not a directory git can descend stands there". Ignored entries count.
 - **The untracked part is restored non-atomically**: after the tracked merge, a checkout that skips an existing file ("already exists, no checkout") and writes the rest. `assertNoUntrackedCollision` (`ls-files -c -o` over U's paths) refuses first.
 

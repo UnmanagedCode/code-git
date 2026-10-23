@@ -1,20 +1,31 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import type { DiffFile } from '@/features/diff/api';
 import { patchPaths } from '@/features/diff/patch';
+import type { ApiError } from '@/lib/api';
 import { clip, FILE_RENDER_CAP } from '@/lib/clip';
 import { clearLineSelection } from '@/state/lineSelection';
 import { closeStashDialog, type SaveMode, type StashDialog } from '@/state/stashDialog';
 import { useStore } from '@/state/store';
 import type { Tab } from '@/state/tabs';
 import { workdirOf, workdirStore } from '@/state/workdir';
-import { stashPush, stashPushLines, type PushParams } from '../api';
+import { stashPush, stashPushLines, type PushParams, type PushResult } from '../api';
 import { runStashOp } from '../run';
 import { dialogError, ErrorBlock, type DialogError } from './shared';
 
 type SaveDialog = Extract<StashDialog, { kind: 'save' }>;
+
+const savedText = (r: PushResult) => (r.selector ? `Stashed as ${r.selector}` : 'Stashed (another stash was saved at the same moment: check the stash list)');
+
+/** A failed save git had already stored as a stash (the refusal names it): said in a toast, beside the dialog's error. */
+function warnIfStored(e: ApiError): void {
+  const selector = (e.body as { oid?: unknown; selector?: unknown } | undefined)?.selector;
+  if (typeof selector !== 'string') return;
+  toast.warning('A stash was created despite the error', { description: `Your changes are in ${selector}; check it before saving again.` });
+}
 
 const MODES: { mode: SaveMode; label: string }[] = [
   { mode: 'all', label: 'All changes' }, { mode: 'files', label: 'Selected files' }, { mode: 'staged', label: 'Staged only' },
@@ -54,11 +65,15 @@ function SaveContent({ dialog }: { dialog: SaveDialog }) {
     if (!ready) return;
     setBusy(true);
     setError(null);
-    const r = await runStashOp(tab, { running: 'Stashing…', toastRunning: false, done: (res) => `Stashed as ${res.selector}` }, () => (preset.mode === 'lines'
+    const r = await runStashOp(tab, { running: 'Stashing…', toastRunning: false, done: savedText }, () => (preset.mode === 'lines'
       ? stashPushLines(tab, { ...preset.request, ...(message.trim() ? { message: message.trim() } : {}) })
       : stashPush(tab, params())));
     setBusy(false);
-    if (!r.ok) { setError(dialogError(r.error)); return; }
+    if (!r.ok) {
+      setError(dialogError(r.error));
+      warnIfStored(r.error);
+      return;
+    }
     if (preset.mode === 'lines') clearLineSelection(tab);
     closeStashDialog();
   };

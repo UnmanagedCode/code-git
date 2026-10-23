@@ -168,3 +168,18 @@ test('pushLines on an unborn HEAD → NO_HEAD; bad params → BAD_PARAMS', async
   w.repo.git('checkout', '-q', '--orphan', 'fresh');
   await assert.rejects(w.op('stash.pushLines', { path: 'f.txt', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }), refused('NO_HEAD'));
 });
+
+test('pushLines onto a file now a symlink (the final component) → PATH_BLOCKED before any read or write', async (t) => {
+  const w = await world(t);
+  const fd = await shown(w);
+  const outside = path.join(w.repo.root, 'outside-f');
+  fs.writeFileSync(outside, 'OUTSIDE\n');
+  fs.rmSync(path.join(w.repo.dir, 'f.txt'));
+  fs.symlinkSync(outside, path.join(w.repo.dir, 'f.txt'));
+  w.cc.state.execCalls.length = 0;
+  await assert.rejects(w.op('stash.pushLines', { path: 'f.txt', context: 3, hunks: request(fd, [[0, 'all']]) }), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === 'f.txt');
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n');
+  assert.deepEqual(stashList(w), []);
+  assert.deepEqual([...runs(w, 'apply'), ...runs(w, 'stash', 'store')], []);
+});
+

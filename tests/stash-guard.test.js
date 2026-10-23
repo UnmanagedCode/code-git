@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { assertNotBlocked, leadingDirs } from '../src/git/stash/guard.js';
+import { assertFileTarget, assertNotBlocked, leadingDirs } from '../src/git/stash/guard.js';
 import { STAGE_LIMITS } from '../src/git/stage/limits.js';
 import { ctxFor, gitFor } from './_ctx.js';
 import { refused } from './_ops.js';
@@ -45,3 +45,28 @@ test('the guard chunks its argv (STAGE_LIMITS.argvChunkBytes)', async (t) => {
   assert.ok(lsCalls.length >= 2);
   for (const a of lsCalls) assert.ok(Buffer.byteLength(a.slice(a.indexOf('--') + 1).join('\0')) <= STAGE_LIMITS.argvChunkBytes);
 });
+
+test('with core.ignorecase the guard folds case: a symlink `Link` blocks `link/x` (the parent is listed); without it, it does not', async (t) => {
+  const w = await guardWorld(t);
+  outsideLink(w, 'Link');
+  outsideLink(w, 'tracked/Inner');
+  await w.guard(['link/x', 'tracked/inner/y']);
+  w.repo.git('config', 'core.ignorecase', 'true');
+  await assert.rejects(w.guard(['link/x']), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === 'Link');
+  await assert.rejects(w.guard(['tracked/inner/y']), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === 'tracked/Inner');
+  await w.guard(['LINKS/x', 'tracked/f.txt']);
+});
+
+test('assertFileTarget: a symlink or a directory at the path is blocked, a file or nothing is not; linkOk lets a symlink through', async (t) => {
+  const w = await guardWorld(t);
+  const git = gitFor(ctxFor(w.target, 'write'));
+  outsideLink(w, 'dirlink');
+  fs.symlinkSync('a.txt', path.join(w.repo.dir, 'filelink'));
+  fs.mkdirSync(path.join(w.repo.dir, 'adir'));
+  for (const p of ['dirlink', 'filelink', 'adir']) await assert.rejects(assertFileTarget(git, p), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === p, p);
+  await assertFileTarget(git, 'a.txt');
+  await assertFileTarget(git, 'absent.txt');
+  await assertFileTarget(git, 'filelink', { linkOk: true });
+  await assert.rejects(assertFileTarget(git, 'dirlink', { linkOk: true }), refused('PATH_BLOCKED'));
+});
+

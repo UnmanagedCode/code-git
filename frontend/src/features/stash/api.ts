@@ -13,7 +13,8 @@ export interface StashUndo {
   worktreePatch: string | null;
 }
 export interface PushParams { message?: string; paths?: string[]; includeUntracked?: boolean; keepIndex?: boolean; staged?: boolean }
-export interface PushResult { oid: string; selector: string; undo: StashUndo }
+/** `oid`/`selector` null (`unverified`): saved, but another session stored an indistinguishable stash at the same moment. */
+export interface PushResult { oid: string | null; selector: string | null; unverified?: true; undo: StashUndo }
 export interface ApplyResult { conflicts: string[]; undo: StashUndo }
 export interface PopResult extends ApplyResult { dropped: boolean; dropError?: 'STASH_MOVED' }
 export interface BranchResult { ref: string; base: string; conflicts: string[]; dropped: boolean; dropError?: 'STASH_MOVED'; undo: StashUndo }

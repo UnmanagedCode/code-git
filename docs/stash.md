@@ -19,7 +19,8 @@ Every stash op is `kind: 'write'` and **not cancellable**: an aborted stash or a
 | Not a bare repository (`assertWorktree`) | every op that writes the worktree or the index: push, pushLines, apply, pop, applyFile, branch | 409 `BARE_REPO` |
 | HEAD born (`rev-parse --verify --quiet HEAD^{commit}`) | push, pushLines | 409 `NO_HEAD` |
 | No unmerged index entries (`ls-files -u -z` prints nothing) | push, apply, pop, branch | 409 `CONFLICTED` |
-| **`assertNotBlocked(paths)`** (`src/git/stash/guard.js`): every proper leading directory of the paths (`a/b/c` → `a`, `a/b`) is run through `ls-files --others --directory -z -- <dirs>` in `STAGE_LIMITS.argvChunkBytes` chunks, without `--exclude-standard`. An entry equal to a leading directory is an untracked (or ignored) symlink or file standing where a directory must be | push (the paths it saves), pushLines (the file), apply / pop / branch (the stash's whole path set), applyFile (the file) | 409 `PATH_BLOCKED`, `paths` = the first 100 found |
+| **`assertNotBlocked(paths)`** (`src/git/stash/guard.js`): every proper leading directory of the paths (`a/b/c` → `a`, `a/b`) is run through `ls-files --others --directory -z -- <dirs>` in `STAGE_LIMITS.argvChunkBytes` chunks, without `--exclude-standard`. An entry equal to a leading directory is an untracked (or ignored) symlink or file standing where a directory must be. With `core.ignorecase` true the comparison folds ASCII case and each leading directory's *parent* is listed instead (the root when any is top-level; capped at `STASH_LIMITS.pathsMaxOutputBytes`), because git refuses `GIT_ICASE_PATHSPECS` with `GIT_LITERAL_PATHSPECS` | push (the paths it saves — below), pushLines (the file), apply / pop / branch (the stash's whole path set), applyFile (the file) | 409 `PATH_BLOCKED`, `paths` = the first 100 found |
+| **`assertFileTarget(path)`**: the path itself, by the raw `diff --no-index /dev/null <path>` probe (`worktreeEntry`, `src/git/diff/noIndex.js`): a directory, a link to one, or a symlink where the stash's own version is not a symlink | applyFile, pushLines | 409 `PATH_BLOCKED`, `paths: [path]` |
 | **`assertNoUntrackedCollision(untracked)`**: `ls-files -c -o -z -- <U's paths>` prints nothing (no tracked, untracked or ignored file where the stash's untracked file goes) | apply, pop, branch | 409 `CHECKOUT_CONFLICT`, `files` |
 | Version floor: `git version` on the project's System ≥ 2.35 | push with `staged` | 409 `GIT_TOO_OLD`, `{feature, need, have}` (`have: null` when `git version` does not parse `^git version (\d+)\.(\d+)`) |
 
@@ -31,29 +32,33 @@ The paths a stash writes (`stashPaths`): `diff-tree -r -z --name-only --no-renam
   - `message`: trimmed; one line, no control characters, ≤ `STASH_LIMITS.messageMax` characters (`checkMessage`, `src/git/stash/message.js`); blank = none.
   - `paths`: 1…`STAGE_LIMITS.maxPaths`, `assertPath` each.
   - `staged` with `includeUntracked` or `keepIndex` → 400 `BAD_PARAMS`.
-- Guarded paths: `paths`; else, for `staged`, `diff --cached --name-only -z --no-renames --no-relative --no-ext-diff --no-textconv`; else `diff-index -z --name-only --no-renames HEAD`.
-- Runs `git stash push -q [--staged] [--keep-index] [--include-untracked] [--message=<m>]`, with `--pathspec-from-file=- --pathspec-file-nul` and the paths on stdin when there are paths. **Without paths, `includeUntracked` or `keepIndex` sends the pathspec `.`**: git's own cleanup (`clean … :/`) and keep-index checkout (`checkout … -- :/`) name `:/`, which `GIT_LITERAL_PATHSPECS=1` turns into a literal path matching nothing — `-u` would leave the untracked files in place (exit 0), `--keep-index` fails.
-- `refs/stash` before and after (`rev-parse -q --verify refs/stash`); unchanged → 409 `NOTHING_TO_STASH`.
-- `result`: `{oid, selector: 'stash@{0}', undo}`.
+- Guarded paths: with `paths`, the paths themselves plus what they expand to — `diff-index -z --name-only --no-renames HEAD -- <paths>` (chunked) and, with `includeUntracked`, `ls-files --others --exclude-standard -z -- <paths>` (a directory pathspec names no leading directory of its own); else, for `staged`, `diff --cached --name-only -z --no-renames --no-relative --no-ext-diff --no-textconv`; else `diff-index -z --name-only --no-renames HEAD`, plus every untracked file (`ls-files --others --exclude-standard -z`) with `includeUntracked`.
+- Runs `git stash push [--staged] [--keep-index] [--include-untracked] [--message=<m>]`, with `--pathspec-from-file=- --pathspec-file-nul` and the paths on stdin when there are paths. **Without paths, `includeUntracked` or `keepIndex` sends the pathspec `.`**: git's own cleanup (`clean … :/`) and keep-index checkout (`checkout … -- :/`) name `:/`, which `GIT_LITERAL_PATHSPECS=1` turns into a literal path matching nothing — `-u` would leave the untracked files in place (exit 0), `--keep-index` fails.
+- **No `-q`**: git's "No local changes to save" (stdout or stderr, `LC_ALL=C`) → 409 `NOTHING_TO_STASH`. Comparing `refs/stash` before and after would take another session's push for this one.
+- **Which entry is ours** (`ownNewStash`): among the entries newer than the `refs/stash` read before the push, the one whose first parent is this HEAD and whose subject is what git writes for this message on this branch (`On <branch>: <message>`, or `WIP on <branch>: …` without one). Exactly one match → `{oid, selector: 'stash@{k}', undo}` (`k` > 0 when another session pushed after it). None or several (another session saved a stash at the same base with the same subject at the same moment) → `{oid: null, selector: null, unverified: true, undo}` with no `stashes` entry: no undo claims a stash that may not be this save's.
+- **A failed save may have stored a stash**: `--staged` with a file staged and then changed again exits 1 after storing it; `--keep-index` can fail after storing it and resetting the index. The same check runs after a `GIT_FAILED`; when it finds this save's stash, the refusal carries `{oid, selector, undo}` (`restore: 'pop'`) and says the changes are in that stash. The stash is kept, not dropped: it may be the only copy of what git already took out of the index. The UI's save dialog shows the error and a toast "A stash was created despite the error".
+- `result`: `{oid, selector, undo}`, or the unverified shape above.
 
 ### `stash.pushLines`
 
 Selected hunks or lines of one file. Same request as the line staging ops (`selectionParams`, `src/git/stage/readSelection.js`; [protocol → Stage selection](protocol.md#stage-selection-stagestagelines-stageunstagelines-stagediscardlines-write)) plus `message?`.
 
 1. `diff --cached --quiet --no-ext-diff --no-textconv --end-of-options <HEAD> -- <path>` exits 1 (the file has staged changes) → 409 `PARTIAL_UNSUPPORTED`. With the index at HEAD for the path, the index → worktree diff is the HEAD → worktree one.
-2. Two patches from the one selection, both built (`readSelectionPatch`) before anything is written: **forward** (what `stage.stageLines` applies; fits HEAD) and **reverse** (what `stage.discardLines` applies; fits the worktree, which still holds the unselected changes). The selection refusals (`STALE_DIFF`, `SELECTION_UNSUPPORTED`) come from here.
-3. On a temporary index `GIT_INDEX_FILE=$(git rev-parse --git-path code-git-stash-index)`: `read-tree <HEAD>`, `apply --cached --whitespace=nowarn --no-ignore-whitespace -` (the forward patch), `write-tree`.
-4. `commit-tree --no-gpg-sign -p <HEAD> -F - <HEAD>^{tree}` → I (`index on <branch>: <abbrev> <subject>`); `commit-tree --no-gpg-sign -p <HEAD> -p <I> -F - <tree>` → W (`On <branch>: <message>`, or `WIP on <branch>: <abbrev> <subject>`). `<branch>` is the short branch, `(no branch)` when detached. Identity: the configured one; when `git var GIT_COMMITTER_IDENT` fails (exit 128), git stash's fallback `git stash <git@stash>` as `GIT_AUTHOR_*` / `GIT_COMMITTER_*`.
-5. `stash store --message=<W subject> <W>`.
-6. `apply -R --whitespace=nowarn --no-ignore-whitespace -` (the reverse patch, worktree only). A failure here → `GIT_FAILED` with `step: 'removeFromWorktree'`, `oid` (the stored stash) and `undo`: the stash holds the lines and the worktree still has them.
+2. `assertNotBlocked([path])` and `assertFileTarget(path)` (no symlink or directory at the file).
+3. Two patches from the one selection, both built (`readSelectionPatch`) before anything is written: **forward** (what `stage.stageLines` applies; fits HEAD) and **reverse** (what `stage.discardLines` applies; fits the worktree, which still holds the unselected changes). The selection refusals (`STALE_DIFF`, `SELECTION_UNSUPPORTED`) come from here.
+4. On a temporary index `GIT_INDEX_FILE=$(git rev-parse --git-path code-git-stash-index)`: `read-tree <HEAD>`, `apply --cached --whitespace=nowarn --no-ignore-whitespace -` (the forward patch), `write-tree`.
+5. `commit-tree --no-gpg-sign -p <HEAD> -F - <HEAD>^{tree}` → I (`index on <branch>: <abbrev> <subject>`); `commit-tree --no-gpg-sign -p <HEAD> -p <I> -F - <tree>` → W (`On <branch>: <message>`, or `WIP on <branch>: <abbrev> <subject>`). `<branch>` is the short branch, `(no branch)` when detached. Identity: the configured one; when `git var GIT_COMMITTER_IDENT` fails (exit 128), git stash's fallback `git stash <git@stash>` as `GIT_AUTHOR_*` / `GIT_COMMITTER_*`.
+6. `stash store --message=<W subject> <W>`.
+7. `apply -R --whitespace=nowarn --no-ignore-whitespace -` (the reverse patch, worktree only). A failure here → `GIT_FAILED` with `step: 'removeFromWorktree'`, `oid` (the stored stash) and `undo`: the stash holds the lines and the worktree still has them.
 
 - Never `apply --index`. The temporary index file stays in the git dir, overwritten on each use.
 - `result`: `{oid, selector: 'stash@{0}', undo}`.
 
 ### `stash.apply` / `stash.pop`
 
-- `params`: `{oid, index?}` (`pop`: `{oid}`). `index: true` → `--index` (restore what was staged as staged).
-- Gates, then `git stash apply -q [--index] <oid>`, accepting exit 0 and 1. Exit 1: unmerged entries afterwards (`ls-files -u -z`) → ok with `conflicts` = their paths; git's "… would be overwritten" (`parseConflictFiles`) → 409 `CHECKOUT_CONFLICT` with `files` and `stderr`; anything else → 422 `GIT_FAILED`.
+- `params`: `{oid, index?}` for both. `index: true` → `--index` (restore what was staged as staged). The UI's Pop sends `{oid}`.
+- Gates, then `git stash apply -q [--index] <oid>`, accepting exit 0 and 1. Exit 1: unmerged entries afterwards (`ls-files -u -z`) → ok with `conflicts` = their paths; git's "… would be overwritten" (`parseConflictFiles`: the tab-indented list of checkout and merge, and the two-space one `--index` prints before "Index was not unstashed.") → 409 `CHECKOUT_CONFLICT` with `files` and `stderr`; anything else → 422 `GIT_FAILED`.
+- **`--index` and the user's staging.** git resets the index to HEAD before its merge; when the merge then refuses ("Index was not unstashed."), staged changes — even ones the stash never touches — are left unstaged. When something is staged (`diff-index --cached --quiet HEAD` exits 1), the index is saved first (`write-tree`) and read back (`read-tree <tree>`) in that case. Index-only state a tree does not hold (stat data, intent-to-add, skip-worktree bits) is not restored.
 - **No confirmation**: git refuses to overwrite a local change (`CHECKOUT_CONFLICT`, nothing written), and a conflict only adds markers to files that were clean. A file with any local change refuses even when the merge would be clean, so a line stash pops only onto a clean file; `stash.applyFile` applies it into an edited one.
 - `pop`: after a clean apply, `dropVerified` (below). With conflicts the stash is kept (`dropped: false`), as git does. A drop refused `STASH_MOVED` is reported, not thrown: `dropped: false, dropError: 'STASH_MOVED'`.
 - `result`: apply `{conflicts, undo}`; pop `{conflicts, dropped, dropError?, undo}`.
@@ -62,6 +67,7 @@ Selected hunks or lines of one file. Same request as the line staging ops (`sele
 
 - `params`: `{oid, path}`; `path` names one file (`filePath`).
 - The part: `diff-tree -r -z --name-only --no-renames <base> <W> -- <path>` listing exactly `path` → `tracked` (from `base` to `W`); else `cat-file -t <U>:<path>` = `blob` → `untracked` (from the empty tree to `U`); else 404 `PATH_NOT_IN_COMMIT` (an unchanged file, a directory, an absent path). A gitlink (`ls-tree` mode `160000`) → 409 `PARTIAL_UNSUPPORTED`.
+- Gates: `assertNotBlocked([path])`, then `assertFileTarget(path)` (a symlink passes only when the stash's version is one).
 - `DIFF_CONFIG diff DIFF_FLAGS --binary --end-of-options <from> <to> -- <path>` (capped `DIFF_LIMITS.patchMaxOutputBytes`), then `git apply --whitespace=nowarn --no-ignore-whitespace -` — **worktree only**, never `--index`, `--cached` or `--3way`. Atomic; a file that differs from the stash's base is refused, never overwritten: exit 1 or 128 → 409 `PATCH_DOES_NOT_APPLY` with `exitCode`, `stderr`.
 - `result`: `{oid, path, part: 'tracked' | 'untracked', undo}`; `undo.worktreePatch` is the applied patch (base64).
 
@@ -98,7 +104,7 @@ Every op returns `result.undo` (`stashUndo`, `src/git/stash/undo.js`): C5's ref-
 
 | Op | `undo` |
 |---|---|
-| push, pushLines | `stashes: [{oid: <new>, old: null, new, restore: 'pop'}]` |
+| push, pushLines; a failed push that stored a stash (on the refusal) | `stashes: [{oid: <new>, old: null, new, restore: 'pop'}]`; an unverified push: none |
 | drop; pop when dropped | `stashes: [{oid, old, new: null, restore: 'store'}]` |
 | rename | `[{oid: <new>, restore: 'drop'}, {oid: <original>, restore: 'store'}]` |
 | applyFile | `worktreePatch` |

@@ -4,12 +4,14 @@ import { commitOid, DIFF_CONFIG, DIFF_FLAGS, emptyTree } from '../diff/source.js
 import { bad, filePath, nulPaths, optBool, paramsObject, pathList } from '../params.js';
 import { parseRecords } from '../parse/graph.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
+import { perChunk } from '../stage/paths.js';
 import { readSelectionPatch, selectionParams } from '../stage/readSelection.js';
 import { assertCcHeadAck, guardOverwrite, ownHead, parseConflictFiles, shortBranch } from '../stash/branch.js';
-import { assertNoUnmerged, assertNotBlocked, assertNoUntrackedCollision } from '../stash/guard.js';
+import { assertFileTarget, assertNoUnmerged, assertNotBlocked, assertNoUntrackedCollision } from '../stash/guard.js';
 import { identEnv } from '../stash/ident.js';
+import { STASH_LIMITS } from '../stash/limits.js';
 import { branchLabel, checkMessage, reMessage, wMessage } from '../stash/message.js';
-import { dropVerified, namesOf, resolveStash, stashPaths } from '../stash/resolve.js';
+import { dropVerified, listStashes, namesOf, resolveStash, stashPaths } from '../stash/resolve.js';
 import { stashUndo } from '../stash/undo.js';
 import { assertGitAtLeast } from '../stash/version.js';
 import { assertOid } from '../validate.js';
@@ -35,12 +37,42 @@ async function assertBornHead(git) {
   return head;
 }
 
-/** The paths a save would take out of the worktree: the named ones, the staged ones, or every changed tracked one. */
-function savedPaths(git, p) {
-  if (p.paths) return p.paths;
+const CAP = { maxOutputBytes: STASH_LIMITS.pathsMaxOutputBytes };
+
+/**
+ * The paths a save takes out of the worktree, for the guard: the named ones and what they expand to (a directory names
+ * its changed files, and its untracked ones with includeUntracked), the staged ones, or every changed tracked one (plus
+ * every untracked one with includeUntracked).
+ */
+async function savedPaths(git, p) {
+  const untracked = ['ls-files', '--others', '--exclude-standard', '-z'];
+  if (p.paths) {
+    const changed = await perChunk(git, ['diff-index', '-z', '--name-only', '--no-renames', 'HEAD'], p.paths, CAP);
+    return [...p.paths, ...changed, ...(p.includeUntracked ? await perChunk(git, untracked, p.paths, CAP) : [])];
+  }
   if (p.staged) return namesOf(git, ['diff', '--cached', '--name-only', '-z', '--no-renames', '--no-relative', '--no-ext-diff', '--no-textconv']);
-  return namesOf(git, ['diff-index', '-z', '--name-only', '--no-renames', 'HEAD']);
+  const changed = await namesOf(git, ['diff-index', '-z', '--name-only', '--no-renames', 'HEAD']);
+  return p.includeUntracked ? [...changed, ...await namesOf(git, untracked)] : changed;
 }
+
+/**
+ * The stash this save stored, among the entries newer than `before` (refs/stash's oid before the push): the one whose
+ * base is `head` and whose subject is the one git writes for this message on this branch. Another session can push
+ * to the shared stack at the same moment, so the tip is not assumed to be ours; null when no entry, or more than one,
+ * matches.
+ */
+async function ownNewStash(git, { before, head, branch, message }) {
+  const fresh = [];
+  for (const s of await listStashes(git)) {
+    if (s.oid === before) break;
+    fresh.push(s);
+  }
+  const ours = fresh.filter((s) => s.parents[0] === head && (message ? s.message === `On ${branch}: ${message}` : s.message.startsWith(`WIP on ${branch}: `)));
+  return ours.length === 1 ? ours[0] : null;
+}
+
+const pushUndo = (s) => stashUndo({ stashes: [{ oid: s.oid, old: null, new: { message: s.message }, restore: 'pop' }] });
+const NO_CHANGES_RE = /^No local changes to save$/m;
 
 /**
  * The gates before anything writes a stash into the worktree: a resolved index, no leading directory of the stash's
@@ -56,10 +88,16 @@ async function assertCanApply(git, s) {
 /**
  * `stash apply [--index] <oid>`: clean → {conflicts: []}; merge conflicts (unmerged entries afterwards) → {conflicts}; git
  * refusing to overwrite local changes → CHECKOUT_CONFLICT; any other failure → GIT_FAILED.
+ * With `--index`, git resets the index to HEAD before its merge; when the merge then refuses ("Index was not
+ * unstashed.") the user's staged changes are left unstaged. The index is saved first (`write-tree`, only when something
+ * is staged) and read back in that case, so a refused apply leaves the staging as it was.
  */
 async function applyStash(git, oid, index) {
+  const staged = index && (await git(['diff-index', '--cached', '--quiet', 'HEAD'], { okExit: [0, 1] })).exitCode === 1;
+  const saved = staged ? text(await git(['write-tree'])).trim() : null;
   const r = await git(['stash', 'apply', '-q', ...(index ? ['--index'] : []), oid], { okExit: [0, 1] });
   if (r.exitCode === 0) return { conflicts: [] };
+  if (saved && decoder.decode(r.stderr).includes('Index was not unstashed.')) await git(['read-tree', saved]);
   const unmerged = (await namesOf(git, ['ls-files', '-u', '-z'])).map((f) => f.slice(f.indexOf('\t') + 1));
   if (unmerged.length) return { conflicts: [...new Set(unmerged)] };
   const stderr = decoder.decode(r.stderr);
@@ -120,12 +158,14 @@ export const ops = [
     },
     async run(git, p) {
       await assertWorktree(git);
-      await assertBornHead(git);
+      const head = await assertBornHead(git);
       await assertNoUnmerged(git);
       if (p.staged) await assertGitAtLeast(git, [2, 35], 'stash push --staged');
       await assertNotBlocked(git, await savedPaths(git, p));
-      const before = await stashTip(git);
-      const args = ['stash', 'push', '-q'];
+      const mine = { before: await stashTip(git), head, branch: branchLabel(await ownHead(git)), message: p.message };
+      // No -q: "No local changes to save" (LC_ALL=C) is how a save that stored nothing is told apart; comparing
+      // refs/stash before and after would take another session's push for ours.
+      const args = ['stash', 'push'];
       if (p.staged) args.push('--staged');
       if (p.keepIndex) args.push('--keep-index');
       if (p.includeUntracked) args.push('--include-untracked');
@@ -134,12 +174,24 @@ export const ops = [
       // turns into a literal path matching nothing: `-u` would leave the untracked files in place, `--keep-index` fail.
       // `.` (the root: commands run there) is what `:/` means.
       const paths = p.paths ?? (p.includeUntracked || p.keepIndex ? ['.'] : null);
-      if (paths) await git([...args, ...FROM_STDIN], { stdin: nulPaths(paths) });
-      else await git(args);
-      const after = await stashTip(git);
-      if (after === before) throw new Refusal('NOTHING_TO_STASH', 'there are no local changes to stash');
-      const { message } = await resolveStash(git, after);
-      return { oid: after, selector: 'stash@{0}', undo: stashUndo({ stashes: [{ oid: after, old: null, new: { message }, restore: 'pop' }] }) };
+      let r;
+      try {
+        r = paths ? await git([...args, ...FROM_STDIN], { stdin: nulPaths(paths) }) : await git(args);
+      } catch (e) {
+        if (e.code !== 'GIT_FAILED') throw e;
+        // git can fail after storing the stash (`--staged` with a file staged and then changed again; `--keep-index`,
+        // which may also have reset the index). The stash is kept, not dropped: it may be the only copy of what git
+        // already took out of the index, so the refusal names it, with the undo a successful save would carry.
+        const s = await ownNewStash(git, mine);
+        if (!s) throw e;
+        throw new Refusal('GIT_FAILED', `${e.message} after storing ${s.selector}: the changes are in that stash`, { ...e.extra, oid: s.oid, selector: s.selector, undo: pushUndo(s) });
+      }
+      if (NO_CHANGES_RE.test(text(r)) || NO_CHANGES_RE.test(decoder.decode(r.stderr))) throw new Refusal('NOTHING_TO_STASH', 'there are no local changes to stash');
+      const s = await ownNewStash(git, mine);
+      // Saved, but another session's stash at the same base with the same subject arrived at the same moment: which
+      // entry is this save's cannot be told, so no undo claims one.
+      if (!s) return { oid: null, selector: null, unverified: true, undo: stashUndo() };
+      return { oid: s.oid, selector: s.selector, undo: pushUndo(s) };
     },
   },
   {
@@ -161,6 +213,7 @@ export const ops = [
       const staged = await git(['diff', '--cached', '--quiet', '--no-ext-diff', '--no-textconv', '--end-of-options', head, '--', p.path], { okExit: [0, 1] });
       if (staged.exitCode === 1) throw new Refusal('PARTIAL_UNSUPPORTED', `${p.path} has staged changes: stash it whole`);
       await assertNotBlocked(git, [p.path]);
+      await assertFileTarget(git, p.path);
       const patch = await readSelectionPatch(git, p, { revs: [], direction: 'forward' });
       const removal = await readSelectionPatch(git, p, { revs: [], direction: 'reverse' });
       const index = text(await git(['rev-parse', '--git-path', 'code-git-stash-index'])).replace(/\n$/, '');
@@ -280,6 +333,7 @@ export const ops = [
       const mode = decoder.decode((await git(['ls-tree', '-z', '--full-tree', to, '--', p.path])).stdout).split(' ')[0];
       if (mode === '160000') throw new Refusal('PARTIAL_UNSUPPORTED', `${p.path} is a submodule: apply the whole stash`);
       await assertNotBlocked(git, [p.path]);
+      await assertFileTarget(git, p.path, { linkOk: mode === '120000' });
       const diff = await git([...DIFF_CONFIG, 'diff', ...DIFF_FLAGS, '--binary', '--end-of-options', from, to, '--', p.path], { maxOutputBytes: DIFF_LIMITS.patchMaxOutputBytes });
       const r = await git(['apply', '--whitespace=nowarn', '--no-ignore-whitespace', '-'], { stdin: diff.stdout, okExit: [0, 1, 128] });
       if (r.exitCode !== 0) {

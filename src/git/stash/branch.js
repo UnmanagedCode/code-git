@@ -4,6 +4,8 @@ import { assertRefName } from '../validate.js';
 // C5 owns these (src/git/refs/check.js shortBranch, src/git/refs/heads.js ownHead / isCcOwned / assertCcHeadAck,
 // src/git/refs/write.js guardOverwrite, src/git/parse/refs.js parseConflictFiles), copied unchanged because C5 had not
 // landed when the stash card needed them. Whichever of the two lands second deletes this file and imports from there.
+// parseConflictFiles fixes C5's copy: it also reads the two-space-indented list `stash apply --index` prints ("…
+// overwritten by merge:\n  <file>\nIndex was not unstashed."); the second lander keeps this behaviour.
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const text = (r) => decoder.decode(r.stdout).trim();
@@ -40,14 +42,16 @@ const OVERWRITE_RE = /would be overwritten by|untracked working tree files would
 
 /**
  * The files git names after "… would be overwritten by checkout:" / "by merge:" / "untracked working tree files would be
- * overwritten…": the tab-indented lines that follow. [] when git said no such thing.
+ * overwritten…": the indented lines that follow (a tab from checkout and merge, two spaces from `stash apply --index`),
+ * the indent removed. [] when git said no such thing.
  */
 export function parseConflictFiles(stderr) {
   const files = [];
   let inList = false;
   for (const line of stderr.split('\n')) {
     if (OVERWRITE_RE.test(line)) { inList = true; continue; }
-    if (inList && line.startsWith('\t')) { files.push(line.slice(1)); continue; }
+    const m = inList && /^(?:\t| {2})(.+)$/.exec(line);
+    if (m) { files.push(m[1]); continue; }
     inList = false;
   }
   return [...new Set(files)];

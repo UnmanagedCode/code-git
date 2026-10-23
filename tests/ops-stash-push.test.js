@@ -180,3 +180,76 @@ test('hostile core.worktree: the stash acts on the checkout, elsewhereSnapshot u
   assert.deepEqual(elsewhereSnapshot(w.repo), Object.fromEntries(Object.entries(ELSEWHERE_FILES).sort()));
   noViolations(w.cc);
 });
+
+test('a failed --staged save that git had already stored names the stash, with the pop undo (refusal carries oid)', async (t) => {
+  const w = await stashWorld(t);
+  w.repo.write('b.txt', 'b staged\n');
+  w.repo.git('add', 'b.txt');
+  w.repo.write('b.txt', 'b staged\nand changed again\n');
+  await assert.rejects(w.op('stash.push', { staged: true }), (e) => {
+    assert.equal(e.code, 'GIT_FAILED');
+    const [top] = stashList(w);
+    assert.ok(top, 'git stored a stash before failing');
+    assert.equal(e.extra.oid, top.oid);
+    assert.equal(e.extra.selector, 'stash@{0}');
+    assert.deepEqual(e.extra.undo.stashes, [{ oid: top.oid, old: null, new: { message: top.message }, restore: 'pop' }]);
+    return true;
+  });
+});
+
+test('a failed save that stored nothing stays a plain GIT_FAILED (no oid)', async (t) => {
+  const w = await stashWorld(t);
+  await assert.rejects(w.op('stash.push', { paths: ['nope.txt'] }), (e) => e.code === 'GIT_FAILED' && e.extra.oid === undefined);
+  assert.deepEqual(stashList(w), []);
+});
+
+test('a no-op save is told by git\'s output (no -q): another session\'s push meanwhile is not taken for it', async (t) => {
+  const w = await stashWorld(t);
+  w.cc.state.execHook = (body) => (body.argv.includes('push') ? 'hold' : undefined);
+  const saving = w.op('stash.push', {});
+  const held = await w.cc.nextHeld();
+  w.repo.write('b.txt', 'theirs\n');
+  w.repo.git('stash', 'push', '-q', '-m', 'foreign');
+  w.cc.state.execHook = null;
+  held.release();
+  await assert.rejects(saving, refused('NOTHING_TO_STASH'));
+  assert.deepEqual(stashList(w).map((s) => s.message), ['On main: foreign']);
+  assert.ok(!runs(w, 'stash', 'push')[0].includes('-q'));
+});
+
+/** Saves `mine` with a foreign push landing between git's store and the op's read of the list. */
+async function racedSave(t, foreignMessage) {
+  const w = await stashWorld(t);
+  w.repo.write('a.txt', 'mine\n');
+  w.cc.state.execHook = (body) => (body.argv.includes('stash') && body.argv.includes('list') ? 'hold' : undefined);
+  const saving = w.op('stash.push', { message: 'mine' });
+  const held = await w.cc.nextHeld();
+  w.repo.write('b.txt', 'theirs\n');
+  w.repo.git('stash', 'push', '-q', '-m', foreignMessage);
+  w.cc.state.execHook = null;
+  held.release();
+  return { w, r: await saving, foreign: stashList(w)[0].oid };
+}
+
+test('a foreign push right after ours: the result and undo name our stash (stash@{1}), never the foreign one', async (t) => {
+  const { w, r, foreign } = await racedSave(t, 'foreign');
+  const ours = stashList(w)[1];
+  assert.equal(ours.message, 'On main: mine');
+  assert.deepEqual({ oid: r.oid, selector: r.selector }, { oid: ours.oid, selector: 'stash@{1}' });
+  assert.deepEqual(r.undo.stashes.map((s) => s.oid), [ours.oid]);
+  assert.notEqual(r.oid, foreign);
+});
+
+test('a foreign stash indistinguishable from ours (same base, same subject): unverified, and no undo claims either', async (t) => {
+  const { r } = await racedSave(t, 'mine');
+  assert.deepEqual({ oid: r.oid, selector: r.selector, unverified: r.unverified, stashes: r.undo.stashes }, { oid: null, selector: null, unverified: true, stashes: [] });
+});
+
+test('push of a directory pathspec guards what it expands to: a tracked dir now an untracked symlink → PATH_BLOCKED', async (t) => {
+  const w = await stashWorld(t, { 'a.txt': 'a\n', 'link/x.txt': 'x\n' });
+  fs.rmSync(path.join(w.repo.dir, 'link'), { recursive: true });
+  const outside = outsideLink(w, 'link');
+  await assert.rejects(w.op('stash.push', { paths: ['link'] }), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths[0] === 'link');
+  assert.deepEqual(fs.readdirSync(outside), []);
+  assert.equal(runs(w, 'stash', 'push').length, 0);
+});

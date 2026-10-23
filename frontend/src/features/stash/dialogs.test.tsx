@@ -10,6 +10,7 @@ import { dfile } from '@/test/diffFixtures';
 import { json } from '@/test/fixtures';
 import { stashFx, stashWorld, W } from '@/test/stashWorld';
 import { openStashSave } from './actions';
+import { StashToaster } from './StashToaster';
 
 afterEach(() => { toast.dismiss(); });
 
@@ -23,7 +24,7 @@ async function world(w: Parameters<typeof stashWorld>[0] = {}) {
     ...w,
     answers: { 'stash.push': PUSHED, 'stash.pushLines': PUSHED, ...w.answers },
   });
-  render(<Shell />);
+  render(<><Shell /><StashToaster /></>);
   act(() => dispatchTabs({ type: 'open', tab: APP }));
   await waitFor(() => expect(getGraph(APP).refs).not.toBeNull());
   await screen.findByRole('button', { name: 'Stash changes…' });
@@ -165,3 +166,34 @@ test('untrusted text in a dialog renders as text: a path and a subject', async (
   expect(document.querySelector('[role="dialog"] img')).toBeNull();
   expect((window as { __pwned?: number }).__pwned).toBeUndefined();
 });
+
+const toastTexts = () => [...screen.getByRole('region', { name: /Notifications/ }).querySelectorAll('[data-sonner-toast]')].map((t) => t.textContent ?? '');
+
+test('a failed save that git had stored as a stash: the error stays in the dialog and a toast says the stash exists', async () => {
+  await world({ answers: { 'stash.push': json({ error: 'git stash exited with 1 after storing stash@{0}', code: 'GIT_FAILED', oid: W, selector: 'stash@{0}', stderr: 'patch failed' }, 422) } });
+  act(() => openStashSave(APP, { mode: 'staged' }));
+  const d = await dialog('Stash changes');
+  await userEvent.click(within(d).getByRole('button', { name: 'Stash' }));
+  expect((await within(d).findByRole('alert')).textContent).toContain('after storing stash@{0}');
+  await waitFor(() => expect(toastTexts().join('\n')).toContain('A stash was created despite the error'));
+  expect(toastTexts().join('\n')).toContain('Your changes are in stash@{0}');
+});
+
+test('a failed save that stored nothing shows no such toast', async () => {
+  await world({ answers: { 'stash.push': json({ error: 'git stash exited with 1', code: 'GIT_FAILED', stderr: 'boom' }, 422) } });
+  act(() => openStashSave(APP, { mode: 'all' }));
+  const d = await dialog('Stash changes');
+  await userEvent.click(within(d).getByRole('button', { name: 'Stash' }));
+  await within(d).findByRole('alert');
+  expect(toastTexts().join('\n')).not.toContain('A stash was created');
+});
+
+test('an unverified save (another session stashed at the same moment) closes the dialog and says to check the list', async () => {
+  await world({ answers: { 'stash.push': { oid: null, selector: null, unverified: true, undo: {} } } });
+  act(() => openStashSave(APP, { mode: 'all' }));
+  const d = await dialog('Stash changes');
+  await userEvent.click(within(d).getByRole('button', { name: 'Stash' }));
+  await waitFor(() => expect(toastTexts().join('\n')).toContain('Stashed (another stash was saved at the same moment: check the stash list)'));
+  expect(stashDialogStore.get()).toBeNull();
+});
+

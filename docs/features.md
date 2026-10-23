@@ -216,7 +216,7 @@ Save work aside and bring it back. Ops and their rules: [stash](stash.md). Every
 | ☐ **Keep staged changes** | The stash takes everything, and what was staged stays staged in the working tree |
 | Lines mode (from the diff) | "N lines of ‹path›" and the message only. Offered on an unstaged diff of a file with nothing staged; the selection clears after the stash |
 
-A refusal (nothing to stash, a conflict in progress, a path behind an untracked symlink, …) stays in the dialog with git's message.
+A refusal (nothing to stash, a conflict in progress, a path behind an untracked symlink, …) stays in the dialog with git's message. When git failed after already storing the stash, a toast also says "A stash was created despite the error" and names it. A save made at the same moment as an identical one from another session says "Stashed (another stash was saved at the same moment: check the stash list)".
 
 **Stash rows** (graph and the refs panel's Stashes section) — right-click:
 
@@ -228,6 +228,7 @@ A refusal (nothing to stash, a conflict in progress, a path behind an untracked 
 | **Rename…** | A new message; "A renamed stash moves to the top (stash@{0})." |
 | **Drop…** | Asks first ("Drop stash@{n}?" with the subject), then removes the stash |
 
+- **Apply with staged changes** with other changes staged: when git refuses, the staging is put back as it was (git itself would leave it unstaged).
 - No confirmation for apply or pop: git refuses to overwrite a local change — the toast says "Local changes would be overwritten" and names the files ("Commit, stash or discard these changes first."); nothing is written. That includes a file with *any* local change, even one the stash would merge cleanly into.
 - Conflicts: "Applied stash@{n} with conflicts in N files", the files named; the conflicted files show in the Changes panel (`U`).
 

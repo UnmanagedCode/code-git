@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { hermeticEnv } from './_git.js';
+import { parseConflictFiles } from '../src/git/stash/branch.js';
 import { noViolations, refused } from './_ops.js';
 import { blob, exists, outsideLink, read, runs, stashList, stashWorld } from './_stash.js';
 
@@ -109,6 +110,8 @@ test('apply index:true restores the staged part; without it the staged change la
   assert.deepEqual(r.conflicts, []);
   assert.deepEqual(w.status(), { 'a.txt': ' M', 'b.txt': 'M ' });
   assert.ok(runs(w, 'stash', 'apply').at(-1).includes('--index'));
+  // Nothing was staged: no index snapshot is taken.
+  assert.deepEqual(runs(w, 'write-tree'), []);
   w.repo.git('reset', '-q', '--hard');
   await w.op('stash.apply', { oid });
   assert.deepEqual(w.status(), { 'a.txt': ' M', 'b.txt': ' M' });
@@ -255,4 +258,97 @@ test('apply / pop / applyFile / branch of an unknown oid → STASH_UNKNOWN', asy
   for (const [op, extra] of [['stash.apply', {}], ['stash.pop', {}], ['stash.applyFile', { path: 'a.txt' }], ['stash.branch', { name: 'x' }]]) {
     await assert.rejects(w.op(op, { oid: w.base, ...extra }), refused('STASH_UNKNOWN'), op);
   }
+});
+
+test('parseConflictFiles reads both of git\'s lists: tab-indented, and the two-space one of stash apply --index', () => {
+  assert.deepEqual(parseConflictFiles('error: Your local changes to the following files would be overwritten by checkout:\n\ta.txt\n\tb c.txt\nPlease commit\n'), ['a.txt', 'b c.txt']);
+  assert.deepEqual(parseConflictFiles('error: Your local changes to the following files would be overwritten by merge:\n  dir/c.txt\nIndex was not unstashed.\n'), ['dir/c.txt']);
+  assert.deepEqual(parseConflictFiles('  indented but no list header\n'), []);
+});
+
+/** The round-1 repro: a stash of a staged b.txt and a changed a.txt, then dir/c.txt changed and staged. */
+async function stagedElsewhere(t) {
+  const w = await stashWorld(t);
+  w.repo.write('b.txt', 'b staged\n');
+  w.repo.git('add', 'b.txt');
+  const oid = await saved(w, { 'a.txt': 'a2\n' });
+  w.repo.write('dir/c.txt', 'c2\n');
+  w.repo.git('add', 'dir/c.txt');
+  return { ...w, oid };
+}
+
+test('Apply with staged changes over a newly staged file → CHECKOUT_CONFLICT {files} (git\'s two-space list); the staging git reset is put back', async (t) => {
+  const w = await stagedElsewhere(t);
+  await assert.rejects(w.op('stash.apply', { oid: w.oid, index: true }), (e) => {
+    assert.equal(e.code, 'CHECKOUT_CONFLICT');
+    assert.deepEqual(e.extra.files, ['dir/c.txt']);
+    return true;
+  });
+  assert.deepEqual(w.status(), { 'dir/c.txt': 'M ' });
+  assert.equal(read(w, 'dir/c.txt'), 'c2\n');
+  assert.equal(w.indexBlob('dir/c.txt').toString(), 'c2\n');
+  assert.deepEqual(stashList(w).map((s) => s.oid), [w.oid]);
+});
+
+test('branch whose apply --index meets that staged file → CHECKOUT_CONFLICT with step apply; the stash stays', async (t) => {
+  const w = await stagedElsewhere(t);
+  await assert.rejects(w.op('stash.branch', { oid: w.oid, name: 'nb' }), (e) => {
+    assert.equal(e.code, 'CHECKOUT_CONFLICT');
+    assert.deepEqual(e.extra.files, ['dir/c.txt']);
+    assert.equal(e.extra.step, 'apply');
+    assert.equal(e.extra.ref, 'refs/heads/nb');
+    assert.deepEqual(e.extra.undo.refs, [{ ref: 'refs/heads/nb', old: null, new: w.base }]);
+    return true;
+  });
+  assert.deepEqual(stashList(w).map((s) => s.oid), [w.oid]);
+  assert.deepEqual(w.status(), { 'dir/c.txt': 'M ' });
+});
+
+/** Replaces `p` in the worktree by a symlink to a file outside the repo; returns that file's path. */
+function linkedFile(w, p) {
+  const outside = path.join(w.repo.root, `outside-${p.replaceAll('/', '-')}`);
+  fs.writeFileSync(outside, 'OUTSIDE\n');
+  fs.rmSync(path.join(w.repo.dir, p));
+  fs.symlinkSync(outside, path.join(w.repo.dir, p));
+  return outside;
+}
+
+test('applyFile onto a file now a symlink (the final component) → PATH_BLOCKED; the outside file is untouched', async (t) => {
+  const w = await stashWorld(t);
+  const oid = await saved(w, { 'a.txt': 'a stashed\n' });
+  const outside = linkedFile(w, 'a.txt');
+  w.cc.state.execCalls.length = 0;
+  await assert.rejects(w.op('stash.applyFile', { oid, path: 'a.txt' }), (e) => e.code === 'PATH_BLOCKED' && e.extra.paths.join() === 'a.txt');
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'OUTSIDE\n');
+  assert.equal(runs(w, 'apply').length, 0);
+  // A directory standing at the path is refused the same way.
+  fs.rmSync(path.join(w.repo.dir, 'a.txt'));
+  fs.mkdirSync(path.join(w.repo.dir, 'a.txt'));
+  await assert.rejects(w.op('stash.applyFile', { oid, path: 'a.txt' }), refused('PATH_BLOCKED'));
+});
+
+test('applyFile of a tracked symlink the stash retargets applies (its own version is a symlink)', async (t) => {
+  const w = await stashWorld(t);
+  fs.symlinkSync('a.txt', path.join(w.repo.dir, 'ln'));
+  w.repo.commit({}, 'add ln');
+  fs.rmSync(path.join(w.repo.dir, 'ln'));
+  fs.symlinkSync('b.txt', path.join(w.repo.dir, 'ln'));
+  const oid = await saved(w, {});
+  assert.equal(fs.readlinkSync(path.join(w.repo.dir, 'ln')), 'a.txt');
+  await w.op('stash.applyFile', { oid, path: 'ln' });
+  assert.equal(fs.readlinkSync(path.join(w.repo.dir, 'ln')), 'b.txt');
+});
+
+test('applyFile of a submodule (gitlink, mode 160000) → PARTIAL_UNSUPPORTED', async (t) => {
+  const w = await stashWorld(t);
+  const env = { ...hermeticEnv(w.repo.home), GIT_INDEX_FILE: path.join(w.repo.root, 'tmp-index') };
+  const g = (args, input) => execFileSync('git', ['-C', w.repo.dir, '--work-tree=.', ...args], { env, input }).toString().trim();
+  g(['read-tree', 'HEAD']);
+  g(['update-index', '--add', '--cacheinfo', `160000,${'1'.repeat(40)},vendor/lib`]);
+  const tree = g(['write-tree']);
+  const index = g(['commit-tree', '-p', 'HEAD', '-m', 'index on main', 'HEAD^{tree}']);
+  const oid = g(['commit-tree', '-p', 'HEAD', '-p', index, '-m', 'On main: gitlink', tree]);
+  w.repo.git('stash', 'store', '-m', 'On main: gitlink', oid);
+  await assert.rejects(w.op('stash.applyFile', { oid, path: 'vendor/lib' }), refused('PARTIAL_UNSUPPORTED'));
+  assert.equal(exists(w, 'vendor/lib'), false);
 });
