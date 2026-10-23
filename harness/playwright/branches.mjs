@@ -204,6 +204,22 @@ try {
       for (const [vp, size] of Object.entries(VIEWPORTS)) {
         await page.setViewportSize(size);
         await open();
+        // The graph toolbar holds C4's Changes button and this card's Branch button: it wraps, never overflows.
+        const toolbar = page.getByRole('region', { name: 'Commit graph', exact: true }).locator(':scope > div').first();
+        const controls = ['Branch', 'Columns', 'Refresh graph', ...(vp === 'phone' ? ['Refs', 'Compare'] : [])];
+        for (const name of controls) await toolbar.getByRole('button', { name, exact: true }).waitFor();
+        if (vp === 'phone') await toolbar.getByRole('button', { name: /^Changes( \(\d+\))?$/ }).waitFor();
+        const fits = await toolbar.evaluate((el) => {
+          const w = document.documentElement.clientWidth;
+          const out = [...el.querySelectorAll('button')].map((b) => [b.getAttribute('aria-label') || b.textContent, b.getBoundingClientRect()])
+            .filter(([, r]) => r.left < 0 || r.right > w).map(([n, r]) => `${n} ${Math.round(r.left)}..${Math.round(r.right)}`);
+          return { ok: el.scrollWidth <= el.clientWidth && !out.length, detail: `scroll ${el.scrollWidth}/${el.clientWidth} of ${w}; out: ${out.join(', ')}` };
+        });
+        const tb = await toolbar.boundingBox();
+        const tbFile = path.join(outDir, `toolbar-${scheme}-${vp}.png`);
+        await page.screenshot({ path: tbFile, clip: { x: 0, y: tb.y, width: size.width, height: tb.height }, animations: 'disabled' });
+        console.log(`screenshot: ${tbFile}`);
+        check(fits.ok, `${scheme} ${vp}: the graph toolbar (Changes, Branch, …) fits the width${fits.ok ? '' : `: ${fits.detail}`}`);
         const fromRefs = async (name, ...items) => {
           if (vp === 'phone') {
             await page.getByRole('button', { name: 'Refs', exact: true }).click();
@@ -223,7 +239,7 @@ try {
         await shot(`reset-hard-${scheme}-${vp}`);
         await page.keyboard.press('Escape');
         await dialog.waitFor({ state: 'detached' });
-        await page.getByRole('button', { name: /Branch/ }).first().click();
+        await page.getByRole('button', { name: 'Branch', exact: true }).click();
         await dialog.getByRole('textbox', { name: 'Branch name' }).fill(`${XSS_BRANCH}-new`);
         await shot(`create-branch-${scheme}-${vp}`);
         await page.keyboard.press('Escape');

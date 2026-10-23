@@ -382,7 +382,8 @@ function GraphView({ tab }: { tab: Tab }) {
         )}
         {search.searching && <span className="text-xs text-muted-foreground">Searching…</span>}
         {search.error && <span className="text-xs text-destructive" role="alert">{search.error}</span>}
-        <span className="ml-auto flex items-center gap-1">
+        {/* Wraps within itself: below `lg` it holds Refs, Compare, Changes, Columns, Branch and Refresh, wider than a phone. */}
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
           {!wide && (
             <>
               <Button variant="outline" size="sm" className="h-7 gap-1 px-2" onClick={() => setRefsOpen(true)}>
