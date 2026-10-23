@@ -1,3 +1,4 @@
+import type { Conflict, Operation } from '@/features/sequence/api';
 import { runOp, type Target } from '@/lib/endpoints';
 
 // The staging, commit, ignore, restore and patch ops' wire shapes (docs/protocol.md → Staging ops) and runOp wrappers.
@@ -25,7 +26,9 @@ export const unstageLines = (t: Target, r: SelectionRequest) => runOp<{ path: st
 export const discardLines = (t: Target, r: SelectionRequest) => runOp<{ path: string; patchB64: string }>('stage.discardLines', t, r);
 
 export const commitCreate = (t: Target, p: CommitParams) => runOp<{ oid: string }>('commit.create', t, p);
-export const commitState = (t: Target) => runOp<{ merging: boolean }>('commit.state', t);
+/** `operation` / `conflicts` may be missing from an older backend's answer: read as null / []. */
+export interface CommitState { merging: boolean; operation?: Operation | null; conflicts?: Conflict[] }
+export const commitState = (t: Target) => runOp<CommitState>('commit.state', t);
 export const headMessage = (t: Target) => runOp<Draft & { oid: string }>('commit.headMessage', t);
 export const commitTemplate = (t: Target) => runOp<TemplateResult>('commit.template', t);
 

@@ -51,7 +51,7 @@ test('ff, diverged → a merge commit of HEAD and the upstream with the remote-t
   assert.deepEqual(parents(w), [local, remote]);
   assert.equal(w.repo.git('log', '-1', '--format=%s'), "Merge remote-tracking branch 'origin/main'");
   assert.deepEqual([read(w, 'r.txt'), read(w, 'l.txt'), r.oid], ['r\n', 'l\n', w.oid('HEAD')]);
-  assert.deepEqual(ran(w, 'merge').at(-1), ['-c', 'merge.autoStash=false', 'merge', '--ff', '--no-edit', '-m', "Merge remote-tracking branch 'origin/main'", '--end-of-options', remote]);
+  assert.deepEqual(ran(w, 'merge').at(-1), ['-c', 'merge.autoStash=false', 'merge', '--ff', '--no-edit', '-m', "Merge remote-tracking branch 'origin/main'", '--no-stat', '--end-of-options', remote]);
 });
 
 test('ffOnly, diverged → NOT_FAST_FORWARD: HEAD unchanged, the upstream fetched', async (t) => {
@@ -70,7 +70,10 @@ test('rebase, diverged → the local commit replayed on the upstream: linear, co
   assert.deepEqual(parents(w), [remote]);
   assert.equal(w.repo.git('log', '-1', '--format=%s'), 'local');
   assert.deepEqual([read(w, 'r.txt'), read(w, 'l.txt'), r.oid], ['r\n', 'l\n', w.oid('HEAD')]);
-  assert.deepEqual(ran(w, 'rebase'), [['-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false', 'rebase', '--end-of-options', remote]]);
+  assert.deepEqual(ran(w, 'rebase'), [[
+    '-c', 'rebase.autoStash=false', '-c', 'rebase.updateRefs=false', '-c', 'rebase.autoSquash=false', '-c', 'rebase.backend=merge', '-c', 'rebase.rebaseMerges=false',
+    'rebase', '--end-of-options', remote,
+  ]]);
   assert.equal(ran(w, 'pull').length, 0, 'never git pull');
 });
 
@@ -87,13 +90,41 @@ test('a merge conflict leaves the merge in progress with the files; head.abort m
   await assert.rejects(w.op('head.abort', { which: 'merge' }), refused('NOTHING_IN_PROGRESS'));
 });
 
-test('a rebase conflict → PULL_CONFLICTS with the files; the rebase is aborted: nothing in progress, HEAD and files unchanged', async (t) => {
+test('a rebase conflict answers `conflicts` with the files and leaves the rebase in progress; head.abort rebase puts HEAD, the branch and the files back', async (t) => {
   const w = await refsWorld(t);
-  const { local } = setup(w, { diverge: true, remoteFiles: { 'f.txt': 'remote\n' }, localFiles: { 'f.txt': 'local\n' } });
-  await assert.rejects(w.op('remote.pull', { mode: 'rebase' }), refused('PULL_CONFLICTS', { files: ['f.txt'] }));
-  assert.equal(inProgress(w, 'REBASE_HEAD'), false);
+  const { local, remote } = setup(w, { diverge: true, remoteFiles: { 'f.txt': 'remote\n' }, localFiles: { 'f.txt': 'local\n' } });
+  const r = await w.op('remote.pull', { mode: 'rebase' });
+  assert.deepEqual([r.outcome, r.files, r.oid, r.undo.head], ['conflicts', ['f.txt'], local, null]);
+  assert.equal(inProgress(w, 'REBASE_HEAD'), true);
+  const state = await w.op('commit.state');
+  assert.equal(state.operation.kind, 'rebase');
+  assert.deepEqual([state.operation.rebase.branch, state.operation.rebase.onto, state.operation.incoming.oid], ['refs/heads/main', remote, local]);
+  assert.deepEqual(state.conflicts.map((c) => [c.path, c.kind]), [['f.txt', 'bothModified']]);
+  await w.op('head.abort', { which: 'rebase' });
   assert.equal(fs.existsSync(path.join(w.repo.dir, '.git', 'rebase-merge')), false);
   assert.deepEqual([w.oid('HEAD'), w.repo.git('symbolic-ref', 'HEAD'), read(w, 'f.txt'), w.repo.git('status', '--porcelain')], [local, 'refs/heads/main', 'local\n', '']);
+});
+
+test('a rebase pull stopped on conflicts finishes after the file is resolved, staged and continued: the branch is linear on the upstream', async (t) => {
+  const w = await refsWorld(t);
+  const { local, remote } = setup(w, { diverge: true, remoteFiles: { 'f.txt': 'remote\n' }, localFiles: { 'f.txt': 'local\n' } });
+  assert.equal((await w.op('remote.pull', { mode: 'rebase' })).outcome, 'conflicts');
+  w.repo.write('f.txt', 'both\n');
+  await w.op('stage.files', { paths: ['f.txt'] });
+  const c = await w.op('head.continue', { which: 'rebase' });
+  assert.equal(c.outcome, 'done');
+  assert.deepEqual([parents(w), w.repo.git('symbolic-ref', 'HEAD'), read(w, 'f.txt'), w.repo.git('log', '-1', '--format=%s')], [[remote], 'refs/heads/main', 'both\n', 'local']);
+  assert.deepEqual(c.undo.refs, [{ ref: 'refs/heads/main', old: local, new: w.oid('HEAD') }]);
+  assert.equal((await w.op('commit.state')).operation, null);
+});
+
+test('a pull refuses OPERATION_IN_PROGRESS while a rebase or merge is in progress, before fetching', async (t) => {
+  const w = await refsWorld(t);
+  setup(w, { diverge: true, remoteFiles: { 'f.txt': 'remote\n' }, localFiles: { 'f.txt': 'local\n' } });
+  await w.op('remote.pull', { mode: 'ff' });
+  const fetches = ran(w, 'fetch').length;
+  for (const mode of ['ff', 'ffOnly', 'rebase']) await assert.rejects(w.op('remote.pull', { mode }), refused('OPERATION_IN_PROGRESS', { operation: 'merge' }));
+  assert.equal(ran(w, 'fetch').length, fetches, 'no fetch');
 });
 
 test('rebase refuses tracked changes (DIRTY_WORKTREE) before fetching; untracked files do not count; ff merges around unrelated changes', async (t) => {

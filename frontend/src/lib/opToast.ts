@@ -7,7 +7,8 @@ import { clip } from './clip';
 
 export interface ToastAction { label: string; onClick: () => void }
 /** A toast's content. `tone` warning: the op succeeded with something to act on (a conflict). */
-export interface ToastText { title: string; description?: string; action?: ToastAction; tone?: 'success' | 'warning' }
+/** `secondary`: a second button beside `action` (a stopped merge's Resolve… and Abort…). */
+export interface ToastText { title: string; description?: string; action?: ToastAction; secondary?: ToastAction; tone?: 'success' | 'warning' }
 export type Tracked<T> = { ok: true; result: T } | { ok: false; error: ApiError };
 
 export interface TrackOptions<T> {
@@ -38,6 +39,7 @@ const opts = (t: Partial<ToastText>, id: string | number | undefined, duration?:
   id,
   description: t.description === undefined ? undefined : clip(t.description, DESCRIPTION_MAX),
   action: t.action ? { label: clip(t.action.label), onClick: t.action.onClick } : undefined,
+  cancel: t.secondary ? { label: clip(t.secondary.label), onClick: t.secondary.onClick } : undefined,
   duration,
 });
 

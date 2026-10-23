@@ -2,7 +2,7 @@
 
 # Branches, tags and HEAD
 
-Writing refs from the graph: branches (create, checkout, rename, delete, upstream, fast-forward, force-move, delete on a remote), tags (create, push, delete locally or on a remote) and HEAD (reset, revert, cherry-pick, abort). Ops and their wire shapes: [protocol](protocol.md#branch-tag-and-head-ops-srcgitopsbranchjs-tagjs-headjs).
+Writing refs from the graph: branches (create, checkout, rename, delete, upstream, fast-forward, force-move, delete on a remote), tags (create, push, delete locally or on a remote) and HEAD (reset, revert, cherry-pick, and continuing, skipping or aborting what stopped: [merge](merge.md)). Ops and their wire shapes: [protocol](protocol.md#branch-tag-and-head-ops-srcgitopsbranchjs-tagjs-headjs).
 
 ## Using it
 
@@ -10,12 +10,12 @@ Writing refs from the graph: branches (create, checkout, rename, delete, upstrea
 
 | Context (right-click) | Actions, in menu order |
 |---|---|
-| Local branch (chip or refs row) | **Checkout** (not the checked-out branch, not one checked out in another checkout) · Create branch here… · Create tag here… · Rename… (not checked out in another checkout; never a checked-out `code-conductor/*` branch) · Set upstream… · **Fast-forward to `<upstream>`** (only when strictly behind a present upstream) · Push · Push to `<remote>`… ([remotes](remotes.md)) · Reset `<HEAD's branch>` to here › Soft / Mixed / Hard (not the HEAD branch; HEAD born) · Delete `<name>`… (not checked out anywhere) |
-| Remote branch | **Checkout** · Create branch here… · Create tag here… · Reset `<HEAD>` to here › … · Delete `<branch>` from `<remote>`… |
+| Local branch (chip or refs row) | **Checkout** (not the checked-out branch, not one checked out in another checkout) · Create branch here… · Create tag here… · Rename… (not checked out in another checkout; never a checked-out `code-conductor/*` branch) · Set upstream… · **Fast-forward to `<upstream>`** (only when strictly behind a present upstream) · Push · Push to `<remote>`… ([remotes](remotes.md)) · Reset `<HEAD's branch>` to here › Soft / Mixed / Hard (not the HEAD branch; HEAD born) · Merge / Rebase items ([merge](merge.md#where-the-actions-are)) · Delete `<name>`… (not checked out anywhere) |
+| Remote branch | **Checkout** · Create branch here… · Create tag here… · Reset `<HEAD>` to here › … · Merge / Rebase items · Delete `<branch>` from `<remote>`… |
 | Several selected branches (refs panel) | Delete N branches… — checked-out branches are left out of the selection and the count, and N is at most `NAMES_MAX` (`features/branches/api.ts`, equal to `REF_LIMITS.namesMax`); hidden when none remain |
 | Tag | Create branch here… · Push to `<remote>` (a **Push to** submenu with more than one remote) · Reset `<HEAD>` to here › … · Delete locally… · Delete from `<remote>`… (submenu likewise) · Jump to commit |
-| Commit | Create branch here… · Create tag here… · Reset `<HEAD>` to this commit › Soft / Mixed / Hard (not HEAD's commit) · **Revert commit** (a merge: **Revert merge (keep first parent)**, `mainline: 1`) · **Cherry-pick commit** (not HEAD's commit; a merge against its first parent) |
-| A branch dropped on another | **Fast-forward `<target>` to `<source>`** (target local, not checked out in another checkout) · **Push `<source>` to `<target>`** (a local source on a remote target: [remotes](remotes.md)) · **Reset `<target>` to `<source>`**: a Soft / Mixed / Hard submenu when the target is HEAD's branch, a force-move confirmation when the target is a local branch checked out nowhere, absent otherwise (a remote target) |
+| Commit | Create branch here… · Create tag here… · Reset `<HEAD>` to this commit › Soft / Mixed / Hard (not HEAD's commit) · **Revert commit** (a merge: **Revert merge (keep first parent)**, `mainline: 1`) · **Cherry-pick commit** (not HEAD's commit; a merge against its first parent) · Rebase items ([merge](merge.md#where-the-actions-are)) |
+| A branch dropped on another | Merge, Squash and Rebase first ([merge](merge.md#where-the-actions-are)) · **Fast-forward `<target>` to `<source>`** (target local, not checked out in another checkout) · **Push `<source>` to `<target>`** (a local source on a remote target: [remotes](remotes.md)) · **Reset `<target>` to `<source>`**: a Soft / Mixed / Hard submenu when the target is HEAD's branch, a force-move confirmation when the target is a local branch checked out nowhere, absent otherwise (a remote target) |
 
 - Remotes for the per-remote items: `git remote`'s list (`branch.tracking`), else the remotes the graph's remote refs name.
 - What is offered reads the graph's last refs answer (`features/branches/refInfo.ts`); the backend checks again. With `worktrees: null` (git < 2.36) "checked out elsewhere" is unknown: the item is offered and the backend refuses.
@@ -48,7 +48,7 @@ Every op from these menus and dialogs shows a toast (bottom right): a running on
 |---|---|
 | `PUSH_REJECTED` | "The remote rejected the push" + each `ref: reason` (the refusal's message names them too). A partly rejected tag push is a warning listing the same |
 | `CHECKOUT_CONFLICT` | "Local changes would be overwritten" + the first `CONFLICT_FILES_SHOWN` files ("and N more") + "Commit, stash or discard these changes first." |
-| Revert / cherry-pick conflicts | Warning "… stopped on conflicts", the conflicted files, **Abort** (`head.abort`). Continuing is a commit (the header's conflicted count shows the state) |
+| Revert / cherry-pick conflicts | Warning "… stopped on conflicts", the conflicted files, **Abort** (`head.abort`). The Changes banner shows the operation with **Continue** / **Skip** / **Abort…** ([merge → The operation banner](merge.md#the-operation-banner)); a commit from the commit box concludes it too |
 | `CC_OWNED_BRANCH` with `head: true` (the UI's refs were stale) | **Review…** opens the cc HEAD confirmation, whose confirm retries with the acknowledgement |
 
 ## Rules
@@ -66,7 +66,7 @@ This checkout is recognised by its HEAD (`symbolic-ref HEAD`), other checkouts b
 
 ### Bare repositories
 
-Under `--work-tree=.` (`BASE_ARGS`) a bare repository's own files would look like a working tree, so every op here that writes the working tree or the index refuses one first (`BARE_REPO`, `assertWorktree` in `src/git/worktree.js`): checkout (and create with checkout), mixed and hard reset, revert, cherry-pick, abort, and the fast-forward of this checkout's own branch. Ops that change refs only — create without checkout, rename, delete, force-move, a free branch's fast-forward, soft reset, upstream, tags, pushes — run. In a bare repository they write only git's own ref metadata besides the ref: `--work-tree=.` makes git treat it as non-bare, so reflogs (`logs/`) are kept and a reset records `ORIG_HEAD`.
+Under `--work-tree=.` (`BASE_ARGS`) a bare repository's own files would look like a working tree, so every op here that writes the working tree or the index refuses one first (`BARE_REPO`, `assertWorktree` in `src/git/worktree.js`): checkout (and create with checkout), mixed and hard reset, revert, cherry-pick, continue, skip, abort, and the fast-forward of this checkout's own branch. Ops that change refs only — create without checkout, rename, delete, force-move, a free branch's fast-forward, soft reset, upstream, tags, pushes — run. In a bare repository they write only git's own ref metadata besides the ref: `--work-tree=.` makes git treat it as non-bare, so reflogs (`logs/`) are kept and a reset records `ORIG_HEAD`.
 
 ### Symbolic refs
 
@@ -79,7 +79,8 @@ cc owns `code-conductor/*` branches: its worktree records name them. A write tha
 | Needs the acknowledgement | No warning |
 |---|---|
 | `branch.delete`, `branch.deleteRemote`, `branch.move` of a cc branch; `branch.rename` from or to a cc name | `branch.create` of a cc name without checkout |
-| **Moving a cc-owned HEAD** (this checkout's HEAD is `code-conductor/*`): `head.reset` in every mode; `branch.checkout` of another branch (local or remote); `branch.create` with checkout | Checking out the branch already checked out; a remote checkout whose local twin is HEAD (only a fast-forward); `branch.fastForward` of the cc HEAD branch (additive); `head.revert`, `head.cherryPick` (they add commits, as a commit does); checking out a cc branch from a non-cc HEAD |
+| **Moving a cc-owned HEAD** (this checkout's HEAD is `code-conductor/*`): `head.reset` in every mode; `branch.checkout` of another branch (local or remote); `branch.create` with checkout | Checking out the branch already checked out; a remote checkout whose local twin is HEAD (only a fast-forward); `branch.fastForward` of the cc HEAD branch (additive); `head.revert`, `head.cherryPick`, `merge.start`, `head.continue` (they add commits, as a commit does); checking out a cc branch from a non-cc HEAD |
+| **Rebasing a cc-owned HEAD**: `rebase.start`, `rebase.interactive` in rebase mode (the editor's rebase and squash), a rebase pull ([merge](merge.md)) | `rebase.interactive` in pick mode (cherry-pick N: it only adds) |
 
 In the UI, moving a cc-owned HEAD with an action that has no dialog (double-click or menu checkout, remote checkout, soft or mixed reset from a menu or the drop menu) opens the **cc HEAD move** confirmation (`confirmCcHeadMove` in `features/branches/actions.ts`, through `confirm()`) first ("This checkout is code-conductor's worktree on `<branch>`. Switching away / Resetting it leaves cc's worktree record, and its sync and merge, on a branch or commit the agent did not make."). The hard-reset dialog and the create-branch dialog (with checkout on) show the same warning inline instead of a second dialog. The delete, rename and force-move dialogs warn about a cc-owned name.
 
@@ -111,7 +112,11 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 | `head.reset` soft / mixed | HEAD's position (mixed: the index too) | reset back to `undo.head.old` |
 | `head.reset` hard | HEAD's position, the index and tracked worktree changes | reset back to `undo.head.old`, then `git stash apply --index <undo.worktreeSnapshot>` (a `stash create` commit, until gc; `--index` restores the staged/unstaged split, without it everything comes back unstaged). Untracked files are never touched |
 | `head.revert`, `head.cherryPick` | nothing (a new commit) | reset to `undo.head.old` |
-| `head.abort` | the stopped revert / cherry-pick's partial result | — |
+| `head.abort` | the stopped merge / rebase / revert / cherry-pick's partial result and its conflict resolutions | — |
+| `merge.start` | nothing (a fast-forward or a merge commit; a squash only stages) | fast-forward / merged: reset back to `undo.head.old` |
+| `rebase.start`, `rebase.interactive` | nothing until done (the old commits stay reachable from the reflog); dropped rows' changes leave the branch | done: reset the branch back to `undo.refs[].old` |
+| `head.continue` | nothing (it commits what is staged and goes on) | done: reset back to `undo.head.old` (a rebase: the branch's tip before the rebase, `undo.refs`) |
+| `head.skip` | the skipped commit's changes and any resolution made for it | done: as `head.continue` |
 
 ### Network ops
 
@@ -119,7 +124,7 @@ Every ref-changing op returns `undo` (`undoRecord` in `src/git/refs/undo.js`; sh
 
 ### Drag-menu orders
 
-The `branch-drop` menu's 100–199 are reserved for merge and rebase (Merge 100, Rebase 110, Interactive rebase 120); Fast-forward is 200, the remotes' Push 250 (group `remote`), Reset 300.
+The `branch-drop` menu's 100–199 are the merge/rebase card's (Merge 100, Merge no-ff 101, Squash 102, Rebase 110, Interactive rebase 120: [merge](merge.md#where-the-actions-are)); Fast-forward is 200, the remotes' Push 250 (group `remote`), Reset 300.
 
 ### Git versions
 
@@ -131,4 +136,4 @@ These ops need git ≥ 2.24 on the project's System (`--end-of-options`; `switch
 - **A remote ref's undo value is best known**: the local tracking ref or tag, which may lag the remote.
 - **A branch mid-rebase in another checkout is not seen as checked out** by fast-forward and force-move (that checkout is detached while rebasing); delete and rename still get git's own check.
 - **Fast-forward from the drop menu is offered without checking ancestry**: a drop of an older branch is refused (`NOT_FAST_FORWARD`) by the backend.
-- **No stash, merge or rebase here**: a dirty checkout that blocks a checkout must be committed or cleaned first.
+- **Checkout never stashes, merges or rebases on its own**: local changes that block a checkout must be committed, stashed or discarded first; merging and rebasing are actions of their own ([merge](merge.md)).

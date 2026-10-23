@@ -221,7 +221,8 @@ test('right-click: a commit row offers the commit menu, a branch chip the branch
   fireEvent.click(rowEl(oid(3))!, { shiftKey: true });
   fireEvent.contextMenu(rowEl(oid(4))!);
   menu = await screen.findByRole('menu');
-  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['View combined diff', 'Copy 3 SHAs']);
+  // The merge/rebase card's items for a run of HEAD's newest commits come first.
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Squash 3 commits…', 'Rebase 3 commits onto…', 'View combined diff', 'Copy 3 SHAs']);
 });
 
 test('Shift+F10 opens the focused row menu; the checked-out branch chip has no Hide', async () => {

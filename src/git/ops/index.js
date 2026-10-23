@@ -12,6 +12,9 @@ import { ops as tag } from './tag.js';
 import { ops as head } from './head.js';
 import { ops as stash } from './stash.js';
 import { ops as remote } from './remote.js';
+import { ops as merge } from './merge.js';
+import { ops as rebase } from './rebase.js';
+import { ops as conflict } from './conflict.js';
 
 // The op registry. A feature adds `ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run}]`
 // and one entry in the list below.
@@ -35,7 +38,7 @@ export function buildRegistry(lists) {
   return map;
 }
 
-export const OPS = buildRegistry([repo, diff, graph, stage, commit, ignore, files, patch, branch, tag, head, stash, remote]);
+export const OPS = buildRegistry([repo, diff, graph, stage, commit, ignore, files, patch, branch, tag, head, stash, remote, merge, rebase, conflict]);
 
 export function getOp(registry, name) {
   const op = registry.get(name);

@@ -54,9 +54,11 @@ export interface FileViewProps {
   staging?: StagingView;
   /** Shown above the body: the line-selection actions. */
   selectionBar?: ReactNode;
+  /** A working-tree conflict: opens it in the merge tool (absent for a commit's diff). */
+  onOpenConflict?: () => void;
 }
 
-function Body({ file, state, forced, prefs, rows, marks, onForce, staging }: FileViewProps) {
+function Body({ file, state, forced, prefs, rows, marks, onForce, staging, onOpenConflict }: FileViewProps) {
   const [showPointer, setShowPointer] = useState(false);
   if (file.oversized && !forced) {
     return (
@@ -67,7 +69,14 @@ function Body({ file, state, forced, prefs, rows, marks, onForce, staging }: Fil
     );
   }
   if (file.binary) return <Note><p>Binary file — not shown</p></Note>;
-  if (file.status === 'U' || state?.diff?.unmerged) return <Note><p>Conflicted file — resolve it first</p></Note>;
+  if (file.status === 'U' || state?.diff?.unmerged) {
+    return (
+      <Note>
+        <p>Conflicted file — resolve it first</p>
+        {onOpenConflict && <Button variant="outline" size="sm" onClick={onOpenConflict}>Open in merge tool</Button>}
+      </Note>
+    );
+  }
   if (!state || state.loading) return <Note><p>Loading…</p></Note>;
   if (state.error) {
     if (state.error.code === 'OUTPUT_TOO_LARGE') {

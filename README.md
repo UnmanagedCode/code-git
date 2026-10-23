@@ -16,6 +16,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Changes | Stage, unstage and discard files, hunks and lines; commit, amend, message-only amend, skip hooks, commit template; ignore; restore a file from a commit; apply a patch. Right slot (it gives way to the commit details while a commit is selected), opened from the graph's WIP row; the **Changes (n)** dialog on narrow screens |
 | Branches & tags | Create, checkout (double-click; a remote branch becomes a tracking branch), rename, delete (several at once, or on a remote), upstream and ahead/behind, fast-forward; tags create (annotated or not), push, delete; reset soft/mixed/hard, revert, cherry-pick; Fast-forward and Reset on a branch dropped onto another. Destructive actions confirm first; `code-conductor/*` branches warn. [docs/refs.md](docs/refs.md) |
 | Stash | Save all changes, selected files, staged only, or selected hunks and lines (with or without untracked files, optionally keeping the index); apply, apply with staged changes, pop, drop, rename, create a branch; a stash's All changes / Staged / Untracked diffs; one file applied alone. [docs/stash.md](docs/stash.md) |
+| Merge & rebase | Merge a branch (fast-forward when possible, no fast-forward, squash) and rebase onto a branch or commit, from the drag menu, a branch's or commit's menu; rebase the newest N commits onto a branch; an interactive-rebase editor (pick, reword, edit, squash, fixup, drop; drag or keys to reorder) that also cherry-picks or squashes N selected commits; a three-pane merge tool for a conflicted file (pick lines, edit the result, save, mark resolved) or take one side. What is in progress (a merge, rebase, cherry-pick or revert, or conflicts left behind) shows as a banner in the Changes panel, after a reload too: Continue, Skip, Abort…. A pull that stops on conflicts stays in progress. [docs/merge.md](docs/merge.md) |
 | Remotes | Add, edit, rename, remove remotes; Fetch (all or one, prune behind a confirmation), auto-fetch (off by default); Pull (fast-forward if possible, fast-forward only, rebase; a per-project default); Push a branch (upstream, first push, a drop onto a remote branch, after a commit), force-with-lease behind a confirmation that checks the remote first. Credentials only from the System. [docs/remotes.md](docs/remotes.md) |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
 
@@ -39,7 +40,7 @@ docs/                   features, protocol, architecture, GitKraken reference
 .wiki/                  gotchas, decisions, glossary
 ```
 
-Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md). Stash: [docs/stash.md](docs/stash.md). Remotes, fetch, pull and push: [docs/remotes.md](docs/remotes.md).
+Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md). Merge, rebase and conflicts: [docs/merge.md](docs/merge.md). Stash: [docs/stash.md](docs/stash.md). Remotes, fetch, pull and push: [docs/remotes.md](docs/remotes.md).
 
 ## Run
 
@@ -62,7 +63,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 | `npm test` | typecheck, then backend, then UI tests |
 | `npm run test:server` | `node --test "tests/*.test.js"` |
 | `npm run test:ui` | `vitest run --config frontend/vitest.config.ts` |
-| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `stash.mjs` / `remotes.mjs` | screenshots / golden path / the diff path / the staging path / the stash path / the remotes path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
+| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `stash.mjs` / `remotes.mjs` / `operations.mjs` / `merge.mjs` / `rebase.mjs` / `conflicts.mjs` | screenshots / golden path / the diff path / the staging path / the stash path / the remotes path / the merge-and-rebase in-progress path / the merge and rebase starts / the interactive editor / the merge tool on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
 | `node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" baseline` | mutation trust gates ([harness/mutation/README.md](harness/mutation/README.md)) |
 
 ## Known limitations
@@ -89,3 +90,6 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **Applying one file of a stash is worktree-only and patch-based**: a file that differs from the stash's base is refused, not merged. Pop is whole-stash only.
 - **Hunks and lines are stashed only from a file with nothing staged**, and such a stash pops only onto a clean file (git's merge refuses a file with any local change; apply its file instead).
 - **Stashing staged changes only needs git ≥ 2.35** on the project's System.
+- **The merge tool merges with its own three-way diff**, which can draw conflicts differently from git's merge (no merge drivers, `-X` options or renames); files over 512 KiB a side, binary or non-UTF-8 files are resolved by taking a side.
+- **Rebase needs git ≥ 2.26** on the project's System, and refuses a range holding merge commits (`HAS_MERGES`).
+- **`git am` in progress, and a multi-commit cherry-pick or revert left stopped after a manual commit, are not shown** as in progress; a branch or tag named `MERGE_HEAD`, `CHERRY_PICK_HEAD` or `REVERT_HEAD` reads as that operation ([docs/merge.md → Known limitations](docs/merge.md#known-limitations)).

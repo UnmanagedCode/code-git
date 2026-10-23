@@ -48,4 +48,3 @@ export const pushBranch = (t: Target, p: PushRequest) => runOp<BranchPushResult>
   ...(p.expect !== undefined ? { forceWithLease: { expect: p.expect } } : {}),
   ...ack(p.ccOwned),
 });
-export const abortMerge = (t: Target) => runOp<{ undo: UndoRecord }>('head.abort', t, { which: 'merge' });

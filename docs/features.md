@@ -68,11 +68,12 @@ Right slot, while the graph has nothing or a single WIP row selected (below `lg`
 | Part | Behaviour |
 |---|---|
 | Header | **Changes**, **Stash changes…** (disabled with nothing to stash; [Stash](#stash)), **Reload changes** (↻), ⋮ menu: **Refresh**, **Apply patch…** |
-| Detached banner | On a detached HEAD: "Detached HEAD at `<oid10>`. A commit made here is on no branch." |
+| Detached banner | On a detached HEAD: "Detached HEAD at `<oid10>`. A commit made here is on no branch." Hidden during a rebase |
+| Operation banner | A merge, rebase, cherry-pick or revert in progress (or conflicts left with none): its title, what to do next, **Continue** / **Skip** / **Abort…** ([merge → The operation banner](merge.md#the-operation-banner)) |
 | Error | The last failed op's message and git's stderr (hook output) as text; × dismisses it |
 | **Unstaged Files (n)** | Worktree changes and untracked files (`?`). Header: **Discard all…**, **Stage all**. Row hover (always shown on a touch screen): discard (↶, not on a conflicted file), stage (+), ⋮. A list longer than `FILE_RENDER_CAP` (`lib/clip.ts`) shows that many rows, then **Show all N** |
 | **Staged Files (n)** | Index changes. Header: **Unstage all**. Row hover: unstage (−), ⋮ |
-| Row | Status letter, path (`old → new` for a rename). Click or Enter opens its unstaged / staged diff at that file. Right-click or ⋮: **Stash this file…**, **Stage** / **Unstage**, **Discard…**, **Copy path**, then the ignore items below |
+| Row | Status letter, path (`old → new` for a rename). Click or Enter opens its unstaged / staged diff at that file; a conflicted (`U`) row opens the merge tool instead, and its menu adds **Open in merge tool**, **Take current (`<label>`)**, **Take incoming (`<label>`)**, **Mark resolved** ([merge → The conflict tool](merge.md#the-conflict-tool)). Right-click or ⋮: **Stash this file…**, **Stage** / **Unstage**, **Discard…**, **Copy path**, then the ignore items below |
 | Commit box | **Summary** (one line), **Description**, ☐ **Amend previous commit**, ☐ **Skip Git hooks**, then the commit button(s) |
 
 **Discard** always asks first and sends nothing until confirmed: a file ("Discard changes to …?" / "Delete …?" for an untracked file), or **Discard all…**, which lists every untracked file it deletes with their count. Both say "This cannot be undone." Discard all throws away exactly the unstaged and untracked files shown; staged changes and ignored files stay, and conflicted files are left untouched — the confirmation says how many.
@@ -113,6 +114,10 @@ The lists load when the tab is first shown, on Refresh and after every op; there
 ## Branches and tags
 
 Write actions on the graph's branch, tag, commit and drop menus, a dialog for each destructive one, double-click to check out (a tag: jump), a toolbar **Branch** button (Ctrl/⌘+B), multi-select delete in the refs panel and ahead/behind badges on local branches. Full behaviour, the checked-out and `code-conductor/*` rules: [refs](refs.md).
+
+## Merge, rebase and conflicts
+
+Merge (fast-forward when possible, no fast-forward, squash) and rebase from the drag menu or a branch's or commit's menu; rebase the newest N commits onto a branch; an interactive-rebase editor (pick, reword, edit, squash, fixup, drop, reordered by drag or keys) that also cherry-picks or squashes N selected commits; a three-pane merge tool for a conflicted file (pick lines from Current and Incoming, edit the Output, save, mark resolved), or take one side. What is in progress in a checkout — a merge, rebase, cherry-pick or revert, or conflicts left by a squash merge or a stash — shows as a banner in the Changes panel, after a reload too, with **Continue**, **Skip** and **Abort…**. A pull that stops on conflicts, merge or rebase, stays in progress the same way. Details: [merge](merge.md).
 
 ## Remotes
 

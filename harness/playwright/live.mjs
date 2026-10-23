@@ -1,7 +1,8 @@
 // READ-ONLY check against a live code-conductor: boots this checkout's backend with CONDUCTOR_URL pointed at it and
 // drives the UI's read path only (the picker, repo.summary — `git status` with GIT_OPTIONAL_LOCKS=0 — and the reads an
 // open tab makes: the graph, branch.tracking, remote.list). On a checkout whose project lives on a non-local System it
-// also asks the remote where HEAD's upstream branch is (remote.peek: `git ls-remote`, a read). It never calls a write
+// also asks the remote where HEAD's upstream branch is (remote.peek: `git ls-remote`, a read) and what is in progress
+// (commit.state: operation and conflicts). It never calls a write
 // op (the script fails if any is posted), never registers or enables the plugin.
 // Run: CONDUCTOR_URL=http://127.0.0.1:<cc port> node harness/playwright/live.mjs [project[/worktree] …]
 // Default checkouts: code-git, code-git/c1-foundation, test, test/review-demo. Screenshots go to out/live/.
@@ -119,6 +120,18 @@ try {
       const ok = peek.status === 200 || (['REMOTE_AUTH_FAILED', 'REMOTE_UNREACHABLE'].includes(peek.body.code) && typeof peek.body.error === 'string' && peek.body.error.length > 0);
       console.log(`note: ${label(c)} (${system}): remote.peek ${remote}/${rest.slice(remote.length + 1)} → ${peek.status} ${peek.status === 200 ? JSON.stringify(peek.body.result) : `${peek.body.code}: ${peek.body.error} (${peek.body.reason ?? ''})`} in ${ms} ms`);
       check(ok && ms < NETWORK_LIMITS.timeoutMs, `${label(c)}: remote.peek answers (ok, or a readable auth/unreachable refusal) within NETWORK_LIMITS.timeoutMs, never waiting on a prompt`);
+    }
+
+    // commit.state's operation and conflicts on a non-local System (its cat-file reads the pseudo-refs from stdin): a
+    // checkout with nothing in progress and nothing conflicted answers null and [].
+    for (const c of CHECKOUTS) {
+      const system = projects.find((p) => p.name === c.project)?.system ?? 'local';
+      if (system === 'local') continue;
+      const state = await readOp('commit.state', c);
+      const r = state.body.result;
+      console.log(`note: ${label(c)} (${system}): commit.state → ${state.status} ${JSON.stringify(r ?? state.body)}`);
+      check(state.status === 200 && typeof r.merging === 'boolean' && r.operation === null && Array.isArray(r.conflicts) && r.conflicts.length === 0,
+        `${label(c)}: commit.state answers merging, operation null and conflicts [] (nothing in progress)`);
     }
 
     const activity = page.getByRole('region', { name: 'Activity' });

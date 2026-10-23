@@ -1,7 +1,6 @@
 import { Refusal } from '../../refusals.js';
 import { optBool, paramsObject } from '../params.js';
 import { parseRecords } from '../parse/graph.js';
-import { parseStatus } from '../parse/status.js';
 import { shortBranch } from '../refs/check.js';
 import { assertCcAck, assertCcHeadAck, assertNotSymbolic, ownHead, readHeads } from '../refs/heads.js';
 import { assertNoSymref, refEntries } from '../refs/resolve.js';
@@ -13,6 +12,7 @@ import { netRun, remoteFailure } from '../remote/net.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
 import { assertNoTrackingSymrefs, fetchSpecs, trackedSnapshot, trackingRefsFor } from '../remote/tracking.js';
 import { newRemoteName, remoteUrl } from '../remote/url.js';
+import { assertClean, assertNoOperation } from '../sequence/guard.js';
 import { assertOid } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
 
@@ -46,13 +46,6 @@ async function headUpstream(git) {
   if (!(await remoteNames(git)).includes(remote)) throw new Refusal('NO_UPSTREAM', `${short}'s upstream remote ${remote} is not a configured remote`);
   if (!upstream.startsWith(REMOTES)) throw new Refusal('NO_UPSTREAM', `${short}'s upstream maps to no remote-tracking ref`);
   return { own, branch: own.branch, upstream, remote };
-}
-
-/** DIRTY_WORKTREE when the index or a tracked file differs from HEAD (untracked files do not count). */
-async function assertClean(git) {
-  const r = await git(['status', '--porcelain=v2', '-z', '--untracked-files=no']);
-  const { counts } = parseStatus(decoder.decode(r.stdout));
-  if (counts.staged + counts.unstaged + counts.conflicted) throw new Refusal('DIRTY_WORKTREE', 'commit or stash the local changes first: a rebase needs a clean working tree');
 }
 
 /** `forceWithLease` → {expect: oid | null} (null: the branch must not exist on the remote), or null when absent. */
@@ -271,6 +264,7 @@ export const ops = [
     },
     async run(git, { mode, ccOwned }) {
       await assertWorktree(git);
+      await assertNoOperation(git);
       const { own, branch, upstream, remote } = await headUpstream(git);
       if (mode === 'rebase') {
         // A rebase rewrites the branch's commits; a fast-forward or merge only adds (as a commit does).
@@ -298,10 +292,10 @@ export const ops = [
       }
       if (mode === 'ffOnly') throw new Refusal('NOT_FAST_FORWARD', `${branch.slice(HEADS.length)} and ${upstream.slice(REMOTES.length)} have diverged`);
       if (mode === 'rebase') {
-        await rebase(git, oid);
-        return moved('rebased');
+        const r = await rebase(git, ['--end-of-options', oid]);
+        return r.outcome === 'conflicts' ? result('conflicts', { files: r.files }) : moved('rebased');
       }
-      const merged = await merge(git, oid, `Merge remote-tracking branch '${upstream.slice(REMOTES.length)}'`);
+      const merged = await merge(git, oid, { mode: 'ff', message: `Merge remote-tracking branch '${upstream.slice(REMOTES.length)}'` });
       return merged.conflicts ? result('conflicts', { files: merged.files }) : moved('merged');
     },
   },

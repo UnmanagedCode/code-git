@@ -2,11 +2,13 @@ import { ccRetry, withCcHeadAck } from '@/features/branches/actions';
 import { headLabel } from '@/features/branches/refInfo';
 import { fileList, runRefOp, type RefOpLabels } from '@/features/branches/run';
 import type { ApiError } from '@/lib/api';
+import { abortFlow } from '@/features/sequence/flows';
 import { confirm } from '@/lib/confirm';
 import type { ToastText, Tracked } from '@/lib/opToast';
 import { refreshRemotes, setRemoteBusy, type RemoteBusy } from '@/state/remotes';
 import type { Tab } from '@/state/tabs';
-import { abortMerge, fetchRemotes, isFetchError, pullHead, type FetchResult, type PullMode, type PullResult } from './api';
+import { refreshWorkdir } from '@/state/workdir';
+import { fetchRemotes, isFetchError, pullHead, type FetchResult, type PullMode, type PullResult } from './api';
 
 // Running remote ops from the UI: runRemoteOp (busy flag, toast, graph and remotes refresh), and the fetch and pull
 // flows with their outcome toasts (docs/remotes.md → Using it).
@@ -69,15 +71,6 @@ export async function fetchFlow(tab: Tab, remote: string | null, prune = false):
   await runRemoteOp(tab, 'fetch', { running: `Fetching ${what}…`, done: (r) => fetchToast(r, what) }, () => fetchRemotes(tab, remote, prune));
 }
 
-/** Aborts a pull's conflicted merge, after asking. */
-async function abortMergeFlow(tab: Tab): Promise<void> {
-  const ok = await confirm({
-    title: 'Abort the merge?', body: 'Discards the merge in progress and any conflict resolutions made so far; HEAD goes back to where it was.',
-    confirmLabel: 'Abort merge', irreversible: true,
-  });
-  if (ok) await runRefOp(tab, { running: 'Aborting the merge…', done: () => 'Merge aborted' }, () => abortMerge(tab));
-}
-
 function pullDone(tab: Tab, r: PullResult): string | ToastText {
   const up = shortTracking(r.upstream);
   const head = headLabel(tab);
@@ -86,23 +79,21 @@ function pullDone(tab: Tab, r: PullResult): string | ToastText {
     case 'fastForward': return `Fast-forwarded ${head} to ${up}`;
     case 'merged': return `Merged ${up} into ${head}`;
     case 'rebased': return `Rebased ${head} onto ${up}`;
-    case 'conflicts': return {
-      tone: 'warning', title: 'The pull stopped on conflicts',
-      description: `Conflicts in ${fileList(r.files)}. Resolve them and commit, or abort the merge.`,
-      action: { label: 'Abort merge…', onClick: () => void abortMergeFlow(tab) },
-    };
+    case 'conflicts': {
+      // A rebase pull's conflicts stay in progress as a merge pull's do: the Changes banner continues or aborts either.
+      const kind = r.mode === 'rebase' ? 'rebase' : 'merge';
+      return {
+        tone: 'warning', title: 'The pull stopped on conflicts',
+        description: `Conflicts in ${fileList(r.files)}. Resolve them, then Continue, or abort the ${kind}.`,
+        action: { label: `Abort ${kind}…`, onClick: () => void abortFlow(tab, kind) },
+      };
+    }
   }
 }
-
-const filesOf = (e: ApiError): string[] => {
-  const f = (e.body as { files?: unknown } | undefined)?.files;
-  return Array.isArray(f) ? f.filter((x): x is string => typeof x === 'string') : [];
-};
 
 function pullFailed(e: ApiError): Partial<ToastText> | undefined {
   if (e.code === 'NOT_FAST_FORWARD') return { title: 'Diverged: pick Pull (fast-forward if possible) or Pull (rebase)', description: e.message };
   if (e.code === 'DIRTY_WORKTREE') return { title: 'Commit or stash first', description: e.message };
-  if (e.code === 'PULL_CONFLICTS') return { title: 'The rebase would conflict; nothing changed', description: `Conflicts in ${fileList(filesOf(e))}.` };
   return undefined;
 }
 
@@ -112,7 +103,7 @@ export function pullFlow(tab: Tab, mode: PullMode): void {
   const go = (ccOwned?: true): Promise<unknown> => runRemoteOp(tab, 'pull', {
     running: `${PULL_LABEL[mode]}…`, done: (r) => pullDone(tab, r),
     failed: (e) => ccRetry(tab, 'rebase', label, go)(e) ?? pullFailed(e),
-  }, () => pullHead(tab, mode, ccOwned));
+  }, () => pullHead(tab, mode, ccOwned)).finally(() => refreshWorkdir(tab));
   if (mode === 'rebase') withCcHeadAck(tab, 'rebase', label, go);
   else void go();
 }

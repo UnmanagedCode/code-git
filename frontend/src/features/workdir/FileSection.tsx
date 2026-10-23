@@ -3,6 +3,7 @@ import { EllipsisVerticalIcon, MinusIcon, PlusIcon, Undo2Icon } from 'lucide-rea
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import type { DiffFile } from '@/features/diff/api';
+import { openConflict } from '@/features/conflicts/open';
 import { fileLabel, STATUS_LABEL } from '@/features/diff/FileList';
 import { openDiff } from '@/features/diff/openDiff';
 import { clip, FILE_RENDER_CAP } from '@/lib/clip';
@@ -21,7 +22,9 @@ function Row({ tab, file, section, busy }: { tab: Tab; file: DiffFile; section: 
   const ctx: WorkdirFileCtx = { tab, file, section };
   const open = () => {
     setDialogOpen(tab, false);
-    openDiff(tab, { kind: section }, { path: file.path });
+    // A conflicted file has no diff to show: it opens in the merge tool.
+    if (file.status === 'U') void openConflict(tab, file.path);
+    else openDiff(tab, { kind: section }, { path: file.path });
   };
   return (
     <li

@@ -14,7 +14,7 @@ import { abbrev, ccHead, ccHeadWarning, checkedOutAnywhere, checkedOutElsewhere,
 import { applyToast, fileList, rejectedLines, runRefOp } from './run';
 
 // The branch, tag and HEAD actions (docs/refs.md → Menus). Orders: 100 checkout, 200 create, 300 history-rewriting;
-// on the branch-drop menu 100–199 are left to the merge/rebase card.
+// on the branch-drop menu 100–199 are merge and rebase's (features/sequence/actions.ts).
 
 const MODES: ResetMode[] = ['soft', 'mixed', 'hard'];
 const MODE_LABEL: Record<ResetMode, string> = { soft: 'Soft (keep index and files)', mixed: 'Mixed (keep files)', hard: 'Hard (discard changes)' };
@@ -257,7 +257,7 @@ export const BRANCH_ACTIONS: MenuAction<never>[] = [
     when: (c: CommitCtx) => headBorn(c.tab) && c.commit.oid !== headOf(c.tab).oid,
     run: (c: CommitCtx) => apply(c.tab, 'cherry-pick', c),
   },
-  // ---- a branch dropped on another (100–199: merge and rebase, a later card) ----
+  // ---- a branch dropped on another (100–199: merge and rebase, features/sequence/actions.ts) ----
   {
     id: 'branches.drop.fastForward', context: 'branch-drop', group: 'ff', order: 200,
     label: (c: BranchDropCtx) => `Fast-forward ${c.target.short} to ${c.source.short}`,

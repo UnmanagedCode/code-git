@@ -2,10 +2,12 @@ import type { ApiError } from '@/lib/api';
 import { trackOp, type ToastText, type Tracked } from '@/lib/opToast';
 import { refreshGraph } from '@/state/graph';
 import type { Tab } from '@/state/tabs';
+import { refreshWorkdirIfShown } from '@/state/workdir';
 import { abortApply, type ApplyResult, type Rejected } from './api';
 
 // Every branch/tag/HEAD op from the UI runs through runRefOp: its toast (lib/opToast.ts), then a graph refresh for the
-// tab whatever the outcome, which also refreshes every checkout's summary (the header).
+// tab whatever the outcome, which also refreshes every checkout's summary (the header), and the Changes panel's lists and
+// operation banner when it has loaded.
 
 /** Files shown in a CHECKOUT_CONFLICT toast; the rest is counted. */
 export const CONFLICT_FILES_SHOWN = 5;
@@ -55,6 +57,7 @@ export async function runRefOp<T>(tab: Tab, labels: RefOpLabels<T>, fn: () => Pr
     failed: (e) => ({ ...conflictToast(e), ...rejectedToast(e), ...labels.failed?.(e) }),
   });
   void refreshGraph(tab, 'write');
+  refreshWorkdirIfShown(tab);
   return r;
 }
 

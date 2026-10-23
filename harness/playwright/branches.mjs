@@ -199,7 +199,7 @@ try {
     check(git('-C', path.join(world.repo.root, 'wt'), 'rev-parse', 'HEAD') === o.tip, 'nothing moved code-conductor/wt');
 
     // 14. a right-press at real speed in the phone Refs dialog: the menu opens over the pointer, and the release that
-    //     ends the press runs nothing (no Hide on a branch row, no Copy name on a tag row)
+    //     ends the press runs nothing (no Hide on a remote branch row, no Copy name on a tag row)
     await page.setViewportSize(VIEWPORTS.phone);
     await open('project=refs&worktree=wt');
     await page.getByRole('button', { name: 'Refs', exact: true }).click();
@@ -207,8 +207,9 @@ try {
     await phoneRefs.waitFor();
     await page.waitForTimeout(1500); // the dialog settles, as a user's hand would let it
     const hidden = () => page.evaluate(() => JSON.parse(localStorage.getItem('code-git:graph:refs') ?? '{}').hidden ?? []);
-    // Rows whose menu opens with an item under the pointer here (Hide; Copy name): the release would hit it.
-    for (const name of ['refs/heads/feature/a', 'refs/tags/v1.0']) {
+    // Rows whose menu opens with an item under the pointer here (Hide; Copy name): the release would hit it. A local
+    // branch's menu (with the merge/rebase items) opens with a separator there; a remote branch's still with Hide.
+    for (const name of ['refs/remotes/origin/feature/a', 'refs/tags/v1.0']) {
       const box = await refRow(name).boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down({ button: 'right' });
