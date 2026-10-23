@@ -1,6 +1,7 @@
 import { Refusal } from '../../refusals.js';
 import { joinMessage, messageParams } from '../commit/message.js';
 import { worktreeEntry } from '../diff/noIndex.js';
+import { commitOid } from '../diff/source.js';
 import { maskUrls } from '../../mask.js';
 import { bad, optBool, paramsObject } from '../params.js';
 import { netRun } from '../remote/net.js';
@@ -215,9 +216,18 @@ export const ops = [
       const [e] = await knownEntries(git, [p.path]);
       if (!e.populated) throw new Refusal('SUBMODULE_NOT_POPULATED', `${p.path} is not cloned`, { path: p.path });
       if (e.head !== p.expect) throw new Refusal('SUBMODULE_POINTER_MOVED', `${p.path} is no longer at the commit shown: check again`, { path: p.path, head: e.head });
-      if (e.head === e.committed) throw new Refusal('NOTHING_TO_COMMIT', `${p.path} already points at its commit`);
-      // --only: the gitlink alone is committed; whatever else is staged stays staged.
-      await git(['commit', '--only', '-F', '-', '--', p.path], { stdin: joinMessage(p.summary, p.description) });
+      if (p.expect === e.committed) throw new Refusal('NOTHING_TO_COMMIT', `${p.path} already points at its commit`);
+      // The commit holds exactly `expect`, whatever the submodule's HEAD is by now (`commit --only -- <path>` would re-read
+      // it): a temporary index of HEAD's tree with only that gitlink changed, committed (hooks run); then the real
+      // index's entry set to it, as --only leaves it. Whatever else is staged stays staged.
+      const head = await commitOid(git, 'HEAD');
+      const index = decoder.decode((await git(['rev-parse', '--git-path', 'code-git-pointer-index'])).stdout).replace(/\n$/, '');
+      const tmp = { env: { GIT_INDEX_FILE: index } };
+      const gitlink = ['update-index', '--add', '--cacheinfo', `160000,${p.expect},${p.path}`];
+      await git(head ? ['read-tree', head] : ['read-tree', '--empty'], tmp);
+      await git(gitlink, tmp);
+      await git(['commit', '-F', '-'], { ...tmp, stdin: joinMessage(p.summary, p.description) });
+      await git(gitlink);
       const oid = decoder.decode((await git(['rev-parse', '--verify', 'HEAD'])).stdout).trim();
       return { oid };
     },

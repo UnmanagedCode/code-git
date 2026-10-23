@@ -29,7 +29,7 @@ Code: `src/git/ops/submodule.js`, `src/git/submodule/`, `subArgs` in `src/git/ru
 - **`git rm` without `-f` refuses a staged-but-uncommitted gitlink** ("has changes staged in the index"): remove reports `staged` before deinit runs, so a refusal never leaves the submodule half-removed.
 - **`submodule deinit` drops the whole `submodule.<name>` config section**, `update` included: a probe re-arming `update=!cmd` must set it after each `init`.
 - **Removal keeps `.git/modules/<name>`**; adding the same name again fails "A git directory for '…' is found locally" (→ `SUBMODULE_EXISTS {reason: 'gitdir'}`).
-- **`commit --only -- <gitlink>`** commits the submodule's current HEAD as the pointer and leaves every other staged change staged.
+- **`commit --only -- <gitlink>` re-reads the submodule's HEAD at commit time**, so a move after the check commits a pointer the user never saw. commitPointer commits a temporary index (HEAD's tree + `update-index --cacheinfo 160000,<expect>,<path>`, `GIT_INDEX_FILE` is not a protected name) and then sets the real index's entry the same way: exactly `expect`, other staged changes untouched, hooks still run.
 
 ## UI
 

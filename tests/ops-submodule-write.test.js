@@ -256,6 +256,47 @@ test('commitPointer commits only the gitlink, leaves other staged changes staged
   }
 });
 
+test('commitPointer commits exactly expect: a submodule HEAD moved between the check and the commit is not what lands', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  w.fx('libA', 'commit', '-q', '--allow-empty', '-m', 'seen');
+  const seen = headOf(w, 'libA');
+  w.repo.write('staged.txt', 's\n');
+  w.repo.git('add', 'staged.txt');
+  // Hold the first command after the gate (the temporary index's read-tree), move libA meanwhile, then let it run.
+  w.cc.state.execHook = (b) => (b.argv.includes('read-tree') ? 'hold' : undefined);
+  const pending = w.op('submodule.commitPointer', { path: 'libA', expect: seen, summary: 'Update submodule libA' });
+  const held = await w.cc.nextHeld();
+  w.fx('libA', 'commit', '-q', '--allow-empty', '-m', 'moved after the check');
+  const moved = headOf(w, 'libA');
+  assert.notEqual(moved, seen);
+  w.cc.state.execHook = null;
+  held.release();
+  const r = await pending;
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(gitlink(w, 'HEAD', 'libA'), seen);
+  assert.equal(w.repo.git('show', '--format=', '--name-only', 'HEAD'), 'libA');
+  // The real index holds the committed pointer (no staged revert), the other staged change is still staged, and the
+  // submodule's newer HEAD shows as a change in the working tree.
+  assert.equal(w.repo.git('rev-parse', ':libA'), seen);
+  assert.equal(w.repo.git('diff', '--cached', '--name-only'), 'staged.txt');
+  assert.equal(w.repo.git('diff', '--name-only', '--ignore-submodules=none'), 'libA');
+});
+
+test('commitPointer runs the commit hooks, and works on a parent with no commit yet', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  w.repo.hook('pre-commit', `#!/bin/sh\ntouch '${w.marker('pre-commit')}'\n`);
+  w.fx('libA', 'commit', '-q', '--allow-empty', '-m', 'moved');
+  await w.ok('submodule.commitPointer', { path: 'libA', expect: headOf(w, 'libA'), summary: 's' });
+  assert.deepEqual(w.markers(), ['pre-commit']);
+  // An unborn HEAD (a new orphan branch): the root commit holds the gitlink alone, as commit --only would.
+  w.repo.git('checkout', '-q', '--orphan', 'fresh');
+  const head = headOf(w, 'libA');
+  await w.ok('submodule.commitPointer', { path: 'libA', expect: head, summary: 'root' });
+  assert.equal(w.repo.git('ls-tree', '--name-only', 'HEAD'), 'libA');
+  assert.equal(w.repo.git('rev-list', '--count', 'HEAD'), '1');
+  assert.equal(gitlink(w, 'HEAD', 'libA'), head);
+});
+
 test('long ops use cloneTimeoutMs; the others the write default', async (t) => {
   const w = await subWorld(t, { nested: false });
   await w.ok('submodule.add', { url: w.urls.libA, path: 'two' });
