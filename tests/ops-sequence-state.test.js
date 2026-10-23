@@ -134,3 +134,15 @@ test('a REBASE_HEAD left behind by a finished rebase (no state directory) is no 
   assert.equal(w.exists('REBASE_HEAD'), true, 'the leftover this test is about');
   assert.deepEqual(await w.state(), { merging: false, operation: null, conflicts: [] });
 });
+
+test('a rebase outranks a MERGE_HEAD beside it (a stale or planted one): kind rebase with the rebase\'s details; merging still reports the file', async (t) => {
+  const w = await world(t);
+  w.repo.checkout('topic');
+  w.user('-c', 'rebase.backend=merge', 'rebase', 'main');
+  fs.writeFileSync(path.join(w.repo.dir, '.git', 'MERGE_HEAD'), `${w.t3}\n`);
+  const s = await w.state();
+  assert.deepEqual(s.operation, {
+    kind: 'rebase', incoming: { oid: w.topic, subject: 'topic change' }, rebase: { branch: 'refs/heads/topic', onto: w.main, step: 1, total: 3 },
+  });
+  assert.equal(s.merging, true);
+});
