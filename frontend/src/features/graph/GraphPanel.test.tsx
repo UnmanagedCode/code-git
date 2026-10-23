@@ -8,6 +8,7 @@ import { updatePrefs } from '@/state/graphPrefs';
 import { getSelection } from '@/state/graphSelection';
 import { activityStore } from '@/state/useActivity';
 import { diffStore } from '@/state/diff';
+import { closeDiff } from '@/features/diff/openDiff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { loadSummary } from '@/state/useRepoSummary';
 import { workdirOf } from '@/state/workdir';
@@ -134,7 +135,7 @@ test('search asks git with the mode and query and marks the matching rows; Enter
   fireEvent.keyDown(box, { key: 'Enter' });
   expect(getSelection(TAB).ids).toEqual([oid(11)]);
   expect(screen.getByLabelText('Match position').textContent).toBe('2 / 2');
-  fireEvent.click(screen.getByRole('button', { name: 'Path' }));
+  fireEvent.click(within(screen.getByRole('group', { name: 'Search by' })).getByRole('button', { name: 'Path' }));
   await act(async () => { vi.advanceTimersByTime(300); });
   await waitFor(() => expect(paramsOf(fetch, 'POST api/ops/graph.search').at(-1)).toEqual({ mode: 'path', query: 'fix', tips: [oid(20)] }));
 });
@@ -251,11 +252,13 @@ test('Enter opens the selection diff: a commit, a multi-selection as the commits
   fireEvent.click(rowEl(oid(2))!, { shiftKey: true });
   fireEvent.keyDown(list(), { key: 'Enter' });
   expect(source()).toEqual({ kind: 'commits', oids: [oid(4), oid(3), oid(2)], wip: false });
+  // In the shell the diff replaces the graph: closed, the graph is back.
+  act(() => closeDiff(TAB));
   fireEvent.click(rowEl('wip:')!);
   // The click shows the Changes panel without taking the focus; Enter asks it to focus its summary. No diff opens.
   expect(workdirOf(TAB).focus).toBeNull();
   fireEvent.keyDown(list(), { key: 'Enter' });
-  expect(source()).toEqual({ kind: 'commits', oids: [oid(4), oid(3), oid(2)], wip: false });
+  expect(source()).toBeUndefined();
   expect(workdirOf(TAB).focus).toBe('slot');
 });
 

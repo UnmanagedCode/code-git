@@ -73,8 +73,9 @@ for (const scheme of ['light', 'dark']) {
         await row('wip:').click();
         await right.getByRole('button', { name: 'Stash changes…', exact: true }).waitFor();
       };
-      const viewFiles = () => diff.getByRole('listbox', { name: 'Changed files', exact: true }).getByRole('option')
-        .evaluateAll((els) => els.map((e) => e.getAttribute('data-path')));
+      // The open diff's file list is in the right slot: the stash's details when it is selected, else the Changed files panel.
+      const viewList = right.getByRole('listbox', { name: 'Changed files', exact: true });
+      const viewFiles = () => viewList.getByRole('option').evaluateAll((els) => els.map((e) => e.getAttribute('data-path')));
 
       // 1. Save selected files (the staged lib/util.js and the untracked todo.txt) from the Changes panel.
       await right.getByRole('button', { name: 'Stash changes…', exact: true }).click();
@@ -104,16 +105,16 @@ for (const scheme of ['light', 'dark']) {
       await sw.waitFor();
       check(JSON.stringify(await sw.locator('label').allTextContents()) === JSON.stringify(['All changes', 'Staged', 'Untracked']), `${scheme}: the switch offers All changes / Staged / Untracked`);
       check(await diff.getByRole('combobox', { name: 'Compare with parent' }).count() === 0, `${scheme}: no parent select for a stash`);
-      await diff.getByRole('option', { name: /lib\/util\.js/ }).waitFor();
+      await viewList.getByRole('option', { name: /lib\/util\.js/ }).waitFor();
       check(JSON.stringify(await viewFiles()) === '["lib/util.js"]', `${scheme}: All changes lists lib/util.js`);
       await shot('view-all');
       await sw.getByText('Staged', { exact: true }).click();
       await page.waitForFunction(() => document.querySelector('[aria-label="Diff source"]')?.textContent?.length);
-      await diff.getByRole('option', { name: /lib\/util\.js/ }).waitFor();
+      await viewList.getByRole('option', { name: /lib\/util\.js/ }).waitFor();
       check(await sw.getByRole('radio', { name: 'Staged', exact: true }).isChecked(), `${scheme}: Staged is checked`);
       check(JSON.stringify(await viewFiles()) === '["lib/util.js"]', `${scheme}: Staged lists lib/util.js`);
       await sw.getByText('Untracked', { exact: true }).click();
-      await diff.getByRole('option', { name: /todo\.txt/ }).waitFor();
+      await viewList.getByRole('option', { name: /todo\.txt/ }).waitFor();
       check(JSON.stringify(await viewFiles()) === '["todo.txt"]', `${scheme}: Untracked lists todo.txt`);
       await shot('view-untracked');
       await diff.getByRole('button', { name: 'Close diff', exact: true }).click();
@@ -123,7 +124,7 @@ for (const scheme of ['light', 'dark']) {
       const draft = stashes().find((s) => s.subject === 'On main: docs draft');
       await row(`stash:${draft.oid}`).click();
       const details = page.getByRole('complementary', { name: 'Commit details', exact: true });
-      const detailFile = details.locator('[data-file="docs/guide.md"]');
+      const detailFile = details.locator('[data-path="docs/guide.md"]');
       await detailFile.waitFor();
       await detailFile.click({ button: 'right' });
       await toasted('Applied docs/guide.md from stash@{1}', () => menu.getByRole('menuitem', { name: 'Apply this file', exact: true }).click());

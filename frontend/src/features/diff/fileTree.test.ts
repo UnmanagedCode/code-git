@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { buildFileTree, MAX_TREE_DEPTH, statusClass } from './fileTree';
+import { buildFileTree, MAX_TREE_DEPTH, orderedFiles, statusClass } from './fileTree';
 
 const f = (path: string, status = 'M') => ({ status, path, oldPath: null });
 
@@ -12,8 +12,18 @@ test('the tree nests directories, directories before files, each by name; every 
   expect(buildFileTree([])).toEqual([]);
 });
 
-test('status colours: added, deleted, modified, renamed/copied, other', () => {
-  expect(['A', 'D', 'M', 'R', 'C', 'T'].map(statusClass)).toEqual(['text-success', 'text-destructive', 'text-info', 'text-warning', 'text-warning', 'text-muted-foreground']);
+test('status colours: added and untracked, deleted and conflicted, modified, renamed/copied, other', () => {
+  expect(['A', '?', 'D', 'U', 'M', 'R', 'C', 'T'].map(statusClass)).toEqual([
+    'text-success', 'text-success', 'text-destructive', 'text-destructive', 'text-info', 'text-warning', 'text-warning', 'text-muted-foreground',
+  ]);
+});
+
+test('orderedFiles: Path keeps the input order; Tree is the tree\'s depth-first file order (directories first, each by name)', () => {
+  const files = [f('src/b.ts'), f('README.md'), f('src/a/x.ts'), f('src/a.ts'), f('docs/z.md')];
+  expect(orderedFiles(files, 'path')).toEqual(files);
+  expect(orderedFiles(files, 'tree').map((x) => x.path)).toEqual(['docs/z.md', 'src/a/x.ts', 'src/a.ts', 'src/b.ts', 'README.md']);
+  expect(orderedFiles(files, 'tree')[0]).toBe(files[4]);
+  expect(orderedFiles([], 'tree')).toEqual([]);
 });
 
 test('a path of 20,000 components nests MAX_TREE_DEPTH directories and keeps the rest in the file name', () => {

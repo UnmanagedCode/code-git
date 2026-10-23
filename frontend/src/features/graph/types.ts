@@ -21,7 +21,8 @@ export interface CommitItem { oid: string; parents: string[]; author: { name: st
 export interface PageResult { items: CommitItem[]; nextCursor: number | null }
 export interface Stat { files: number; insertions: number; deletions: number }
 export interface SearchResult { matches: string[]; truncated: boolean }
-export interface CommitFile { status: string; path: string; oldPath: string | null }
+/** A commit's changed file (graph.commit): numstat's counts, null for a binary file. */
+export interface CommitFile { status: string; path: string; oldPath: string | null; added: number | null; deleted: number | null; binary: boolean; submodule: boolean }
 export interface Ident { name: string; email: string; time: number }
 export interface CommitDetail {
   oid: string;

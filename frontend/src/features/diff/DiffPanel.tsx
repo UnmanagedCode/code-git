@@ -9,6 +9,7 @@ import { stashViewOf } from '@/features/stash/views';
 import type { LineSelection } from '@/features/workdir/api';
 import { extendRange, hunkRequest, lineKey, toggle, toRequest } from '@/features/staging/selection';
 import { useGraphData } from '@/state/graph';
+import { useFileView } from '@/state/fileView';
 import { clearLineSelection, setLineSelection, useLineSelection } from '@/state/lineSelection';
 import { useStore } from '@/state/store';
 import {
@@ -18,7 +19,8 @@ import { tabKey, type Tab } from '@/state/tabs';
 import { workdirOf, workdirStore } from '@/state/workdir';
 import type { Marks, StagingView } from './CodeLine';
 import { DiffHeader } from './DiffHeader';
-import { FileList } from './FileList';
+import { DiffFilesButton } from './DiffFileList';
+import { orderedFiles } from './fileTree';
 import { FileView } from './FileView';
 import { languageFor } from './highlight';
 import { useTokenizer } from './highlight/useTokenizer';
@@ -46,6 +48,9 @@ function DiffView({ tab }: { tab: Tab }) {
   const list = state?.list;
   const result = list?.result ?? null;
   const files = result?.files ?? [];
+  // Previous / next file step through the files in the order the file list shows them.
+  const view = useFileView();
+  const ordered = useMemo(() => orderedFiles(files, view), [files, view]);
   const file = files.find((f) => f.path === state?.viewed) ?? null;
   const context = contextFor(prefs);
   const key = file ? fileKey(file.path, context, prefs.whitespace) : null;
@@ -131,8 +136,8 @@ function DiffView({ tab }: { tab: Tab }) {
   });
 
   if (!state) return null;
-  const viewedIndex = file ? files.indexOf(file) : -1;
-  const pickFile = (i: number) => { const f = files[i]; if (f) setSelection(tab, [f.path], f.path); };
+  const viewedIndex = file ? ordered.indexOf(file) : -1;
+  const pickFile = (i: number) => { const f = ordered[i]; if (f) setSelection(tab, [f.path], f.path); };
   const psource = result ? patchSource(state.source, result) : state.source;
 
   return (
@@ -143,6 +148,7 @@ function DiffView({ tab }: { tab: Tab }) {
         loading={!!list?.loading}
         selectedCount={state.selected.length}
         notice={state.notice}
+        filesControl={files.length > 0 && <DiffFilesButton tab={tab} count={files.length} />}
         parentControl={stashView && <StashViewSwitch tab={tab} stash={stashView.stash} view={stashView.view} path={state.viewed} />}
         onParent={(parent) => state.source.kind === 'commit' && openDiff(tab, { ...state.source, parent }, state.viewed ? { path: state.viewed } : {})}
         onRefresh={() => void loadList(tab)}
@@ -162,16 +168,7 @@ function DiffView({ tab }: { tab: Tab }) {
       ) : !files.length ? (
         <p className="p-4 text-sm text-muted-foreground">No changes.</p>
       ) : (
-        <div className="flex flex-1 flex-col md:min-h-0 md:flex-row">
-          <FileList
-            tab={tab}
-            files={files}
-            selected={state.selected}
-            viewed={state.viewed}
-            patchSource={psource}
-            onSelect={(sel, viewed) => setSelection(tab, sel, viewed)}
-            className="max-h-28 shrink-0 overflow-y-auto border-b md:max-h-none md:w-64 md:border-r md:border-b-0"
-          />
+        <div className="flex min-h-0 flex-1 flex-col">
           {file && (
             <FileView
               file={file}
@@ -185,7 +182,7 @@ function DiffView({ tab }: { tab: Tab }) {
               onChange={goChange}
               onFile={(d) => pickFile(viewedIndex + d)}
               canPrevFile={viewedIndex > 0}
-              canNextFile={viewedIndex !== -1 && viewedIndex < files.length - 1}
+              canNextFile={viewedIndex !== -1 && viewedIndex < ordered.length - 1}
               onForce={() => forceFile(tab, file.path)}
               onOpenConflict={state.source.kind === 'unstaged' || state.source.kind === 'staged' ? () => void openConflict(tab, file.path) : undefined}
               staging={staging}

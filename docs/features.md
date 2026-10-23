@@ -7,8 +7,8 @@
 - Full-width page: the tab bar, the active checkout's header, the panel slots (`left`, `center`, `right`, `bottom`), and the repo picker dialog. It caps no content width, so it does not read `--cc-session-width`.
 - Follows cc's light/dark theme live when embedded; standalone, follows the OS (`frontend/public/theme-init.js`). No theme toggle of its own.
 - With no tab open the center shows "No repository open." and an **Open a repository** button.
-- The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel, the Compare panel and the Submodules panel, the right slot the Changes panel or the commit details (Changes while nothing or a single WIP row is selected in the graph, the details for a commit, a stash or several rows), the bottom slot the activity panel.
-- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the Compare picker as dialogs (**Refs**, **Compare**), the commit details open as a dialog when a commit is clicked, and **Changes (n)** beside **Refs** and **Compare** (or a WIP row click, or Ctrl/⌘+Shift+M) opens the Changes panel as a dialog; **Submodules** opens the Submodules panel as a dialog.
+- The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel, the Compare panel and the Submodules panel, the right slot the Changes panel, the commit details or the diff's **Changed files** panel (with no diff open: Changes while nothing or a single WIP row is selected in the graph, the details for a commit, a stash or several rows; with a diff open, the list that drives it: [Diff → File lists](#file-lists)), the bottom slot the activity panel.
+- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the Compare picker as dialogs (**Refs**, **Compare**), the commit details open as a dialog when a commit is clicked, and **Changes (n)** beside **Refs** and **Compare** (or a WIP row click, or Ctrl/⌘+Shift+M) opens the Changes panel as a dialog; **Submodules** opens the Submodules panel as a dialog; an open diff's file list opens from the diff header's **Files (n)**.
 
 ## Repo picker
 
@@ -69,7 +69,7 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 
 ## File history, blame and the reflog
 
-- **File history** (a file's menu in the commit details, a diff's file list, a tracked Changes row, or the palette's **File history…**): the commits that changed the file, newest first, following renames ("renamed from ‹old›"). Click one to see its change to the file beside the list (Diff or File view). **Show in graph** jumps to it.
+- **File history** (a file's menu in the commit details, a diff's file list, a tracked Changes row, or the palette's **File history…**): the commits that changed the file, newest first, following renames ("renamed from ‹old›"). Click one to see its change to the file beside the list (Diff or File view; the toolbar shows the change's `+added −deleted`, or **binary**). **Show in graph** jumps to it.
 - **Blame** (the same menus, the palette's **Blame…**, or the panel's **Blame** toggle): each line with the commit that last changed it; each run of lines starts with the commit's short SHA, author and date in the author's colour. Click it to see that commit in History. Lines load as you scroll. Binary files have no blame.
 - **Reflog** (a local branch's **Show reflog**, the palette's **Reflog**): where HEAD or a branch has been — selector, action, commit, subject, time — with View changes, Create branch here…, Reset HEAD to here (Soft / Mixed / Hard) and Copy SHA on each entry.
 - Reference: [history](history.md).
@@ -83,21 +83,21 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 
 ## Commit graph
 
-The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree). Full behaviour: [graph](graph.md).
+The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree, with line counts; the list that drives the commit's diff while it is open: [File lists](#file-lists)). Full behaviour: [graph](graph.md).
 
 ## Changes panel
 
-Right slot, while the graph has nothing or a single WIP row selected (below `lg`: the **Changes (n)** dialog from the graph's toolbar). Stage, unstage, discard and commit. Opened from the graph by clicking a WIP row (or Enter on it, or its menu's **Show changes**) and by **Edit HEAD message…** on the HEAD commit's menu, which ticks Amend with HEAD's message. Ops: [protocol → Staging ops](protocol.md#staging-ops-shared-rules).
+Right slot, while the graph has nothing or a single WIP row selected, and while an unstaged or staged diff is open whatever the selection (below `lg`: the **Changes (n)** dialog from the graph's toolbar; also on a wide screen when Ctrl/⌘+Shift+M is pressed while another diff holds the right slot). Stage, unstage, discard and commit. Opened from the graph by clicking a WIP row (or Enter on it, or its menu's **Show changes**) and by **Edit HEAD message…** on the HEAD commit's menu, which ticks Amend with HEAD's message. Ops: [protocol → Staging ops](protocol.md#staging-ops-shared-rules).
 
 | Part | Behaviour |
 |---|---|
-| Header | **Changes**, **Stash changes…** (disabled with nothing to stash; [Stash](#stash)), **Reload changes** (↻), ⋮ menu: **Refresh**, **Apply patch…** |
+| Header | **Changes**, the **Path / Tree** toggle (both lists; the one shared File view choice), **Stash changes…** (disabled with nothing to stash; [Stash](#stash)), **Reload changes** (↻), ⋮ menu: **Refresh**, **Apply patch…** |
 | Detached banner | On a detached HEAD: "Detached HEAD at `<oid10>`. A commit made here is on no branch." Hidden during a rebase |
 | Operation banner | A merge, rebase, cherry-pick or revert in progress (or conflicts left with none): its title, what to do next, **Continue** / **Skip** / **Abort…** ([merge → The operation banner](merge.md#the-operation-banner)) |
 | Error | The last failed op's message and git's stderr (hook output) as text; × dismisses it |
-| **Unstaged Files (n)** | Worktree changes and untracked files (`?`). Header: **Discard all…**, **Stage all**. Row hover (always shown on a touch screen): discard (↶, not on a conflicted file), stage (+), ⋮. A list longer than `FILE_RENDER_CAP` (`lib/clip.ts`) shows that many rows, then **Show all N** |
-| **Staged Files (n)** | Index changes. Header: **Unstage all**. Row hover: unstage (−), ⋮ |
-| Row | Status letter, path (`old → new` for a rename). Click or Enter opens its unstaged / staged diff at that file; a conflicted (`U`) row opens the merge tool instead, and its menu adds **Open in merge tool**, **Take current (`<label>`)**, **Take incoming (`<label>`)**, **Mark resolved** ([merge → The conflict tool](merge.md#the-conflict-tool)). Right-click or ⋮: **Stash this file…**, **Stage** / **Unstage**, **Discard…**, **Copy path**, then the ignore items below |
+| **Unstaged Files (n)** | Worktree changes and untracked files (`?`). Header: **Discard all…**, **Stage all**. Row hover (always shown on a touch screen): discard (↶, not on a conflicted file), stage (+), ⋮. Tree directory: **Stage folder** (+, `Stage folder <dir>`): one `stage.files` of this section's files beneath the directory, conflicted (`U`) files left out (staging one marks it resolved); hidden when only conflicted files are beneath it. No folder Discard (bulk discard is **Discard all…**). A list longer than `FILE_RENDER_CAP` (`lib/clip.ts`) shows that many rows, then **Show all N** |
+| **Staged Files (n)** | Index changes. Header: **Unstage all**. Row hover: unstage (−), ⋮. Tree directory: **Unstage folder** (−, `Unstage folder <dir>`): one `stage.unstageFiles` of this section's files beneath it |
+| Row | Status letter, path (`old → new` for a rename; its name alone in Tree), line counts of that section's change (none for an untracked or conflicted file). S stages / U unstages the focused row, in both views. Click or Enter opens its unstaged / staged diff at that file — while that section's diff is open, the section drives it instead ([File lists](#file-lists)) and the other section's row opens its own diff; a conflicted (`U`) row opens the merge tool instead, and its menu adds **Open in merge tool**, **Take current (`<label>`)**, **Take incoming (`<label>`)**, **Mark resolved** ([merge → The conflict tool](merge.md#the-conflict-tool)). Right-click or ⋮: **Stash this file…**, **Stage** / **Unstage**, **Discard…**, **Copy path**, then the ignore items below |
 | Commit box | **Summary** (one line), **Description**, ☐ **Amend previous commit**, ☐ **Skip Git hooks**, then the commit button(s) |
 
 **Discard** always asks first and sends nothing until confirmed: a file ("Discard changes to …?" / "Delete …?" for an untracked file), or **Discard all…**, which lists every untracked file it deletes with their count. Both say "This cannot be undone." Discard all throws away exactly the unstaged and untracked files shown; staged changes and ignored files stay, and conflicted files are left untouched — the confirmation says how many.
@@ -185,7 +185,29 @@ Center slot, per tab: each tab keeps its own diff; switching tabs shows that tab
 
 **Header:** the source (`Commit <oid7>`, `Unstaged changes`, `main...side (merge base <oid7>)`, `3 commits <oldest7>…<newest7>`, …); a **vs parent N** select on a merge commit, or on a stash the **All changes / Staged / Untracked** switch ([Stash](#stash)); **Refresh** (refetches the list — how work in progress is updated); **Create patch** ▾; **Close diff**.
 
-**File list** ("Changed files"; above the viewer below `md`): status letter (A added, M modified, D deleted, R renamed, C copied, T type changed, U conflicted, ? untracked), path (`old → new` for a rename), `+added −deleted`. Click views a file; Ctrl/⌘-click toggles it in the selection; Shift-click extends the selection; ↑/↓ move through the files. Row menu (⋮ or right-click), on the selection when the row is in it, else on the row: **Apply file from stash** (one file of a stash's All changes or Untracked view), **Copy path**, **Create patch from selection (download)**, **Copy patch of selection**.
+**Files (n)** (header, below `lg` only): the diff's file list as a dialog ("Changed files", with the Path / Tree toggle). A plain click or Enter views the file and closes the dialog; Ctrl/⌘- and Shift-click and ↑/↓ keep it open. **Previous file** / **Next file** (viewer toolbar) follow the list's displayed order: path order, or the tree's order in Tree.
+
+### File lists
+
+The diff has no file list of its own: the list beside it in the right slot drives it. One component renders every list (`features/diff/FileList.tsx`).
+
+| Diff | Its list |
+|---|---|
+| The commit or stash selected in the graph (a stash's All changes / Staged / Untracked view included; a merge vs any parent) | The commit details' files, bound to the diff (they list the diff's files: a stash's Staged view lists the index commit's) |
+| Unstaged / staged changes | The Changes panel's Unstaged / Staged section (shown even with a commit selected) |
+| Anything else: Compare panel commit, commit vs working directory, two refs; a combined multi-commit diff; a reflog entry's or another commit's diff not selected in the graph | **Changed files** panel in the right slot: "N files", the Path / Tree toggle, the list |
+| Any, below `lg` | **Files (n)** in the diff header (above) |
+
+| Part | Behaviour |
+|---|---|
+| Row | Status letter (A added, M modified, D deleted, R renamed, C copied, T type changed, U conflicted, ? untracked), path (`old → new` for a rename), line counts, then the host's row buttons and ⋮ (hover or focus; always on a touch screen) |
+| Line counts | `+added −deleted`; **binary** for a binary file; **submodule** for a gitlink; none for an untracked or conflicted file. Commit details with no diff open: `graph.commit`'s counts; an open diff: `diff.files`'; Changes: each section's own list |
+| Path / Tree | One choice for every list, persisted as `code-git:graph:fileView`. Tree: directories first, then files, each by name; at most `MAX_TREE_DEPTH` (`features/diff/fileTree.ts`) directory levels |
+| Bound to the open diff | The viewed file is highlighted (`aria-current`). Click, ↑/↓ or Enter views a file (no list refetch; in Changes, a file the diff's list does not have yet — it appeared on a reload of the panel — refetches the list and is shown); Ctrl/⌘-click toggles it in the selection; Shift-click extends the selection over the displayed order |
+| Not bound | Click or Enter opens the diff at that file (details: the commit's diff; Changes: the section's diff, a conflicted file the merge tool); the list then becomes bound |
+| Keys | ↑/↓ (`files.move`): previous / next file row (directory rows are skipped; bound: views it). Enter (`files.open`): opens / views the focused file |
+| Row menu (⋮ or right-click) | Bound to a diff (details, Changed files panel, Files dialog), on the selection when the row is in it, else on the row: **Apply file from stash** (one file of a stash's All changes or Untracked view), **File history**, **Blame**, **Copy path**, **Create patch from selection (download)**, **Copy patch of selection**, **Restore file to this version…**. Details with no diff open: the commit file menu (**Apply this file** on a stash, **File history**, **Blame**, **Copy path**). Changes: its row menu (below) |
+| Large lists | The first `FILE_RENDER_CAP` (`lib/clip.ts`) rows, then **Show all N**; a viewed file past the cap shows them all |
 
 **Viewer toolbar** (the choices persist in `localStorage` key `code-git:diff-prefs`):
 
@@ -215,7 +237,7 @@ Center slot, per tab: each tab keeps its own diff; switching tabs shows that tab
 | Over the file cap | "Too large to display (over N MB)"; in Inline, Split or File view also **Switch to Hunk mode** |
 | Empty file added / deleted | "Empty file added" / "Empty file deleted" |
 | No content change (rename-only, mode-only, whitespace hidden) | "No content changes" + the mode or rename line |
-| List over its cap | An alert: the diff is too large to list; no file list |
+| List over its cap | An alert in the diff: the diff is too large to list; the Changed files panel stays empty, the bound details say "The changed files could not be listed; the diff says why." (no file count) |
 
 **Hunk and line staging** — only on an unstaged or staged diff of a modified (`M`) text file, with **Show all whitespace** and the Diff view (not File view); not on added, deleted, renamed, untracked, binary, submodule, conflicted or LFS-pointer files, nor on commit or compare diffs:
 
@@ -229,7 +251,7 @@ Center slot, per tab: each tab keeps its own diff; switching tabs shows that tab
 - Discarding asks first and previews the removed/added lines. A refusal shows in the header: the file changed since it was shown (reload it), or a selection that leaves out the end-of-file newline change.
 - After each action the selection clears and the diff, the Changes lists and the header reload.
 
-**Restore file to this version…** (file list menu, one file, when the diff's new side is a commit — a commit, a range or two refs; not for a deleted file or a submodule): after a confirmation, puts that commit's version of the file in the index and the working tree, overwriting uncommitted changes to it.
+**Restore file to this version…** (the bound file list's menu, one file, when the diff's new side is a commit — a commit, a range or two refs; not for a deleted file or a submodule): after a confirmation, puts that commit's version of the file in the index and the working tree, overwriting uncommitted changes to it.
 
 **Create patch** ▾: **Download .patch**, **Copy patch**; with more than one file selected also the same two for the selected files only (a renamed file brings its old path, so the rename stays a rename). A selection needing more than `PATCH_MAX_PATHS` paths (`features/diff/patch.ts`, equal to `DIFF_LIMITS.maxPaths`) is refused in the header before any request: use the whole-diff patch. A commit, or a run of commits without merges, gives a mailbox patch (`git am`); anything else a plain diff (`git apply`), binary changes included, untracked files not. The file name comes from the backend. A failed request is shown as an alert in the header.
 
@@ -267,7 +289,7 @@ A refusal (nothing to stash, a conflict in progress, a path behind an untracked 
 
 **View** — **View changes** (stash menu) or the details panel's **View changes**: the diff header's switch shows **All changes** (staged and unstaged together, against the stash's base), **Staged** (what was staged), **Untracked** (only for a stash with untracked files).
 
-**One file** — **Apply this file** (the details panel's file menu, on a stash) or **Apply file from stash** (the diff's file menu, on All changes or Untracked): the file's change goes into the working tree only, as a patch — all of it or nothing; a file that differs from the stash's base is refused, never overwritten. Pop is whole-stash only.
+**One file** — **Apply this file** (the details panel's file menu, on a stash) or **Apply file from stash** (the diff's file list menu — the details while the stash is selected, on All changes or Untracked): the file's change goes into the working tree only, as a patch — all of it or nothing; a file that differs from the stash's base is refused, never overwritten. Pop is whole-stash only.
 
 
 ## Submodules

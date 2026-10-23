@@ -1,5 +1,5 @@
 // The history card's golden path on the `hist` world (historySeed.mjs), in light then dark, each on a fresh seed: the
-// palette's File history… → the rename rows → the viewer (Diff, then File) → Blame (author colours) → a 1500-line blame
+// palette's File history… → the rename rows → the viewer (Diff with its line counts, then File) → Blame (author colours) → a 1500-line blame
 // paging as it scrolls → Show in graph → the Reflog and its row menu → a branch's Show reflog. Screenshots at desktop
 // and phone width into out/history/. Fails on a console error or a ≥400 response other than the two host URLs.
 // Run: node harness/playwright/history.mjs   (needs `npm run prepare` first, for frontend/dist)
@@ -67,6 +67,11 @@ for (const scheme of ['light', 'dark']) {
       const viewer = page.locator('[data-history-viewer]');
       await viewer.locator('[data-view="unified"] [data-row="add"]').first().waitFor();
       check(await viewer.locator('[data-row="add"]').count() > 0, 'the edit shows its added lines in the diff view');
+      // The toolbar's counts are the loaded change's own lines.
+      const adds = await viewer.locator('[data-row="add"]').count();
+      const dels = await viewer.locator('[data-row="del"]').count();
+      const toolbarText = await page.getByRole('toolbar', { name: 'Change view', exact: true }).textContent();
+      check(toolbarText.includes(`+${adds} −${dels}`), `the change view's toolbar shows +${adds} −${dels}`);
       await shot('history-desktop');
       await page.getByRole('toolbar', { name: 'Change view', exact: true }).getByRole('button', { name: 'File', exact: true }).click();
       await viewer.locator('[data-view="file"]').waitFor();

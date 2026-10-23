@@ -86,14 +86,18 @@ Another checkout's WIP opens in that checkout's tab (opened if needed).
 
 ### Details panel
 
+In the right slot the details show while `rightSlotFor` (`features/workdir/rightSlot.ts`) answers `'details'`: no diff open and a commit, stash or several rows selected, or the open diff is the selected commit's or stash's. In the narrow dialog they always show.
+
 | Selection | Shows |
 |---|---|
-| Nothing | In the right slot: nothing — the slot shows the Changes panel (`changesInRightSlot`, `features/workdir/rightSlot.ts`); in the narrow dialog: "Select a commit" |
-| One commit or stash | Subject, body (as text), author, committer when different, co-authors (`Co-authored-by:` trailers), full SHA with copy, signature badge (below), parents as buttons that jump, "Changes against the first parent" for a merge, and the changed files |
+| Nothing | In the right slot: nothing — the slot shows the Changes panel; in the narrow dialog: "Select a commit" |
+| One commit or stash | Subject, body (as text), author, committer when different, co-authors (`Co-authored-by:` trailers), full SHA with copy, signature badge (below), parents as buttons that jump, "Changes against the first parent" for a merge ("Changes against parent N" while its diff against parent N is open), and the changed files |
 | One WIP row | In the right slot: the Changes panel instead |
 | Several | "N selected" and each row's short SHA and subject |
 
-- **Files**: Path or Tree view (the choice persists under `code-git:graph:fileView`); status letter coloured A added, D deleted, M modified, R/C renamed/copied (with `old → new`); the first `FILE_RENDER_CAP` then **Show all N**. A click opens the commit's diff at that file (and publishes the file-open intent) and marks the row; right-click for the file menu.
+- **Files** ("N files", the shared file list: [features → File lists](features.md#file-lists)): Path or Tree view (`code-git:graph:fileView`, the one choice every file list shares); status letter coloured by `statusClass` (`features/diff/fileTree.ts`); `+added −deleted` from `graph.commit` (**binary**, **submodule** instead); rows carry `data-path`; the first `FILE_RENDER_CAP` then **Show all N**.
+  - **Unbound** (no diff of this commit open): a click or Enter publishes the file-open intent (`requestFileOpen`), which opens the commit's diff at that file; right-click or ⋮ for the commit file menu (`CONTEXT.file`).
+  - **Bound** (the open diff is this commit's, or one of this stash's views: `diffOwnerCommit`, `features/diff/binding.ts`): the list is the diff's (`DiffFileList`) — its files (a stash's Staged view lists the index commit's), the viewed file highlighted, a click, ↑/↓ or Enter views a file without refetching the list, Ctrl/⌘- and Shift-click select, the menu is the diff's (`'diff-file'`). While the diff's list loads, the commit's own files stand in when they are the same diff (the commit against its first parent), and pick and select as the loaded list will; a pick made there is kept when the list arrives. A failed diff list shows no count and no list here, only "The changed files could not be listed; the diff says why." (the error is the diff's alert).
 - A commit whose file list is over the output cap shows its metadata and "Too many changes to list." instead of the files.
 - **Signature badge** (git's `%G?`): G Signed (good), U Signed (unknown validity), X Expired signature, Y Expired key, R Revoked key, B Bad signature, E Unverified (cannot be checked); N (unsigned) shows none. Hover for git's signer and key.
 

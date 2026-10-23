@@ -5,21 +5,22 @@ import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
 import { runOp } from '@/lib/endpoints';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { ContextMenuHost } from '@/shell/ContextMenuHost';
 import { useGraphData } from '@/state/graph';
-import { useGraphSelection, type SelectedRow } from '@/state/graphSelection';
+import { requestFileOpen, useGraphSelection, type SelectedRow } from '@/state/graphSelection';
 import { tabKey, type Tab } from '@/state/tabs';
-import { changesInRightSlot } from '@/features/workdir/rightSlot';
+import { diffOwnerCommit, useOpenDiff } from '@/features/diff/binding';
+import { DiffFileList } from '@/features/diff/DiffFileList';
+import { FileList, FileViewToggle } from '@/features/diff/FileList';
+import { useRightSlot } from '@/features/workdir/rightSlot';
 import { openIn, openSelectionDiff, selectionDiff } from '../diffWiring';
 import { formatTime } from '../time';
 import { initials } from '../initials';
 import { requestJump } from '../jump';
 import { WIDE_GRAPH_QUERY } from '../media';
+import { CONTEXT, type FileCtx } from '../contexts';
 import type { CommitDetail, Stash } from '../types';
-import { FileList } from './FileList';
 import { SignatureBadge } from './SignatureBadge';
 
-const HOST = 'details';
 /** Characters of a commit body shown until "Show the whole message". */
 export const BODY_SHOWN = 16_384;
 /** Co-authors listed; the rest are counted. */
@@ -40,8 +41,8 @@ function Body({ text }: { text: string }) {
 }
 
 /**
- * The details panel (right slot; a dialog on narrow screens) for the graph's selection. In the slot it gives way to the
- * Changes panel when nothing or a single WIP row is selected (features/workdir/rightSlot.ts).
+ * The details panel (right slot; a dialog on narrow screens) for the graph's selection. In the slot it shows only while
+ * the slot is the details' (features/workdir/rightSlot.ts).
  */
 export function CommitDetails({ tab, inDialog = false }: { tab: Tab | null; inDialog?: boolean }) {
   const wide = useMediaQuery(WIDE_GRAPH_QUERY);
@@ -52,7 +53,8 @@ export function CommitDetails({ tab, inDialog = false }: { tab: Tab | null; inDi
 function DetailsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const sel = useGraphSelection(tab);
   const data = useGraphData(tab);
-  if (data.status === 'idle' || (!inDialog && changesInRightSlot(sel.items))) return null;
+  const slot = useRightSlot(tab);
+  if (data.status === 'idle' || (!inDialog && slot !== 'details')) return null;
   const only = sel.items.length === 1 ? sel.items[0] : null;
   let body;
   if (sel.items.length > 1) body = <Multi tab={tab} items={sel.items} commits={data.commits} stashes={data.refs?.stashes ?? []} />;
@@ -61,7 +63,6 @@ function DetailsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   return (
     <aside className="flex flex-col gap-3 p-3" aria-label="Commit details">
       {body}
-      <ContextMenuHost host={HOST} />
     </aside>
   );
 }
@@ -107,6 +108,8 @@ function Person({ label, name, email, time }: { label: string; name: string; ema
 function Commit({ tab, oid }: { tab: Tab; oid: string }) {
   const [d, setD] = useState<CommitDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const open = useOpenDiff(tab);
+  const stashes = useGraphData(tab).refs?.stashes ?? [];
   useEffect(() => {
     const ac = new AbortController();
     runOp<CommitDetail>('graph.commit', tab, { oid }, { signal: ac.signal })
@@ -116,6 +119,14 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
   }, [oid]);
   if (error) return <p className="text-sm text-destructive" role="alert">{error}</p>;
   if (!d) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  // The open diff is this commit's (or one of this stash's views): the list shows and drives the diff's files.
+  const bound = open && diffOwnerCommit(open, stashes) === d.oid ? open : null;
+  const boundParent = bound?.source.kind === 'commit' ? bound.source.parent ?? 1 : 1;
+  const sameFiles = !!bound && bound.source.kind === 'commit' && bound.source.rev === d.oid && boundParent === 1;
+  // A failed diff list shows its error in the diff: here neither a count nor a list, only a pointer to it.
+  const listFailed = !!bound?.list.error;
+  const count = listFailed ? undefined : bound ? bound.list.result?.files.length ?? (sameFiles ? d.files?.length : undefined) : d.files?.length;
+  const parent = d.parents[0] ?? null;
   const sameCommitter = d.committer.name === d.author.name && d.committer.email === d.author.email;
   return (
     <>
@@ -146,8 +157,26 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
           ))}
         </div>
       )}
-      {d.parents.length > 1 && <p className="text-xs text-muted-foreground">Changes against the first parent</p>}
-      {d.files ? <FileList tab={tab} commit={d.oid} parent={d.parents[0] ?? null} files={d.files} host={HOST} /> : (
+      {boundParent > 1
+        ? <p className="text-xs text-muted-foreground">Changes against parent {boundParent}</p>
+        : d.parents.length > 1 && <p className="text-xs text-muted-foreground">Changes against the first parent</p>}
+      {count !== undefined && (
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase">{count} {count === 1 ? 'file' : 'files'}</h3>
+          <div className="ml-auto"><FileViewToggle /></div>
+        </div>
+      )}
+      {listFailed ? <p className="text-xs text-muted-foreground">The changed files could not be listed; the diff says why.</p>
+        : bound ? <div className="-mx-3"><DiffFileList tab={tab} fallback={sameFiles ? d.files ?? undefined : undefined} /></div> : d.files ? (
+        <div className="-mx-3">
+          <FileList
+            label="Changed files"
+            files={d.files}
+            onSelect={(_sel, f) => requestFileOpen({ tab, commit: d.oid, parent, path: f.path, oldPath: f.oldPath })}
+            menu={(f) => ({ context: CONTEXT.file, ctx: { tab, commit: d.oid, parent, file: f } satisfies FileCtx })}
+          />
+        </div>
+      ) : (
         <p className="text-sm text-destructive" role="alert">
           {d.filesError?.code === 'OUTPUT_TOO_LARGE' ? 'Too many changes to list.' : `The changed files could not be listed: ${d.filesError?.message ?? 'unknown error'}`}
         </p>

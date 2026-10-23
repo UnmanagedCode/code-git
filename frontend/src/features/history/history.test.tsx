@@ -10,6 +10,7 @@ import { EMPTY_GRAPH, graphStore } from '@/state/graph';
 import { refDialogStore } from '@/state/refDialog';
 import { oid, ref, refsResult } from '@/test/graphData';
 import { stubFetch } from '@/test/stubFetch';
+import { hunk } from '@/test/diffFixtures';
 import { BLAME_PAGE, HISTORY_PAGE, type BlamePage, type HistoryItem } from './api';
 import { REFLOG_CONTEXT } from './actions';
 import { authorClasses } from './authorColors';
@@ -66,6 +67,27 @@ test('file history: pages, the rename marker, the viewer', async () => {
   await waitFor(() => expect(params(f, 'diff.file')[0]).toMatchObject({ source: { kind: 'commit', rev: oid(5) }, path: 'c.txt', oldPath: 'b.txt' }));
   await userEvent.click(within(list).getAllByRole('option')[1]);
   await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ source: { kind: 'commit', rev: oid(4) }, path: 'b.txt' }));
+});
+
+// Invariant: the change view's toolbar shows the loaded change's line counts, and "binary" for a binary change.
+test("file history: the change view's toolbar shows the change's +added −deleted; a binary change shows binary", async () => {
+  open();
+  stubFetch({
+    'POST api/ops/history.file': { ok: true, result: { items: [item(5), item(4)], nextCursor: null, truncated: false } },
+    'POST api/ops/diff.file': (_u: URL, init?: RequestInit) => {
+      const rev = (JSON.parse(String(init!.body)) as { params: { source: { rev: string } } }).params.source.rev;
+      return { ok: true, result: rev === oid(5)
+        ? { ...fileDiff, hunks: [hunk(1, 1, [' a', '-b', '+B', '+C', ' d']), hunk(9, 10, ['-x'])] }
+        : { ...fileDiff, binary: true } };
+    },
+  });
+  render(<HistoryPanel tab={TAB} />);
+  act(() => openFileHistory(TAB, { path: 'c.txt', rev: REV }));
+  const toolbar = await screen.findByRole('toolbar', { name: 'Change view' });
+  expect(await within(toolbar).findByLabelText('2 added, 2 deleted')).toBeTruthy();
+  await userEvent.click(within(screen.getByRole('listbox', { name: 'File history' })).getAllByRole('option')[1]);
+  expect(await within(screen.getByRole('toolbar', { name: 'Change view' })).findByText('binary')).toBeTruthy();
+  expect(within(screen.getByRole('toolbar', { name: 'Change view' })).queryByLabelText(/added/)).toBeNull();
 });
 
 const blame: BlamePage = {

@@ -84,7 +84,7 @@ test('closing a diff keeps the search the user was in: its query, its mode and i
     const world = linearWorld(20);
     world.search = ({ mode, query }) => ({ matches: mode === 'path' && query === 'src/a.ts' ? [oid(17)] : [], truncated: false });
     await shell(world);
-    fireEvent.click(screen.getByRole('button', { name: 'Path' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Search by' })).getByRole('button', { name: 'Path' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Search commits' }), { target: { value: 'src/a.ts' } });
     await act(async () => { vi.advanceTimersByTime(300); });
     await waitFor(() => expect(rowEl(oid(17))!.hasAttribute('data-match')).toBe(true));
@@ -93,7 +93,7 @@ test('closing a diff keeps the search the user was in: its query, its mode and i
     act(() => closeDiff(TAB));
     const box = await screen.findByRole('textbox', { name: 'Search commits' });
     expect((box as HTMLInputElement).value).toBe('src/a.ts');
-    expect(screen.getByRole('button', { name: 'Path' }).getAttribute('aria-pressed')).toBe('true');
+    expect(within(screen.getByRole('group', { name: 'Search by' })).getByRole('button', { name: 'Path' }).getAttribute('aria-pressed')).toBe('true');
     await act(async () => { vi.advanceTimersByTime(300); });
     await waitFor(() => expect(rowEl(oid(17))!.hasAttribute('data-match')).toBe(true));
   } finally {

@@ -45,3 +45,25 @@ test('Discard all lists at most FILE_RENDER_CAP untracked names, then how many m
   await userEvent.click(within(dialog).getByRole('button', { name: 'Discard all' }));
   await waitFor(() => expect((w.posts('stage.discardFiles')[0] as { untracked: string[] }).untracked).toHaveLength(FILE_RENDER_CAP + 3));
 });
+
+test('Stage folder and Unstage folder act on every file of the section beneath the folder, not only the rows rendered under the cap', async () => {
+  const under = (dir: string, n: number) => Array.from({ length: n }, (_, i) => dfile({ path: `${dir}/f${i}.ts` }));
+  const unstaged = [...under('src', FILE_RENDER_CAP + 3), dfile({ path: 'src/c.ts', status: 'U' })];
+  const staged = under('lib', FILE_RENDER_CAP + 2);
+  const w = workdirWorld({ unstaged, staged });
+  render(<Shell />);
+  act(() => dispatchTabs({ type: 'open', tab: APP }));
+  await screen.findByRole('region', { name: 'Unstaged Files' });
+  await userEvent.click(within(screen.getByRole('group', { name: 'File view' })).getByRole('button', { name: 'Tree' }));
+  const unstagedSection = screen.getByRole('region', { name: 'Unstaged Files' });
+  await waitFor(() => expect(within(unstagedSection).getAllByRole('option')).toHaveLength(FILE_RENDER_CAP));
+  await userEvent.click(within(unstagedSection).getByRole('button', { name: 'Stage folder src' }));
+  await waitFor(() => expect(w.posts('stage.files')).toHaveLength(1));
+  expect((w.posts('stage.files')[0] as { paths: string[] }).paths.sort()).toEqual(under('src', FILE_RENDER_CAP + 3).map((f) => f.path).sort());
+  await waitFor(() => expect(screen.queryByText('Loading changes…')).toBeNull());
+  const stagedSection = screen.getByRole('region', { name: 'Staged Files' });
+  expect(within(stagedSection).getAllByRole('option')).toHaveLength(FILE_RENDER_CAP);
+  await userEvent.click(within(stagedSection).getByRole('button', { name: 'Unstage folder lib' }));
+  await waitFor(() => expect(w.posts('stage.unstageFiles')).toHaveLength(1));
+  expect((w.posts('stage.unstageFiles')[0] as { paths: string[] }).paths.sort()).toEqual(staged.map((f) => f.path).sort());
+});

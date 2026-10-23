@@ -1,11 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { Shell } from '@/shell/Shell';
 import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { dispatchTabs, tabKey } from '@/state/tabs';
-import { dfile } from '@/test/diffFixtures';
+import { dfile, fdiff, hunk } from '@/test/diffFixtures';
 import { json, summary } from '@/test/fixtures';
 import { workdirWorld, type WorkdirWorld } from '@/test/workdirWorld';
 
@@ -29,12 +29,149 @@ const commitBox = () => screen.getByRole('region', { name: 'Commit message' });
 const summaryBox = () => within(commitBox()).getByRole('textbox', { name: 'Summary' }) as HTMLInputElement;
 const descBox = () => within(commitBox()).getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement;
 const dialog = () => screen.getByRole('dialog');
+const row = (name: 'Unstaged Files' | 'Staged Files', path: string) => section(name).querySelector<HTMLElement>(`li[role="option"][data-path="${CSS.escape(path)}"]`)!;
 
 test('lists the unstaged (untracked included) and staged files with their counts', async () => {
-  await show();
+  await show({ unstaged: [dfile({ path: 'src/a.ts', added: 7, deleted: 2 }), NEW], staged: [dfile({ path: 'src/b.ts', added: 3, deleted: 0 })] });
   expect(within(section('Unstaged Files')).getByRole('heading').textContent).toBe('Unstaged Files (2)');
   expect(within(section('Staged Files')).getByRole('heading').textContent).toBe('Staged Files (1)');
   expect(within(section('Unstaged Files')).getAllByRole('option').map((o) => o.getAttribute('data-path'))).toEqual(['src/a.ts', 'notes.txt']);
+  // Line counts per section; none for an untracked file.
+  expect(within(row('Unstaged Files', 'src/a.ts')).getByLabelText('7 added, 2 deleted')).toBeTruthy();
+  expect(within(row('Staged Files', 'src/b.ts')).getByLabelText('3 added, 0 deleted')).toBeTruthy();
+  expect(row('Unstaged Files', 'notes.txt').textContent).not.toMatch(/[+−]\d/);
+});
+
+const TREE_UNSTAGED = [
+  dfile({ path: 'src/a.ts' }), dfile({ path: 'src/b/c.ts' }), dfile({ path: 'src/x.ts', status: 'U' }), dfile({ path: 'conf/y.ts', status: 'U' }),
+  dfile({ path: 'src/mv.ts', oldPath: 'src/old.ts', status: 'R' }), NEW,
+];
+const TREE_STAGED = [dfile({ path: 'src/s.ts' }), dfile({ path: 'lib/t.ts' })];
+
+test('Tree: one toggle for both sections; rows nest and keep Stage / Unstage / Discard / ⋮ and the S / U keys', async () => {
+  const w = await show({ unstaged: TREE_UNSTAGED, staged: TREE_STAGED });
+  const toggles = screen.getAllByRole('group', { name: 'File view' });
+  expect(toggles).toHaveLength(1);
+  await userEvent.click(within(toggles[0]).getByRole('button', { name: 'Tree' }));
+  const src = within(section('Unstaged Files')).getByRole('group', { name: 'src' });
+  expect(within(within(src).getByRole('group', { name: 'src/b' })).getByRole('option', { name: /c\.ts/ })).toBeTruthy();
+  expect(within(section('Staged Files')).getByRole('group', { name: 'lib' })).toBeTruthy();
+  expect(within(row('Unstaged Files', 'src/a.ts')).getByRole('button', { name: 'Stage src/a.ts' })).toBeTruthy();
+  expect(within(row('Unstaged Files', 'src/a.ts')).getByRole('button', { name: 'Discard src/a.ts' })).toBeTruthy();
+  expect(within(row('Unstaged Files', 'src/a.ts')).getByRole('button', { name: 'Actions for src/a.ts' })).toBeTruthy();
+  expect(within(row('Staged Files', 'src/s.ts')).getByRole('button', { name: 'Unstage src/s.ts' })).toBeTruthy();
+  await userEvent.click(within(row('Unstaged Files', 'src/b/c.ts')).getByRole('button', { name: 'Stage src/b/c.ts' }));
+  await waitFor(() => expect(w.posts('stage.files')).toEqual([{ paths: ['src/b/c.ts'] }]));
+  row('Unstaged Files', 'src/a.ts').focus();
+  fireEvent.keyDown(row('Unstaged Files', 'src/a.ts'), { key: 's' });
+  await waitFor(() => expect(w.posts('stage.files').at(-1)).toEqual({ paths: ['src/a.ts'] }));
+  fireEvent.keyDown(row('Staged Files', 'lib/t.ts'), { key: 'u' });
+  await waitFor(() => expect(w.posts('stage.unstageFiles')).toEqual([{ paths: ['lib/t.ts'] }]));
+});
+
+test('Tree: Stage folder sends one stage.files with the section\'s files beneath it, conflicted ones left out; Unstage folder likewise; no folder Discard', async () => {
+  const w = await show({ unstaged: TREE_UNSTAGED, staged: TREE_STAGED });
+  await userEvent.click(within(screen.getByRole('group', { name: 'File view' })).getByRole('button', { name: 'Tree' }));
+  // Nothing stageable under conf/ (only a conflicted file): no button there.
+  expect(within(section('Unstaged Files')).queryByRole('button', { name: 'Stage folder conf' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^Discard folder/ })).toBeNull();
+  await userEvent.click(within(section('Unstaged Files')).getByRole('button', { name: 'Stage folder src' }));
+  await waitFor(() => expect(w.posts('stage.files')).toHaveLength(1));
+  expect((w.posts('stage.files')[0] as { paths: string[] }).paths.sort()).toEqual(['src/a.ts', 'src/b/c.ts', 'src/mv.ts', 'src/old.ts']);
+  await waitFor(() => expect(screen.queryByText('Loading changes…')).toBeNull());
+  await userEvent.click(within(section('Unstaged Files')).getByRole('button', { name: 'Stage folder src/b' }));
+  await waitFor(() => expect(w.posts('stage.files').at(-1)).toEqual({ paths: ['src/b/c.ts'] }));
+  await userEvent.click(within(section('Staged Files')).getByRole('button', { name: 'Unstage folder src' }));
+  await waitFor(() => expect(w.posts('stage.unstageFiles')).toEqual([{ paths: ['src/s.ts'] }]));
+  expect(within(section('Staged Files')).queryByRole('button', { name: /^Stage folder/ })).toBeNull();
+  expect(within(section('Unstaged Files')).queryByRole('button', { name: /^Unstage folder/ })).toBeNull();
+});
+
+test('Tree: folder buttons are disabled while an op runs', async () => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  await show({ unstaged: TREE_UNSTAGED, staged: TREE_STAGED });
+  // stage.files answers only once released.
+  const stubbed = globalThis.fetch;
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/ops/stage.files')) await held;
+    return stubbed(input, init);
+  });
+  await userEvent.click(within(screen.getByRole('group', { name: 'File view' })).getByRole('button', { name: 'Tree' }));
+  await userEvent.click(within(section('Unstaged Files')).getByRole('button', { name: 'Stage folder src/b' }));
+  await waitFor(() => expect((within(section('Unstaged Files')).getByRole('button', { name: 'Stage folder src' }) as HTMLButtonElement).disabled).toBe(true));
+  expect((within(section('Staged Files')).getByRole('button', { name: 'Unstage folder src' }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => { release(); await held; });
+  await waitFor(() => expect((within(section('Unstaged Files')).getByRole('button', { name: 'Stage folder src' }) as HTMLButtonElement).disabled).toBe(false));
+});
+
+test('a second row clicked before the unstaged diff\'s list answers is the one viewed once it does', async () => {
+  await show({ unstaged: [M, NEW, dfile({ path: 'z.ts' })] });
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  const stubbed = globalThis.fetch;
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/ops/diff.files')) await held;
+    return stubbed(input, init);
+  });
+  await userEvent.click(within(section('Unstaged Files')).getByText('src/a.ts'));
+  expect(diffStore.get().get(tabKey(APP))).toMatchObject({ viewed: 'src/a.ts', list: { loading: true } });
+  await userEvent.click(within(section('Unstaged Files')).getByText('z.ts'));
+  expect(diffStore.get().get(tabKey(APP))?.viewed).toBe('z.ts');
+  await act(async () => { release(); await held; });
+  await waitFor(() => expect(diffStore.get().get(tabKey(APP))?.list.loading).toBe(false));
+  expect(diffStore.get().get(tabKey(APP))).toMatchObject({ source: { kind: 'unstaged' }, viewed: 'z.ts', selected: ['z.ts'] });
+  expect(row('Unstaged Files', 'z.ts').getAttribute('aria-current')).toBe('true');
+});
+
+test('bound section: a listed file is viewed with no new list; one that appeared after Reload changes refetches the diff\'s list and is shown', async () => {
+  const w = await show({
+    unstaged: [M, NEW],
+    fileDiffs: { 'src/a.ts': fdiff([hunk(1, 1, ['+a'])], { path: 'src/a.ts' }), 'notes.txt': fdiff([hunk(1, 1, ['+n'])], { path: 'notes.txt' }), 'src/new.ts': fdiff([hunk(1, 1, ['+fresh line'])], { path: 'src/new.ts' }) },
+  });
+  const diffLists = () => (w.posts('diff.files') as { source: { kind: string } }[]).length;
+  await userEvent.click(within(section('Unstaged Files')).getByText('src/a.ts'));
+  await waitFor(() => expect(diffStore.get().get(tabKey(APP))?.list.result).toBeTruthy());
+  // A new file shows up in the panel only: Reload changes does not reload the diff's list.
+  w.lists.unstaged.push(dfile({ path: 'src/new.ts', status: 'A' }));
+  const before = diffLists();
+  await userEvent.click(screen.getByRole('button', { name: 'Reload changes' }));
+  await waitFor(() => expect(row('Unstaged Files', 'src/new.ts')).not.toBeNull());
+  expect(diffStore.get().get(tabKey(APP))?.list.result?.files.map((f) => f.path)).not.toContain('src/new.ts');
+  const afterReload = diffLists();
+  expect(afterReload).toBe(before + 2);
+  await userEvent.click(within(section('Unstaged Files')).getByText('notes.txt'));
+  expect(diffStore.get().get(tabKey(APP))?.viewed).toBe('notes.txt');
+  expect(diffLists()).toBe(afterReload);
+  await userEvent.click(within(section('Unstaged Files')).getByText('src/new.ts'));
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Diff' }).textContent).toContain('fresh line'));
+  expect(diffLists()).toBe(afterReload + 1);
+  expect(diffStore.get().get(tabKey(APP))).toMatchObject({ source: { kind: 'unstaged' }, viewed: 'src/new.ts', selected: ['src/new.ts'] });
+  expect(screen.getByLabelText('Viewed file').textContent).toContain('src/new.ts');
+  expect(row('Unstaged Files', 'src/new.ts').getAttribute('aria-current')).toBe('true');
+});
+
+test('with the unstaged diff open its section drives it: viewed row current, a click or ↓ views a file without a new list; a staged row opens the staged diff', async () => {
+  const w = await show({ unstaged: [M, NEW, dfile({ path: 'z.ts' })] });
+  await userEvent.click(within(section('Unstaged Files')).getByText('src/a.ts'));
+  await waitFor(() => expect(diffStore.get().get(tabKey(APP))?.list.result).toBeTruthy());
+  expect(row('Unstaged Files', 'src/a.ts').getAttribute('aria-current')).toBe('true');
+  const lists = w.fetch.count('POST api/ops/diff.files');
+  await userEvent.click(within(section('Unstaged Files')).getByText('notes.txt'));
+  expect(diffStore.get().get(tabKey(APP))).toMatchObject({ source: { kind: 'unstaged' }, viewed: 'notes.txt', selected: ['notes.txt'] });
+  expect(row('Unstaged Files', 'notes.txt').getAttribute('aria-current')).toBe('true');
+  fireEvent.keyDown(row('Unstaged Files', 'notes.txt'), { key: 'ArrowDown' });
+  expect(diffStore.get().get(tabKey(APP))?.viewed).toBe('z.ts');
+  expect(document.activeElement).toBe(row('Unstaged Files', 'z.ts'));
+  fireEvent.click(row('Unstaged Files', 'src/a.ts'), { ctrlKey: true });
+  expect(diffStore.get().get(tabKey(APP))?.selected).toEqual(['z.ts', 'src/a.ts']);
+  expect(w.fetch.count('POST api/ops/diff.files')).toBe(lists);
+  // The staged section is not bound: its row opens the staged diff.
+  expect(row('Staged Files', 'src/b.ts').getAttribute('aria-current')).toBeNull();
+  await userEvent.click(within(section('Staged Files')).getByText('src/b.ts'));
+  expect(diffStore.get().get(tabKey(APP))?.source).toEqual({ kind: 'staged' });
+  await waitFor(() => expect(row('Staged Files', 'src/b.ts').getAttribute('aria-current')).toBe('true'));
+  expect(row('Unstaged Files', 'z.ts').getAttribute('aria-current')).toBeNull();
 });
 
 test('Stage sends the row path, Unstage of a rename sends both paths; each op refreshes the lists and the summary', async () => {
@@ -235,6 +372,8 @@ test('keys: ↓ moves between rows, S stages and U unstages the focused row; Ctr
   rows[0].focus();
   fireEvent.keyDown(rows[0], { key: 'ArrowDown' });
   expect(document.activeElement).toBe(rows[1]);
+  // No diff is open: ↓ moves the focus only.
+  expect(shownPanelStore.get().get(tabKey(APP))).toBeUndefined();
   fireEvent.keyDown(rows[1], { key: 's' });
   await waitFor(() => expect(w.posts('stage.files')).toEqual([{ paths: ['notes.txt'] }]));
   const staged = within(section('Staged Files')).getAllByRole('option')[0];

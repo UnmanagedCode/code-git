@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { fdiff, hunk } from '@/test/diffFixtures';
-import { changeBlocks, displayText, fileContent, sideText, splitRows, unifiedRows } from './model';
+import { changeBlocks, displayText, fileContent, lineCounts, sideText, splitRows, unifiedRows } from './model';
 
 const H = [hunk(1, 1, [' a', '-b', '+B', ' c', '-d', '-e']), hunk(10, 9, ['+x', ' y'])];
 
@@ -53,4 +53,9 @@ test('fileContent rebuilds the new side exactly, honouring "no newline at end of
 test('displayText drops only a trailing carriage return', () => {
   expect(displayText({ text: 'a\r' })).toBe('a');
   expect(displayText({ text: 'a\rb' })).toBe('a\rb');
+});
+
+test('lineCounts: added and deleted lines across every hunk; context lines are not counted', () => {
+  expect(lineCounts(fdiff(H))).toEqual({ added: 2, deleted: 3 });
+  expect(lineCounts(fdiff([]))).toEqual({ added: 0, deleted: 0 });
 });

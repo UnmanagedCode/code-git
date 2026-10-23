@@ -81,7 +81,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **The graph refreshes on its own only after code-git's own writes and when the window regains focus** (no polling): a commit made elsewhere shows on focus or Refresh.
 - **Search pages forward** to reach a match that is not loaded yet, a bounded number of pages at a time.
 - **Worktree labels need git ≥ 2.36 and commit co-authors git ≥ 2.22** on the project's System ([docs/graph.md → Git versions](docs/graph.md#git-versions)).
-- **Below the `lg` breakpoint the side panels are dialogs**: refs, Compare and commit details open from the graph's toolbar or a commit click instead of beside the graph, and the Changes panel from the toolbar's **Changes (n)**.
+- **Below the `lg` breakpoint the side panels are dialogs**: refs, Compare and commit details open from the graph's toolbar or a commit click instead of beside the graph, and the Changes panel from the toolbar's **Changes (n)**; a diff's file list opens from the diff header's **Files (n)**.
 - **Untracked files are not in a work-in-progress patch** (`git diff` leaves them out).
 - **No image or binary preview** in the diff; blame is its own view (of a commit, never of uncommitted lines), and file history is at most `HISTORY_LIMITS.followMaxCommits` commits deep ([docs/history.md → Known limitations](docs/history.md#known-limitations)).
 - **Non-UTF-8 text shows replacement characters** in the diff (hunk and line staging still writes the exact bytes).
