@@ -8,7 +8,9 @@ import { ComparePanel } from '@/features/diff/ComparePanel';
 import { setCssPx } from '@/lib/cssVars';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
+import { CreateBranchButton } from '@/features/branches/CreateBranchButton';
 import { anchorOf, ContextMenuHost, openContextMenu } from '@/shell/ContextMenuHost';
+import { runPrimary } from '@/shell/menus';
 import { loadNextPage, loadStats, loadUntil, refreshGraph, useGraph, viewMemory, type SeekResult } from '@/state/graph';
 import { useGraphPrefs } from '@/state/graphPrefs';
 import { dispatchSelection, getSelection, useGraphSelection } from '@/state/graphSelection';
@@ -295,6 +297,10 @@ function GraphView({ tab }: { tab: Tab }) {
         if (r) rowMenu(r, at);
       }
     },
+    onDoubleClick: (l) => {
+      if (l.kind === 'tag') runPrimary(CONTEXT.tag, { tab, ref: l.ref } satisfies RefCtx);
+      else if ((l.kind === 'local' || l.kind === 'remote' || l.kind === 'head') && l.ref) runPrimary(CONTEXT.branch, { tab, ref: l.ref } satisfies RefCtx);
+    },
     onPointerDown: (e, l) => {
       if ((l.kind !== 'local' && l.kind !== 'remote' && l.kind !== 'head') || !l.ref) return;
       const source = toDragRef(l.ref);
@@ -376,7 +382,8 @@ function GraphView({ tab }: { tab: Tab }) {
         )}
         {search.searching && <span className="text-xs text-muted-foreground">Searching…</span>}
         {search.error && <span className="text-xs text-destructive" role="alert">{search.error}</span>}
-        <span className="ml-auto flex items-center gap-1">
+        {/* Wraps within itself: below `lg` it holds Refs, Compare, Changes, Columns, Branch and Refresh, wider than a phone. */}
+        <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
           {!wide && (
             <>
               <Button variant="outline" size="sm" className="h-7 gap-1 px-2" onClick={() => setRefsOpen(true)}>
@@ -397,6 +404,7 @@ function GraphView({ tab }: { tab: Tab }) {
               <ColumnToggles project={tab.project} prefs={prefs} />
             </DropdownMenuContent>
           </DropdownMenu>
+          <CreateBranchButton tab={tab} />
           <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Refresh graph" onClick={() => void refreshGraph(tab, 'manual')}>
             <RefreshCwIcon className={data.status === 'loading' ? 'animate-spin' : undefined} />
           </Button>

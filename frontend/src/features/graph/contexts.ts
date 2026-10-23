@@ -18,8 +18,11 @@ export interface FileCtx { tab: Tab; commit: string; parent: string | null; file
 /** A branch chip dropped on another (drag.ts). */
 export interface DragRef { name: string; kind: 'local' | 'remote'; short: string; remote: string | null; oid: string | null }
 export interface BranchDropCtx { tab: Tab; source: DragRef; target: DragRef }
+/** Two or more branches selected in the refs panel (local and remote). */
+export interface BranchesCtx { tab: Tab; refs: Ref[] }
 
 export const CONTEXT = {
   commit: 'commit', commits: 'commits', wip: 'wip', branch: 'branch', tag: 'tag', stash: 'stash', remote: 'remote',
   worktree: 'worktree', file: 'file', branchDrop: 'branch-drop',
+  branches: 'branches',
 } as const;

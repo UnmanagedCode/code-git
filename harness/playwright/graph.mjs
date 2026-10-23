@@ -137,11 +137,12 @@ try {
     await box2.press('Enter');
     const firstMatch = ids.find((x) => [o.E, o.F, o.G, o.M1].includes(x));
     check(await page.locator('[role=option][aria-selected=true]').getAttribute('data-row-id') === firstMatch, 'Enter jumps to the first match');
-    await page.getByRole('button', { name: 'Path', exact: true }).click();
+    // Scoped: the details panel's File view toggle has a Path button too, once the jumped-to commit's details load.
+    await page.getByRole('group', { name: 'Search by', exact: true }).getByRole('button', { name: 'Path', exact: true }).click();
     await box2.fill('src/b.js');
     await page.waitForFunction((want) => JSON.stringify([...document.querySelectorAll('[data-match]')].map((e) => e.getAttribute('data-row-id')).sort()) === want, JSON.stringify([o.E, o.F].sort()));
     check(true, 'path search src/b.js marks E and F');
-    await page.getByRole('button', { name: 'Commits', exact: true }).click();
+    await page.getByRole('group', { name: 'Search by', exact: true }).getByRole('button', { name: 'Commits', exact: true }).click();
     await box2.fill('grace');
     await page.waitForFunction((want) => [...document.querySelectorAll('[data-match]')].map((e) => e.getAttribute('data-row-id')).join() === want, o.C);
     check(true, 'an author search finds Grace Hopper’s commit');
@@ -158,7 +159,7 @@ try {
     check(await details.getByRole('region', { name: 'Co-authors' }).getByText('Alan Turing').isVisible(), 'details list the co-author');
     check(await details.getByRole('button', { name: `Jump to parent ${o.B.slice(0, 7)}` }).isVisible(), 'details list the parent');
     check(await details.getByText('docs/guide.md').isVisible(), 'details list the changed file');
-    await details.getByRole('button', { name: 'Tree' }).click();
+    await details.getByRole('button', { name: 'Tree', exact: true }).click();
     check(await details.getByText('docs', { exact: true }).isVisible() && await details.getByText('guide.md', { exact: true }).isVisible(), 'the tree view nests the file under its directory');
     await shot('details-light-desktop');
     // The left slot: the refs panel first, the diff's Compare panel below it, both reachable.
@@ -211,7 +212,9 @@ try {
     check(await row(o.D).locator('[data-label-kind=head]').getAttribute('data-drop-active') === '', 'dragging feature/a over main marks main the drop target');
     await shot('drag-light-desktop');
     await page.mouse.up();
-    check(await page.getByRole('menu').count() === 0, 'the drop opens no menu (no branch-drop actions yet)');
+    // The drop menu holds the branches card's entries only (merge and rebase come later, at orders 100–199).
+    const dropItems = await menuItems();
+    check(dropItems.join('|') === 'Fast-forward main to feature/a|Reset main to feature/a', `the drop opens the branch-drop menu (${dropItems.join(', ')})`);
 
     // ---- every scheme and viewport ----
     await page.mouse.move(0, 0); // off every chip: no hover dimming in the screenshots

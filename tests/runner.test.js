@@ -58,7 +58,7 @@ test("an op's env cannot set a protected name: prompts, askpass programs, pathsp
   const { cc } = await world(t);
   const ctx = ctxFor(APP, 'write');
   const names = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH',
-    'GIT_SSH_COMMAND', 'GIT_SSH', 'GIT_SSH_VARIANT', 'GIT_SSH_ANYTHING_NEW', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+    'GIT_SSH_COMMAND', 'GIT_SSH', 'GIT_SSH_VARIANT', 'GIT_SSH_ANYTHING_NEW', 'GIT_ASKPASS', 'SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
     'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG'];
   for (const name of names) {
     await assert.rejects(runGit(ctx, ['status'], { env: { OK: '1', [name]: 'x' } }), new RegExp(`may not set ${name}`), name);

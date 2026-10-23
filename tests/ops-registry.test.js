@@ -64,3 +64,29 @@ test('the commit box reads and patch.check are cancellable reads', () => {
     assert.equal(d.cancellable, true, name);
   }
 });
+
+test('the branch ops: tracking is a cancellable read; the local branch writes are not cancellable', () => {
+  assert.equal(OPS.get('branch.tracking')?.kind, 'read');
+  assert.equal(OPS.get('branch.tracking').cancellable, true);
+  for (const name of ['branch.create', 'branch.checkout', 'branch.rename', 'branch.delete', 'branch.setUpstream', 'branch.fastForward', 'branch.move']) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'write', name);
+    assert.equal(d.cancellable, false, name);
+  }
+});
+
+test('the tag ops and the remote branch delete are registered as writes, the network ones cancellable', () => {
+  for (const [name, cancellable] of [['tag.create', false], ['tag.delete', false], ['tag.push', true], ['tag.deleteRemote', true], ['branch.deleteRemote', true]]) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'write', name);
+    assert.equal(d.cancellable, cancellable, name);
+  }
+});
+
+test('the HEAD ops are registered as non-cancellable writes', () => {
+  for (const name of ['head.reset', 'head.revert', 'head.cherryPick', 'head.abort']) {
+    const d = OPS.get(name);
+    assert.equal(d?.kind, 'write', name);
+    assert.equal(d.cancellable, false, name);
+  }
+});

@@ -2,7 +2,7 @@
 
 # Commit graph
 
-The active checkout's history as a lane graph (center slot), its refs (left slot) and the selection's details (right slot). Read-only: write actions (checkout, merge, reset, …) are registered by later cards on the menus and the drag hook below.
+The active checkout's history as a lane graph (center slot), its refs (left slot) and the selection's details (right slot). The graph's own actions only read; write actions are registered by other features on its menus and the drag hook below — branches, tags and HEAD: [refs](refs.md).
 
 ## Using it
 
@@ -42,11 +42,11 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 
 **Jumps** — clicking a ref, a pinned-ref icon, a stash or a worktree in the refs panel, a parent in the details panel, **Jump to commit** in a ref menu, or a search match that is not loaded yet pages forward until the commit is loaded, then selects it and scrolls it to the middle. A jump requested while a diff is shown closes the diff first, so the graph is back to show it. While it pages: "Loading… N commits" (**Stop** or Esc cancels). After `SEEK_PAGES` pages: "Not within the first N commits" with **Load more**; when the snapshot ends first: "Not in the visible graph" (a SHA search match need not be reachable from the visible refs). A page that fails ends the jump silently: the page-error banner says why, with **Retry**. A load already running (the first load, a refresh, the scroll prefetch) is waited for and does not count against `SEEK_PAGES`.
 
-**Drag** — drag a branch chip (graph or refs panel; local or remote) onto another branch chip: the target is highlighted (`data-drop-active`), Esc cancels, dropping on itself does nothing. A drop opens the `branch-drop` menu; with no action registered for it, nothing opens.
+**Drag** — drag a branch chip (graph or refs panel; local or remote) onto another branch chip: the target is highlighted (`data-drop-active`), Esc cancels, dropping on itself does nothing. A drop opens the `branch-drop` menu: Fast-forward and Reset ([refs](refs.md#where-the-actions-are)); with no action applying, nothing opens. **Double-click** a chip runs its primary action (a branch: Checkout; a tag: Jump to commit).
 
 **Untrusted text** (subjects, names, refnames, paths) is shown cut to `DISPLAY_MAX` characters (`lib/clip.ts`), in text and tooltips; a commit body to `BODY_SHOWN` until **Show the whole message**; at most `CO_AUTHORS_SHOWN` co-authors. Copy actions copy the whole value. The Tree view nests at most `MAX_TREE_DEPTH` directories.
 
-**Context menus** — commit, multi-selection, WIP, stash, branch, tag, remote, worktree and file menus. The graph's own actions:
+**Context menus** — commit, multi-selection, WIP, stash, branch, tag, remote, worktree and file menus. The graph's own actions (after the write actions of [refs](refs.md#where-the-actions-are)):
 
 | Menu | Actions |
 |---|---|
@@ -78,7 +78,7 @@ Another checkout's WIP opens in that checkout's tab (opened if needed).
 
 - **Filter refs**: case-insensitive substring of the short name (stashes: selector or subject; worktrees: their name).
 - Sections, each collapsible: **Local** (pinned first, with a pin icon that jumps), **Remotes** (one group per remote, pinned first likewise), **Tags**, **Stashes**, **Worktrees** (every git worktree of the project with its cc name, branch or detached commit, **dirty** and **locked** badges; when git cannot list them — git < 2.36 — a notice with git's message).
-- A row click jumps to its commit; a stash row to its stash row, or — while the Stashes section is hidden — to its base commit. Hover a row for its pin (branches, local or remote), eye (hide) and target (solo) toggles; active toggles stay visible. The checked-out branch's eye is disabled. Refs not shown in the graph are dimmed.
+- A row click jumps to its commit; a stash row to its stash row, or — while the Stashes section is hidden — to its base commit. Ctrl/⌘-click and Shift-click select branch rows instead (right-click a selected row for the multi-selection menu), double-click runs the ref's primary action, and local rows show their ahead/behind ([refs](refs.md#where-the-actions-are)). Hover a row for its pin (branches, local or remote), eye (hide) and target (solo) toggles; active toggles stay visible. The checked-out branch's eye is disabled. Refs not shown in the graph are dimmed.
 - Section headers: eye (hide the section), target (solo the section; not for Stashes), **Show all** while anything in the section is hidden. Remote group headers: eye and target for the remote, right-click for the remote menu.
 - **Visibility rules** (`resolveVisibility`): any solo (ref, remote or section) shows only the soloed refs, overriding hides; otherwise every ref minus the hidden ones, hidden remotes and hidden sections; the checked-out branch is never hidden. HEAD and detached worktree HEADs are always graphed unless soloing. A WIP row shows only for a checkout with uncommitted changes: the own checkout's whatever is hidden or soloed; another's when its branch is shown, or when it is detached and nothing is soloed.
 - Hide, solo, pin and the columns persist **per project** (all its checkouts share them) under storage key `code-git:graph:<project>`; names of refs that no longer exist are kept and do nothing.

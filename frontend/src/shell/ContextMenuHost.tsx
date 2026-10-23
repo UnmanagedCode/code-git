@@ -13,9 +13,74 @@ export interface ContextMenuRequest { host: string; context: string; ctx: unknow
 export const contextMenuStore = createStore<(ContextMenuRequest & { seq: number }) | null>(null);
 let seq = 0;
 
+/**
+ * A menu opened during a press (a right-press, a touch long-press) can be placed under that pointer, and a Radix menu
+ * item activates on a pointerup whose pointerdown it did not see: the release would run the item. So the release that
+ * ends each press held at opening — and the click it may produce — is stopped (window, capture phase) before it reaches
+ * the menu. A menu opened with no press held (keyboard, after a drop) keeps every later click.
+ *
+ * Disarming never waits on a timer: a release lost outside the window, a release that produces no click, or a
+ * compatibility click queued late (touch) must not eat a later, real click. A new press of the same pointer ends its
+ * armed release and its armed click; a key ends an armed click; the window losing focus or the page being hidden ends all.
+ */
+/** Pointers pressed and not yet released. */
+const pressed = new Set<number>();
+/** Pointers whose next release is swallowed: pressed when a menu opened. */
+const armedReleases = new Set<number>();
+/** The pointer whose swallowed release may still produce a click (swallowed too), or null. */
+let armedClick: number | null = null;
+
+function disarm(): void {
+  armedReleases.clear();
+  armedClick = null;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', (e) => {
+    // A new press of this pointer: its armed release was lost (a mouse reuses its id), and a click from its earlier
+    // release will not come. Another pointer's press (a second finger) leaves both armed: the first finger's release,
+    // or its delayed compatibility click, may still land on the item.
+    armedReleases.delete(e.pointerId);
+    if (armedClick === e.pointerId) armedClick = null;
+    pressed.add(e.pointerId);
+  }, true);
+  window.addEventListener('pointerup', (e) => {
+    pressed.delete(e.pointerId);
+    if (!armedReleases.delete(e.pointerId)) return;
+    e.stopPropagation();
+    armedClick = e.pointerId;
+  }, true);
+  window.addEventListener('pointercancel', (e) => {
+    pressed.delete(e.pointerId);
+    armedReleases.delete(e.pointerId);
+  }, true);
+  window.addEventListener('click', (e) => {
+    if (armedClick === null) return;
+    // A click is a PointerEvent carrying its pointer's id (Chromium): only the swallowed pointer's click is its click.
+    // Another finger's tap runs, and leaves the arm for the first one's delayed click. No id (an engine whose click is
+    // a plain MouseEvent): swallow, as the safe side.
+    const id = (e as Partial<PointerEvent>).pointerId;
+    if (id !== undefined && id !== armedClick) return;
+    armedClick = null;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+  // Enter or Space on an item clicks it: a key always means the user's own choice.
+  window.addEventListener('keydown', () => { armedClick = null; }, true);
+  const lost = () => { pressed.clear(); disarm(); };
+  window.addEventListener('blur', lost);
+  document.addEventListener('visibilitychange', lost);
+}
+
+/** Arms the swallow for every press held now (see above). */
+function swallowOpeningPress(): void {
+  for (const id of pressed) armedReleases.add(id);
+}
+
 /** Opens the context's menu at `at` in host `host`; nothing opens (and false is returned) when no action applies. */
 export function openContextMenu(req: ContextMenuRequest): boolean {
   if (!actionsFor(req.context, req.ctx).length) return false;
+  swallowOpeningPress();
   contextMenuStore.set({ ...req, seq: ++seq });
   return true;
 }

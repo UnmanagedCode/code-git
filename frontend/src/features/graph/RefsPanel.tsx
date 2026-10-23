@@ -5,11 +5,14 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
+import { TrackingBadge } from '@/features/branches/TrackingBadge';
 import { ContextMenuHost, openContextMenu } from '@/shell/ContextMenuHost';
+import { runPrimary } from '@/shell/menus';
 import { useGraphData } from '@/state/graph';
 import { toggled, updatePrefs, useGraphPrefs, type GraphPrefs, type Section } from '@/state/graphPrefs';
+import { dispatchRefSelection, selectedRefs, useRefSelection } from '@/state/refSelection';
 import type { Tab } from '@/state/tabs';
-import { CONTEXT, type RefCtx, type RemoteCtx, type StashCtx, type WorktreeCtx } from './contexts';
+import { CONTEXT, type BranchesCtx, type RefCtx, type RemoteCtx, type StashCtx, type WorktreeCtx } from './contexts';
 import { startBranchDrag, toDragRef, useDropActive } from './drag';
 import { requestJump } from './jump';
 import { WIDE_GRAPH_QUERY } from './media';
@@ -21,7 +24,10 @@ const HOST = 'refs';
 /** Rows a list shows before "Show more", and how many each click adds: the filter finds the rest. */
 export const REFS_SHOWN = 200;
 
-/** The refs panel (left slot; a dialog on narrow screens): sections with hide / solo / pin, a filter, jump on click. */
+/**
+ * The refs panel (left slot; a dialog on narrow screens): sections with hide / solo / pin, a filter, jump on click,
+ * double-click for the ref's primary action, Ctrl/⌘- and Shift-click to select branches.
+ */
 export function RefsPanel({ tab, inDialog = false }: { tab: Tab | null; inDialog?: boolean }) {
   const wide = useMediaQuery(WIDE_GRAPH_QUERY);
   if (!tab || (!inDialog && !wide)) return null;
@@ -49,6 +55,7 @@ function IconToggle({ label, on, disabled, onClick, children }: { label: string;
 function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const data = useGraphData(tab);
   const prefs = useGraphPrefs(tab.project);
+  const selection = useRefSelection(tab);
   const [filter, setFilter] = useState('');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [limits, setLimits] = useState<Readonly<Record<string, number>>>({});
@@ -91,6 +98,18 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const stashes = refs.stashes.filter((s) => match(s.selector) || match(s.subject));
   const own = refs.worktrees ? ownWorktree(refs.head, refs.worktrees) : null;
   const worktrees = (refs.worktrees ?? []).filter((w) => !w.bare && match(worktreeName(w, data.checkouts).name));
+  /** The branch rows as displayed, top to bottom: what a Shift-click range spans. */
+  const order = [...locals, ...remoteNames.flatMap((n) => remotes.filter((r) => r.remote === n))].map((r) => r.name);
+  /** A row of a multi-selection opens the selection's menu; any other row its own. */
+  const branchMenu = (e: MouseEvent, r: Ref) => {
+    const picked = selectedRefs(tab, refs.refs);
+    if (picked.length >= 2 && picked.some((x) => x.name === r.name)) return menu(e, CONTEXT.branches, { tab, refs: picked } satisfies BranchesCtx);
+    menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx);
+  };
+  const branchRow = (r: Ref, indent = false) => (
+    <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} indent={indent} selected={selection.names.includes(r.name)} order={order}
+      onMenu={(e) => branchMenu(e, r)} />
+  );
 
   const sectionHidden = (s: Section, list: Ref[]) => prefs.hiddenSections.includes(s) || list.some((r) => prefs.hidden.includes(r.name))
     || (s === 'remote' && prefs.hiddenRemotes.length > 0);
@@ -135,7 +154,7 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
       {head('local', 'Local', locals.length, locals)}
       {!collapsed.has('local') && (
         <ul aria-label="Local branches">
-          {capped('local', locals, (r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} onMenu={(e) => menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx)} />)}
+          {capped('local', locals, (r) => branchRow(r))}
         </ul>
       )}
 
@@ -163,7 +182,7 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
             </div>
             {!collapsed.has(id) && (
               <ul aria-label={`Branches on ${clip(name)}`}>
-                {capped(id, list, (r) => <RefRow key={r.name} tab={tab} r={r} vis={vis} prefs={prefs} all={refs.refs} indent onMenu={(e) => menu(e, CONTEXT.branch, { tab, ref: r } satisfies RefCtx)} />)}
+                {capped(id, list, (r) => branchRow(r, true))}
               </ul>
             )}
           </div>
@@ -205,8 +224,8 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
 
 const KIND_ICON = { local: GitBranchIcon, remote: CloudIcon, tag: TagIcon } as const;
 
-function RefRow({ tab, r, vis, prefs, all, indent = false, onMenu }: {
-  tab: Tab; r: Ref; vis: Visibility; prefs: GraphPrefs; all: Ref[]; indent?: boolean; onMenu: (e: MouseEvent) => void;
+function RefRow({ tab, r, vis, prefs, all, indent = false, selected = false, order = [], onMenu }: {
+  tab: Tab; r: Ref; vis: Visibility; prefs: GraphPrefs; all: Ref[]; indent?: boolean; selected?: boolean; order?: string[]; onMenu: (e: MouseEvent) => void;
 }) {
   const Icon = KIND_ICON[r.kind];
   const shown = vis.visible.has(r.name);
@@ -215,12 +234,21 @@ function RefRow({ tab, r, vis, prefs, all, indent = false, onMenu }: {
   const pinned = prefs.pinned.includes(r.name);
   const set = (fn: (p: GraphPrefs) => GraphPrefs) => updatePrefs(tab.project, fn);
   const jump = () => { if (r.oid) requestJump(tab, r.oid); };
+  const isBranch = r.kind !== 'tag';
+  /** Ctrl/⌘ toggles the row into the selection, Shift selects the range; a plain click clears it and jumps. */
+  const onNameClick = (e: MouseEvent) => {
+    if (isBranch && (e.ctrlKey || e.metaKey)) return dispatchRefSelection(tab, { type: 'toggle', name: r.name });
+    if (isBranch && e.shiftKey) return dispatchRefSelection(tab, { type: 'range', name: r.name, order });
+    dispatchRefSelection(tab, { type: 'clear' });
+    jump();
+  };
   const source = toDragRef(r);
   const dropActive = useDropActive(source ? r.name : '\0');
   return (
     <li
-      className={cn('group flex items-center gap-1 py-0.5 pr-2', indent ? 'pl-9' : 'pl-5', !shown && 'opacity-50', dropActive && 'bg-accent ring-2 ring-ring ring-inset')}
+      className={cn('group flex items-center gap-1 py-0.5 pr-2', indent ? 'pl-9' : 'pl-5', !shown && 'opacity-50', (dropActive || selected) && 'bg-accent', dropActive && 'ring-2 ring-ring ring-inset')}
       data-ref={r.name}
+      data-selected={selected ? '' : undefined}
       data-drop-ref={source ? r.name : undefined}
       data-drop-active={dropActive ? '' : undefined}
       onContextMenu={onMenu}
@@ -231,9 +259,12 @@ function RefRow({ tab, r, vis, prefs, all, indent = false, onMenu }: {
       {pinned ? (
         <button type="button" aria-label={`Jump to pinned ${clip(r.short)}`} className="shrink-0 text-primary" onClick={jump}><PinIcon className="size-3.5" /></button>
       ) : <Icon className="size-3.5 shrink-0 text-muted-foreground" />}
-      <button type="button" className={cn('min-w-0 flex-1 truncate text-left hover:underline', r.isHead && 'font-semibold')} title={clip(r.name)} disabled={!r.oid} onClick={jump}>
+      <button type="button" className={cn('min-w-0 flex-1 truncate text-left hover:underline', r.isHead && 'font-semibold')} title={clip(r.name)} disabled={!r.oid}
+        onClick={onNameClick} onDoubleClick={() => runPrimary(isBranch ? CONTEXT.branch : CONTEXT.tag, { tab, ref: r } satisfies RefCtx)}>
         {clip(r.kind === 'remote' && r.remote ? r.short.slice(r.remote.length + 1) : r.short)}
+        {selected && <span className="sr-only"> (selected)</span>}
       </button>
+      {r.kind === 'local' && <TrackingBadge tab={tab} ref={r.name} />}
       {r.kind !== 'tag' && (
         <IconToggle label={pinned ? `Unpin ${clip(r.short)}` : `Pin ${clip(r.short)} to left`} on={pinned} onClick={() => set((p) => ({ ...p, pinned: toggled(p.pinned, r.name, !pinned) }))}>
           <PinIcon className="size-3.5" />

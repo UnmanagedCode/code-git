@@ -44,6 +44,13 @@ export function remoteOf(path, remotes) {
   return best ?? path.split('/')[0];
 }
 
+/** `refs/remotes/<path>` → {remote, branch}: the remote by `remoteOf`, the branch the rest of the path. */
+export function splitRemoteRef(refname, remotes) {
+  const path = refname.slice('refs/remotes/'.length);
+  const remote = remoteOf(path, remotes);
+  return { remote, branch: path.slice(remote.length + 1) };
+}
+
 /**
  * `for-each-ref --format=%(refname)%00%(objectname)%00%(objecttype)%00%(*objectname)%00%(*objecttype)%00%(HEAD)%00%(symref)`
  * over refs/heads, refs/remotes, refs/tags → Ref[]. `oid` is the commit a ref names (an annotated tag peeled once), or
@@ -62,7 +69,7 @@ export function parseRefs(out, remotes) {
       if (symref) continue;
       kind = 'remote';
       short = name.slice('refs/remotes/'.length);
-      remote = remoteOf(short, remotes);
+      ({ remote } = splitRemoteRef(name, remotes));
     } else if (name.startsWith('refs/tags/')) {
       kind = 'tag';
       short = name.slice('refs/tags/'.length);

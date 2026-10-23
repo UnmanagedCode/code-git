@@ -34,7 +34,11 @@ const select = (c: CommitCtx, id: string) => {
 
 type RefAction = MenuAction<RefCtx>;
 const refActions = (context: 'branch' | 'tag'): RefAction[] => [
-  { id: `graph.${context}.jump`, context, label: 'Jump to commit', group: 'view', order: 800, when: (c) => !!c.ref.oid, run: (c) => requestJump(c.tab, c.ref.oid!) },
+  {
+    id: `graph.${context}.jump`, context, label: 'Jump to commit', group: 'view', order: 800, when: (c) => !!c.ref.oid, run: (c) => requestJump(c.tab, c.ref.oid!),
+    // A tag's double-click jumps (a branch's checks out: features/branches/actions.ts).
+    primary: context === 'tag',
+  },
   { id: `graph.${context}.copyName`, context, label: 'Copy name', group: 'copy', order: 900, run: (c) => copy(c.ref.short) },
   {
     id: `graph.${context}.hide`, context, group: 'visibility', order: 950,

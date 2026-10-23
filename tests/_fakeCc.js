@@ -69,7 +69,7 @@ function parse(state, body) {
 
 function run(state, spec, req, res, body) {
   const started = Date.now();
-  const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, env: { ...hermeticEnv(state.home), ...spec.env }, detached: true });
+  const child = spawn(spec.argv[0], spec.argv.slice(1), { cwd: spec.cwd, env: { ...hermeticEnv(state.home), ...state.inheritedEnv, ...spec.env }, detached: true });
   state.children.add(child);
   const kill = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ } };
   const out = [];
@@ -123,13 +123,14 @@ function run(state, spec, req, res, body) {
  * `projects`: {name: {dir, system?, remoteId?, workspace?, worktrees?: {name: dir}, locked?: [worktree names], isGitRepo?, unbornHead?,
  * systemUnreachable?, gitRefusal?, degraded?}}. A project with `system: 'docker'` still runs here: code-git
  * addresses it by {project, worktree} alone. `home` is the git HOME (default: a temp dir of its own).
- * Knobs on the returned object: `state.execCalls`, `state.violations` (any form-B or shell use), `state.disconnects`,
+ * Knobs on the returned object: `state.inheritedEnv` (the System's own environment, under the request's env, as cc's
+ * local provider merges it), `state.execCalls`, `state.violations` (any form-B or shell use), `state.disconnects`,
  * `state.execHook(body)` → `{status, body}` | `{status, raw}` (a non-JSON body) | `'hold'` | `'reset'` (the connection is destroyed unanswered) | undefined, `systemDown(project, down)`, `nextHeld()`.
  */
 export async function fakeCc({ projects = {}, home } = {}) {
   const ownHome = home ? null : fs.mkdtempSync(path.join(os.tmpdir(), 'cg-fakecc-'));
   const state = {
-    projects, home: home ?? ownHome, execCalls: [], violations: [], disconnects: [], execHook: null,
+    projects, home: home ?? ownHome, execCalls: [], violations: [], disconnects: [], execHook: null, inheritedEnv: {},
     down: new Set(), children: new Set(), held: [], heldWaiters: [],
   };
   const sockets = new Set();

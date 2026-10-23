@@ -359,6 +359,61 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 - Exit 1 (does not apply) or 128 (no valid patch in the input; an `..`, absolute or `.git/` path) → 409 `PATCH_DOES_NOT_APPLY` with `exitCode` and `stderr`. Worktree mode also refuses a path beyond a symlink; index mode never writes to disk.
 - A mailbox (`format-patch`) works: git skips the mail header.
 
+### Branch, tag and HEAD ops (`src/git/ops/branch.js`, `tag.js`, `head.js`)
+
+Behaviour, the checked-out and cc-owned rules and what each op destroys: [refs](refs.md). Common rules:
+
+- Params are a plain object; an unknown key → `BAD_PARAMS`. A branch or tag **name** is short (`feature/a`) and passes `assertRefName`; `HEAD` and a leading `refs/` → `BAD_REF`. A **full ref** must start with the prefix the op names. An **oid** is full hex (`assertOid`). A name list holds 1…`REF_LIMITS.namesMax` (`src/git/refs/limits.js`) names, duplicates dropped.
+- Every check runs before any write. `--end-of-options` precedes every user-named argument.
+- `ccOwned: true` acknowledges a `code-conductor/*` branch (the UI's confirmation). Without it: 409 `CC_OWNED_BRANCH` with `branches` (short names), plus `head: true` when the refusal is about moving this checkout's own cc-owned HEAD.
+- A branch checked out in a checkout the op may not touch: 409 `BRANCH_CHECKED_OUT` with `worktree` (that checkout's path).
+- Local changes git would overwrite: 409 `CHECKOUT_CONFLICT` with `files` and `stderr`.
+- The ops that write the working tree or the index first check for a bare repository (`assertWorktree`): 409 `BARE_REPO` from `branch.checkout`, `branch.create` with `checkout`, `head.reset` mixed and hard, `head.revert`, `head.cherryPick`, `head.abort`, and `branch.fastForward` of this checkout's own branch. Soft reset and the other ops change refs only.
+- A symbolic ref (`%(symref)` set) as the branch an op checks out, renames, fast-forwards, moves or sets the upstream of — local, or `refs/remotes/<r>/HEAD` and other remote aliases for checkout: 409 `SYMBOLIC_REF` with `target`. `branch.delete` deletes a symbolic ref itself, never its target. A *dangling* symbolic ref (its target missing: `for-each-ref` does not list it) is found by `symbolic-ref -q <ref>` on the exact name: `branch.create` and `tag.create` of that name, `branch.rename` from or to it and `branch.delete` of it refuse `SYMBOLIC_REF` (never `REF_UNKNOWN`), since git would create the target, in any namespace, under the alias's name. Every `update-ref` passes `--no-deref`.
+- Every ref-changing op returns `undo`: `UndoRecord` below.
+
+```
+UndoRecord      { refs: RefChange[], remoteRefs: RemoteRefChange[],
+                  head: {old: {branch: refname|null, oid: oid|null}, new: {branch, oid}} | null,
+                  worktreeSnapshot: oid | null }
+RefChange       { ref /* refs/heads/… | refs/tags/… */, old: oid|null /* null = created */, new: oid|null /* null = deleted */,
+                  upstream?: refname|null /* a deleted branch's upstream */,
+                  symref?: refname /* a deleted symbolic ref's target: restore with symbolic-ref; old and new are null */ }
+RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */, old: oid|null /* best known */, new: oid|null,
+                  tracking?: refname|null /* branch.deleteRemote: the tracking ref here git deleted with it (old is its value) */ }
+```
+
+| Op | kind | `params` | Runs (after the reads `for-each-ref refs/heads` with `%(worktreepath)`, `symbolic-ref -q HEAD`, `rev-parse --verify -q HEAD`) | `result` | Refusals |
+|---|---|---|---|---|---|
+| `branch.tracking` | read | none | `for-each-ref --format=%(refname)%00%(upstream)%00%(upstream:track,nobracket) refs/heads`; `remote` | `{remotes: string[], branches: {[ref]: {upstream: refname\|null, ahead, behind, gone}}}` | — |
+| `branch.create` | write | `{name, from?: oid, checkout?: bool, ccOwned?}` | `branch --no-track --end-of-options <name> <oid>`; with `checkout`: `switch --no-guess --no-track -c <name> --end-of-options <oid>`. No `from` = HEAD | `{ref, oid, checkedOut, undo}` | `REF_EXISTS`; `NO_HEAD` (no `from`, unborn HEAD); `REV_UNKNOWN` (`from` not a commit); `CC_OWNED_BRANCH` (`checkout` on a cc-owned HEAD); `CHECKOUT_CONFLICT` |
+| `branch.checkout` | write | `{ref: refs/heads/… \| refs/remotes/…, ccOwned?}` | local: `switch --no-guess --end-of-options <name>`. Remote, no local twin: `switch --no-guess --track -c <b> --end-of-options <ref>`; local twin: switch to it, then `merge --ff-only --end-of-options <oid>` when it tracks `ref` and is behind it | `{branch, created, localExisted, fastForwarded, ffBlocked: path[]\|null, undo}` | `REF_UNKNOWN`; `BRANCH_CHECKED_OUT` (elsewhere); `CC_OWNED_BRANCH`; `CHECKOUT_CONFLICT` |
+| `branch.rename` | write | `{name, newName, ccOwned?}` | `branch -m --end-of-options <name> <newName>` | `{ref, undo}` | `REF_UNKNOWN`; `REF_EXISTS`; `BRANCH_CHECKED_OUT` (another checkout, or a checked-out cc branch anywhere); `CC_OWNED_BRANCH` (either name) |
+| `branch.delete` | write | `{names, force?, ccOwned?}` | `branch -d\|-D --end-of-options <names…>` (exit 0 or 1), then the heads again | `{deleted, notMerged, undo}` | `REF_UNKNOWN`, `BRANCH_CHECKED_OUT` (any checkout, this one included), `CC_OWNED_BRANCH` — for any name, before anything is deleted; `GIT_FAILED` for a name git kept for another reason |
+| `branch.deleteRemote` | write, **cancellable** | `{remote, branches: string[] /* names on the remote */, ccOwned?}` | `push --porcelain --end-of-options <remote> :refs/heads/<b>…` | `{deleted, rejected: [{ref, reason}], unrequested, undo}` (`undo.remoteRefs[].old` = the tracking ref before) | `REMOTE_UNKNOWN`; `CC_OWNED_BRANCH`; the push refusals below |
+| `branch.setUpstream` | write | `{name, upstream: refs/remotes/… \| null}` | `branch --set-upstream-to=<u> --end-of-options <name>` / `branch --unset-upstream --end-of-options <name>` (skipped when none is set) | `{name, upstream, previous}` | `REF_UNKNOWN` (branch or upstream) |
+| `branch.fastForward` | write | `{name, to: oid, expect: oid}` | `merge-base --is-ancestor <expect> <to>`; this checkout's branch: `merge --ff-only --end-of-options <to>`; else `update-ref -m "code-git: fast-forward" refs/heads/<name> <to> <expect>` | `{upToDate, undo}` | `REF_UNKNOWN`; `REF_MOVED` (not at `expect`); `BRANCH_CHECKED_OUT` (another checkout); `NOT_FAST_FORWARD`; `CHECKOUT_CONFLICT` |
+| `branch.move` | write | `{name, to: oid, expect: oid, ccOwned?}` | `update-ref -m "code-git: reset" refs/heads/<name> <to> <expect>` | `{undo}` | `REF_UNKNOWN`; `BRANCH_CHECKED_OUT` (any checkout: this one's branch moves with `head.reset`); `CC_OWNED_BRANCH`; `REV_UNKNOWN`; `REF_MOVED` |
+| `tag.create` | write | `{name, oid, message?}` | non-blank `message`: `tag -a --cleanup=verbatim -F - --end-of-options <name> <oid>`, the message on stdin (≤ `REF_LIMITS.tagMessageMaxBytes`, no NUL); else `tag --end-of-options <name> <oid>` | `{ref, oid /* tag object, or the commit for a lightweight tag */, undo}` | `REF_EXISTS`; `REV_UNKNOWN` |
+| `tag.delete` | write | `{names}` | `tag -d --end-of-options <names…>` | `{deleted, undo}` (`old` = the tag object) | `REF_UNKNOWN` (any name, before anything is deleted) |
+| `tag.push` | write, **cancellable** | `{remote, names}` | `push --porcelain --end-of-options <remote> refs/tags/<n>:refs/tags/<n>…` (never forced) | `{pushed, upToDate, rejected, unrequested, undo}` | `REMOTE_UNKNOWN`; `REF_UNKNOWN`; the push refusals below |
+| `tag.deleteRemote` | write, **cancellable** | `{remote, names}` | `push --porcelain --end-of-options <remote> :refs/tags/<n>…` | `{deleted, rejected, unrequested, undo}` (`undo.remoteRefs[].old` = the local tag object, else null) | `REMOTE_UNKNOWN`; the push refusals below |
+| `head.reset` | write | `{to: oid, mode: 'soft' \| 'mixed' \| 'hard', expect: oid /* HEAD now */, ccOwned?}` | hard only: `stash create` first; `reset --<mode> --end-of-options <to>` | `{undo}` (`undo.worktreeSnapshot` = the `stash create` commit of the discarded tracked changes, null when clean or not hard) | `NO_HEAD`; `REF_MOVED` (HEAD ≠ `expect`); `CC_OWNED_BRANCH` (`head: true`, any mode); `REV_UNKNOWN` |
+| `head.revert` | write | `{oid, mainline?: 1…16}` | `revert --no-edit [-m <n>] --end-of-options <oid>` (exit 0 or 1) | `{conflicts, files, oid /* the new commit, null on conflicts */, undo}` | `NO_HEAD`; `CHECKOUT_CONFLICT`; `PICK_EMPTY`; `GIT_FAILED` (a merge without `mainline`, …) |
+| `head.cherryPick` | write | `{oid, mainline?: 1…16}` | `cherry-pick [-m <n>] --end-of-options <oid>` (exit 0 or 1) | as `head.revert` | as `head.revert` |
+| `head.abort` | write | `{which: 'revert' \| 'cherry-pick'}` | `<which> --abort` | `{undo}` (`undo.head`) | `NOTHING_IN_PROGRESS` (no `REVERT_HEAD` / `CHERRY_PICK_HEAD`) |
+
+- **Revert and cherry-pick outcomes.** Stopped on conflicts (exit 1 with `REVERT_HEAD` / `CHERRY_PICK_HEAD` and unmerged files): `{conflicts: true, files}` (`diff --name-only --diff-filter=U -z`), the operation left in progress for `head.abort` or a commit. Exit 1 with nothing unmerged (the change is already in HEAD): the operation is aborted and 409 `PICK_EMPTY`. Local changes in the way: `CHECKOUT_CONFLICT`.
+
+**Remote names and pushes** (`src/git/remote/push.js`, shared with later remote ops):
+
+- `remote` is checked in `params` (non-empty, ≤ 200 characters, no leading `-`, whitespace or control character) and then must be one of `git remote`'s names; either failure is 404 `REMOTE_UNKNOWN`, the first before any exec.
+- A push is `push --porcelain --no-follow-tags --end-of-options <remote> <refspecs…>` (`--no-follow-tags`: a configured `push.followTags` never publishes a tag nobody selected), runs with `NETWORK_LIMITS` (`src/git/remote/limits.js`) and accepts exit 0, 1 and 128. No env is added: `BASE_ENV` already disables every prompt.
+- Before a push, each `refs/heads/<b>` destination is mapped through the remote's configured fetch refspecs (`git config --get-all remote.<name>.fetch`; `src/git/remote/tracking.js`) to the tracking refs here git updates with it, and none may be a symbolic ref, live or dangling: git would follow it to its target. Else 409 `SYMBOLIC_REF` with `target`, and nothing runs. Accepted refspecs: `[+]refs/…:refs/…` (exact, or one `*` on each side), `[+]refs/…` (stores nothing) and `^refs/…`; negative refspecs exclude nothing, because git's push-time tracking update ignores them. Any other shape is 409 `REMOTE_CONFIG_UNSUPPORTED` with `remote` and `refspec`. So is a remote with no url (no non-empty `remote.<name>.url` after the last empty value, which clears the list; a `pushurl` does not count) **and** a legacy `.git/remotes/<name>` or `.git/branches/<name>` file, from which git would take refspecs (`refspec: null`; found with `rev-parse --git-path` and `hash-object --no-filters`). A push-only remote with no legacy file maps through its config. Tag destinations update no tracking ref and read no fetch config.
+- Results and undo lists come from the `--porcelain` ref lines for the refspecs' destinations only (`splitRequested` in `src/git/parse/push.js`); a line for any other ref is listed in `unrequested: [{ref, flag}]` (the porcelain flag), never dropped.
+- No ref line and a non-zero exit: 502 `REMOTE_AUTH_FAILED` or 502 `REMOTE_UNREACHABLE` (`classifyRemoteFailure` in `src/git/parse/push.js`), with `stderr`; anything else (a pre-push hook that refused) 422 `GIT_FAILED` with `stderr`. Hooks always run.
+- Every ref rejected and none updated or up to date: 409 `PUSH_REJECTED` with `rejected: [{ref, reason}]`; the message names each `ref: reason` (the first five, then a count). A partly rejected push succeeds and lists `rejected`.
+
 ### Paging convention (for ops that list)
 
 An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b`, blobs by `cat-file -s` before reading.
@@ -421,7 +476,20 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `GITIGNORE_UNSUPPORTED` | 409 | The root `.gitignore` is a symlink, binary or over `STAGE_LIMITS.gitignoreMaxBytes` |
 | `PATH_NOT_IN_COMMIT` | 404 | The path is not a file in that commit |
 | `UNTRACKED_UNDER_PATH` | 409 | A tracked path to discard is now a directory holding untracked or ignored files; `paths` |
-| `BARE_REPO` | 409 | A bare repository (its git dir is the working tree, whatever `core.bare` says): `repo.summary` and every write refuse it |
+| `BARE_REPO` | 409 | A bare repository (its git dir is the working tree, whatever `core.bare` says): `repo.summary` and every write that touches the working tree or the index refuse it (a pure ref write — a tag, a branch delete or move, a push — does not) |
+| `REF_UNKNOWN` | 404 | A branch, tag or remote branch the op names does not exist |
+| `BRANCH_CHECKED_OUT` | 409 | The branch is checked out where the op may not touch it; `worktree` = that checkout's path |
+| `CC_OWNED_BRANCH` | 409 | A `code-conductor/*` branch without `ccOwned: true`; `branches`, and `head: true` for this checkout's own HEAD |
+| `REF_EXISTS` | 409 | A branch or tag of that name exists |
+| `REF_MOVED` | 409 | The ref is no longer at the op's `expect` |
+| `NOT_FAST_FORWARD` | 409 | The target is not a descendant of the branch |
+| `CHECKOUT_CONFLICT` | 409 | Local changes would be overwritten; `files`, `stderr` |
+| `SYMBOLIC_REF` | 409 | The branch named is a symbolic ref; `target` = the ref it points at |
+| `REMOTE_CONFIG_UNSUPPORTED` | 409 | A fetch refspec of the remote code-git cannot map to the tracking refs a push updates, or a remote with no url whose config git reads from a legacy remote file; `remote`, `refspec` |
+| `REMOTE_UNKNOWN` | 404 | The remote name is malformed or not one of `git remote`'s |
+| `PUSH_REJECTED` | 409 | The remote rejected every ref of a push; `rejected` |
+| `PICK_EMPTY` | 409 | A revert or cherry-pick would commit nothing; nothing is left in progress |
+| `NOTHING_IN_PROGRESS` | 409 | `head.abort` with no revert or cherry-pick in progress |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |
@@ -429,6 +497,8 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `INTERNAL` | 500 | A code-git bug (logged) |
 | `SYSTEM_UNREACHABLE` | 502 | The project's System cannot be asked; `detail` = cc's code |
 | `GIT_UNAVAILABLE` | 502 | git could not start on the System; `errno` |
+| `REMOTE_AUTH_FAILED` | 502 | The remote refused the credentials, or would have prompted for them; `stderr` |
+| `REMOTE_UNREACHABLE` | 502 | The remote could not be reached; `stderr` |
 | `CONDUCTOR_UNAVAILABLE` | 503 | No `CONDUCTOR_URL`, cc did not answer, or answered without a usable body |
 | `GIT_TIMEOUT` | 504 | The command passed its deadline and was killed; partial `stderr` |
 

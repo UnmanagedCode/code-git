@@ -42,6 +42,10 @@
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |
 | `src/git/ops/graph.js` | `graph.refs`, `graph.page`, `graph.stats`, `graph.search`, `graph.commit` ([graph](graph.md)) |
 | `src/git/parse/graph.js` | The graph ops' parsers: NUL-field records, refs, stashes, worktrees, shortstats, commit metadata, name-status |
+| `src/git/ops/branch.js`, `tag.js`, `head.js` | The ref-writing ops `branch.*`, `tag.*`, `head.*` ([refs](refs.md)) |
+| `src/git/refs/` | What those ops share: `check.js` (ref-name checks: `shortBranch`, `fullRef`, `nameList`; the generic `paramsObject` / `optBool` are `src/git/params.js`), `heads.js` (`readHeads` with `%(worktreepath)`, `ownHead`, the checked-out and `code-conductor/*` asserts), `resolve.js` (`refEntries` with `%(symref)`, `refObjects`, `tagObjects`: unpeeled ids), `write.js` (`guardOverwrite` → `CHECKOUT_CONFLICT`, `casUpdate` → `REF_MOVED`), `undo.js` (`undoRecord`), `limits.js` (`REF_LIMITS`) |
+| `src/git/remote/` | Commands that talk to a remote: `push.js` (`remoteName`, `knownRemote`, `push`, `assertSomethingPushed`), `tracking.js` (`fetchSpecs`, `parseFetchRefspec`, `trackingRefsFor`: the tracking refs a push updates, from the remote's fetch config), `limits.js` (`NETWORK_LIMITS`) |
+| `src/git/parse/refs.js`, `parse/push.js` | `parseTracking`, `parseConflictFiles`; `parsePushPorcelain`, `classifyRemoteFailure` — pure |
 | `src/activity/log.js` | `createActivityLog()`: the ring, its events, cancel |
 | `src/routes/*.js` | One file per feature, each `mount(router, deps)`; `index.js` mounts them |
 
@@ -73,6 +77,9 @@
 | `features/graph/` | The commit graph ([graph](graph.md)): pure `layout.ts` (lanes), `rows.ts` (row order), `visibility.ts` (hide/solo → tips), `labels.ts`, `ancestry.ts`, `columns.ts` (the column catalogue), `windowFor.ts` (virtual window); the panels `GraphPanel.tsx`, `RefsPanel.tsx`, `details/`; `actions.ts` (`GRAPH_ACTIONS`), `contexts.ts`, `drag.ts`, `jump.ts`; `panel.ts` (the three `PanelDef`s) |
 | `state/graph.ts`, `state/graphPrefs.ts`, `state/graphSelection.ts` | Graph data per checkout (snapshot, pages, stats, refresh triggers); per-project prefs; selection and the file-open intent |
 | `shell/ContextMenuHost.tsx` | A context menu at the pointer for any registered context (`openContextMenu`) |
+| `features/branches/` | Branches, tags and HEAD ([refs](refs.md)): `api.ts` (wire types + op wrappers), `run.ts` (`runRefOp`: toast + graph refresh), `actions.ts` (`BRANCH_ACTIONS`, the cc HEAD gate `withCcHeadAck`), `refInfo.ts` (checked-out / cc-owned reads of the graph's refs), `RefDialogHost.tsx` + `dialogs/`, `TrackingBadge.tsx`, `CreateBranchButton.tsx` |
+| `state/refDialog.ts`, `state/refSelection.ts`, `state/branchTracking.ts` | The pending branch/tag dialog; the refs panel's branch selection per tab (`refSelectionReducer`, `selectedRefs`); ahead/behind per project (`useTracking`) |
+| `lib/opToast.ts`, `shell/Toasts.tsx` | `trackOp` (an op's running → outcome toast); the one sonner `<Toaster>`, mounted beside `<App>` in `main.tsx` |
 | `lib/cssVars.ts`, `lib/limit.ts` | `setCssPx` (the only `.style` user); `mapLimit` (bounded concurrency) |
 | `components/ui/`, `lib/utils.ts`, `lib/modalFocus.ts`, `lib/textEntry.ts`, `lib/useMediaQuery.ts` | Copied from cc's `web/src` on first use; the plugin's own code from then on |
 
@@ -94,7 +101,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 | Context-menu actions | `MenuAction[]` in the feature folder (fields below) | `ACTIONS` in `frontend/src/shell/menus.ts`; render with `<ActionMenuItems context ctx>` inside a `DropdownMenuContent`, or open at the pointer with `openContextMenu({host, context, ctx, at})` and a mounted `<ContextMenuHost host>` |
 | Per-checkout UI state | `frontend/src/state/<feature>.ts`: a `createStore` map keyed by `tabKey` | nothing; add its reset to `frontend/src/test/setup.ts` |
 
-**`MenuAction<C>`**: `{id, context, label: string | (ctx) => string, when?, run?, children?, group?, order?, destructive?}`. `children` is a submenu (its children inherit the context; a submenu with no child left after `when` is not shown); `group` puts a separator between consecutive actions of different groups; `order` (default 500) sorts, ties keep registration order. A menu with no action does not open.
+**`MenuAction<C>`**: `{id, context, label: string | (ctx) => string, when?, run?, children?, group?, order?, destructive?, primary?}`. `children` is a submenu — a list, or `(ctx) => list` to build it from the ctx (one item per remote) — whose children inherit the context; a submenu with no child left after `when` is not shown. `group` puts a separator between consecutive actions of different groups; `order` (default 500) sorts, ties keep registration order. `primary` marks the action a double-click runs: `runPrimary(context, ctx)` (`shell/menus.ts`) runs the first primary action offered and returns whether one ran. A menu with no action does not open.
 
 **Order convention**: 100 checkout / navigation, 200 create, 300 history-rewriting, 400 stash, 800 view, 900 copy, 950 visibility.
 
@@ -111,13 +118,21 @@ What a later card touches to add a feature — each is one file of its own plus 
 | `remote` | `{remote: string}` |
 | `worktree` | `{worktree: GitWorktree, ccCheckout: Target \| null}` |
 | `file` | `{commit: oid, parent: oid \| null, file: {status, path, oldPath}}` |
-| `branch-drop` | `{source: DragRef, target: DragRef}` — a branch chip dropped on another; `DragRef = {name: full refname, kind: 'local' \| 'remote', short, remote, oid}` |
+| `branch-drop` | `{source: DragRef, target: DragRef}` — a branch chip dropped on another; `DragRef = {name: full refname, kind: 'local' \| 'remote', short, remote, oid}`. Orders 100–199 are reserved for merge / rebase; Fast-forward is 200, Reset 300 |
+| `branches` | `{refs: Ref[]}` — two or more branches selected in the refs panel (local and remote) |
 
 **Graph stores other cards read** (`frontend/src/state/graphSelection.ts`, `features/graph/drag.ts`):
 
 - `graphSelectionStore`: per `tabKey`, `{ids, anchor, focus, items}`; `items` (also `selectedRows(tab)`) are `{kind: 'commit' | 'stash', oid} | {kind: 'wip', checkout: Target}`, top to bottom.
 - `fileIntentStore`: `{seq, tab, commit, parent, path, oldPath, selection}` — the last file clicked in the details panel (`requestFileOpen`); `seq` increases per request. `features/graph/diffWiring.ts` subscribes and opens the diff (`openDiff`); every graph entry point to a diff goes through `selectionDiff` / `openIn` there.
 - `branchDropStore`: `{seq, tab, source, target, at}` — every drop, before its menu opens.
+
+**Ref writes other cards build on:**
+
+- **Toasts**: `trackOp(fn, {running, done, failed?, toastRunning?})` in `lib/opToast.ts` for any op the user should see progress of; `done` may return a warning with an action, or `null` for no toast.
+- **Remote commands**: `src/git/remote/push.js` (`remoteName` in `params`, `knownRemote`, `push` with `NETWORK_LIMITS` and the auth/unreachable classification); fetch and pull reuse `NETWORK_LIMITS` and `classifyRemoteFailure`.
+- **Undo**: every ref-changing op returns `result.undo` (`undoRecord`, [refs → Undo record](refs.md#undo-record)); a journal reads it in `runRefOp` (`features/branches/run.ts`).
+- **Branch actions**: `checkout(tab, ref)`, `reset(tab, point, mode)` and `withCcHeadAck` in `features/branches/actions.ts`; `openRefDialog` for a confirmation.
 
 **Dynamic geometry** (positions, sizes from data) is set only through `setCssPx(el, '--name', px)` (`lib/cssVars.ts`: a finite number, a `--[a-z][a-z0-9-]*` name) and read by Tailwind classes such as `h-(--graph-total)`; `guards.test.ts` fails on any other `.style` access outside `components/ui/`.
 
@@ -131,13 +146,13 @@ What a later card touches to add a feature — each is one file of its own plus 
 ## Runner pipeline (`runGit`)
 
 1. argv = `['git', ...BASE_ARGS, ...args]`. `BASE_ARGS` disables the pager, colour, path quoting, fsmonitor and submodule recursion (`submodule.recurse=false`: a repo's `true` would make a discard of a submodule row discard the submodule's own uncommitted work; a later card passes `--recurse-submodules` explicitly), and pins `--work-tree=.`: the checkout cc runs the command in is the working tree, whatever the repo's `core.worktree` says (it resolves after any `-C <subpath>` an op adds). A bare repository then looks like a working tree of its own files, so `repo.summary` (before `status`) and every write check first whether the git dir is the working tree itself — `rev-parse --git-dir` printing exactly `.`, no path parsed — and refuse `BARE_REPO` (`src/git/worktree.js`: `isBare`, `assertWorktree`). Never `core.bare`: the repository sets it (directly or through an `[include]`), so a bare repo saying `false` would pass.
-2. env = `BASE_ENV` + (`READ_ENV` for reads) + the op's env. An op's env naming a protected variable (`isProtectedEnv`: the names in `PROTECTED_ENV` — `GIT_TERMINAL_PROMPT`, `GCM_INTERACTIVE`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_LITERAL_PATHSPECS`, `GIT_DIR`, `GIT_WORK_TREE`, `GIT_EXEC_PATH` — and every name starting with a `PROTECTED_ENV_PREFIXES` entry: `GIT_SSH` (`GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT`, …) or `GIT_CONFIG`) throws before anything runs or is logged: a code-git bug, answered 500 `INTERNAL`. `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` stay overridable (an interactive-rebase todo editor, say).
+2. env = `BASE_ENV` + (`READ_ENV` for reads) + the op's env. An op's env naming a protected variable (`isProtectedEnv`: the names in `PROTECTED_ENV` — `GIT_TERMINAL_PROMPT`, `GCM_INTERACTIVE`, `GIT_ASKPASS`, `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `GIT_LITERAL_PATHSPECS`, `GIT_DIR`, `GIT_WORK_TREE`, `GIT_EXEC_PATH` — and every name starting with a `PROTECTED_ENV_PREFIXES` entry: `GIT_SSH` (`GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT`, …) or `GIT_CONFIG`) throws before anything runs or is logged: a code-git bug, answered 500 `INTERNAL`. `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` stay overridable (an interactive-rebase todo editor, say).
 3. A write takes its **project's** lock (worktrees share refs and objects); reads and other projects never wait.
 4. The activity entry opens (`running`) with its own `AbortController`, combined with the op's signal.
 5. `exec` → cc. The deadline and output cap default from `LIMITS[kind]`.
 6. The entry closes with cc's duration, the exit code, the stderr tail, and a status. An exit outside `okExit` (default `[0]`) throws `GIT_FAILED`.
 
-**Non-interactive git.** `BASE_ENV` sets `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`, `GIT_EDITOR=false`, `GIT_SEQUENCE_EDITOR=false` (an accidental editor launch fails instead of hanging), `GIT_LITERAL_PATHSPECS=1` and `LC_ALL=C` (git's own messages only — repo-specific matching such as `NOT_A_REPO` relies on it). `READ_ENV` adds `GIT_OPTIONAL_LOCKS=0`, so a read never refreshes the index.
+**Non-interactive git.** `BASE_ENV` sets `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`, `GIT_ASKPASS=false`, `SSH_ASKPASS=false` and `SSH_ASKPASS_REQUIRE=never` (cc's local provider merges the System's own environment, whose askpass program git would run despite `GIT_TERMINAL_PROMPT=0` and wait on until the timeout), `GIT_EDITOR=false`, `GIT_SEQUENCE_EDITOR=false` (an accidental editor launch fails instead of hanging), `GIT_LITERAL_PATHSPECS=1` and `LC_ALL=C` (git's own messages only — repo-specific matching such as `NOT_A_REPO` relies on it). `READ_ENV` adds `GIT_OPTIONAL_LOCKS=0`, so a read never refreshes the index.
 
 **Validation.** No route takes argv or git options. Everything a user names is checked before any exec:
 
@@ -175,20 +190,23 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 - **Residual risks.** `commit.gpgSign=true` runs the configured signer; a signer that cannot sign (no key, or no pinentry: the exec has no tty) fails at once as `GIT_FAILED` — verified with gpg 2 + pinentry-curses (`RUN_REAL_GPG=1` test in `tests/ops-commit.test.js`). A signer that waits forever would run until the write timeout. Commit messages are assumed UTF-8 (`i18n.commitEncoding` is not read).
   - **`git apply --index` writes through an untracked symlink.** It checks a path's leading directories against the index only, so with an untracked `link → /outside` a patch creating `link/x` writes `/outside/x` (exit 0). Plain `git apply` (worktree) lstat-checks and refuses ("beyond a symbolic link"); `--cached` writes only the index. So no op passes `--index`: `patch.apply` offers worktree and index only. Any later op that would use `--index` (stash, cherry-pick by patch) must not, or must first refuse every path git's worktree check refuses.
-  - **Programs a hostile repo config or `.gitattributes` makes git run** (accepted: cc projects are the user's own; the same class as C1's `git status` running filters):
+  - **Programs a hostile repo config, `.gitattributes` or hooks make git run** during staging, committing and the ref writes ([refs](refs.md)) (accepted: cc projects are the user's own; the same class as C1's `git status` running filters):
 
 | Config | Runs on |
 |---|---|
-| `filter.<driver>.smudge` / `.process` | writing a worktree file: `patch.apply` (worktree), `stage.discardLines`, `stage.discardFiles` (tracked), `files.restore` |
-| `filter.<driver>.clean` / `.process` | reading a worktree file into git: `stage.files`, `stage.stageLines` and every diff of a worktree side (including the selection ops' re-reads) |
-| `core.hooksPath` (and `.git/hooks`) | `commit.create` (pre-commit, commit-msg, …), unless **Skip Git hooks** |
-| `commit.gpgSign` / `gpg.program` | `commit.create` |
+| `filter.<driver>.smudge` / `.process` | writing a worktree file: `patch.apply` (worktree), `stage.discardLines`, `stage.discardFiles` (tracked), `files.restore`; checkouts (`branch.checkout`, `branch.create` with checkout), `head.reset` hard, this checkout's `branch.fastForward`, `head.revert`, `head.cherryPick`, `head.abort` |
+| `filter.<driver>.clean` / `.process` | reading a worktree file into git: `stage.files`, `stage.stageLines` and every diff of a worktree side (including the selection ops' re-reads); `head.reset` hard's `stash create` |
+| `core.hooksPath` (and `.git/hooks`) | `commit.create` (pre-commit, commit-msg, …), unless **Skip Git hooks**; pre-push (every push: `branch.deleteRemote`, `tag.push`, `tag.deleteRemote`); post-checkout (checkouts); post-merge (fast-forwards by `merge --ff-only`); reference-transaction (every ref update); `head.revert` and `head.cherryPick` run prepare-commit-msg and post-commit (not pre-commit or commit-msg) |
+| `commit.gpgSign` with `gpg.program`, or with `gpg.format=ssh`: `gpg.ssh.program`, and `gpg.ssh.defaultKeyCommand` when `user.signingkey` is unset (even with no `gpg.ssh.program`) | `commit.create`; the commits `head.revert` and `head.cherryPick` make |
+| `tag.gpgSign` with `gpg.program`, or SSH signing (`gpg.format=ssh`): `gpg.ssh.program`, and `gpg.ssh.defaultKeyCommand` when `user.signingkey` is unset (`tag.forceSignAnnotated` has no effect: `tag.create` passes `-a`, which overrides it) | `tag.create`. A signer that cannot sign fails as `GIT_FAILED` and can leave `.git/TAG_EDITMSG` behind; one that waits runs until the write timeout |
+| `core.sshCommand`, `remote.<name>.receivepack`, `url.<base>.insteadOf` with `protocol.<name>.allow` (e.g. an `ext::` transport) | every push: `branch.deleteRemote`, `tag.push`, `tag.deleteRemote` (the env cannot set them — `GIT_SSH*` and `GIT_CONFIG*` are protected names — but the repo's config can) |
+| `credential.helper` in any of its forms: `!<command>` (a shell command), an absolute program path, or `<name>` (runs `git-credential-<name>` from `PATH`) | a push the remote asks credentials for (`branch.deleteRemote`, `tag.push`, `tag.deleteRemote`): git runs the helper before failing |
 
   - **A project whose `.git` is a file pointing at another repository's git dir makes code-git act on that repository.** That is git's own model (cc worktrees use `.git` files legitimately) and cc projects are the user's own; the same class as the other hostile-repo residuals. `--work-tree=.` keeps the working tree the checkout's, not the git dir.
 
 ### What each destructive op destroys
 
-For the undo card: what an op overwrites or deletes, and whether git can give it back.
+For the undo card: what an op overwrites or deletes, and whether git can give it back. The branch, tag and HEAD ops: [refs → Undo record](refs.md#undo-record) (their `result.undo` and the table there).
 
 | Op | Destroys | Recoverable from git |
 |---|---|---|
@@ -229,6 +247,7 @@ For the undo card: what an op overwrites or deletes, and whether git can give it
 - `_diffRepo.js`: `diffRepo(t)` — one repo with every diff source and file state (merge, root, orphan, side branch, rename, binary, LFS pointer, oversized file, gitlink, `-rf` and `:(glob)*`, staged/unstaged/untracked, symlinks) and a hostile `.git/config` set last; the Playwright seed's `diffs` project reuses it.
 - `_ops.js`: `opWorld(t)` — one repo behind the fake cc and `op(name, params)` running an op as the route does; `hostile(repo)` sets `STAGE_HOSTILE_CONFIG` (the diff fixture's keys, a failing `diff.external`, `apply.whitespace=error`, `apply.ignoreWhitespace=change`); `status()`, `indexBlob(path)`, `execArgv()`. The staging, commit, ignore and patch op tests build on it; `RUN_REAL_GPG=1` enables the one real-gpg test.
 - `_git.js`: `makeRepo(t)` (temp dir, `main`, pinned identity and dates, cleaned up after the test), `bareRemote`, `worktreeAdd`, `hook`. `_ctx.js` builds a runner context; `_app.js` boots the server on port 0 and reads SSE.
+- `_refsWorld.js`: `refsWorld(t)` — a repo with one commit pushed to a bare `origin`, the fake cc, `op(name, params, worktree?)`, `worktree(name, branch)` (a git worktree registered with the fake cc), `argvs()` / `writes()` (the exec log after `BASE_ARGS`), `refused(code, extra)`, `endOfOptionsBefore(argv, value)`.
 - **UI** (`frontend/src/**/*.test.{ts,tsx}`, Vitest + happy-dom): `test/stubFetch.ts` (route table; an unstubbed or root-relative request fails), `test/fakeEventSource.ts`, `test/fixtures.ts`, `test/diffFixtures.ts` (`dfile`, `filesResult`, `hunk`, `fdiff`), `test/workdirWorld.ts` (a stubbed backend for the Changes panel and line staging: lists by source kind, the commit reads, every write answered ok unless overridden; `posts(op)`); `test/setup.ts` resets every store, storage and the URL after each test.
-- **Graph tests**: `tests/_graphFixture.js` (`buildGraphFixture`: a seeded large history via `git fast-import`); UI side `test/graphData.ts` (row/ref builders) and `test/graphBackend.ts` (`stubGraph(world)`: the graph ops over a mutable in-memory world). Tests that mock `@/shell/menus` call `vi.resetModules()` and import the menu modules dynamically: `test/setup.ts` has already loaded the real registry.
+- **Graph tests**: `tests/_graphFixture.js` (`buildGraphFixture`: a seeded large history via `git fast-import`); UI side `test/graphData.ts` (row/ref builders) and `test/graphBackend.ts` (`stubGraph(world, extra?)`: the graph ops over a mutable in-memory world, plus `extra` routes for another feature's ops). Tests that mock `@/shell/menus` call `vi.resetModules()` and import the menu modules dynamically: `test/setup.ts` has already loaded the real registry.
 - **Harnesses**: `harness/playwright/` (seeded screenshots, golden path, the diff path, the staging path, the graph's visual and perf checks, read-only live checks) and `harness/mutation/` (code-mutant routes `server` and `ui`).
