@@ -161,6 +161,28 @@ test('a file picked in the loading stand-in stays picked when the diff\'s list a
   expect(fileRow('gone.txt').getAttribute('aria-current')).toBe('true');
 });
 
+test('the loading stand-in selects like the bound list (Ctrl- and Shift-click, ↓ views), and its selection survives the answer', async () => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  await show({ files }, [A], {
+    'POST api/ops/diff.files': async () => { await held; return diffFiles['POST api/ops/diff.files']; },
+  });
+  fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
+  expect(screen.getByRole('listbox', { name: 'Changed files' }).getAttribute('aria-multiselectable')).toBe('true');
+  fireEvent.click(fileRow('src/new.ts'));
+  fireEvent.click(fileRow('src/lib/a.ts'), { ctrlKey: true });
+  expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'src/lib/a.ts', selected: ['src/new.ts', 'src/lib/a.ts'] });
+  expect(fileRow('src/new.ts').getAttribute('aria-selected')).toBe('true');
+  fireEvent.click(fileRow('gone.txt'), { shiftKey: true });
+  expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'gone.txt', selected: ['gone.txt', 'src/lib/a.ts'] });
+  fireEvent.keyDown(fileRow('src/lib/a.ts'), { key: 'ArrowDown' });
+  expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'src/b.ts', selected: ['src/b.ts'] });
+  fireEvent.click(fileRow('src/new.ts'), { ctrlKey: true });
+  await act(async () => { release(); await held; });
+  await waitFor(() => expect(diffStore.get().get('app\0')?.list.result).toBeTruthy());
+  expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'src/new.ts', selected: ['src/b.ts', 'src/new.ts'] });
+});
+
 test('unbound: the row menu is the commit file menu; a merge diffed against parent 2 says so and lists that diff\'s files', async () => {
   const merge = [cf('M', 'from-side.txt')];
   await show({ files, parents: [P, oid(9)] }, [A], {
