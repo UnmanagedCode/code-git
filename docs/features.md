@@ -237,7 +237,7 @@ The diff has no file list of its own: the list beside it in the right slot drive
 | Over the file cap | "Too large to display (over N MB)"; in Inline, Split or File view also **Switch to Hunk mode** |
 | Empty file added / deleted | "Empty file added" / "Empty file deleted" |
 | No content change (rename-only, mode-only, whitespace hidden) | "No content changes" + the mode or rename line |
-| List over its cap | An alert in the diff: the diff is too large to list; the list beside it stays empty |
+| List over its cap | An alert in the diff: the diff is too large to list; the Changed files panel stays empty, the bound details say "The changed files could not be listed; the diff says why." (no file count) |
 
 **Hunk and line staging** — only on an unstaged or staged diff of a modified (`M`) text file, with **Show all whitespace** and the Diff view (not File view); not on added, deleted, renamed, untracked, binary, submodule, conflicted or LFS-pointer files, nor on commit or compare diffs:
 

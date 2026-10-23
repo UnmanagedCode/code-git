@@ -123,7 +123,9 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
   const bound = open && diffOwnerCommit(open, stashes) === d.oid ? open : null;
   const boundParent = bound?.source.kind === 'commit' ? bound.source.parent ?? 1 : 1;
   const sameFiles = !!bound && bound.source.kind === 'commit' && bound.source.rev === d.oid && boundParent === 1;
-  const count = bound ? bound.list.result?.files.length ?? (sameFiles ? d.files?.length : undefined) : d.files?.length;
+  // A failed diff list shows its error in the diff: here neither a count nor a list, only a pointer to it.
+  const listFailed = !!bound?.list.error;
+  const count = listFailed ? undefined : bound ? bound.list.result?.files.length ?? (sameFiles ? d.files?.length : undefined) : d.files?.length;
   const parent = d.parents[0] ?? null;
   const sameCommitter = d.committer.name === d.author.name && d.committer.email === d.author.email;
   return (
@@ -164,7 +166,8 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
           <div className="ml-auto"><FileViewToggle /></div>
         </div>
       )}
-      {bound ? <div className="-mx-3"><DiffFileList tab={tab} fallback={sameFiles ? d.files ?? undefined : undefined} /></div> : d.files ? (
+      {listFailed ? <p className="text-xs text-muted-foreground">The changed files could not be listed; the diff says why.</p>
+        : bound ? <div className="-mx-3"><DiffFileList tab={tab} fallback={sameFiles ? d.files ?? undefined : undefined} /></div> : d.files ? (
         <div className="-mx-3">
           <FileList
             label="Changed files"

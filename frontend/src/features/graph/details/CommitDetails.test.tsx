@@ -183,6 +183,19 @@ test('the loading stand-in selects like the bound list (Ctrl- and Shift-click, â
   expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'src/new.ts', selected: ['src/b.ts', 'src/new.ts'] });
 });
 
+test('bound to a diff whose list failed: no "N files" header and no list, a note that the diff says why', async () => {
+  await show({ files }, [A], { 'POST api/ops/diff.files': json({ error: 'git output exceeded', code: 'OUTPUT_TOO_LARGE', limitBytes: 1 }, 422) });
+  await screen.findByText('4 files');
+  fireEvent.click(fileRow('gone.txt'));
+  await waitFor(() => expect(diffStore.get().get('app\0')?.list.error).not.toBeNull());
+  expect(screen.queryByText('4 files')).toBeNull();
+  expect(screen.queryByRole('listbox', { name: 'Changed files' })).toBeNull();
+  expect(screen.queryByRole('group', { name: 'File view' })).toBeNull();
+  expect(screen.getByText('The changed files could not be listed; the diff says why.')).toBeTruthy();
+  // The diff's own alert is the one alert.
+  expect(within(screen.getByRole('complementary', { name: 'Commit details' })).queryByRole('alert')).toBeNull();
+});
+
 test('unbound: the row menu is the commit file menu; a merge diffed against parent 2 says so and lists that diff\'s files', async () => {
   const merge = [cf('M', 'from-side.txt')];
   await show({ files, parents: [P, oid(9)] }, [A], {
