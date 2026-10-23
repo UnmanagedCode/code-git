@@ -72,7 +72,7 @@ async function planOf(git, { base, head, oids }) {
  * still at `expect`, the cc acknowledgement (unless `ack` is false: a pick-mode run only adds), a clean tree, no merge
  * commit in `upstream..HEAD`. Resolves HEAD.
  */
-export async function rebaseGates(git, { expect, upstream, ccOwned, ack = true }) {
+async function rebaseGates(git, { expect, upstream, ccOwned, ack = true }) {
   await assertWorktree(git);
   await assertGitAtLeast(git, REBASE_FLOOR, 'rebase');
   await assertNoOperation(git);
@@ -88,7 +88,7 @@ export async function rebaseGates(git, { expect, upstream, ccOwned, ack = true }
 }
 
 /** A finished rebase's answer: upToDate when HEAD did not move, else done with the branch's move as its undo. */
-export async function rebaseResult(git, own, r) {
+async function rebaseResult(git, own, r) {
   if (r.outcome !== 'done') return { outcome: r.outcome, files: r.files, oid: (await ownHead(git)).oid, undo: undoRecord() };
   const now = await ownHead(git);
   if (now.oid === own.oid) return { outcome: 'upToDate', files: [], oid: now.oid, undo: undoRecord() };

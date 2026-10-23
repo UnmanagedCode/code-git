@@ -26,7 +26,7 @@ function utf8(b64: string | null): string | null {
 }
 
 /** The tool's model of a conflict.read answer: the sides as text, the merge regions and the initial output. */
-export function fileOf(read: ConflictRead, labels: SideLabels): ToolFile {
+function fileOf(read: ConflictRead, labels: SideLabels): ToolFile {
   const blank = { sides: null, regions: null, out: { text: '', blocks: [] } };
   const base: Omit<ToolFile, 'sides' | 'regions' | 'out' | 'notText'> = {
     path: read.path, read, expect: read.worktree?.oid ?? null, worktreeText: read.worktree ? utf8(read.worktree.b64) : null,

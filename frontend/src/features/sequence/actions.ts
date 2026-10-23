@@ -13,7 +13,7 @@ import { mergeFlow, rebaseFlow } from './flows';
 // The merge and rebase menu items (docs/merge.md → Where the actions are). Orders: the branch-drop menu's 100–199
 // (merge 100–102, rebase 110, interactive 120), the branch menu's 330–332, the commit menu's 312–313, the commits menu's
 // 320–322; group `rewrite`
-// beside C5's reset (300), revert (310) and cherry-pick (311). HEAD is read from the graph's refs answer.
+// beside the branch actions' reset (300), revert (310) and cherry-pick (311). HEAD is read from the graph's refs answer.
 
 const parentsMemo = new WeakMap<readonly CommitItem[], ReadonlyMap<string, string[]>>();
 /** The loaded commits' parents, one map per loaded page set (ancestorsWithin memoizes on its identity). */
@@ -25,7 +25,7 @@ function parentsOf(tab: Tab): ReadonlyMap<string, string[]> {
 }
 
 /** `oid` is HEAD's commit or one of its ancestors, among the loaded rows. */
-export function inHeadHistory(tab: Tab, oid: string): boolean {
+function inHeadHistory(tab: Tab, oid: string): boolean {
   const head = headOf(tab).oid;
   return head !== null && ancestorsWithin(head, parentsOf(tab)).has(oid);
 }
@@ -37,7 +37,7 @@ const isHeadBranch = (tab: Tab, r: { name: string }) => headOf(tab).branch === r
  * The selected commits as one first-parent chain, newest first, when they are one: every row a commit with exactly one
  * parent (no merge, no root), each the parent of the one above it. null otherwise.
  */
-export function chainOf(c: CommitsCtx): CommitItem[] | null {
+function chainOf(c: CommitsCtx): CommitItem[] | null {
   const items = c.rows.map((r) => (r.kind === 'commit' ? r.item : null));
   if (items.length < 2 || items.some((i) => i === null || i.parents.length !== 1)) return null;
   const chain = items as CommitItem[];
@@ -70,7 +70,7 @@ function rebaseOnto(tab: Tab, onto: string, ontoLabel: string): void {
 }
 
 /** A drop's rebase: which branch moves (HEAD's) onto which; null when neither side is HEAD's branch. */
-export function dropRebase(c: BranchDropCtx): { branch: DragRef; onto: DragRef } | null {
+function dropRebase(c: BranchDropCtx): { branch: DragRef; onto: DragRef } | null {
   if (!c.source.oid || !c.target.oid || c.source.oid === c.target.oid) return null;
   if (c.source.kind === 'local' && isHeadBranch(c.tab, c.source)) return { branch: c.source, onto: c.target };
   if (c.target.kind === 'local' && isHeadBranch(c.tab, c.target)) return { branch: c.target, onto: c.source };

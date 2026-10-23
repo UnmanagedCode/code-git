@@ -50,6 +50,3 @@ export function operationTitle(op: Operation, headBranch: string | null, refs: r
     case 'revert': return `Reverting ${commitLine(op)}`;
   }
 }
-
-/** The operation's name in a sentence: "the rebase", "the cherry-pick". */
-export const operationNoun = (kind: Operation['kind']): string => `the ${kind}`;

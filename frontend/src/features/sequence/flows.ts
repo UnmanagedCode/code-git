@@ -68,7 +68,7 @@ function resumeFailed(e: ApiError): Partial<ToastText> | undefined {
   return undefined;
 }
 
-export const filesOf = (e: ApiError): string[] => {
+const filesOf = (e: ApiError): string[] => {
   const f = (e.body as { files?: unknown } | undefined)?.files;
   return Array.isArray(f) ? f.filter((x): x is string => typeof x === 'string') : [];
 };
