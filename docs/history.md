@@ -34,6 +34,7 @@ A file's commits across renames, who last changed each line, and where HEAD and 
 | A local branch (`'branch'`) | **Show reflog** |
 | The palette | **File history…** / **Blame…** (pick one of HEAD's files, `history.paths`, or type a path), **Reflog** |
 
+- Each panel's **×** (**Close file history**, **Close reflog**) gives the slot back to the graph.
 - Entry points: `openFileHistory(tab, {path, rev})`, `openBlame(tab, {path, rev})`, `openReflog(tab, ref?)` (`open.ts`); state per `tabKey` in `state.ts`.
 - Everything from git (subjects, blame lines, reflog messages, ref and author names) is rendered as React text; no `href` or `style` is built from it.
 

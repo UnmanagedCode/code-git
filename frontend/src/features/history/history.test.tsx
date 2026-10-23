@@ -62,6 +62,7 @@ test('file history: pages, the rename marker, the viewer', async () => {
   await waitFor(() => expect(within(list).getAllByRole('option')).toHaveLength(3));
   expect(params(f, 'history.file')).toEqual([{ rev: REV, path: 'c.txt', skip: 0, limit: HISTORY_PAGE }, { rev: REV, path: 'c.txt', skip: 2, limit: HISTORY_PAGE }]);
   expect(screen.getByText('3 commits')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Close file history' })).toBeTruthy();
   await waitFor(() => expect(params(f, 'diff.file')[0]).toMatchObject({ source: { kind: 'commit', rev: oid(5) }, path: 'c.txt', oldPath: 'b.txt' }));
   await userEvent.click(within(list).getAllByRole('option')[1]);
   await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ source: { kind: 'commit', rev: oid(4) }, path: 'b.txt' }));
@@ -136,6 +137,8 @@ test('reflog rows and the reflog-entry menu', async () => {
   expect(refDialogStore.get()).toMatchObject({ kind: 'createBranch', from: { oid: oid(7), label: 'HEAD@{0}' } });
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Reflog of' }), 'refs/heads/feat');
   await waitFor(() => expect(params(f, 'history.reflog').at(-1)).toEqual({ ref: 'refs/heads/feat', skip: 0, limit: HISTORY_PAGE }));
+  await userEvent.click(screen.getByRole('button', { name: 'Close reflog' }));
+  expect(shownPanelStore.get().get(tabKey(TAB))).toBeUndefined();
 });
 
 // Invariant: File history and Blame are offered on a commit's file, a diff's file and a tracked Changes row; Show reflog on a

@@ -16,11 +16,11 @@ export function ShortcutSheet() {
           {SHORTCUT_GROUPS.map((g) => (
             <section key={g.scope} aria-label={g.scope}>
               <h3 className="mb-1 text-sm font-semibold">{g.scope}</h3>
-              <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-sm">
+              <dl className="grid grid-cols-[minmax(9rem,1fr)_auto] gap-x-3 gap-y-0.5 text-sm">
                 {g.shortcuts.map((s) => (
                   <div key={s.id} className="contents" data-shortcut={s.id}>
                     <dt className="text-muted-foreground">{s.label}</dt>
-                    <dd><kbd className="font-mono text-xs">{shortcutLabel(s)}</kbd></dd>
+                    <dd className="text-right"><kbd className="font-mono text-xs">{shortcutLabel(s)}</kbd></dd>
                   </div>
                 ))}
               </dl>

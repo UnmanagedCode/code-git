@@ -31,6 +31,8 @@ test('comboLabel and shortcutLabel', () => {
   expect(comboLabel({ key: 'Escape', mod: 'any' })).toBe('Esc');
   expect(comboLabel({ key: 'J', exact: true, shift: 'any' })).toBe('Shift+J');
   expect(shortcutLabel(s({ key: 'f', mod: true }, { key: '/' }))).toBe('Ctrl/⌘+F or /');
+  expect(shortcutLabel(s(...['1', '2', '3', '4'].map((key) => ({ key, mod: true }))))).toBe('Ctrl/⌘+1…4');
+  expect(shortcutLabel(s({ key: '1', mod: true }, { key: '3', mod: true }, { key: '4', mod: true }))).toBe('Ctrl/⌘+1 or Ctrl/⌘+3 or Ctrl/⌘+4');
 });
 
 // Invariant: pointerMods reports Shift, Ctrl-or-⌘ and Alt of a click.

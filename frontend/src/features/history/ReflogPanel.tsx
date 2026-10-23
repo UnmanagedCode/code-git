@@ -1,4 +1,4 @@
-import { EllipsisVerticalIcon } from 'lucide-react';
+import { EllipsisVerticalIcon, XIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -7,7 +7,7 @@ import { ActionMenuItems } from '@/shell/ActionMenu';
 import { useGraphData } from '@/state/graph';
 import type { Tab } from '@/state/tabs';
 import { REFLOG_CONTEXT, type ReflogEntryCtx } from './actions';
-import { openReflog } from './open';
+import { closeHistoryPanel, openReflog } from './open';
 import { loadMoreReflog, useReflog } from './state';
 
 // Where HEAD or a branch has been: the reflog, newest first, with a row menu (view, branch from, reset to, copy).
@@ -54,6 +54,7 @@ function ReflogFor({ tab }: { tab: Tab }) {
           {s.ref !== 'HEAD' && !locals.some((r) => r.name === s.ref) && <option value={s.ref}>{s.ref.replace(/^refs\/heads\//, '')}</option>}
         </select>
         <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={() => openReflog(tab, s.ref)}>Reload reflog</Button>
+        <Button variant="ghost" size="icon-sm" aria-label="Close reflog" onClick={() => closeHistoryPanel(tab)}><XIcon /></Button>
       </header>
       <ul aria-label="Reflog entries" className="min-h-0 flex-1 overflow-y-auto">
         {p.items.map((e) => <Row key={e.selector} tab={tab} entry={e} />)}

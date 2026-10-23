@@ -1,5 +1,5 @@
 import { useMemo, type UIEvent } from 'react';
-import { CrosshairIcon } from 'lucide-react';
+import { CrosshairIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Chunked } from '@/features/diff/CodeLine';
 import { requestJump } from '@/features/graph/jump';
@@ -73,7 +73,7 @@ function BlameView({ tab, s }: { tab: Tab; s: FileHistoryState }) {
           const author = c?.author ?? '';
           return (
             <div key={id} role="row" className={cn('flex', first && 'border-t')} data-blame-line={line.n}>
-              <span role="cell" className={cn('flex w-64 shrink-0 items-center gap-1.5 overflow-hidden px-2', colours.get(author))}>
+              <span role="cell" className={cn('flex w-80 shrink-0 items-center gap-1.5 overflow-hidden px-2', colours.get(author))}>
                 <span aria-hidden className="h-4 w-1 shrink-0 rounded-sm bg-(--lane)" />
                 {first && (
                   <button type="button" className="flex min-w-0 gap-1.5 truncate text-left hover:underline" title={c?.summary}
@@ -118,11 +118,14 @@ function HistoryPanelFor({ tab }: { tab: Tab }) {
             </Button>
           ))}
         </div>
-        {s.picked && (
-          <Button variant="ghost" size="sm" className="ml-auto h-7 gap-1 text-xs" onClick={() => { const oid = s.picked!.oid; closeHistoryPanel(tab); requestJump(tab, oid); }}>
-            <CrosshairIcon /> Show in graph
-          </Button>
-        )}
+        <span className="ml-auto flex items-center gap-1">
+          {s.picked && (
+            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => { const oid = s.picked!.oid; closeHistoryPanel(tab); requestJump(tab, oid); }}>
+              <CrosshairIcon /> Show in graph
+            </Button>
+          )}
+          <Button variant="ghost" size="icon-sm" aria-label="Close file history" onClick={() => closeHistoryPanel(tab)}><XIcon /></Button>
+        </span>
       </header>
       {s.view === 'blame' ? <BlameView tab={tab} s={s} /> : (
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">

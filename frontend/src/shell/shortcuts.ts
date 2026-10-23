@@ -72,8 +72,15 @@ export function comboLabel(c: Combo): string {
   return parts.join('+');
 }
 
-/** Every combo of `s`, labelled: "Ctrl/⌘+F or /". */
-export const shortcutLabel = (s: Shortcut): string => s.combos.map(comboLabel).join(' or ');
+const sameMods = (a: Combo, b: Combo) => a.mod === b.mod && a.shift === b.shift && a.alt === b.alt;
+
+/** Every combo of `s`, labelled: "Ctrl/⌘+F or /"; a run of three or more consecutive digits as one: "Ctrl/⌘+1…8". */
+export function shortcutLabel(s: Shortcut): string {
+  const c = s.combos;
+  const digits = c.length >= 3 && c.every((x, i) => /^\d$/.test(x.key) && sameMods(x, c[0]) && (i === 0 || Number(x.key) === Number(c[i - 1].key) + 1));
+  if (digits) return `${comboLabel(c[0])}…${c[c.length - 1].key}`;
+  return c.map(comboLabel).join(' or ');
+}
 
 export interface ShortcutGroup { scope: string; shortcuts: Shortcut[] }
 
