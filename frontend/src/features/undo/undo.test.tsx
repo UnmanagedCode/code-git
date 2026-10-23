@@ -10,8 +10,8 @@ import { dispatchTabs, tabKey } from '@/state/tabs';
 import { undoOf } from '@/state/undo';
 import { workdirStore, workdirOf } from '@/state/workdir';
 import { json } from '@/test/fixtures';
-import { FakeEventSource } from '@/test/fakeEventSource';
-import { entry } from '@/test/fixtures';
+import { activityStore } from '@/state/useActivity';
+import { opRun } from '@/test/fixtures';
 import { linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
 import type { UndoSlot, UndoState } from './api';
 import { UNDO_SHELL_KEYS } from './flows';
@@ -120,17 +120,22 @@ test('a code-conductor refusal: Review… confirms and retries with ccOwned', as
   await waitFor(() => expect(w.posts('undo.undo')).toEqual([{ id: 7 }, { id: 7, ccOwned: true }]));
 });
 
-// Invariant: a finished write in this checkout (an activity event) refetches the slots; a read or another checkout's write does not.
-test('an activity event for a finished write here refetches undo.state', async () => {
+// Invariant: the end of a write run in this checkout refetches the slots once; nothing while it runs, nor for a run in
+// another checkout of the project or another project.
+test('the end of a write run here refetches undo.state', async () => {
   const w = world([{ undo: null, redo: null }, { undo: slot(), redo: null }]);
   await waitFor(() => expect(w.fetch.count('POST api/ops/undo.state')).toBe(1));
-  act(() => FakeEventSource.last!.emit(entry({ kind: 'read', status: 'ok', target: TAB })));
-  act(() => FakeEventSource.last!.emit(entry({ kind: 'write', status: 'ok', target: { project: 'other', worktree: null } })));
-  act(() => FakeEventSource.last!.emit(entry({ kind: 'write', status: 'running', target: TAB })));
+  const wt = { project: 'app', worktree: 'wt' };
+  act(() => activityStore.set({ entries: [], runs: [opRun({ id: 1, status: 'running', endedAt: null, target: TAB })], error: null }));
+  act(() => activityStore.set((s) => ({ ...s, runs: [...s.runs, opRun({ id: 2, target: wt }), opRun({ id: 3, target: { project: 'other', worktree: null } })] })));
   await act(async () => {});
   expect(w.fetch.count('POST api/ops/undo.state')).toBe(1);
-  act(() => FakeEventSource.last!.emit(entry({ kind: 'write', status: 'ok', target: TAB })));
+  act(() => activityStore.set((s) => ({ ...s, runs: [opRun({ id: 1, target: TAB }), ...s.runs.slice(1)] })));
   await waitFor(() => expect(button('Undo').hasAttribute('disabled')).toBe(false));
+  expect(w.fetch.count('POST api/ops/undo.state')).toBe(2);
+  act(() => activityStore.set((s) => ({ ...s, runs: [...s.runs, opRun({ id: 4, target: wt })] })));
+  await act(async () => {});
+  expect(w.fetch.count('POST api/ops/undo.state')).toBe(2);
 });
 
 // Invariant: while an operation is in progress Undo and Redo are disabled with that reason, and the keys send nothing.

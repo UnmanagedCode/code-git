@@ -6,7 +6,7 @@ import { Shell } from '@/shell/Shell';
 import { Toasts } from '@/shell/Toasts';
 import { activityStore } from '@/state/useActivity';
 import { dispatchTabs } from '@/state/tabs';
-import { entry } from '@/test/fixtures';
+import { entry, opRun } from '@/test/fixtures';
 import { COMMITTED, HEAD, subEntry, submoduleWorld } from '@/test/submoduleWorld';
 import type { SubmoduleEntry } from './api';
 
@@ -98,16 +98,25 @@ test('Update all sends every unblocked, recorded, unconflicted path', async () =
   await waitFor(() => expect(w.posts('submodule.update')).toEqual([{ paths: ['a', 'c'] }]));
 });
 
-test('the list is read again after a finished write on the project, not after a read or another project', async () => {
+// Invariant: submodule.list is read again once when a write run of the project ends — not while it runs (its commands
+// closing), not on a focus during it, not for another project's run.
+test('the list is read again when a write run on the project ends, not between its commands, on focus during it, or for another project', async () => {
   let n = 0;
   const { w, panel } = await show(() => { n++; return [subEntry()]; });
   await within(panel).findByText('libs/a');
   const count = () => w.fetch.count('POST api/ops/submodule.list');
   const before = count();
-  act(() => activityStore.set({ entries: [entry({ id: 50, kind: 'read', status: 'ok' }), entry({ id: 51, kind: 'write', status: 'ok', target: { project: 'other', worktree: null } })], error: null }));
+  const running = opRun({ id: 1, op: 'submodule.remove', status: 'running', endedAt: null });
+  act(() => activityStore.set({ entries: [entry({ id: 50, kind: 'write', opRunId: 'run-1', status: 'ok' })], runs: [running], error: null }));
+  act(() => activityStore.set((s) => ({ ...s, entries: [...s.entries, entry({ id: 51, kind: 'write', opRunId: 'run-1', status: 'ok' })] })));
+  act(() => activityStore.set((s) => ({ ...s, runs: [...s.runs, opRun({ id: 2, opRunId: 'run-2', target: { project: 'other', worktree: null } })] })));
+  act(() => { window.dispatchEvent(new Event('focus')); });
+  await act(async () => {});
   expect(count()).toBe(before);
-  act(() => activityStore.set({ entries: [entry({ id: 52, kind: 'write', status: 'ok' })], error: null }));
+  act(() => activityStore.set((s) => ({ ...s, runs: [opRun({ id: 1, op: 'submodule.remove' }), s.runs[1]] })));
   await waitFor(() => expect(count()).toBe(before + 1));
+  await act(async () => {});
+  expect(count()).toBe(before + 1);
   expect(n).toBeGreaterThan(0);
 });
 

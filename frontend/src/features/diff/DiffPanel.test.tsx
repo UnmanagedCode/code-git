@@ -27,7 +27,7 @@ afterEach(() => { Element.prototype.scrollIntoView = original; });
 /** Stubs the shell's own requests plus diff.files / diff.file answered by `list` and `byPath`. */
 function world(list: DiffFilesResult | Response | ((body: { target: { project: string } }) => DiffFilesResult), byPath: Record<string, FileDiff | Response> = {}) {
   const fetch = stubFetch({
-    'GET api/activity': { entries: [] },
+    'GET api/activity': { entries: [], runs: [] },
     'POST api/ops/repo.summary': { ok: true, result: summary() },
     // The graph the diff replaces: an empty repo.
     'POST api/ops/graph.refs': { ok: true, result: refsResult({ head: { oid: null, branch: 'refs/heads/main', detached: false, unborn: true } }) },

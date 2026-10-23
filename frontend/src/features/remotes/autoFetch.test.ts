@@ -7,7 +7,7 @@ import { updateRemotePrefs } from '@/state/remotePrefs';
 import { getRemotes } from '@/state/remotes';
 import { dispatchTabs } from '@/state/tabs';
 import { activityStore } from '@/state/useActivity';
-import { entry } from '@/test/fixtures';
+import { entry, opRun } from '@/test/fixtures';
 import { refusal, remotesWorld, T } from '@/test/remotesWorld';
 import { setRemoteClock } from './autoFetch';
 import { RemotesHost } from './RemotesHost';
@@ -65,10 +65,11 @@ test('a tick skips while the page is hidden, while a write of the project runs, 
   Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
   w.tick();
   Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
-  activityStore.set({ entries: [entry({ status: 'running', kind: 'write', op: 'commit.create' })], error: null });
+  // Between two commands of a write: its run is running, none of its entries is.
+  activityStore.set({ entries: [entry({ status: 'ok', kind: 'write', op: 'submodule.remove' })], runs: [opRun({ status: 'running', endedAt: null, op: 'submodule.remove' })], error: null });
   w.tick();
   expect(w.posts('remote.fetch')).toEqual([]);
-  activityStore.set({ entries: [entry({ status: 'running', kind: 'write', target: { project: 'other', worktree: null } }), entry({ status: 'running', kind: 'read' })], error: null });
+  activityStore.set({ entries: [entry({ status: 'running', kind: 'read' })], runs: [opRun({ status: 'running', endedAt: null, target: { project: 'other', worktree: null } }), opRun({ id: 2 })], error: null });
   hold = true;
   w.tick();
   await waitFor(() => expect(w.posts('remote.fetch')).toHaveLength(1), { timeout: 2000 });

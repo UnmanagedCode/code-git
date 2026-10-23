@@ -10,7 +10,7 @@ export class FakeEventSource {
     (this.listeners.get(type) ?? this.listeners.set(type, new Set()).get(type)!).add(fn);
   }
   close() { this.closed = true; }
-  emit(data: unknown) { this.listeners.get('activity')?.forEach((f) => f(new MessageEvent('activity', { data: JSON.stringify(data) }))); }
+  emit(data: unknown, type: 'activity' | 'run' = 'activity') { this.listeners.get(type)?.forEach((f) => f(new MessageEvent(type, { data: JSON.stringify(data) }))); }
   /** The connection (re)opened. */
   reopen() { this.listeners.get('open')?.forEach((f) => f(new Event('open'))); }
 }

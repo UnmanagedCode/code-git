@@ -75,7 +75,7 @@ export function stubGraph(world: GraphWorld, extra: Parameters<typeof stubFetch>
       const d = world.detail?.(o) ?? detailOf(world.commits.find((c) => c.oid === o)!);
       return d instanceof Response ? d : { ok: true, result: d };
     },
-    'GET api/activity': { entries: [] },
+    'GET api/activity': { entries: [], runs: [] },
     // The toolbar's remotes (the remotes card): none unless a test passes its own.
     'POST api/ops/remote.list': { ok: true, result: { remotes: [] } },
     // The diff the graph opens: its file list only.

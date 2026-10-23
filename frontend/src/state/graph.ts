@@ -7,7 +7,7 @@ import { mapLimit } from '@/lib/limit';
 import { getPrefs, graphPrefsStore, loadPrefs } from './graphPrefs';
 import { createStore, useStore } from './store';
 import { prefsKey, tabKey, tabsStore, type Tab } from './tabs';
-import { activityStore } from './useActivity';
+import { onSettledWrite, writeRunning } from './settledWrites';
 import { loadSummary, summaryStore } from './useRepoSummary';
 
 // The commit graph's data per checkout (docs/graph.md → Snapshot and refresh). Pages are read from a frozen tip set
@@ -306,28 +306,21 @@ export async function loadStats(tab: Tab, oids: string[]): Promise<void> {
 
 /**
  * Refresh triggers besides the first show and the Refresh button, started by openGraph for as long as the tab is
- * open — the panel may be unmounted meanwhile (a diff replaces it): a finished write on the same project (the activity
- * store, refetched on every SSE event by the always-mounted activity panel), the window regaining focus or visibility
- * (throttled; a background tab is refreshed when shown again), which catches agents committing in other checkouts,
- * and a hide/solo change. No timer.
+ * open — the panel may be unmounted meanwhile (a diff replaces it): the end of a write op run on the same project
+ * (onSettledWrite over the activity store, refetched on every SSE event by the always-mounted activity panel), the
+ * window regaining focus or visibility (throttled; a background tab is refreshed when shown again), which catches
+ * agents committing in other checkouts, and a hide/solo change. No timer.
  */
 function watchGraph(tab: Tab): () => void {
   const key = tabKey(tab);
-  const seen = () => Math.max(0, ...activityStore.get().entries.filter((e) => e.target.project === tab.project).map((e) => e.id));
-  let lastId = seen();
-  const unsubActivity = activityStore.subscribe(() => {
-    const fresh = activityStore.get().entries.filter((e) => e.target.project === tab.project && e.id > lastId);
-    const done = fresh.filter((e) => e.kind === 'write' && e.status !== 'running');
-    if (!done.length) return;
-    // Advance past finished entries only, so a write still running is seen when it ends.
-    lastId = Math.max(...done.map((e) => e.id));
-    void refreshGraph(tab, 'write');
-  });
+  const unsubActivity = onSettledWrite(tab.project, () => true, () => void refreshGraph(tab, 'write'));
   let lastFocus = -Infinity;
   const onFocus = () => {
     if (document.visibilityState === 'hidden') return;
     const active = tabsStore.get().open[tabsStore.get().active];
     if (!active || tabKey(active) !== key) { stale.add(key); return; }
+    // A write run of the project is mid-way: its end refreshes (the same reads), so a focus now would only race it.
+    if (writeRunning(tab.project)) return;
     const t = clock();
     if (t - lastFocus < FOCUS_THROTTLE_MS) return;
     lastFocus = t;
