@@ -2,7 +2,7 @@ import { runOp, type Target } from '@/lib/endpoints';
 
 // The submodule ops' wire types (docs/protocol.md → Submodule ops). Paths are relative to the target's repo.
 
-export type Blocked = 'name' | 'path' | 'escapes';
+export type Blocked = 'name' | 'path' | 'duplicate' | 'escapes';
 
 export interface SubmoduleEntry {
   name: string;

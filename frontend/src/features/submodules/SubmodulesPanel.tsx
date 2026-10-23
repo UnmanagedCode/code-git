@@ -20,7 +20,7 @@ type Variant = 'warning' | 'info' | 'destructive' | 'outline';
 /** The status badges of an entry, in the order shown; each one's text is its accessible name. */
 export function statusBadges(e: SubmoduleEntry): { label: string; variant: Variant; title?: string }[] {
   const out: { label: string; variant: Variant; title?: string }[] = [];
-  if (e.blocked) out.push({ label: 'Blocked', variant: 'destructive', title: { name: 'Its .gitmodules name is not a safe name', path: 'Its .gitmodules path is not safe, or another entry declares it', escapes: 'Its directory resolves outside the checkout' }[e.blocked] });
+  if (e.blocked) out.push({ label: 'Blocked', variant: 'destructive', title: { name: 'Its .gitmodules name is not a safe name', path: 'Its .gitmodules path is not safe', duplicate: '.gitmodules declares its name at another path, or its path under another name', escapes: 'Its directory, or the git dir its .git names, is not its own' }[e.blocked] });
   if (e.typeChanged) out.push({ label: 'Type changed', variant: 'warning', title: 'A file or a directory is staged where the parent has this submodule: unstage it to remove the submodule' });
   else if (!recorded(e)) out.push({ label: 'Not recorded', variant: 'warning', title: '.gitmodules declares it, but its gitlink is not in the index: add it again, or remove the declaration' });
   if (!e.initialized) out.push({ label: 'Uninitialised', variant: 'outline' });
@@ -86,7 +86,7 @@ function SubmodulesView({ tab }: { tab: Tab }) {
       {!s.list && s.status !== 'error' && <p className="px-3 py-1 text-muted-foreground">Loading submodules…</p>}
       {s.error && <p className="px-3 py-1 text-destructive" role="alert">{s.error}</p>}
       {s.list && !list.length && <p className="px-3 py-1 text-muted-foreground">No submodules</p>}
-      {list.length > 0 && <ul aria-label="Submodule list">{list.map((e) => <Row key={e.name} tab={tab} entry={e} />)}</ul>}
+      {list.length > 0 && <ul aria-label="Submodule list">{list.map((e) => <Row key={`${e.name}\0${e.path}`} tab={tab} entry={e} />)}</ul>}
       {s.list?.truncated && <p className="px-3 py-1 text-xs text-muted-foreground">Only the first {list.length} are listed.</p>}
       <ContextMenuHost host={HOST} />
     </section>

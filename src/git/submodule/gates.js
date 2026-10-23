@@ -23,7 +23,8 @@ export async function knownEntries(git, paths) {
 
 const BLOCKED = {
   name: 'its name in .gitmodules is not a safe name',
-  path: 'its path in .gitmodules is not a safe path, or another entry declares it too',
+  path: 'its path in .gitmodules is not a safe path',
+  duplicate: '.gitmodules declares its name at another path, or its path under another name',
   escapes: 'its directory resolves outside the checkout (a symbolic link)',
 };
 

@@ -40,24 +40,37 @@ async function configRows(git, where, re) {
   return r.exitCode === 0 ? parseSubmoduleConfig(text(r)) : [];
 }
 
-/** `.gitmodules` (the working tree's file, as git reads it) → [{name, path, url, branch}], entries without a path dropped. */
+/**
+ * `.gitmodules` (the working tree's file, as git reads it) → [{name, path, url, branch, duplicate}], one per distinct
+ * (name, path): every record is read before any is collapsed, so a second section reusing a name with another path is
+ * seen. `duplicate` marks every entry of a name declared at more than one path, or of a path declared under more than
+ * one name — git would pick one, and a crafted second section could borrow another submodule's git dir. A url or
+ * branch declared twice for a name keeps the last value (such entries are duplicates anyway). Entries without a path
+ * are dropped.
+ */
 export async function readGitmodules(git) {
   const by = new Map();
   for (const { name, key, value } of await configRows(git, ['-f', '.gitmodules'], '^submodule\\..*\\.(path|url|branch)$')) {
-    if (!by.has(name)) by.set(name, { name, path: null, url: null, branch: null });
-    by.get(name)[key] = value;
+    if (!by.has(name)) by.set(name, { paths: [], url: null, branch: null });
+    const x = by.get(name);
+    if (key !== 'path') x[key] = value;
+    else if (typeof value === 'string' && value !== '' && !x.paths.includes(value)) x.paths.push(value);
   }
-  return [...by.values()].filter((e) => typeof e.path === 'string' && e.path !== '');
+  const entries = [...by].flatMap(([name, x]) => x.paths.map((path) => ({ name, path, url: x.url, branch: x.branch, duplicate: x.paths.length > 1 })));
+  const names = new Map();
+  for (const e of entries) names.set(e.path, (names.get(e.path) ?? 0) + 1);
+  for (const e of entries) if (names.get(e.path) > 1) e.duplicate = true;
+  return entries;
 }
 
 /**
  * Why an entry may not be acted on: its path fails the checks (checked first: only a `submodulePath` ever reaches argv),
- * its name does, or another entry declares the same path.
+ * its name does, or `.gitmodules` declares its name at another path or its path under another name (`duplicate`).
  */
-function blockedBy(e, dupPaths) {
+function blockedBy(e) {
   try { submodulePath(e.path); } catch { return 'path'; }
   try { submoduleName(e.name); } catch { return 'name'; }
-  return dupPaths.has(e.path) ? 'path' : null;
+  return e.duplicate ? 'duplicate' : null;
 }
 
 /** `remoteUrl`'s refusal message for the url git would clone, or null (fine, absent, or relative and not resolved yet). */
@@ -176,19 +189,16 @@ export async function listSubmodules(git) {
   const declared = await readGitmodules(git);
   if (!declared.length) return { submodules: [], truncated: false };
   const gitDir = text(await git(['rev-parse', '--absolute-git-dir'])).replace(/\n$/, '');
-  declared.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  declared.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const truncated = declared.length > SUBMODULE_LIMITS.maxListed;
   const entries = declared.slice(0, SUBMODULE_LIMITS.maxListed);
-  const seen = new Set();
-  const dupPaths = new Set();
-  for (const e of declared) (seen.has(e.path) ? dupPaths : seen).add(e.path);
 
   const local = new Map();
   for (const { name, key, value } of await configRows(git, ['--local'], '^submodule\\..*\\.(url|active)$')) {
     if (!local.has(name)) local.set(name, {});
     local.get(name)[key] = value;
   }
-  for (const e of entries) e.blocked = blockedBy(e, dupPaths);
+  for (const e of entries) e.blocked = blockedBy(e);
   const paths = entries.filter((e) => e.blocked !== 'path').map((e) => e.path);
   const [index, committed, status] = paths.length
     ? [await indexState(git, paths), await committedState(git, paths), await statusState(git, paths)]

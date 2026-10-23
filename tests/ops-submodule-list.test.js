@@ -77,13 +77,21 @@ test('blocked: ..-name, .git-alias path, symlink escape (probe); no blocked path
   assert.equal(by.sym.blocked, 'escapes');
   assert.equal(by.sym.populated, false);
   // Two entries declaring libA: neither can be told apart, both blocked.
-  assert.equal(by.dup.blocked, 'path');
-  assert.equal(by.libA.blocked, 'path');
+  assert.equal(by.dup.blocked, 'duplicate');
+  assert.equal(by.libA.blocked, 'duplicate');
   assert.equal(by['../both'].blocked, 'path');
   assert.equal(by['../abs'].blocked, 'path');
-  const blockedPaths = list.submodules.filter((e) => e.blocked === 'path' && e.path !== 'libA').map((e) => e.path);
+  const blockedPaths = list.submodules.filter((e) => e.blocked === 'path').map((e) => e.path);
   assert.deepEqual(blockedPaths.sort(), ['-both', '-oops', '/abs/x', 'x/.GIT']);
   for (const a of w.execArgv()) for (const bad of blockedPaths) assert.equal(a.some((x) => x === bad || x.includes(bad)), false, `${bad} in ${a}`);
+});
+
+test("readGitmodules keeps every (name, path): a name at two paths and a path under two names mark every entry involved duplicate", async (t) => {
+  const w = await subWorld(t, { nested: false });
+  // git config keeps both sections; a second [submodule "libA"] with another path.
+  fs.appendFileSync(w.file('.gitmodules'), '[submodule "libA"]\n\tpath = evil\n[submodule "x"]\n\tpath = shared\n[submodule "y"]\n\tpath = shared\n[submodule "z"]\n\tpath = alone\n');
+  const rows = (await w.ok('submodule.list')).submodules.map((e) => [e.name, e.path, e.blocked]);
+  assert.deepEqual(rows, [['z', 'alone', null], ['libA', 'evil', 'duplicate'], ['libA', 'libA', 'duplicate'], ['x', 'shared', 'duplicate'], ['y', 'shared', 'duplicate']]);
 });
 
 test('.gitmodules absent → [] with one exec beyond toplevel', async (t) => {

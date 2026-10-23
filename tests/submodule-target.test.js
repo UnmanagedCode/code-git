@@ -268,3 +268,23 @@ test("a cc worktree's submodule (git dir under the worktree's own git dir, not t
   const list = await w.app.call('POST', '/api/ops/submodule.list', { target: { project: PROJECT, worktree: 'wt' } });
   assert.deepEqual([list.body.result.submodules[0].blocked, list.body.result.submodules[0].populated], [null, true]);
 });
+
+test("a second [submodule \"libA\"] at path evil whose gitfile borrows libA's git dir is refused duplicate before any op; libA's repo is untouched; both rows listed blocked", async (t) => {
+  const w = await subWorld(t, { nested: false, ops: TEST_OPS });
+  fs.appendFileSync(w.file('.gitmodules'), '[submodule "libA"]\n\tpath = evil\n');
+  fs.mkdirSync(w.file('evil'));
+  fs.writeFileSync(w.file('evil/.git'), 'gitdir: ../.git/modules/libA\n');
+  const libAgit = w.file('.git/modules/libA');
+  const snap = () => [fs.readFileSync(path.join(libAgit, 'config')), fs.readFileSync(path.join(libAgit, 'index')), fs.existsSync(path.join(libAgit, 'modules'))];
+  const before = snap();
+  RAN.length = 0;
+  for (const [name, params] of [['test.write', undefined], ['submodule.add', { url: w.urls.libA, path: 'x' }], ['submodule.list', undefined]]) {
+    const r = await w.op(name, params, ['evil']);
+    assert.deepEqual([r.status, r.body.code, r.body.reason, r.body.path], [409, 'SUBMODULE_UNSAFE', 'duplicate', 'evil'], name);
+  }
+  assert.deepEqual(RAN, []);
+  assert.deepEqual(snap(), before);
+  const rows = (await w.ok('submodule.list')).submodules.map((e) => [e.name, e.path, e.blocked]);
+  assert.deepEqual(rows, [['libA', 'evil', 'duplicate'], ['libA', 'libA', 'duplicate']]);
+  assert.equal((await w.op('submodule.update', { paths: ['libA'] })).body.reason, 'duplicate');
+});

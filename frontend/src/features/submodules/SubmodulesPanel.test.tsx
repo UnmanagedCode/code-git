@@ -111,10 +111,16 @@ test('the list is read again after a finished write on the project, not after a 
   expect(n).toBeGreaterThan(0);
 });
 
-test('two .gitmodules sections declaring one path render two rows, keyed by name (no duplicate-key warning)', async () => {
+test('duplicate declarations (one path under two names, one name at two paths) render every row, keyed by name and path (no duplicate-key warning)', async () => {
   const err = vi.spyOn(console, 'error').mockImplementation(() => {});
-  const { panel } = await show([subEntry({ name: 'one', path: 'libs/a', blocked: 'path' }), subEntry({ name: 'two', path: 'libs/a', blocked: 'path' })]);
+  const { panel } = await show([
+    subEntry({ name: 'one', path: 'libs/a', blocked: 'duplicate' }), subEntry({ name: 'two', path: 'libs/a', blocked: 'duplicate' }),
+    subEntry({ name: 'libA', path: 'evil', blocked: 'duplicate' }), subEntry({ name: 'libA', path: 'libA', blocked: 'duplicate' }),
+  ]);
   await waitFor(() => expect(within(panel).getAllByRole('button', { name: 'libs/a' })).toHaveLength(2));
+  expect(within(panel).getByRole('button', { name: 'evil' })).toBeTruthy();
+  expect(within(panel).getByRole('button', { name: 'libA' })).toBeTruthy();
+  expect(badgesOf(panel, 'evil')).toEqual(['Blocked']);
   expect(err.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false);
   err.mockRestore();
 });
