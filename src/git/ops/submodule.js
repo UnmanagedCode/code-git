@@ -11,7 +11,7 @@ import {
   knownEntries, orphanCount, resolvedUrls,
 } from '../submodule/gates.js';
 import { SUBMODULE_LIMITS } from '../submodule/limits.js';
-import { listSubmodules, readGitmodules, urlProblem } from '../submodule/list.js';
+import { isTypeChanged, listSubmodules, parseIndexRecord, readGitmodules, urlProblem } from '../submodule/list.js';
 import { isRelativeUrl, submoduleUrl } from '../submodule/url.js';
 import { submoduleName, submodulePath } from '../submodule/validate.js';
 import { assertOid, assertRefName } from '../validate.js';
@@ -47,6 +47,16 @@ async function run(git, args) {
   const r = await git(args, { okExit: [0, 1, 128] });
   if (r.exitCode !== 0) throw submoduleFailure(r, args.slice(0, 2).join(' '));
   return r;
+}
+
+const nulFields = (r) => decoder.decode(r.stdout).split('\0').filter(Boolean);
+
+/** Removes the gitlink a failed removal put back from HEAD — only while the index still holds exactly that entry. */
+async function takeBack(git, path, oid) {
+  const now = nulFields(await git(['ls-files', '-s', '-z', '--', path])).map(parseIndexRecord);
+  if (now.length === 1 && now[0].path === path && now[0].mode === '160000' && now[0].oid === oid && now[0].stage === '0') {
+    await git(['update-index', '--force-remove', '--', path]);
+  }
 }
 
 /** SUBMODULE_DIRTY with the facts the UI lists: what removing the submodule would throw away or stage. */
@@ -203,14 +213,18 @@ export const ops = [
       let [e] = await knownEntries(git, [p.path]);
       // git rm refuses while .gitmodules has unstaged changes: it stages the whole file with the removal.
       const gitmodules = (await git(['diff', '--quiet', '--no-ext-diff', '--', '.gitmodules'], { okExit: [0, 1] })).exitCode === 1;
-      // No gitlink in the index (deinit and rm would not find the path):
-      let restored = false;
-      if (e.recorded === null && !e.conflicted) {
+      const records = nulFields(await git(['ls-files', '-s', '-z', '--', p.path])).map(parseIndexRecord);
+      if (isTypeChanged(records, p.path)) {
+        throw new Refusal('SUBMODULE_NOT_RECORDED', `${p.path} is staged as something other than a submodule (a file or a directory): unstage that first, then remove it`, { paths: [p.path], reason: 'typechange' });
+      }
+      // The gitlink code-git put back from HEAD, taken out again whenever the removal does not complete.
+      let restored = null;
+      if (!records.length) {
         if (e.committed) {
-          // In HEAD, not in the index (`git rm --cached`): put the entry back from HEAD, so the removal below runs
-          // gated as for any submodule and ends with the same staged deletion.
-          await git(['update-index', '--add', '--cacheinfo', `160000,${e.committed},${e.path}`]);
-          restored = true;
+          // In HEAD, absent from the index at every stage (`git rm --cached`): put the entry back from HEAD, so the
+          // removal below runs gated as for any submodule and ends with the same staged deletion.
+          restored = ['update-index', '--add', '--cacheinfo', `160000,${e.committed},${e.path}`];
+          await git(restored);
           [e] = await knownEntries(git, [p.path]);
         } else if (e.populated) {
           throw new Refusal('SUBMODULE_NOT_RECORDED', `${p.path} is cloned but its gitlink is in neither the index nor HEAD: add it back (git add ${p.path}) or delete its directory, then remove it`, { paths: [p.path] });
@@ -223,21 +237,22 @@ export const ops = [
           return { path: p.path, name: e.name };
         }
       }
-      if (!p.discard) {
-        const orphaned = e.populated ? await orphanCount(git, e.path, e.recorded) : 0;
-        // A pointer staged but not committed (an added submodule, a moved one): `git rm` would need -f.
-        const staged = e.recorded !== e.committed;
-        if ((e.populated && (e.modified || e.untracked)) || orphaned > 0 || staged || gitmodules) {
-          // Refused: the index entry put back is taken out again, as it was.
-          if (restored) await git(['update-index', '--force-remove', '--', e.path]);
-          throw dirtyRefusal(p.path, e, orphaned, staged, gitmodules);
+      try {
+        if (!p.discard) {
+          const orphaned = e.populated ? await orphanCount(git, e.path, e.recorded) : 0;
+          // A pointer staged but not committed (an added submodule, a moved one): `git rm` would need -f.
+          const staged = e.recorded !== e.committed;
+          if ((e.populated && (e.modified || e.untracked)) || orphaned > 0 || staged || gitmodules) throw dirtyRefusal(p.path, e, orphaned, staged, gitmodules);
         }
+        const force = p.discard ? ['-f'] : [];
+        if (gitmodules) await git(['add', '--', '.gitmodules']);
+        if (e.initialized || e.populated) await run(git, ['submodule', 'deinit', ...force, '--', p.path]);
+        // Removes the gitlink, the directory and the .gitmodules section, and stages .gitmodules. .git/modules/<name> stays.
+        await run(git, ['rm', '-q', ...force, '--', p.path]);
+      } catch (err) {
+        if (restored) await takeBack(git, p.path, e.committed);
+        throw err;
       }
-      const force = p.discard ? ['-f'] : [];
-      if (gitmodules) await git(['add', '--', '.gitmodules']);
-      if (e.initialized || e.populated) await run(git, ['submodule', 'deinit', ...force, '--', p.path]);
-      // Removes the gitlink, the directory and the .gitmodules section, and stages .gitmodules. .git/modules/<name> stays.
-      await run(git, ['rm', '-q', ...force, '--', p.path]);
       return { path: p.path, name: e.name };
     },
   },

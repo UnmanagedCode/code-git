@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -275,6 +276,44 @@ test('remove of a gitlink in HEAD but not in the index (git rm --cached): gated 
   assert.equal(w.repo.git('ls-files', '--', 'libA'), '');
   assert.deepEqual(w.repo.git('diff', '--cached', '--name-status').split('\n'), ['M\t.gitmodules', 'D\tlibA']);
   assert.ok(fs.existsSync(w.file('.git/modules/libA')));
+});
+
+test('remove of a type-changed entry (a file or a directory staged where HEAD has the gitlink) refuses typechange and leaves the index byte-identical', async (t) => {
+  for (const at of ['libA', 'libA/inner.txt']) {
+    const w = await subWorld(t, { nested: false });
+    const blob = execFileSync('git', ['-C', w.repo.dir, 'hash-object', '-w', '--stdin'], { input: 'a file\n', env: w.env, encoding: 'utf8' }).trim();
+    w.repo.git('rm', '-q', '--cached', 'libA');
+    w.repo.git('update-index', '--add', '--cacheinfo', `100644,${blob},${at}`);
+    const index = fs.readFileSync(w.file('.git/index'));
+    const e = byPathOf(await w.ok('submodule.list')).libA;
+    assert.deepEqual([e.typeChanged, e.recorded], [true, null], at);
+    for (const discard of [false, true]) {
+      const b = await refusal(w, 'submodule.remove', { path: 'libA', discard }, 'SUBMODULE_NOT_RECORDED');
+      assert.deepEqual([b.reason, b.paths], ['typechange', ['libA']], at);
+    }
+    assert.deepEqual(fs.readFileSync(w.file('.git/index')), index, at);
+    assert.equal(w.execArgv().map(afterBase).some((a) => a[0] === 'update-index' || a[0] === 'rm' || a[1] === 'deinit'), false, at);
+  }
+});
+
+test('a deinit or rm that fails after the gitlink was put back from HEAD takes it out again (discard included)', async (t) => {
+  for (const failing of ['deinit', 'rm']) {
+    const w = await subWorld(t, { nested: false });
+    w.repo.git('rm', '-q', '--cached', 'libA');
+    const before = [w.repo.git('ls-files', '-s'), w.repo.git('diff', '--cached', '--name-status')];
+    w.cc.state.execHook = (b) => {
+      const a = afterBase(b.argv);
+      if ((failing === 'rm' && a[0] === 'rm') || (failing === 'deinit' && a[0] === 'submodule' && a[1] === 'deinit')) {
+        return { status: 200, body: { exitCode: 128, stdout: '', stderr: Buffer.from(`fatal: simulated ${failing} failure\n`).toString('base64'), encoding: 'base64', durationMs: 1 } };
+      }
+      return undefined;
+    };
+    const r = await w.op('submodule.remove', { path: 'libA', discard: true });
+    w.cc.state.execHook = null;
+    assert.equal(r.body.code, 'GIT_FAILED', failing);
+    assert.match(r.body.stderr, new RegExp(`simulated ${failing}`));
+    assert.deepEqual([w.repo.git('ls-files', '-s'), w.repo.git('diff', '--cached', '--name-status')], before, failing);
+  }
 });
 
 test('remove of a declared-only entry whose directory holds a clone refuses SUBMODULE_NOT_RECORDED and leaves it', async (t) => {

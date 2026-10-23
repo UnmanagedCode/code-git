@@ -23,6 +23,8 @@ export interface SubmoduleEntry {
   untracked: boolean;
   added: boolean;
   conflicted: boolean;
+  /** The index holds a file or a directory where HEAD has the gitlink: Remove is refused until that is unstaged. */
+  typeChanged: boolean;
   /** Not acted on: an unsafe name or path, or a directory resolving outside the checkout. */
   blocked: Blocked | null;
   /** Why the url git would clone is refused, or null. */

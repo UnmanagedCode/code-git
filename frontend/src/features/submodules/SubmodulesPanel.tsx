@@ -21,7 +21,8 @@ type Variant = 'warning' | 'info' | 'destructive' | 'outline';
 export function statusBadges(e: SubmoduleEntry): { label: string; variant: Variant; title?: string }[] {
   const out: { label: string; variant: Variant; title?: string }[] = [];
   if (e.blocked) out.push({ label: 'Blocked', variant: 'destructive', title: { name: 'Its .gitmodules name is not a safe name', path: 'Its .gitmodules path is not safe, or another entry declares it', escapes: 'Its directory resolves outside the checkout' }[e.blocked] });
-  if (!recorded(e)) out.push({ label: 'Not recorded', variant: 'warning', title: '.gitmodules declares it, but its gitlink is not in the index: add it again, or remove the declaration' });
+  if (e.typeChanged) out.push({ label: 'Type changed', variant: 'warning', title: 'A file or a directory is staged where the parent has this submodule: unstage it to remove the submodule' });
+  else if (!recorded(e)) out.push({ label: 'Not recorded', variant: 'warning', title: '.gitmodules declares it, but its gitlink is not in the index: add it again, or remove the declaration' });
   if (!e.initialized) out.push({ label: 'Uninitialised', variant: 'outline' });
   else if (!e.populated) out.push({ label: 'Not cloned', variant: 'outline' });
   if (e.outOfSync) out.push({ label: 'Out of sync', variant: 'warning', title: `Checked out ${short(e.head)}, recorded ${short(e.recorded)}` });

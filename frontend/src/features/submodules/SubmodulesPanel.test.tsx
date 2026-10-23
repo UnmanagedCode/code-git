@@ -33,9 +33,10 @@ test('rows show status badges by accessible name, the count, and the checked-out
     subEntry({ path: 'f-conflict', conflicted: true, recorded: null }),
     subEntry({ path: 'g-bad', blocked: 'name', urlProblem: 'invalid remote url: a <transport>:: url runs a remote helper' }),
     subEntry({ path: 'h-ghost', recorded: null, committed: null }),
+    subEntry({ path: 'i-typed', recorded: null, typeChanged: true }),
   ]);
   await within(panel).findByText('a-clean');
-  expect(within(panel).getByRole('heading', { name: 'Submodules (8)' })).toBeTruthy();
+  expect(within(panel).getByRole('heading', { name: 'Submodules (9)' })).toBeTruthy();
   expect(within(panel).queryByRole('list', { name: 'Status of a-clean' })).toBeNull();
   expect(badgesOf(panel, 'b-uninit')).toEqual(['Uninitialised']);
   expect(badgesOf(panel, 'c-notcloned')).toEqual(['Not cloned']);
@@ -44,6 +45,7 @@ test('rows show status badges by accessible name, the count, and the checked-out
   expect(badgesOf(panel, 'f-conflict')).toEqual(['Conflicted']);
   expect(badgesOf(panel, 'g-bad')).toEqual(['Blocked', 'URL refused']);
   expect(badgesOf(panel, 'h-ghost')).toEqual(['Not recorded']);
+  expect(badgesOf(panel, 'i-typed')).toEqual(['Type changed']);
   const moved = within(panel).getByText('d-moved').closest('li')!;
   expect(within(moved).getByLabelText('Checked out').textContent).toBe(HEAD.slice(0, 7));
   expect(within(moved).getByLabelText('Recorded').textContent).toContain(COMMITTED.slice(0, 7));

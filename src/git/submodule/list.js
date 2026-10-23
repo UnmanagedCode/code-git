@@ -71,17 +71,30 @@ export function urlProblem(url) {
   }
 }
 
-/** `ls-files -s -z` → path → {recorded: the stage-0 gitlink oid, conflicted}. */
+/** One `ls-files -s -z` record → {mode, oid, stage, path}. */
+export function parseIndexRecord(f) {
+  const tab = f.indexOf('\t');
+  const [mode, oid, stage] = f.slice(0, tab).split(' ');
+  return { mode, oid, stage, path: f.slice(tab + 1) };
+}
+
+/**
+ * What the index holds at `path` (records of `ls-files -s -- <path>`): `typeChanged` when a stage-0 entry there is not a
+ * gitlink (a file staged in its place) or files are tracked under it (a directory in its place).
+ */
+export const isTypeChanged = (records, path) => records.some((r) => (r.path === path && r.stage === '0' && r.mode !== GITLINK) || r.path.startsWith(`${path}/`));
+
+/** `ls-files -s -z` → path → {recorded: the stage-0 gitlink oid, conflicted, typeChanged}. */
 async function indexState(git, paths) {
-  const out = new Map(paths.map((p) => [p, { recorded: null, conflicted: false }]));
-  for (const f of await perChunk(git, ['ls-files', '-s', '-z'], paths)) {
-    const tab = f.indexOf('\t');
-    const [mode, oid, stage] = f.slice(0, tab).split(' ');
-    const s = out.get(f.slice(tab + 1));
+  const out = new Map(paths.map((p) => [p, { recorded: null, conflicted: false, typeChanged: false }]));
+  const records = (await perChunk(git, ['ls-files', '-s', '-z'], paths)).map(parseIndexRecord);
+  for (const r of records) {
+    const s = out.get(r.path);
     if (!s) continue;
-    if (stage !== '0') s.conflicted = true;
-    else if (mode === GITLINK) s.recorded = oid;
+    if (r.stage !== '0') s.conflicted = true;
+    else if (r.mode === GITLINK) s.recorded = r.oid;
   }
+  for (const [p, s] of out) s.typeChanged = isTypeChanged(records, p);
   return out;
 }
 
@@ -156,7 +169,7 @@ async function mapLimited(items, n, fn) {
 /**
  * The repo's submodules, sorted by path: `{submodules, truncated}`, at most SUBMODULE_LIMITS.maxListed (no probe past it).
  * An entry: {name, path, url, resolvedUrl, branch, initialized, populated, recorded, committed, head, outOfSync,
- * modified, untracked, added, conflicted, blocked, urlProblem} (docs/submodules.md → Status).
+ * modified, untracked, added, conflicted, typeChanged, blocked, urlProblem} (docs/submodules.md → Status).
  */
 export async function listSubmodules(git) {
   const top = text(await git(['rev-parse', '--show-toplevel'])).replace(/\n$/, '');
@@ -184,7 +197,7 @@ export async function listSubmodules(git) {
 
   const submodules = entries.map((e, i) => {
     const p = probes[i] ?? { populated: false, head: null, escapes: false };
-    const ix = index.get(e.path) ?? { recorded: null, conflicted: false };
+    const ix = index.get(e.path) ?? { recorded: null, conflicted: false, typeChanged: false };
     const st = status.get(e.path) ?? { modified: false, untracked: false };
     const resolvedUrl = local.get(e.name)?.url ?? null;
     const recorded = ix.recorded;
@@ -195,7 +208,7 @@ export async function listSubmodules(git) {
       populated: p.populated, recorded, committed: committedOid, head: p.head,
       outOfSync: Boolean(p.populated && p.head && recorded && p.head !== recorded),
       modified: p.populated && st.modified, untracked: p.populated && st.untracked,
-      added: Boolean(recorded && !committedOid), conflicted: ix.conflicted,
+      added: Boolean(recorded && !committedOid), conflicted: ix.conflicted, typeChanged: ix.typeChanged,
       blocked: e.blocked ?? (p.escapes ? 'escapes' : null),
       urlProblem: urlProblem(resolvedUrl ?? e.url),
     };

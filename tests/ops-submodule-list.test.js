@@ -21,7 +21,7 @@ test('status flags: uninitialised (no local url), not populated, out of sync (he
   let a = byPath(await w.ok('submodule.list')).libA;
   assert.deepEqual(a, {
     name: 'libA', path: 'libA', url: w.urls.libA, resolvedUrl: w.urls.libA, branch: null, ...clean,
-    recorded: headA, committed: headA, head: headA, blocked: null, urlProblem: null,
+    recorded: headA, committed: headA, head: headA, typeChanged: false, blocked: null, urlProblem: null,
   });
   w.repo.write('libA/a.txt', 'changed\n');
   assert.deepEqual(flags(byPath(await w.ok('submodule.list')).libA), { ...clean, modified: true });

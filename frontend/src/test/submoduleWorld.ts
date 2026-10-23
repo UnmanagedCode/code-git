@@ -12,7 +12,7 @@ export const COMMITTED = OID('6');
 export const subEntry = (over: Partial<SubmoduleEntry> = {}): SubmoduleEntry => ({
   name: over.path ?? 'libs/a', path: 'libs/a', url: 'https://h/a.git', resolvedUrl: 'https://h/a.git', branch: null,
   initialized: true, populated: true, recorded: COMMITTED, committed: COMMITTED, head: COMMITTED,
-  outOfSync: false, modified: false, untracked: false, added: false, conflicted: false, blocked: null, urlProblem: null, ...over,
+  outOfSync: false, modified: false, untracked: false, added: false, conflicted: false, typeChanged: false, blocked: null, urlProblem: null, ...over,
 });
 
 export interface SubmoduleTarget { project: string; worktree?: string; sub?: string[] }

@@ -42,6 +42,8 @@ test('menu items by state: Open only when cloned, Initialize only when not, Sync
   expect(labels(subEntry({ recorded: null, committed: null }))).toEqual(['Open', 'Edit URL…', 'Remove…']);
   expect(labels(subEntry({ recorded: null, committed: null, populated: false, initialized: false, head: null }))).toEqual(['Edit URL…', 'Remove…']);
   expect(labels(subEntry({ recorded: null, conflicted: true }))).toEqual(['Open', 'Update', 'Sync', 'Edit URL…', 'Remove…']);
+  // A file or directory staged in the gitlink's place: no Remove (the server refuses typechange).
+  expect(labels(subEntry({ recorded: null, typeChanged: true }))).toEqual(['Open', 'Edit URL…']);
   const c: SubmoduleCtx = { tab: APP, entry: subEntry() };
   expect(actionsFor(SUBMODULE_CONTEXT, c).find((a) => a.primary)?.id).toBe('submodule.open');
   expect(actionsFor(SUBMODULE_CONTEXT, c).find((a) => labelOf(a, c) === 'Remove…')?.destructive).toBe(true);
