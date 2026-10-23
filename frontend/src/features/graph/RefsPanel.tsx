@@ -1,6 +1,6 @@
 import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { clip } from '@/lib/clip';
-import { ArchiveIcon, ChevronDownIcon, ChevronRightIcon, CloudIcon, EyeIcon, EyeOffIcon, FolderGit2Icon, GitBranchIcon, PinIcon, TagIcon, TargetIcon } from 'lucide-react';
+import { ArchiveIcon, ChevronDownIcon, ChevronRightIcon, CloudIcon, EyeIcon, EyeOffIcon, FolderGit2Icon, GitBranchIcon, PinIcon, PlusIcon, TagIcon, TargetIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useMediaQuery } from '@/lib/useMediaQuery';
@@ -9,6 +9,8 @@ import { TrackingBadge } from '@/features/branches/TrackingBadge';
 import { ContextMenuHost, openContextMenu } from '@/shell/ContextMenuHost';
 import { runPrimary } from '@/shell/menus';
 import { useGraphData } from '@/state/graph';
+import { openRemoteDialog } from '@/state/remoteDialog';
+import { useRemotes } from '@/state/remotes';
 import { toggled, updatePrefs, useGraphPrefs, type GraphPrefs, type Section } from '@/state/graphPrefs';
 import { dispatchRefSelection, selectedRefs, useRefSelection } from '@/state/refSelection';
 import type { Tab } from '@/state/tabs';
@@ -54,6 +56,7 @@ function IconToggle({ label, on, disabled, onClick, children }: { label: string;
 
 function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const data = useGraphData(tab);
+  const listed = useRemotes(tab);
   const prefs = useGraphPrefs(tab.project);
   const selection = useRefSelection(tab);
   const [filter, setFilter] = useState('');
@@ -93,7 +96,8 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const pinnedFirst = (list: Ref[]) => [...list.filter((r) => prefs.pinned.includes(r.name)), ...list.filter((r) => !prefs.pinned.includes(r.name))];
   const locals = pinnedFirst(byKind('local'));
   const remotes = pinnedFirst(byKind('remote'));
-  const remoteNames = [...new Set(refs.refs.filter((r) => r.kind === 'remote').map((r) => r.remote ?? ''))].sort();
+  // Every listed remote shows, one with no fetched branch too.
+  const remoteNames = [...new Set([...refs.refs.filter((r) => r.kind === 'remote').map((r) => r.remote ?? ''), ...(listed.data ?? []).map((r) => r.name)])].sort();
   const tags = byKind('tag');
   const stashes = refs.stashes.filter((s) => match(s.selector) || match(s.subject));
   const own = refs.worktrees ? ownWorktree(refs.head, refs.worktrees) : null;
@@ -119,7 +123,7 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
     hiddenRemotes: s === 'remote' ? [] : p.hiddenRemotes,
   }));
 
-  const head = (s: Section | 'worktrees', title: string, count: number, list: Ref[] = []) => (
+  const head = (s: Section | 'worktrees', title: string, count: number, list: Ref[] = [], extra?: ReactNode) => (
     <div className="group flex items-center gap-1 px-2 pt-2 pb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
       <button type="button" className="flex min-w-0 flex-1 items-center gap-1 text-left" aria-expanded={!collapsed.has(s)} onClick={() => toggleCollapsed(s)}>
         {collapsed.has(s) ? <ChevronRightIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
@@ -141,6 +145,7 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
           <TargetIcon className="size-3.5" />
         </IconToggle>
       )}
+      {extra}
     </div>
   );
 
@@ -158,7 +163,13 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
         </ul>
       )}
 
-      {head('remote', 'Remotes', remotes.length, remotes)}
+      {head('remote', 'Remotes', remotes.length, remotes, (
+        <button type="button" aria-label="Add remote" title="Add remote"
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={() => openRemoteDialog({ kind: 'add', tab })}>
+          <PlusIcon className="size-3.5" />
+        </button>
+      ))}
       {!collapsed.has('remote') && remoteNames.map((name) => {
         const list = remotes.filter((r) => r.remote === name);
         if (f && !list.length) return null;

@@ -1,12 +1,12 @@
 import { Refusal } from '../../refusals.js';
 import { parseRemotes } from '../parse/graph.js';
-import { classifyRemoteFailure, parsePushPorcelain, splitRequested } from '../parse/push.js';
+import { parsePushPorcelain, splitRequested } from '../parse/push.js';
 import { assertNoSymref } from '../refs/resolve.js';
-import { NETWORK_LIMITS } from './limits.js';
-import { fetchSpecs, trackingRefsFor } from './tracking.js';
+import { netRun, remoteFailure } from './net.js';
+import { assertPushTracking, fetchSpecs, trackingMapFor } from './tracking.js';
 
-// The commands that talk to a remote. Credentials come only from the System's helper or agent: BASE_ENV turns every
-// prompt off, so an op that would prompt fails (REMOTE_AUTH_FAILED). Hooks (pre-push) always run.
+// Pushing, and the remote-name checks every remote op shares. The push runs through netRun (net.js): no prompt, no
+// `ext::`/`fd::` transport. Hooks (pre-push) always run.
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const hasControlOrSpace = (s) => [...s].some((c) => c.charCodeAt(0) < 0x21 || c.charCodeAt(0) === 0x7f);
@@ -27,42 +27,60 @@ export async function knownRemote(git, name) {
 }
 
 /**
+ * Config pinned on every push: `remote.<name>.mirror=true` would make git refuse any refspec ("--mirror can't be
+ * combined with refspecs"), and a push here always names its refspecs. `-c` beats the repo's value (a boolean: last
+ * wins). git splits a `-c` pair at its first `=`, so a remote named with `=` (refused for new names: newRemoteName) pins
+ * nothing; its push then fails closed if mirror is set.
+ */
+export const pushConfig = (remote) => ['-c', `remote.${remote}.mirror=false`];
+
+/**
  * `git push --porcelain --no-follow-tags` of `refspecs` (`src:dst`) to `remote` → {updated, rejected, upToDate,
  * unrequested} (splitRequested over parsePushPorcelain): the first three hold only the refspecs' destinations.
- * `--no-follow-tags` keeps a configured `push.followTags` from publishing tags nobody selected. A branch destination whose
- * remote-tracking ref here (per the remote's fetch refspecs) is symbolic, live or dangling, refuses SYMBOLIC_REF, and
- * a fetch config code-git cannot map refuses REMOTE_CONFIG_UNSUPPORTED, before anything runs. A push that reports no
- * ref at all failed as a whole: REMOTE_AUTH_FAILED / REMOTE_UNREACHABLE, or GIT_FAILED with git's stderr (a pre-push
- * hook that refused lands here). Rejected refs are the caller's to judge.
+ * `--no-follow-tags` keeps a configured `push.followTags` from publishing tags nobody selected. Before anything runs: a
+ * destination whose mapped local ref (per the remote's fetch refspecs) is symbolic, live or dangling, refuses
+ * SYMBOLIC_REF; one mapped outside refs/remotes/, or a fetch config code-git cannot map, REMOTE_CONFIG_UNSUPPORTED. A push that reports no
+ * ref at all failed as a whole: remoteFailure (REMOTE_AUTH_FAILED / REMOTE_UNREACHABLE with a reason, or GIT_FAILED with
+ * git's stderr: a pre-push hook that refused lands here). Rejected refs are the caller's to judge.
+ * `setUpstream` adds `--set-upstream`; each lease `{ref, expect}` adds `--force-with-lease=<ref>:<expect>` (expect null:
+ * the ref must not exist on the remote). Never `--force` and never a `+` refspec: a lease is the only way to overwrite.
  */
-export async function push(git, remote, refspecs) {
-  // git updates the remote-tracking ref of every branch it pushes or deletes, following a symbolic one: an alias
+export async function push(git, remote, refspecs, { setUpstream = false, leases = [] } = {}) {
+  // git updates the remote-tracking ref of every ref it pushes or deletes, following a symbolic one: an alias
   // → refs/heads/victim would move or delete `victim` past every guard. Which ref that is comes from the remote's
-  // configured fetch refspecs (tracking.js); tags update no tracking ref.
+  // configured fetch refspecs (tracking.js), and it must lie under refs/remotes/.
   for (const ref of await trackingRefsOfPush(git, remote, refspecs)) await assertNoSymref(git, ref);
-  const r = await git(['push', '--porcelain', '--no-follow-tags', '--end-of-options', remote, ...refspecs], {
-    timeoutMs: NETWORK_LIMITS.timeoutMs, maxOutputBytes: NETWORK_LIMITS.maxOutputBytes, okExit: [0, 1, 128],
-  });
+  const options = [
+    ...(setUpstream ? ['--set-upstream'] : []),
+    ...leases.map((l) => `--force-with-lease=${l.ref}:${l.expect ?? ''}`),
+  ];
+  const r = await netRun(git, [...pushConfig(remote), 'push', '--porcelain', '--no-follow-tags', ...options, '--end-of-options', remote, ...refspecs], { okExit: [0, 1, 128] });
   const parsed = parsePushPorcelain(decoder.decode(r.stdout));
   const reported = parsed.updated.length + parsed.rejected.length + parsed.upToDate.length;
-  if (r.exitCode !== 0 && !reported) {
-    const stderr = decoder.decode(r.stderr);
-    const code = classifyRemoteFailure(stderr);
-    if (code) throw new Refusal(code, code === 'REMOTE_AUTH_FAILED' ? `${remote} refused the credentials (or would have prompted)` : `${remote} could not be reached`, { stderr });
-    throw new Refusal('GIT_FAILED', `git push exited with ${r.exitCode}`, { exitCode: r.exitCode, stderr });
-  }
+  if (r.exitCode !== 0 && !reported) throw remoteFailure(remote, r, 'push');
   return splitRequested(parsed, refspecs.map((s) => s.slice(s.indexOf(':') + 1)));
 }
 
 /** Rejected refs named in a PUSH_REJECTED message; the rest are counted (all are in `rejected`). */
 const REJECTED_NAMED = 5;
 
-/** Every tracking ref here a push of `refspecs` to `remote` may update: its branch destinations mapped through the fetch config. */
+/**
+ * Every local ref a push of `refspecs` to `remote` may update: each destination (branch or tag: git updates either)
+ * mapped through the fetch config (tracking.js), all of them under refs/remotes/ (assertPushTracking). A ref mapped to
+ * the refspec's own source is left out: git writes it the value it just pushed from it (a tag pushed under
+ * `+refs/tags/*:refs/tags/*`), never another ref's.
+ */
 async function trackingRefsOfPush(git, remote, refspecs) {
-  const branches = refspecs.map((s) => s.slice(s.indexOf(':') + 1)).filter((d) => d.startsWith('refs/heads/'));
-  if (!branches.length) return [];
   const specs = await fetchSpecs(git, remote);
-  return [...new Set(branches.flatMap((b) => trackingRefsFor(specs, b)))];
+  const out = new Set();
+  for (const spec of refspecs) {
+    const i = spec.indexOf(':');
+    const src = spec.slice(0, i);
+    const mapped = trackingMapFor(specs, spec.slice(i + 1)).filter((m) => m.dst !== src);
+    assertPushTracking(remote, mapped);
+    for (const m of mapped) out.add(m.dst);
+  }
+  return [...out];
 }
 
 /** PUSH_REJECTED with the rejected refs when a push changed nothing and refused something; the message names each ref and why. */

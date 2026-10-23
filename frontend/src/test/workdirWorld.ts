@@ -56,6 +56,10 @@ export function workdirWorld(w: WorkdirWorld = {}) {
     'POST api/ops/commit.state': op('commit.state', () => ({ merging: w.merging ?? false })),
     'POST api/ops/commit.template': op('commit.template', () => ({ path: w.template ? '/t' : null, draft: w.template ?? null, problem: null })),
     'POST api/ops/commit.headMessage': op('commit.headMessage', () => ({ oid: 'a'.repeat(40), ...(w.head ?? { summary: 'HEAD summary', description: 'HEAD body' }) })),
+    // The remotes card's reads (push after commit): no remote unless answered.
+    'POST api/ops/remote.list': op('remote.list', () => ({ remotes: [] })),
+    'POST api/ops/branch.tracking': op('branch.tracking', () => ({ remotes: [], branches: {} })),
+    'POST api/ops/remote.push': op('remote.push', () => ({ remote: 'origin', branch: 'main', to: 'main', created: false, forced: false, upToDate: false, upstreamSet: false, unrequested: [], undo: {} })),
   };
   for (const name of WRITES) routes[`POST api/ops/${name}`] = op(name, () => ({ oid: 'b'.repeat(40) }));
   const fetch = stubFetch(routes);

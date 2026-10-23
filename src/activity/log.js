@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { LIMITS } from '../git/limits.js';
+import { maskUrl } from '../mask.js';
 import { Refusal } from '../refusals.js';
 
 // A diagnostic record of every git command run: what ran, where, and how it ended. Nothing derives
@@ -10,6 +11,9 @@ const decoder = new TextDecoder('utf-8', { fatal: false });
 
 /** Env values as recorded: a secret-looking name's value is redacted. */
 export const redactEnv = (env) => Object.fromEntries(Object.entries(env).map(([k, v]) => [k, SECRET_NAME.test(k) ? '[redacted]' : v]));
+
+/** Argv as recorded: an argument that is a url with a password is masked (maskUrl); git itself gets the real argv. */
+export const redactArgv = (argv) => argv.map(maskUrl);
 
 /** The tail of `buf` (git's verdict comes last), decoded without trusting it to be UTF-8. */
 export function capStderr(buf, cap = LIMITS.stderrCap) {
@@ -42,7 +46,7 @@ export function createActivityLog({ ring = LIMITS.activityRing } = {}) {
     open({ opRunId, op, kind, target, argv, env = {}, stdinBytes = 0, cancellable, signal }) {
       const controller = new AbortController();
       const entry = {
-        id: nextId++, opRunId, op, kind, target: { project: target.project, worktree: target.worktree ?? null }, argv: [...argv],
+        id: nextId++, opRunId, op, kind, target: { project: target.project, worktree: target.worktree ?? null }, argv: redactArgv(argv),
         env: redactEnv(env), stdinBytes, cancellable, startedAt: new Date().toISOString(),
         durationMs: null, exitCode: null, stderr: '', stderrTruncated: false, status: 'running', code: null,
       };

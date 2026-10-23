@@ -11,7 +11,7 @@ import { BASE_ENV } from '../src/git/runner.js';
 import { startApp } from './_app.js';
 import { refsWorld, refused } from './_refsWorld.js';
 
-const NETWORK_OPS = ['branch.deleteRemote', 'tag.push', 'tag.deleteRemote'];
+const NETWORK_OPS = ['branch.deleteRemote', 'tag.push', 'tag.deleteRemote', 'remote.fetch', 'remote.push'];
 const hasHttp = (() => {
   try { return fs.existsSync(path.join(execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim(), 'git-remote-http')); } catch { return false; }
 })();
@@ -21,12 +21,13 @@ test('NETWORK_LIMITS stay within cc\'s exec caps', () => {
   assert.ok(NETWORK_LIMITS.maxOutputBytes > 0 && NETWORK_LIMITS.maxOutputBytes <= CC_EXEC_CAPS.EXEC_MAX_OUTPUT_BYTES);
 });
 
-test('the network ops are cancellable writes; every other branch, tag and HEAD write is not', () => {
+test('the network writes are cancellable; every other branch, tag, HEAD and remote write is not; the remote reads are cancellable', () => {
   for (const [name, def] of OPS) {
-    if (!/^(branch|tag|head)\./.test(name) || def.kind !== 'write') continue;
+    if (!/^(branch|tag|head|remote)\./.test(name) || def.kind !== 'write') continue;
     assert.equal(def.cancellable, NETWORK_OPS.includes(name), name);
   }
   for (const name of NETWORK_OPS) assert.equal(OPS.get(name)?.kind, 'write', name);
+  for (const name of ['remote.list', 'remote.peek']) assert.deepEqual([OPS.get(name)?.kind, OPS.get(name)?.cancellable], ['read', true], name);
 });
 
 test('a push to a remote asking for credentials fails fast with REMOTE_AUTH_FAILED: prompts are off, nothing is added to the env', { skip: !hasHttp && 'this git has no git-remote-http' }, async (t) => {

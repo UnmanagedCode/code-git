@@ -31,7 +31,7 @@ export function CcWarning({ children }: { children: ReactNode }) {
   return <p role="note" className="rounded-md border border-warning/60 bg-warning/10 p-2 text-sm">{children}</p>;
 }
 
-export function RefDialogFrame({ title, description, submit, busyLabel, busy, error, destructive = false, canSubmit = true, onSubmit, extraButton, children }: {
+export function RefDialogFrame({ title, description, submit, busyLabel, busy, error, destructive = false, canSubmit = true, onSubmit, extraButton, onClose = closeRefDialog, children }: {
   title: string;
   description?: ReactNode;
   submit: string;
@@ -42,12 +42,14 @@ export function RefDialogFrame({ title, description, submit, busyLabel, busy, er
   canSubmit?: boolean;
   onSubmit: () => void;
   extraButton?: ReactNode;
+  /** Closes the dialog (Cancel, Esc, outside): another dialog store's than the branch dialogs' default. */
+  onClose?: () => void;
   children?: ReactNode;
 }) {
   const stderr = error ? stderrOf(error) : undefined;
   const rejected = error ? rejectedLines(rejectedOf(error)) : [];
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !busy) closeRefDialog(); }}>
+    <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
       <DialogContent onEscapeKeyDown={(e) => { if (busy) e.preventDefault(); }} onInteractOutside={(e) => { if (busy) e.preventDefault(); }}>
         <form className="grid gap-4" onSubmit={(e: FormEvent) => { e.preventDefault(); if (!busy && canSubmit) onSubmit(); }}>
           <DialogHeader>
@@ -63,7 +65,7 @@ export function RefDialogFrame({ title, description, submit, busyLabel, busy, er
             </div>
           )}
           <DialogFooter>
-            <Button type="button" variant="outline" disabled={busy} onClick={() => closeRefDialog()}>Cancel</Button>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => onClose()}>Cancel</Button>
             {extraButton}
             <Button type="submit" variant={destructive ? 'destructive' : 'default'} disabled={busy || !canSubmit}>{busy ? busyLabel : submit}</Button>
           </DialogFooter>

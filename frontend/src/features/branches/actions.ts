@@ -22,21 +22,22 @@ const MODE_LABEL: Record<ResetMode, string> = { soft: 'Soft (keep index and file
 const pointOf = (r: Ref): Point | null => (r.oid ? { oid: r.oid, label: r.short } : null);
 const commitPoint = (c: CommitCtx): Point => ({ oid: c.commit.oid, label: abbrev(c.commit.oid) });
 
+/** How a move of the cc-owned HEAD is named in its confirmation. */
+export type CcHeadAction = 'checkout' | 'reset' | 'rebase';
+const CC_WHAT: Record<CcHeadAction, string> = { checkout: 'Switching away', reset: 'Resetting it', rebase: 'Rebasing it' };
+const CC_CONFIRM: Record<CcHeadAction, string> = { checkout: 'Switch anyway', reset: 'Reset anyway', rebase: 'Rebase anyway' };
+
 /**
  * Asks (the shared confirm(), lib/confirm.ts) before moving the code-conductor/* HEAD `branch`; only Confirm runs `run`,
  * with the acknowledgement. Cancel and Esc send nothing.
  */
-export async function confirmCcHeadMove(branch: string, action: 'checkout' | 'reset', label: string, run: (ccOwned: true) => Promise<unknown>): Promise<void> {
-  const ok = await confirm({
-    title: `${label}?`,
-    body: ccHeadWarning(branch, action === 'checkout' ? 'Switching away' : 'Resetting it'),
-    confirmLabel: action === 'checkout' ? 'Switch anyway' : 'Reset anyway',
-  });
+export async function confirmCcHeadMove(branch: string, action: CcHeadAction, label: string, run: (ccOwned: true) => Promise<unknown>): Promise<void> {
+  const ok = await confirm({ title: `${label}?`, body: ccHeadWarning(branch, CC_WHAT[action]), confirmLabel: CC_CONFIRM[action] });
   if (ok) await run(true);
 }
 
 /** Runs `run` at once unless this checkout's HEAD is a code-conductor/* branch; then only after confirmCcHeadMove. */
-export function withCcHeadAck(tab: Tab, action: 'checkout' | 'reset', label: string, run: (ccOwned?: true) => Promise<unknown>): void {
+export function withCcHeadAck(tab: Tab, action: CcHeadAction, label: string, run: (ccOwned?: true) => Promise<unknown>): void {
   if (!ccHead(tab)) { void run(); return; }
   void confirmCcHeadMove(shortBranch(headOf(tab).branch!), action, label, run);
 }
@@ -49,7 +50,7 @@ export function ccHeadBranchOf(e: ApiError): string | null {
 }
 
 /** A CC_OWNED_BRANCH refusal about this HEAD (the UI's refs were stale): the toast offers the confirmation. */
-const ccRetry = (tab: Tab, action: 'checkout' | 'reset', label: string, run: (ccOwned: true) => Promise<unknown>) => (e: ApiError): Partial<ToastText> | undefined => {
+export const ccRetry = (tab: Tab, action: CcHeadAction, label: string, run: (ccOwned: true) => Promise<unknown>) => (e: ApiError): Partial<ToastText> | undefined => {
   const branch = ccHeadBranchOf(e);
   if (branch === null) return undefined;
   return {
@@ -101,7 +102,7 @@ const resetChildren = <C extends { tab: Tab }>(id: string, context: string, poin
 const headBorn = (tab: Tab) => headOf(tab).oid !== null;
 
 /** One item per remote: a plain item (`one(remote)`) for a single remote, a submenu (`many`) for several. */
-function perRemote<C extends { tab: Tab }>(
+export function perRemote<C extends { tab: Tab }>(
   id: string, context: string, base: Pick<MenuAction<C>, 'group' | 'order' | 'destructive'>,
   labels: { one: (remote: string) => string; many: string }, run: (c: C, remote: string) => void,
 ): MenuAction<C>[] {

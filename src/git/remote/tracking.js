@@ -1,7 +1,9 @@
 import { Refusal } from '../../refusals.js';
+import { LIMITS } from '../limits.js';
+import { parseRecords } from '../parse/graph.js';
 
-// Which remote-tracking refs here a push to a remote updates. git maps each pushed (or deleted) branch through the
-// remote's *configured* fetch refspecs (remote_find_tracking), so the mapping is read from config, never assumed.
+// Which remote-tracking refs here a push or a fetch writes. git maps each branch through the remote's *configured*
+// fetch refspecs (remote_find_tracking for a push), so the mapping is read from config, never assumed.
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const hasControlOrSpace = (s) => [...s].some((c) => c.charCodeAt(0) < 0x21 || c.charCodeAt(0) === 0x7f);
@@ -11,7 +13,7 @@ const unsupported = (remote, refspec, why) => new Refusal('REMOTE_CONFIG_UNSUPPO
   `the fetch refspec ${JSON.stringify(refspec)} of ${remote} is not one code-git can map (${why})`, { remote, refspec });
 
 /**
- * One `remote.<name>.fetch` value → {negative, src, dst | null}, or REMOTE_CONFIG_UNSUPPORTED for any shape not parsed
+ * One `remote.<name>.fetch` value → {negative, src, dst | null, refspec (as given)}, or REMOTE_CONFIG_UNSUPPORTED for any shape not parsed
  * with confidence. Accepted: `[+]<src>:<dst>` and `[+]<src>` (fetch without storing: maps nothing), `^<src>` (an
  * exclusion); src and dst full refs (`refs/…`) with no `*` or exactly one `*` on each side that has a dst.
  */
@@ -20,7 +22,7 @@ export function parseFetchRefspec(remote, refspec) {
   if (refspec.startsWith('^')) {
     const src = refspec.slice(1);
     if (src.includes(':') || !src.startsWith('refs/') || stars(src) > 1) throw unsupported(remote, refspec, 'a negative refspec must be one full ref pattern');
-    return { negative: true, src, dst: null };
+    return { negative: true, src, dst: null, refspec };
   }
   const body = refspec.startsWith('+') ? refspec.slice(1) : refspec;
   const parts = body.split(':');
@@ -29,11 +31,11 @@ export function parseFetchRefspec(remote, refspec) {
   if (!src.startsWith('refs/')) throw unsupported(remote, refspec, 'the source is not a full ref');
   if (dst === null) {
     if (stars(src) > 1) throw unsupported(remote, refspec, 'more than one *');
-    return { negative: false, src, dst: null };
+    return { negative: false, src, dst: null, refspec };
   }
   if (!dst.startsWith('refs/')) throw unsupported(remote, refspec, 'the destination is not a full ref');
   if (stars(src) > 1 || stars(dst) > 1 || stars(src) !== stars(dst)) throw unsupported(remote, refspec, 'each side needs the same single *, or none');
-  return { negative: false, src, dst };
+  return { negative: false, src, dst, refspec };
 }
 
 /** The part of `ref` a single-`*` pattern's star stands for, or null when it does not match (an exact pattern: '' on equality). */
@@ -47,22 +49,27 @@ function matchPattern(pattern, ref) {
 }
 
 /**
- * Every tracking ref the parsed refspecs map `ref` (a branch on the remote, `refs/heads/<b>`) to, in refspec order
- * (git writes the first; all are checked). Negative refspecs exclude nothing here: git's push-time tracking update
- * ignores them (verified with git 2.55: `^refs/heads/b` does not stop `push :refs/heads/b` writing through a symbolic
- * tracking ref), so honouring them would hide the very ref git writes.
+ * Every local ref the parsed refspecs map `ref` (a ref on the remote: a branch or a tag) to → [{refspec, dst}], in
+ * refspec order, each dst once (git writes the first; all are checked). Negative refspecs are not applied here, so a
+ * push git would leave alone may be refused. git 2.55 honours one against an exact mapping (`^refs/heads/main` stops
+ * `+refs/heads/main:refs/heads/victim` moving `victim`) but not against a wildcard one (`^refs/heads/w` does not stop
+ * `+refs/heads/*:refs/heads/mirror/*` moving or deleting `mirror/w`, symbolic refs followed): applying them would hide
+ * refs git does write, ignoring them only over-refuses.
  */
-export function trackingRefsFor(specs, ref) {
+export function trackingMapFor(specs, ref) {
   const out = [];
   for (const s of specs) {
     if (s.negative || s.dst === null) continue;
     const m = matchPattern(s.src, ref);
     if (m === null) continue;
     const dst = s.dst.includes('*') ? s.dst.replace('*', m) : s.dst;
-    if (!out.includes(dst)) out.push(dst);
+    if (!out.some((x) => x.dst === dst)) out.push({ refspec: s.refspec, dst });
   }
   return out;
 }
+
+/** trackingMapFor's refnames only. */
+export const trackingRefsFor = (specs, ref) => trackingMapFor(specs, ref).map((x) => x.dst);
 
 /** `--get-all` output → its values, empty ones kept (each value ends with a newline). */
 const values = (r) => {
@@ -116,4 +123,89 @@ export async function fetchSpecs(git, remote) {
     }
   }
   return values(fetch).filter(Boolean).map((s) => parseFetchRefspec(remote, s));
+}
+
+/** Where a fetch may write: its refspecs' destinations must lie here. */
+const FETCH_DST_ROOTS = ['refs/remotes/', 'refs/tags/'];
+/** Where a push may update a local ref through the fetch refspecs (git's remote-tracking update). */
+const PUSH_TRACKING_ROOTS = ['refs/remotes/'];
+
+/** THE destination rule fetch and push share: each mapped {refspec, dst} under one of `roots`, else REMOTE_CONFIG_UNSUPPORTED naming the refspec. */
+function assertUnder(remote, mapped, roots, why) {
+  for (const { refspec, dst } of mapped) {
+    if (!roots.some((root) => dst.startsWith(root))) throw unsupported(remote, refspec, why);
+  }
+}
+
+/**
+ * Refuses REMOTE_CONFIG_UNSUPPORTED when a refspec of `remote` would make a fetch write outside `refs/remotes/` or
+ * `refs/tags/`: a `+refs/heads/*:refs/heads/*` mirror would move local branches, `code-conductor/*` ones included.
+ */
+export function assertFetchDestinations(remote, specs) {
+  assertUnder(remote, storing(specs).map((s) => ({ refspec: s.refspec, dst: s.dst })), FETCH_DST_ROOTS, 'a fetch would write outside refs/remotes/ and refs/tags/');
+}
+
+/**
+ * Refuses REMOTE_CONFIG_UNSUPPORTED when a push would update (or, pushing a delete, delete) a local ref outside
+ * `refs/remotes/` through `mapped` (trackingMapFor of a pushed destination): `+refs/heads/main:refs/heads/code-conductor/wt`
+ * would move a cc branch, or one checked out elsewhere, with no acknowledgement.
+ */
+export function assertPushTracking(remote, mapped) {
+  assertUnder(remote, mapped, PUSH_TRACKING_ROOTS, 'a push would update or delete a local ref outside refs/remotes/ through it');
+}
+
+const storing = (specs) => specs.filter((s) => !s.negative && s.dst !== null);
+
+/**
+ * The `for-each-ref` patterns covering every ref the refspecs' destinations name: a wildcard destination cut after the
+ * last `/` before its `*`, an exact one as it is. They also match more (for-each-ref matches below a `/`); `inDestinations`
+ * filters to the exact set.
+ */
+export function destinationNamespaces(specs) {
+  return [...new Set(storing(specs).map((s) => {
+    const i = s.dst.indexOf('*');
+    return i === -1 ? s.dst : s.dst.slice(0, s.dst.lastIndexOf('/', i) + 1);
+  }))];
+}
+
+/** `ref` is a destination of one of the refspecs. */
+export const inDestinations = (specs, ref) => storing(specs).some((s) => matchPattern(s.dst, ref) !== null);
+
+/**
+ * The remote's own HEAD alias, which git itself keeps symbolic (`remote set-head`, a fetch's `followRemoteHEAD`): a
+ * wildcard destination with `HEAD` for the `*`, pointing at a ref of the same destination pattern.
+ */
+export function isHeadAlias(specs, ref, target) {
+  return storing(specs).some((s) => s.dst.includes('*') && s.dst.replace('*', 'HEAD') === ref && matchPattern(s.dst, target) !== null);
+}
+
+/**
+ * One read of every ref a fetch with `specs` may write: the refspecs' destinations (inDestinations) and all of
+ * `refs/tags` → Map(ref → {oid, symref | null}). A live symbolic ref reports its target's oid; a dangling one is not
+ * listed (for-each-ref skips it).
+ */
+export async function trackedSnapshot(git, specs) {
+  const r = await git(['for-each-ref', '--format=%(refname)%00%(objectname)%00%(symref)', ...destinationNamespaces(specs), 'refs/tags'],
+    { maxOutputBytes: LIMITS.read.maxOutputBytes });
+  const out = new Map();
+  for (const [ref, oid, symref] of parseRecords(decoder.decode(r.stdout), 3)) {
+    if (ref.startsWith('refs/tags/') || inDestinations(specs, ref)) out.set(ref, { oid, symref: symref || null });
+  }
+  return out;
+}
+
+/**
+ * Refuses SYMBOLIC_REF (`ref`, `target`) for the first symbolic ref in `snapshot` other than the remote's HEAD alias: a
+ * fetch writing that ref would follow it and move its target (a local branch, a cc-owned one, in any namespace).
+ */
+export function assertNoTrackingSymrefs(snapshot, specs, remote) {
+  for (const [ref, e] of snapshot) {
+    if (!e.symref || isHeadAlias(specs, ref, e.symref)) continue;
+    throw new Refusal('SYMBOLIC_REF', `${ref} is a symbolic ref to ${e.symref}: fetching ${remote} would write through it`, { ref, target: e.symref });
+  }
+}
+
+/** The symbolic refs live in `after` that were not live symbolic refs in `before` → [{ref, target}]. */
+export function newlyLiveSymrefs(before, after) {
+  return [...after].filter(([ref, e]) => e.symref && !before.get(ref)?.symref).map(([ref, e]) => ({ ref, target: e.symref }));
 }

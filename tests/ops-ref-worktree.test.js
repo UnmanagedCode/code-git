@@ -46,13 +46,16 @@ test('checkout, create+checkout, mixed and hard reset, revert, cherry-pick, abor
     ['head.cherryPick', { oid: other }],
     ['head.abort', { which: 'cherry-pick' }],
     ['branch.fastForward', { name: 'main', to: other, expect: w.base }],
+    ['head.abort', { which: 'merge' }],
+    ['remote.pull', { mode: 'ff' }],
+    ['remote.pull', { mode: 'rebase' }],
   ];
   for (const [name, params] of guarded) await assert.rejects(op(name, params), refused('BARE_REPO'), `${name} ${params.mode ?? ''}`);
   assert.deepEqual(snapshot(), before);
   // Only the bare check ran in it: no checkout, reset, stash, merge, revert or cherry-pick.
   const ran = w.cc.state.execCalls.filter((b) => b.project === 'bare').map((b) => b.argv.slice(1 + BASE_ARGS.length));
   assert.ok(ran.length >= guarded.length);
-  for (const a of ran) assert.ok(!['switch', 'checkout', 'reset', 'stash', 'merge', 'revert', 'cherry-pick', 'branch', 'update-ref'].includes(a[0]), a.join(' '));
+  for (const a of ran) assert.ok(!['switch', 'checkout', 'reset', 'stash', 'merge', 'revert', 'cherry-pick', 'branch', 'update-ref', 'fetch', 'rebase'].some((x) => a.includes(x)), a.join(' '));
 });
 
 test('core.worktree pointing elsewhere: checkout, reset --hard with its stash create snapshot, and cherry-pick change only the checkout', async (t) => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FolderGit2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RefDialogHost } from '@/features/branches/RefDialogHost';
+import { RemotesHost } from '@/features/remotes/RemotesHost';
 import { RepoPicker } from '@/features/repos/RepoPicker';
 import { StashDialogHost } from '@/features/stash/StashDialogHost';
 import { RepoHeader } from '@/features/repo/RepoHeader';
@@ -58,6 +59,7 @@ export function Shell() {
       <RepoPicker open={pickerOpen} onOpenChange={setPickerOpen} onOpen={(t) => dispatchTabs({ type: 'open', tab: t })} />
       <RefDialogHost />
       <StashDialogHost />
+      <RemotesHost />
     </div>
   );
 }

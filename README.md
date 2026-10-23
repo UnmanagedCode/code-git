@@ -16,6 +16,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Changes | Stage, unstage and discard files, hunks and lines; commit, amend, message-only amend, skip hooks, commit template; ignore; restore a file from a commit; apply a patch. Right slot (it gives way to the commit details while a commit is selected), opened from the graph's WIP row; the **Changes (n)** dialog on narrow screens |
 | Branches & tags | Create, checkout (double-click; a remote branch becomes a tracking branch), rename, delete (several at once, or on a remote), upstream and ahead/behind, fast-forward; tags create (annotated or not), push, delete; reset soft/mixed/hard, revert, cherry-pick; Fast-forward and Reset on a branch dropped onto another. Destructive actions confirm first; `code-conductor/*` branches warn. [docs/refs.md](docs/refs.md) |
 | Stash | Save all changes, selected files, staged only, or selected hunks and lines (with or without untracked files, optionally keeping the index); apply, apply with staged changes, pop, drop, rename, create a branch; a stash's All changes / Staged / Untracked diffs; one file applied alone. [docs/stash.md](docs/stash.md) |
+| Remotes | Add, edit, rename, remove remotes; Fetch (all or one, prune behind a confirmation), auto-fetch (off by default); Pull (fast-forward if possible, fast-forward only, rebase; a per-project default); Push a branch (upstream, first push, a drop onto a remote branch, after a commit), force-with-lease behind a confirmation that checks the remote first. Credentials only from the System. [docs/remotes.md](docs/remotes.md) |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
 
 Details: [docs/features.md](docs/features.md).
@@ -38,7 +39,7 @@ docs/                   features, protocol, architecture, GitKraken reference
 .wiki/                  gotchas, decisions, glossary
 ```
 
-Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md). Stash: [docs/stash.md](docs/stash.md).
+Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md). Stash: [docs/stash.md](docs/stash.md). Remotes, fetch, pull and push: [docs/remotes.md](docs/remotes.md).
 
 ## Run
 
@@ -61,7 +62,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 | `npm test` | typecheck, then backend, then UI tests |
 | `npm run test:server` | `node --test "tests/*.test.js"` |
 | `npm run test:ui` | `vitest run --config frontend/vitest.config.ts` |
-| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `stash.mjs` | screenshots / golden path / the diff path / the staging path / the stash path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
+| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `stash.mjs` / `remotes.mjs` | screenshots / golden path / the diff path / the staging path / the stash path / the remotes path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
 | `node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" baseline` | mutation trust gates ([harness/mutation/README.md](harness/mutation/README.md)) |
 
 ## Known limitations

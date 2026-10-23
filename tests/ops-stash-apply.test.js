@@ -97,7 +97,7 @@ test('apply conflicting with HEAD → {conflicts}, markers written; pop keeps th
   w.repo.git('checkout', '-q', '-f', 'HEAD', '--', 'a.txt');
   const a = await w.op('stash.apply', { oid });
   assert.deepEqual(a.conflicts, ['a.txt']);
-  assert.deepEqual(a.undo, { refs: [], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [], worktreePatch: null });
+  assert.deepEqual(a.undo, { refs: [], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [], worktreePatch: null, remotes: [] });
 });
 
 test('apply index:true restores the staged part; without it the staged change lands unstaged', async (t) => {

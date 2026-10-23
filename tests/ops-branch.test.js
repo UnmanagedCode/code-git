@@ -35,7 +35,7 @@ test('create: from HEAD, from an oid, from a tag\'s commit, without checkout; RE
   const second = w.repo.commit({ 'g.txt': 'g\n' }, 'second');
   w.repo.git('tag', '-a', 'ann', '-m', 'm', w.base);
   const r1 = await w.op('branch.create', { name: 'from-head' });
-  assert.deepEqual(r1, { ref: 'refs/heads/from-head', oid: second, checkedOut: false, undo: { refs: [{ ref: 'refs/heads/from-head', old: null, new: second }], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [], worktreePatch: null } });
+  assert.deepEqual(r1, { ref: 'refs/heads/from-head', oid: second, checkedOut: false, undo: { refs: [{ ref: 'refs/heads/from-head', old: null, new: second }], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [], worktreePatch: null, remotes: [] } });
   assert.equal(w.oid('from-head'), second);
   await w.op('branch.create', { name: 'from-oid', from: w.base });
   assert.equal(w.oid('from-oid'), w.base);
@@ -294,7 +294,7 @@ test('fastForward: a free branch moves by CAS; not an ancestor → NOT_FAST_FORW
   const ahead = w.repo.commit({ 'a.txt': 'a\n' }, 'ahead');
   const r = await w.op('branch.fastForward', { name: 'behind', to: ahead, expect: w.base });
   assert.equal(w.oid('behind'), ahead);
-  assert.deepEqual(r, { upToDate: false, undo: { refs: [{ ref: 'refs/heads/behind', old: w.base, new: ahead }], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [], worktreePatch: null } });
+  assert.deepEqual(r, { upToDate: false, undo: { refs: [{ ref: 'refs/heads/behind', old: w.base, new: ahead }], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [], worktreePatch: null, remotes: [] } });
   assert.equal((await w.op('branch.fastForward', { name: 'behind', to: ahead, expect: ahead })).upToDate, true);
   w.repo.git('checkout', '-q', '-b', 'diverged', w.base);
   const d = w.repo.commit({ 'd.txt': 'd\n' }, 'd');

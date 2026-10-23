@@ -1,6 +1,7 @@
 // READ-ONLY graph measurement against a live code-conductor: boots this checkout's backend with CONDUCTOR_URL pointed at
 // it, opens a project's graph by URL and runs the scroll measurement of graph-perf.mjs (graphMeasure.mjs). Everything it
-// drives is a read: repo.summary and the graph.* ops (git with GIT_OPTIONAL_LOCKS=0), cc's project and worktree lists.
+// drives is a read: repo.summary, the graph.* ops, branch.tracking and remote.list (git with GIT_OPTIONAL_LOCKS=0), cc's
+// project and worktree lists.
 // It never calls a write op, never registers, rescans or enables the plugin. The only gate is the DOM bound.
 // Run: CONDUCTOR_URL=http://127.0.0.1:<cc port> node harness/playwright/live-graph.mjs [project[/worktree]]   (default code-conductor)
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -27,7 +28,7 @@ let report;
 try {
   report = await withPage(async (page) => {
     const writes = [];
-    page.on('request', (r) => { if (/api\/ops\//.test(r.url()) && !/api\/ops\/(repo\.summary|graph\.(refs|page|stats|search|commit))$/.test(r.url())) writes.push(r.url()); });
+    page.on('request', (r) => { if (/api\/ops\//.test(r.url()) && !/api\/ops\/(repo\.summary|graph\.(refs|page|stats|search|commit)|branch\.tracking|remote\.list)$/.test(r.url())) writes.push(r.url()); });
     const m = await measureScroll(page, `${srv.url}/${query}`);
     await page.screenshot({ path: path.join(outDir, 'graph.png'), animations: 'disabled' });
     if (writes.length) throw new Error(`live-graph: an op outside the read set was called: ${writes.join(', ')}`);

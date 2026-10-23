@@ -25,7 +25,7 @@ test('push whole: creates a stash with the message and cleans tracked changes', 
   assert.equal(blob(w, `${r.oid}^2:b.txt`), 'b staged');
   assert.equal(blob(w, `${r.oid}^2:a.txt`), 'a');
   assert.deepEqual(w.status(), { 'new.txt': '??' });
-  assert.deepEqual(r.undo, { refs: [], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [{ oid: r.oid, old: null, new: { message: 'On main: my work' }, restore: 'pop' }], worktreePatch: null });
+  assert.deepEqual(r.undo, { refs: [], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [{ oid: r.oid, old: null, new: { message: 'On main: my work' }, restore: 'pop' }], worktreePatch: null, remotes: [] });
   noViolations(w.cc);
 });
 

@@ -3,6 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { clip } from '@/lib/clip';
 import type { RepoSummary } from '@/lib/endpoints';
+import { pushHead } from '@/features/remotes/pushFlow';
+import { updateRemotePrefs, useRemotePrefs } from '@/state/remotePrefs';
+import { useRemotes } from '@/state/remotes';
 import type { Tab } from '@/state/tabs';
 import {
   commitDraft, consumeFocus, sameDraft, setAmend, setDraft, setNoVerify, type CommitMode, type WorkdirState,
@@ -23,7 +26,8 @@ export function commitRules(s: WorkdirState) {
 }
 
 /**
- * Summary (one line) + description, Amend previous commit, Skip Git hooks, and the commit buttons. Ctrl/⌘+Enter commits
+ * Summary (one line) + description, Amend previous commit, Skip Git hooks, Push after commit (HEAD on a branch and a
+ * remote to push to), and the commit buttons. Ctrl/⌘+Enter commits
  * (amends in amend mode); Ctrl/⌘+Shift+Enter stages everything first. `instance` tells the slot's box from the narrow
  * dialog's, for focus requests.
  */
@@ -37,7 +41,14 @@ export function CommitBox({ tab, state, summary, instance }: { tab: Tab; state: 
     consumeFocus(tab);
   }, [state.focus]);
 
-  const run = (mode: CommitMode, stageAll = false) => void commitDraft(tab, mode, { stageAll });
+  const pushAfter = useRemotePrefs(tab.project).pushAfterCommit;
+  // Every hook unconditionally, before any condition: the summary's HEAD flips (a rebase reports it detached).
+  const remoteCount = useRemotes(tab).data?.length ?? 0;
+  const canPushAfter = !!summary?.head.branch && remoteCount > 0;
+  const run = (mode: CommitMode, stageAll = false) => void commitDraft(tab, mode, { stageAll }).then((ok) => {
+    // The push goes through the shared flow: its cc warning and rejected-push handling.
+    if (ok && pushAfter && canPushAfter) pushHead(tab);
+  });
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || e.altKey) return;
     e.preventDefault();
@@ -73,6 +84,12 @@ export function CommitBox({ tab, state, summary, instance }: { tab: Tab; state: 
         <input type="checkbox" checked={state.noVerify} onChange={(e) => setNoVerify(tab, e.target.checked)} />
         Skip Git hooks
       </label>
+      {canPushAfter && (
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={pushAfter} onChange={(e) => updateRemotePrefs(tab.project, { pushAfterCommit: e.target.checked })} />
+          Push after commit
+        </label>
+      )}
       {state.amend.on ? (
         <div className="flex flex-wrap gap-1">
           <Button size="sm" disabled={!rules.amend} onClick={() => run('amend')}>Amend commit</Button>
