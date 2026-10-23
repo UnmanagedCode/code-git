@@ -41,7 +41,6 @@ export function withCcHeadAck(tab: Tab, action: 'checkout' | 'reset', label: str
   void confirmCcHeadMove(shortBranch(headOf(tab).branch!), action, label, run);
 }
 
-/** A CC_OWNED_BRANCH refusal about this HEAD (the UI's refs were stale): the toast offers the confirmation. */
 /** The cc-owned HEAD branch a CC_OWNED_BRANCH refusal about this checkout (`head: true`) names ('' when unnamed); null for any other error. */
 export function ccHeadBranchOf(e: ApiError): string | null {
   const body = e.body as { head?: unknown; branches?: unknown } | undefined;
@@ -49,6 +48,7 @@ export function ccHeadBranchOf(e: ApiError): string | null {
   return Array.isArray(body.branches) && typeof body.branches[0] === 'string' ? body.branches[0] : '';
 }
 
+/** A CC_OWNED_BRANCH refusal about this HEAD (the UI's refs were stale): the toast offers the confirmation. */
 const ccRetry = (tab: Tab, action: 'checkout' | 'reset', label: string, run: (ccOwned: true) => Promise<unknown>) => (e: ApiError): Partial<ToastText> | undefined => {
   const branch = ccHeadBranchOf(e);
   if (branch === null) return undefined;
