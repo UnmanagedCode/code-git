@@ -24,10 +24,17 @@ export function mount(router, { ops, activity, locks, journal }) {
       target, op: op.name, kind: op.kind, cancellable: op.cancellable, signal: controller.signal,
       opRunId: activity.newRunId(), activity, locks,
     };
-    if (target.sub) await assertInsideCheckout(ctx);
-    const git = (args, opts) => runGit(ctx, args, opts);
-    // Every write clears this checkout's undo journal first and may record its own undo (src/git/undo/record.js).
-    const result = await journalAround(journal, op, target, params, () => op.run(git, params, { target, journal }));
-    res.json({ ok: true, result });
+    // A write's run is bracketed (`event: run`) so the UI refreshes once it settled, never between its commands.
+    // Reads open none. assertInsideCheckout awaits each of its commands, so they settled before end() either way.
+    const run = op.kind === 'write' ? activity.openRun(ctx) : null;
+    try {
+      if (target.sub) await assertInsideCheckout(ctx);
+      const git = run ? (args, opts) => run.track(runGit(ctx, args, opts)) : (args, opts) => runGit(ctx, args, opts);
+      // Every write clears this checkout's undo journal first and may record its own undo (src/git/undo/record.js).
+      const result = await journalAround(journal, op, target, params, () => op.run(git, params, { target, journal }));
+      res.json({ ok: true, result });
+    } finally {
+      run?.end();
+    }
   }));
 }

@@ -178,3 +178,75 @@ test('a closed entry is not closed again', () => {
   assert.equal(log.list()[0].status, 'ok');
   assert.equal(log.list()[0].exitCode, 0);
 });
+
+// Write op runs: what `GET api/activity`'s `runs` and `event: run` report (docs/protocol.md → Activity).
+const RUN = { opRunId: 'run-1', op: 'x.write', kind: 'write', target: { project: 'p', worktree: null } };
+/** A log and every `run` event it emits. */
+function runLog(opts) {
+  const log = createActivityLog(opts);
+  const events = [];
+  log.events.on('run', (r) => events.push(r));
+  return { log, events };
+}
+/** A promise and its resolve/reject, for a git call that settles when the test says. */
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+// Invariant: a run is announced running, then ended exactly once on end() when no git call of it is pending.
+test('openRun records a running run and emits it; end() with nothing pending ends it once, a second end() is a no-op', () => {
+  const { log, events } = runLog();
+  const run = log.openRun(RUN);
+  assert.deepEqual(events.map((r) => r.status), ['running']);
+  const [listed] = log.listRuns();
+  assert.deepEqual([listed.opRunId, listed.op, listed.kind, listed.target, listed.status, listed.endedAt],
+    ['run-1', 'x.write', 'write', { project: 'p', worktree: null }, 'running', null]);
+  assert.ok(!Number.isNaN(Date.parse(listed.startedAt)));
+  run.end();
+  run.end();
+  assert.deepEqual(events.map((r) => r.status), ['running', 'ended']);
+  assert.equal(events[1].id, events[0].id);
+  assert.equal(log.listRuns()[0].status, 'ended');
+  assert.ok(!Number.isNaN(Date.parse(log.listRuns()[0].endedAt)));
+});
+
+// Invariant: ended ⇒ every tracked git call of the run has settled (resolved or rejected), whatever the order.
+test('end() while git calls are pending leaves the run running until the last one settles, rejected ones included', async () => {
+  const { log, events } = runLog();
+  const run = log.openRun(RUN);
+  const a = deferred();
+  const b = deferred();
+  const ta = run.track(a.promise);
+  const tb = run.track(b.promise);
+  run.end();
+  a.reject(new Error('fast failure'));
+  await assert.rejects(ta, /fast failure/, 'track() passes the outcome through');
+  assert.equal(log.listRuns()[0].status, 'running');
+  b.resolve('done');
+  assert.equal(await tb, 'done');
+  assert.deepEqual(events.map((r) => r.status), ['running', 'ended']);
+});
+
+// Invariant: settling every call before end() does not end the run — only end() does.
+test('a run whose calls all settled is still running until end()', async () => {
+  const { log, events } = runLog();
+  const run = log.openRun(RUN);
+  await run.track(Promise.resolve(1));
+  assert.equal(log.listRuns()[0].status, 'running');
+  run.end();
+  assert.deepEqual(events.map((r) => r.status), ['running', 'ended']);
+});
+
+// Invariant: runs live in a ring capped like entries; snapshots never alias the log.
+test('the run ring keeps the newest runs, newest last; run snapshots do not alias the log', () => {
+  const { log } = runLog({ ring: 2 });
+  for (const id of ['a', 'b', 'c']) log.openRun({ ...RUN, opRunId: id }).end();
+  const runs = log.listRuns();
+  assert.deepEqual(runs.map((r) => r.opRunId), ['b', 'c']);
+  assert.ok(runs[0].id < runs[1].id);
+  runs[0].target.project = 'q';
+  runs[0].status = 'running';
+  assert.deepEqual([log.listRuns()[0].target.project, log.listRuns()[0].status], ['p', 'ended']);
+});

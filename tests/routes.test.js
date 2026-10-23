@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { test } from 'node:test';
+import { createActivityLog } from '../src/activity/log.js';
 import { buildRegistry } from '../src/git/ops/index.js';
 import { ops as repoOps } from '../src/git/ops/repo.js';
 import { assertRev } from '../src/git/validate.js';
@@ -10,7 +11,10 @@ import { sse, startApp } from './_app.js';
 import { fakeCc } from './_fakeCc.js';
 import { makeRepo } from './_git.js';
 
-// Test-only ops beside C1's own: two writes (one opting into cancel) and a read taking a revision.
+/** Opened by a test while `test.gapWrite` waits between its two commands. */
+let gate = Promise.resolve();
+
+// Test-only ops beside C1's own: writes (one opting into cancel; multi-command ones for op runs) and a read taking a revision.
 const commitOp = (over) => ({
   kind: 'write', params: () => ({}),
   async run(git) { await git(['commit', '--allow-empty', '-q', '-m', 'w']); return { done: true }; },
@@ -19,6 +23,24 @@ const commitOp = (over) => ({
 const TEST_OPS = buildRegistry([repoOps, [
   commitOp({ name: 'test.write' }),
   commitOp({ name: 'test.cancellableWrite', cancellable: true }),
+  {
+    name: 'test.twoWrites', kind: 'write', params: () => ({}),
+    async run(git) { await git(['rev-parse', 'HEAD']); await git(['status']); return { done: true }; },
+  },
+  {
+    // Between its commands no entry is running: the gap a watcher must not refresh in.
+    name: 'test.gapWrite', kind: 'write', params: () => ({}),
+    async run(git) { await git(['rev-parse', 'HEAD']); await gate; await git(['status']); return { done: true }; },
+  },
+  {
+    name: 'test.writeFails', kind: 'write', params: () => ({}),
+    async run(git) { await git(['rev-parse', 'HEAD']); await git(['rev-parse', '--verify', '--end-of-options', 'nope']); return { done: true }; },
+  },
+  {
+    // The first command fails while the second waits for the project lock (as readHeads/ownHead do in branch ops).
+    name: 'test.writeParallel', kind: 'write', params: () => ({}),
+    async run(git) { await Promise.all([git(['rev-parse', '--verify', '--end-of-options', 'nope']), git(['status'])]); return { done: true }; },
+  },
   {
     // Two commands: the first finishes, the second is the one a test holds.
     name: 'test.twoStep', kind: 'read', params: () => ({}),
@@ -50,8 +72,9 @@ async function world(t) {
     },
   });
   t.after(() => cc.close());
-  const app = await startApp(t, { ops: TEST_OPS });
-  return { repo, cc, ...app };
+  const activity = createActivityLog();
+  const app = await startApp(t, { ops: TEST_OPS, activity });
+  return { repo, cc, activity, ...app };
 }
 
 const APP = { project: 'app' };
@@ -246,7 +269,7 @@ test('a browser that goes away does not abort a write: it runs to completion and
   // The write's command finishes after its HTTP client left: wait for its entry to close.
   const stream = await sse(`${w.url}/api/activity/events`, t);
   const live = (await w.call('GET', '/api/activity')).body.entries.at(-1);
-  const closed = live.status === 'running' ? (await stream.next((e) => e.data.id === entry.id && e.data.status !== 'running')).data : live;
+  const closed = live.status === 'running' ? (await stream.next((e) => e.event === 'activity' && e.data.id === entry.id && e.data.status !== 'running')).data : live;
   assert.equal(closed.status, 'ok');
   assert.equal(held.disconnected, false);
   assert.notEqual(w.repo.git('rev-parse', 'HEAD'), before);
@@ -261,7 +284,7 @@ test('a browser that goes away aborts a cancellable op; its entry ends cancelled
   assert.equal(held.disconnected, true);
   const live = (await w.call('GET', '/api/activity')).body.entries.find((e) => e.id === entry.id);
   const closed = live.status === 'running'
-    ? (await within(stream.next((e) => e.data.id === entry.id && e.data.status !== 'running'), 'the entry closing')).data : live;
+    ? (await within(stream.next((e) => e.event === 'activity' && e.data.id === entry.id && e.data.status !== 'running'), 'the entry closing')).data : live;
   assert.equal(closed.status, 'cancelled');
 });
 
@@ -311,4 +334,150 @@ test('cc answering without a usable body is 503 CONDUCTOR_UNAVAILABLE, never a c
   }
   const op = await w.call('POST', '/api/ops/repo.summary', { target: APP });
   assert.deepEqual([op.status, op.body.code], [503, 'CONDUCTOR_UNAVAILABLE']);
+});
+
+// Write op runs (docs/protocol.md → Activity): the bracket a client waits on before reading a settled repo.
+
+/** Every `activity` and `run` event the log emits from now on, in emission order, as {type, data}. */
+function record(activity) {
+  const events = [];
+  activity.events.on('activity', (data) => events.push({ type: 'activity', data }));
+  activity.events.on('run', (data) => events.push({ type: 'run', data }));
+  return events;
+}
+
+/** Resolves the first run matching `pred` once it is ended (already, or later). */
+function runEnded(activity, pred) {
+  return new Promise((resolve) => {
+    const done = activity.listRuns().find((r) => pred(r) && r.status === 'ended');
+    if (done) { resolve(done); return; }
+    const on = (r) => { if (pred(r) && r.status === 'ended') { activity.events.off('run', on); resolve(r); } };
+    activity.events.on('run', on);
+  });
+}
+
+/** Resolves the next `name` event of `activity` matching `pred`. */
+const nextEvent = (activity, name, pred) => new Promise((resolve) => {
+  const on = (e) => { if (pred(e)) { activity.events.off(name, on); resolve(e); } };
+  activity.events.on(name, on);
+});
+
+const runOf = async (w, op) => (await w.call('GET', '/api/activity')).body.runs.filter((r) => r.op === op);
+
+// Invariant: a write run's `ended` comes after every one of its entries closed, and is emitted exactly once.
+test('a multi-command write emits run running before its first entry opens and run ended exactly once after its last entry closes', async (t) => {
+  const w = await world(t);
+  const events = record(w.activity);
+  const r = await w.call('POST', '/api/ops/test.twoWrites', { target: APP });
+  assert.equal(r.status, 200);
+  const ended = await within(runEnded(w.activity, (x) => x.op === 'test.twoWrites'), 'the run ending');
+  const mine = events.filter((e) => e.data.opRunId === ended.opRunId).map((e) => `${e.type}:${e.data.status}`);
+  assert.deepEqual(mine, ['run:running', 'activity:running', 'activity:ok', 'activity:running', 'activity:ok', 'run:ended']);
+  await w.call('POST', '/api/ops/test.write', { target: APP });
+  await within(runEnded(w.activity, (x) => x.op === 'test.write'), 'the next run ending');
+  assert.equal(events.filter((e) => e.type === 'run' && e.data.opRunId === ended.opRunId && e.data.status === 'ended').length, 1);
+});
+
+// Invariant: between two commands of a write (no entry running) the run still reads running.
+test('between two commands of a write, GET api/activity shows its run running though none of its entries is', async (t) => {
+  const w = await world(t);
+  let open;
+  gate = new Promise((r) => { open = r; });
+  t.after(() => open());
+  const firstClosed = nextEvent(w.activity, 'activity', (e) => e.op === 'test.gapWrite' && e.status !== 'running');
+  const response = w.call('POST', '/api/ops/test.gapWrite', { target: APP });
+  await within(firstClosed, 'the first command closing');
+  const { body } = await w.call('GET', '/api/activity');
+  const entries = body.entries.filter((e) => e.op === 'test.gapWrite');
+  assert.deepEqual(entries.map((e) => e.status), ['ok']);
+  assert.deepEqual(body.runs.filter((r) => r.op === 'test.gapWrite').map((r) => [r.status, r.opRunId]), [['running', entries[0].opRunId]]);
+  open();
+  assert.equal((await within(response, 'the write answering')).status, 200);
+  assert.equal((await within(runEnded(w.activity, (x) => x.op === 'test.gapWrite'), 'the run ending')).opRunId, entries[0].opRunId);
+});
+
+// Invariant: an op that throws, a refused preflight and a client disconnect all end the run (no stale running run).
+test('a write that fails after its first command, one refused before any command, and one whose client left all end their run', async (t) => {
+  const w = await world(t);
+  const fails = await w.call('POST', '/api/ops/test.writeFails', { target: APP });
+  assert.equal(fails.body.code, 'GIT_FAILED');
+  await within(runEnded(w.activity, (x) => x.op === 'test.writeFails'), 'the failed run ending');
+
+  const before = w.repo.git('rev-parse', 'HEAD');
+  const refused = await w.call('POST', '/api/ops/test.write', { target: { project: 'app', sub: ['nope'] } });
+  assert.equal(refused.status >= 400, true, JSON.stringify(refused.body));
+  assert.equal(w.repo.git('rev-parse', 'HEAD'), before);
+  const [refusedRun] = await runOf(w, 'test.write');
+  assert.deepEqual([refusedRun.status, refusedRun.target], ['ended', { project: 'app', worktree: null, sub: ['nope'] }]);
+
+  const { held, response, controller } = await startHeld(t, w, 'test.cancellableWrite');
+  controller.abort();
+  assert.deepEqual(await response, { aborted: 'AbortError' });
+  await within(held.closed, 'cc seeing the disconnect');
+  await within(runEnded(w.activity, (x) => x.op === 'test.cancellableWrite'), 'the cancelled run ending');
+
+  const left = await startHeld(t, w, 'test.twoWrites');
+  left.controller.abort();
+  assert.deepEqual(await left.response, { aborted: 'AbortError' });
+  assert.deepEqual((await runOf(w, 'test.twoWrites')).map((r) => r.status), ['running'], 'a write runs on after its client left');
+  left.held.release();
+  await within(runEnded(w.activity, (x) => x.op === 'test.twoWrites'), 'the abandoned run ending');
+});
+
+// Invariant: ended waits for every git call of the run, including one still queued on the project lock when the op
+// already failed.
+test('a write whose Promise.all rejects fast stays running until its sibling, queued on the lock then held, settles', async (t) => {
+  const w = await world(t);
+  w.cc.state.execHook = (b) => (b.argv.includes('status') ? 'hold' : undefined);
+  const r = await w.call('POST', '/api/ops/test.writeParallel', { target: APP });
+  assert.equal(r.body.code, 'GIT_FAILED');
+  assert.deepEqual((await runOf(w, 'test.writeParallel')).map((x) => x.status), ['running'], 'the op answered, its sibling has not settled');
+  const held = await within(w.cc.nextHeld(), 'the queued sibling reaching cc');
+  w.cc.state.execHook = null;
+  assert.deepEqual((await runOf(w, 'test.writeParallel')).map((x) => x.status), ['running']);
+  const events = record(w.activity);
+  held.release();
+  const ended = await within(runEnded(w.activity, (x) => x.op === 'test.writeParallel'), 'the run ending');
+  const order = events.filter((e) => e.data.opRunId === ended.opRunId).map((e) => `${e.type}:${e.data.status}`);
+  assert.deepEqual(order, ['activity:ok', 'run:ended']);
+});
+
+// Invariant: only writes open runs; two writes on one project each end on their own.
+test('reads open no run; two concurrent writes on one project each end independently', async (t) => {
+  const w = await world(t);
+  await w.call('POST', '/api/ops/repo.summary', { target: APP });
+  await w.call('POST', '/api/ops/test.twoStep', { target: APP });
+  assert.deepEqual((await w.call('GET', '/api/activity')).body.runs, []);
+
+  w.cc.state.execHook = () => 'hold';
+  const r1 = w.call('POST', '/api/ops/test.write', { target: APP });
+  const h1 = await w.cc.nextHeld();
+  const secondOpen = nextEvent(w.activity, 'run', (x) => x.status === 'running');
+  const r2 = w.call('POST', '/api/ops/test.write', { target: APP });
+  const second = await within(secondOpen, 'the second run opening');
+  assert.deepEqual((await runOf(w, 'test.write')).map((x) => x.status), ['running', 'running']);
+  h1.release();
+  assert.equal((await r1).status, 200);
+  const first = await within(runEnded(w.activity, (x) => x.opRunId !== second.opRunId), 'the first run ending');
+  const h2 = await w.cc.nextHeld();
+  w.cc.state.execHook = null;
+  assert.deepEqual((await runOf(w, 'test.write')).map((x) => [x.opRunId, x.status]), [[first.opRunId, 'ended'], [second.opRunId, 'running']]);
+  h2.release();
+  assert.equal((await r2).status, 200);
+  await within(runEnded(w.activity, (x) => x.opRunId === second.opRunId), 'the second run ending');
+});
+
+// Invariant: the wire contract — SSE `event: run` on open and on end, and GET's `{entries, runs}`.
+test('SSE delivers event: run when a write run opens and when it ends; GET api/activity answers {entries, runs}', async (t) => {
+  const w = await world(t);
+  const stream = await sse(`${w.url}/api/activity/events`, t);
+  await w.call('POST', '/api/ops/test.write', { target: APP });
+  const open = await within(stream.next((e) => e.event === 'run'), 'event: run (open)');
+  assert.deepEqual([open.data.op, open.data.kind, open.data.status, open.data.target], ['test.write', 'write', 'running', { project: 'app', worktree: null }]);
+  const end = await within(stream.next((e) => e.event === 'run'), 'event: run (end)');
+  assert.deepEqual([end.data.id, end.data.opRunId, end.data.status], [open.data.id, open.data.opRunId, 'ended']);
+  const { body } = await w.call('GET', '/api/activity');
+  assert.deepEqual(Object.keys(body).sort(), ['entries', 'runs']);
+  assert.deepEqual(body.runs.map((r) => [r.opRunId, r.status]), [[open.data.opRunId, 'ended']]);
+  assert.ok(body.entries.every((e) => e.opRunId === open.data.opRunId));
 });
