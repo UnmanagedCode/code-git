@@ -1,8 +1,9 @@
 import { maskUrls } from '../../mask.js';
 import { Refusal } from '../../refusals.js';
 import {
-  parseCommitMeta, parseCommits, parseNameStatus, parseOids, parseRefs, parseRemotes, parseShortstats, parseStashes, parseWorktrees,
+  parseCommitMeta, parseCommits, parseOids, parseRefs, parseRemotes, parseShortstats, parseStashes, parseWorktrees,
 } from '../parse/graph.js';
+import { parseRawNumstat } from '../parse/diff.js';
 import { assertOid, assertPath } from '../validate.js';
 
 // The commit graph's reads (docs/protocol.md → graph.*). Pages address an explicit tip set sent on stdin, so a page
@@ -160,9 +161,9 @@ export const ops = [
       let files = null;
       let filesError = null;
       try {
-        const r = await git(['diff-tree', '-r', '-z', '--no-commit-id', '--name-status', '-M', '--root', '--no-ext-diff', '--no-textconv',
+        const r = await git(['diff-tree', '-r', '-z', '--no-commit-id', '--raw', '--numstat', '--no-abbrev', '-M', '--root', '--no-ext-diff', '--no-textconv',
           ...meta.parents.slice(0, 1), oid]);
-        files = parseNameStatus(text(r));
+        files = parseRawNumstat(text(r)).map(({ status, path, oldPath, added, deleted, binary, submodule }) => ({ status, path, oldPath, added, deleted, binary, submodule }));
       } catch (e) {
         if (!(e instanceof Refusal) || e.code === 'CANCELLED') throw e;
         filesError = { code: e.code, message: e.message, ...(e.extra.limitBytes ? { limitBytes: e.extra.limitBytes } : {}) };

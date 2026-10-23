@@ -7,7 +7,7 @@ import { getOp, OPS } from '../src/git/ops/index.js';
 import { BASE_ARGS } from '../src/git/runner.js';
 import { PAGE_MAX, SEARCH_MAX, STATS_MAX, TIPS_MAX } from '../src/git/ops/graph.js';
 import {
-  parseCommitMeta, parseCommits, parseNameStatus, parseRecords, parseRefs, parseShortstats, parseStashes, parseWorktrees, remoteOf,
+  parseCommitMeta, parseCommits, parseRecords, parseRefs, parseShortstats, parseStashes, parseWorktrees, remoteOf,
 } from '../src/git/parse/graph.js';
 import { startApp } from './_app.js';
 import { ctxFor, gitFor } from './_ctx.js';
@@ -435,15 +435,18 @@ test('commit: subject, body with blank lines, co-authors, parents, author vs com
   assert.deepEqual(result.author, { name: 'T', email: 't@example.com', time: 1704067200 });
   assert.deepEqual(result.committer, { name: 'Cee', email: 'cee@x.org', time: 1704067200 });
   assert.deepEqual(result.signature, { status: 'N', signer: null, key: null });
+  const counts = { binary: false, submodule: false };
   assert.deepEqual(result.files, [
-    { status: 'A', path: 'added.txt', oldPath: null },
-    { status: 'D', path: 'gone.txt', oldPath: null },
-    { status: 'M', path: 'keep.txt', oldPath: null },
-    { status: 'R', path: 'new name.txt', oldPath: 'old name.txt' },
+    { status: 'A', path: 'added.txt', oldPath: null, added: 1, deleted: 0, ...counts },
+    { status: 'D', path: 'gone.txt', oldPath: null, added: 0, deleted: 1, ...counts },
+    { status: 'M', path: 'keep.txt', oldPath: null, added: 1, deleted: 1, ...counts },
+    { status: 'R', path: 'new name.txt', oldPath: 'old name.txt', added: 0, deleted: 0, ...counts },
   ]);
   assert.equal(result.filesError, null);
   assert.equal(entries.length, 2, 'metadata and the file list are separate commands');
   assert.ok(entries[0].argv.some((a) => a.includes('%G?')));
+  // One command lists the files with their line counts.
+  assert.ok(op(entries[1]).includes('--numstat') && op(entries[1]).includes('--raw'));
   // The oid is checked as full hex, so no --end-of-options (git 2.24) is needed: details work from git 2.22.
   assert.deepEqual(op(entries[1]).slice(-2), [A, B]);
   assert.ok(!entries.some((e) => e.argv.includes('--end-of-options')));
@@ -460,10 +463,30 @@ test('commit: a merge is diffed against its first parent; a root commit lists it
   const merge = repo.git('rev-parse', 'HEAD');
   const m = (await run('graph.commit', { oid: merge })).result;
   assert.equal(m.parents[0], main2);
-  assert.deepEqual(m.files, [{ status: 'A', path: 'side.txt', oldPath: null }]);
+  assert.deepEqual(m.files, [{ status: 'A', path: 'side.txt', oldPath: null, added: 1, deleted: 0, binary: false, submodule: false }]);
   const r = (await run('graph.commit', { oid: root })).result;
   assert.deepEqual(r.parents, []);
   assert.deepEqual(r.files.map((f) => [f.status, f.path]), [['A', 'r1.txt'], ['A', 'r2.txt']]);
+});
+
+test('commit: files carry numstat counts; a binary file is binary with null counts; a gitlink is a submodule; a root commit counts its lines', async (t) => {
+  const { repo } = await world(t);
+  const root = repo.commit({ 'three.txt': 'a\nb\nc\n' }, 'root');
+  repo.write('bin.dat', Buffer.from([0, 1, 2, 0, 255]));
+  repo.write('three.txt', 'a\nB\nc\nd\n');
+  repo.git('update-index', '--add', '--cacheinfo', `160000,${'1'.repeat(40)},vendor/lib`);
+  repo.git('add', 'bin.dat', 'three.txt');
+  repo.git('commit', '-q', '-m', 'mixed');
+  const mixed = repo.git('rev-parse', 'HEAD');
+  const { result, entries } = await run('graph.commit', { oid: mixed });
+  const by = Object.fromEntries(result.files.map((f) => [f.path, f]));
+  assert.deepEqual(by['bin.dat'], { status: 'A', path: 'bin.dat', oldPath: null, added: null, deleted: null, binary: true, submodule: false });
+  assert.deepEqual(by['three.txt'], { status: 'M', path: 'three.txt', oldPath: null, added: 2, deleted: 1, binary: false, submodule: false });
+  assert.equal(by['vendor/lib'].submodule, true);
+  assert.equal(by['vendor/lib'].binary, false);
+  assert.equal(entries.length, 2);
+  const r = (await run('graph.commit', { oid: root })).result;
+  assert.deepEqual(r.files, [{ status: 'A', path: 'three.txt', oldPath: null, added: 3, deleted: 0, binary: false, submodule: false }]);
 });
 
 test('commit: a file list over the output cap keeps the metadata and reports OUTPUT_TOO_LARGE instead of an empty list', async (t) => {
@@ -558,13 +581,6 @@ test('parseCommitMeta: a literal unsupported-trailers placeholder yields no co-a
   assert.deepEqual(parseCommitMeta(rec('Ann <a@x>\x1e  Bob B <b@x> ', '')).coAuthors, [{ name: 'Ann', email: 'a@x' }, { name: 'Bob B', email: 'b@x' }]);
   assert.equal(parseCommitMeta(rec('', '')).signature.status, 'N');
   assert.throws(() => parseCommitMeta('a\0b\0c'), (e) => e.code === 'INTERNAL');
-});
-
-test('parseNameStatus: copies carry an old path; a truncated record throws', () => {
-  assert.deepEqual(parseNameStatus('C075\0a\0b\0T\0t\0'), [{ status: 'C', path: 'b', oldPath: 'a' }, { status: 'T', path: 't', oldPath: null }]);
-  assert.deepEqual(parseNameStatus(''), []);
-  assert.throws(() => parseNameStatus('R100\0a'), (e) => e.code === 'INTERNAL');
-  assert.throws(() => parseNameStatus('M'), (e) => e.code === 'INTERNAL');
 });
 
 test('every graph op is a cancellable read', () => {

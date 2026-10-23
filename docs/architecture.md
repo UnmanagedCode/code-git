@@ -49,7 +49,7 @@
 | `src/git/parse/diff.js` | `parseRawNumstat`, `parseFilePatch`, `detectLfs`, `sideLines` — pure |
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |
 | `src/git/ops/graph.js` | `graph.refs`, `graph.page`, `graph.stats`, `graph.search`, `graph.commit` ([graph](graph.md)) |
-| `src/git/parse/graph.js` | The graph ops' parsers: NUL-field records, refs, stashes, worktrees, shortstats, commit metadata, name-status |
+| `src/git/parse/graph.js` | The graph ops' parsers: NUL-field records, refs, stashes, worktrees, shortstats, commit metadata |
 | `src/git/ops/branch.js`, `tag.js`, `head.js` | The ref-writing ops `branch.*`, `tag.*`, `head.*` ([refs](refs.md)) |
 | `src/git/ops/remote.js` | `remote.list`, `remote.add`, `remote.edit`, `remote.rename`, `remote.remove`, `remote.fetch`, `remote.peek`, `remote.pull`, `remote.push` ([remotes](remotes.md)) |
 | `src/git/refs/` | What those ops share: `check.js` (ref-name checks: `shortBranch`, `fullRef`, `nameList`; the generic `paramsObject` / `optBool` are `src/git/params.js`), `heads.js` (`readHeads` with `%(worktreepath)`, `ownHead`, the checked-out and `code-conductor/*` asserts), `resolve.js` (`refEntries` with `%(symref)`, `refObjects`, `tagObjects`: unpeeled ids), `write.js` (`guardOverwrite` → `CHECKOUT_CONFLICT`, `casUpdate` → `REF_MOVED`), `undo.js` (`undoRecord`), `limits.js` (`REF_LIMITS`) |

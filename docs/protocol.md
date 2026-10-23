@@ -181,7 +181,7 @@ Every log-family command adds `--no-show-signature --no-ext-diff --no-textconv`.
 | `graph.page` | `{tips: oid[] (0..TIPS_MAX), skip: int ≥ 0, limit: 1..PAGE_MAX}` | `log --stdin --topo-order --format=… --skip=<skip> --max-count=<limit+1>` | `{items: CommitItem[], nextCursor: number \| null}` |
 | `graph.stats` | `{oids: oid[] (1..STATS_MAX)}` | `log --no-walk=unsorted --stdin --root --format=%x00%H%x00%P --shortstat` | `{stats: {[oid]: {files, insertions, deletions} \| null}}` |
 | `graph.search` | `{mode: 'commits' \| 'path', query: string, tips: oid[] (0..TIPS_MAX)}` | below | `{matches: oid[], truncated: boolean}` |
-| `graph.commit` | `{oid}` | `log -1 --no-walk --format=… <oid>`, then `diff-tree -r -z --no-commit-id --name-status -M --root --no-ext-diff --no-textconv [<first parent>] <oid>` (full-hex oids need no `--end-of-options`) | `CommitDetail` |
+| `graph.commit` | `{oid}` | `log -1 --no-walk --format=… <oid>`, then `diff-tree -r -z --no-commit-id --raw --numstat --no-abbrev -M --root --no-ext-diff --no-textconv [<first parent>] <oid>`, parsed by `parseRawNumstat` (full-hex oids need no `--end-of-options`) | `CommitDetail` |
 
 - **Empty `tips`** (`graph.page`, `graph.search`): an empty result, no command run.
 - `head`: `{oid: string|null, branch: full refname|null, detached, unborn}` (`branch` is `refs/heads/…`, unlike `repo.summary`'s short name).
@@ -196,7 +196,7 @@ Every log-family command adds `--no-show-signature --no-ext-diff --no-textconv`.
   - `commits`: the union of `log --stdin --topo-order --format=%H -i -F --grep=<query>`, the same with `--author=<query>` (git ANDs the two, so they run apart), and — when the query matches `/^[0-9a-f]{4,64}$/i` — `rev-parse --disambiguate=<lowercased>` (exit 0 or 128) filtered to commits by `cat-file --batch-check`. The query is always inside one `--grep=`/`--author=` element, so an option-shaped query is a pattern; `-F` makes it a fixed string.
   - `path`: `assertPath(query)` (`BAD_PATH`), then `log --stdin --topo-order --format=%H -- <query>`; `GIT_LITERAL_PATHSPECS=1` keeps it literal.
   - Each log asks for `SEARCH_MAX + 1`; `matches` holds at most `SEARCH_MAX`, and `truncated` is true when any command or the union passed it. A sha match may be unreachable from the tips.
-- **`CommitDetail`** (`graph.commit`): `{oid, parents, author: {name, email, time}, committer: {name, email, time}, subject, body, coAuthors: [{name, email}], signature: {status, signer|null, key|null}, files: [{status, path, oldPath|null}] | null, filesError: {code, message, limitBytes?} | null}`.
+- **`CommitDetail`** (`graph.commit`): `{oid, parents, author: {name, email, time}, committer: {name, email, time}, subject, body, coAuthors: [{name, email}], signature: {status, signer|null, key|null}, files: [{status, path, oldPath|null, added|null, deleted|null, binary, submodule}] | null, filesError: {code, message, limitBytes?} | null}`. A file's `added` / `deleted` are numstat's line counts, both null for a binary file; `submodule` is true for a gitlink (whose counts are its `Subproject commit` line, not content).
   - `signature.status` is git's `%G?` letter (`N` = unsigned). `%G?` runs the repo's signing program for this one commit; no other graph op asks for it.
   - `coAuthors` come from `Co-authored-by:` trailers; a value that is not `Name <email>` is dropped.
   - `files`: a merge against its first parent, a root commit against the empty tree; `status` is the first letter of git's (`A`, `M`, `D`, `R`, `C`, `T`, …); a rename/copy carries `oldPath`.

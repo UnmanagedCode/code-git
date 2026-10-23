@@ -173,22 +173,3 @@ export function parseCommitMeta(out) {
   };
 }
 
-/** `diff-tree -r -z --name-status -M` → [{status, path, oldPath}]; a rename or copy carries its old path first. */
-export function parseNameStatus(out) {
-  const f = out.split('\0');
-  const files = [];
-  let i = 0;
-  while (i < f.length && f[i] !== '') {
-    const status = f[i][0];
-    if (status === 'R' || status === 'C') {
-      if (i + 2 >= f.length) throw bad(`name-status ${f[i]} lacks its paths`);
-      files.push({ status, path: f[i + 2], oldPath: f[i + 1] });
-      i += 3;
-    } else {
-      if (i + 1 >= f.length) throw bad(`name-status ${f[i]} lacks its path`);
-      files.push({ status, path: f[i + 1], oldPath: null });
-      i += 2;
-    }
-  }
-  return files;
-}
