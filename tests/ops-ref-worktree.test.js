@@ -14,9 +14,9 @@ import { refsWorld, refused } from './_refsWorld.js';
 // that write the working tree or the index refuse a bare repository (assertWorktree, src/git/worktree.js), whose HEAD,
 // config and objects/ would otherwise be treated as a working tree.
 
-test('checkout, create+checkout, mixed and hard reset, revert, cherry-pick, abort and the own fast-forward refuse a bare repo; nothing in it changes', async (t) => {
+/** The refs world's bare origin registered with the fake cc as project `bare`: main at base, `other` one commit ahead. */
+async function bareWorld(t) {
   const w = await refsWorld(t);
-  // The world's bare origin, registered with the fake cc as a project of its own: main at base, `other` one commit ahead.
   w.repo.git('checkout', '-q', '-b', 'other');
   const other = w.repo.commit({ 'o.txt': 'o\n' }, 'other');
   w.repo.git('push', '-q', 'origin', 'other');
@@ -27,11 +27,14 @@ test('checkout, create+checkout, mixed and hard reset, revert, cherry-pick, abor
     return def.run(gitFor(ctxFor(target, def.kind, { op: name })), def.params(params), { target });
   };
   const env = hermeticEnv(w.repo.home);
-  const snapshot = () => ({
-    HEAD: fs.readFileSync(path.join(w.origin.dir, 'HEAD'), 'utf8'),
-    entries: fs.readdirSync(w.origin.dir).sort(),
-    refs: execFileSync('git', ['-C', w.origin.dir, 'for-each-ref'], { env }).toString(),
-  });
+  const files = () => ({ HEAD: fs.readFileSync(path.join(w.origin.dir, 'HEAD'), 'utf8'), entries: fs.readdirSync(w.origin.dir).sort() });
+  const refs = () => execFileSync('git', ['-C', w.origin.dir, 'for-each-ref'], { env }).toString();
+  const snapshot = () => ({ ...files(), refs: refs() });
+  return { w, other, op, files, snapshot, bareOid: (ref) => execFileSync('git', ['-C', w.origin.dir, 'rev-parse', ref], { env }).toString().trim() };
+}
+
+test('checkout, create+checkout, mixed and hard reset, revert, cherry-pick, abort and the own fast-forward refuse a bare repo; nothing in it changes', async (t) => {
+  const { w, other, op, snapshot } = await bareWorld(t);
   const before = snapshot();
   assert.equal(before.entries.includes('index'), false);
   const guarded = [
@@ -75,4 +78,36 @@ test('core.worktree pointing elsewhere: checkout, reset --hard with its stash cr
   assert.equal(c.conflicts, false);
   assert.equal(read('p.txt'), 'p\n');
   assert.deepEqual(elsewhereSnapshot(w.repo), ELSEWHERE_FILES);
+});
+
+/**
+ * A ref move in a bare repo writes only git's own ref metadata: under --work-tree=. git treats it as non-bare, so
+ * core.logAllRefUpdates defaults on (`logs/`) and a reset records `ORIG_HEAD`. HEAD's file is unchanged, and no index
+ * and no file of a commit (`f.txt`, `o.txt`) appears.
+ */
+function onlyRefMetadataAdded(before, after) {
+  assert.equal(after.HEAD, before.HEAD);
+  const added = after.entries.filter((e) => !before.entries.includes(e));
+  assert.deepEqual(added.filter((e) => e !== 'logs' && e !== 'ORIG_HEAD'), [], `only ref metadata added: ${added}`);
+  assert.deepEqual(before.entries.filter((e) => !after.entries.includes(e)), [], 'nothing removed');
+}
+
+test('a soft reset in a bare repo is a ref move: it runs (no BARE_REPO) and moves HEAD\'s branch, writing only ref metadata', async (t) => {
+  const { w, other, op, files, bareOid } = await bareWorld(t);
+  const before = files();
+  const r = await op('head.reset', { to: other, mode: 'soft', expect: w.base });
+  assert.equal(bareOid('refs/heads/main'), other);
+  assert.equal(r.undo.worktreeSnapshot, null);
+  onlyRefMetadataAdded(before, files());
+});
+
+test('fast-forwarding a branch that is not HEAD in a bare repo is a ref update: it runs (no BARE_REPO), the ref moves, only ref metadata is written', async (t) => {
+  const { w, other, op, files, bareOid } = await bareWorld(t);
+  execFileSync('git', ['-C', w.origin.dir, 'branch', 'free', w.base], { env: hermeticEnv(w.repo.home) });
+  const before = files();
+  const r = await op('branch.fastForward', { name: 'free', to: other, expect: w.base });
+  assert.equal(r.upToDate, false);
+  assert.equal(bareOid('refs/heads/free'), other);
+  assert.equal(bareOid('refs/heads/main'), w.base);
+  onlyRefMetadataAdded(before, files());
 });

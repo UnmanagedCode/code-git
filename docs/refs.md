@@ -66,7 +66,7 @@ This checkout is recognised by its HEAD (`symbolic-ref HEAD`), other checkouts b
 
 ### Bare repositories
 
-Under `--work-tree=.` (`BASE_ARGS`) a bare repository's own files would look like a working tree, so every op here that writes the working tree or the index refuses one first (`BARE_REPO`, `assertWorktree` in `src/git/worktree.js`): checkout (and create with checkout), mixed and hard reset, revert, cherry-pick, abort, and the fast-forward of this checkout's own branch. Ops that change refs only — create without checkout, rename, delete, force-move, a free branch's fast-forward, soft reset, upstream, tags, pushes — run.
+Under `--work-tree=.` (`BASE_ARGS`) a bare repository's own files would look like a working tree, so every op here that writes the working tree or the index refuses one first (`BARE_REPO`, `assertWorktree` in `src/git/worktree.js`): checkout (and create with checkout), mixed and hard reset, revert, cherry-pick, abort, and the fast-forward of this checkout's own branch. Ops that change refs only — create without checkout, rename, delete, force-move, a free branch's fast-forward, soft reset, upstream, tags, pushes — run. In a bare repository they write only git's own ref metadata besides the ref: `--work-tree=.` makes git treat it as non-bare, so reflogs (`logs/`) are kept and a reset records `ORIG_HEAD`.
 
 ### Symbolic refs
 

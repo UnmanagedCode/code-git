@@ -210,3 +210,17 @@ test('a selection over NAMES_MAX deletes the first NAMES_MAX and tells the dialo
   expect(d.refs.map((r) => r.name)).toEqual(many.slice(0, NAMES_MAX).map((r) => r.name));
   expect(d.omitted).toBe(5);
 });
+
+test('on a code-conductor/* HEAD, checking out its own remote twin (only a fast-forward) asks nothing and sends no ccOwned', async () => {
+  const twin = ref('refs/remotes/origin/code-conductor/wt', oid(9));
+  const refs = refsOn(ccHeadRef);
+  setRefs({ ...refs, refs: [...refs.refs, twin] });
+  const f = backend();
+  // Control: the same action on another remote branch is gated (and cancelled here).
+  find('branch', branch(ORIGIN_FREE), 'Checkout').run!(branch(ORIGIN_FREE));
+  expect(confirmStore.get()?.opts.confirmLabel).toBe('Switch anyway');
+  settleConfirm(false);
+  find('branch', branch(twin), 'Checkout').run!(branch(twin));
+  expect(confirmStore.get()).toBeNull();
+  await waitFor(() => expect(sent(f, 'branch.checkout')).toEqual([{ ref: 'refs/remotes/origin/code-conductor/wt' }]));
+});

@@ -465,3 +465,15 @@ test('a dangling symbolic ref (invisible to for-each-ref) refuses create, create
   assert.equal(head(w), 'refs/heads/main');
   assert.deepEqual(w.writes(), []);
 });
+
+test('checkout of a remote branch whose local twin is a symbolic ref → SYMBOLIC_REF with its target, nothing written', async (t) => {
+  const w = await refsWorld(t);
+  w.repo.git('branch', 'target');
+  w.repo.git('symbolic-ref', 'refs/heads/alias', 'refs/heads/target');
+  w.repo.git('push', '-q', 'origin', 'target:alias');
+  w.repo.git('fetch', '-q', 'origin');
+  await assert.rejects(w.op('branch.checkout', { ref: 'refs/remotes/origin/alias' }), refused('SYMBOLIC_REF', { target: 'refs/heads/target' }));
+  assert.equal(head(w), 'refs/heads/main');
+  assert.equal(w.repo.git('symbolic-ref', 'refs/heads/alias'), 'refs/heads/target');
+  assert.deepEqual(w.writes(), []);
+});
