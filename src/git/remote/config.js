@@ -1,3 +1,4 @@
+import { maskUrl } from '../../mask.js';
 import { Refusal } from '../../refusals.js';
 import { parseRemotes } from '../parse/graph.js';
 import { hasUrl, legacyRemoteFile } from './tracking.js';
@@ -18,8 +19,6 @@ export function parseConfigZ(out) {
 /** git's url list semantics (hasUrl): an empty value clears what came before it. */
 const effective = (values) => values.slice(values.lastIndexOf('') + 1);
 
-/** A url with any userinfo password masked: `https://u:***@h/r`. */
-export const maskUrl = (url) => url.replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/[^/@:]*):[^/@]*@/, '$1:***@');
 
 /**
  * Every remote's raw config: Map(name → {urls, pushUrls, fetch}) for `remotes` (`git remote`'s names), values as

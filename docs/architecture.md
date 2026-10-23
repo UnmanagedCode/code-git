@@ -14,6 +14,7 @@
 | `src/http/static.js` | `serveDist(distDir)`: the `ASSET_RE` allowlist, `inside()` realpath check, 503 while unbuilt |
 | `src/http/route.js` | `route(fn)`: a throw becomes a refusal response; `sendError` |
 | `src/refusals.js` | `Refusal` and `HTTP_STATUS` (the code table) |
+| `src/mask.js` | `maskUrl`: a url's password shown as `***`, the one masking used for display urls and activity argv |
 | `src/conductor/fetch.js` | `ccFetch`: `CONDUCTOR_URL`, per-attempt deadline, caller abort → `CANCELLED`, connection-only retry |
 | `src/conductor/cc.js` | `projects()`, `worktrees(project)` |
 | `src/conductor/exec.js` | `exec(target, argv, opts)`: cc exec form A + the refusal map; `CC_EXEC_CAPS` |
@@ -275,7 +276,7 @@ For the undo card: what an op overwrites or deletes, and whether git can give it
 ## Activity log
 
 - In memory, per backend process, newest `LIMITS.activityRing` entries. **Diagnostic only**: undo, reflog and every other feature derive state from git, never from this log.
-- Records what ran (argv), where, the op's env overlay with secret-looking values redacted, stdin size (never content), the stderr tail (hook output included, decoded with `TextDecoder` `fatal: false`).
+- Records what ran (argv, an argument that is a url with a password masked by `maskUrl` in `src/mask.js`: `https://u:***@h/r`), where, the op's env overlay with secret-looking values redacted, stdin size (never content), the stderr tail (hook output included, decoded with `TextDecoder` `fatal: false`).
 - `events` (an `EventEmitter`) feeds the SSE route; the UI refetches on each event.
 
 ## UI state and routing

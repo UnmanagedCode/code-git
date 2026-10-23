@@ -75,6 +75,7 @@ Off by default (`autoFetchMinutes: 0`, per project, `code-git:remotes:<project>`
 
 ### Remote config
 
+- **Passwords in urls** are never shown: `remote.list`'s `displayUrl` / `displayPushUrl` and the activity log's argv (so `/api/activity`, its events and the Activity panel) go through `maskUrl` (`src/mask.js`), which hides everything from the userinfo's first `:` to the authority's last `@` (a password may hold `/` and `@`; a path holding `@` after a `user:` prefix is masked too). Git config keeps the real url.
 - **Urls** typed in the UI pass `remoteUrl` (`src/git/remote/url.js`) or are refused `BAD_URL`: `http(s)://`, `ssh://`, `git+ssh://`, `ssh+git://`, `git://`, `file://`, an absolute path, scp-like `[user@]host:path`. Never a `<transport>::` url (a remote helper; `ext::` runs a command), a leading `-`, a host starting with `-`, whitespace or control characters, or more than `URL_MAX` characters.
 - **New names** pass `newRemoteName`: git's own rule (a valid `refs/remotes/<name>/…`), else `BAD_REF`.
 - **Edit** writes only the fields sent; the UI sends only what changed, so a masked `displayUrl` is never written back. A url list with several values is refused (`REMOTE_CONFIG_UNSUPPORTED`).
