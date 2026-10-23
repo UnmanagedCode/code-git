@@ -4,6 +4,7 @@ import { fieldClass, RefDialogFrame, useRefOp } from '@/features/branches/dialog
 import { trackingOf } from '@/state/branchTracking';
 import { closeRemoteDialog, type RemoteDialog } from '@/state/remoteDialog';
 import { refreshRemotes, remoteInfo, useRemotes } from '@/state/remotes';
+import { refsKey } from '@/state/tabs';
 import { addRemote, editRemote, renameRemote } from './api';
 import { pushFlow } from './pushFlow';
 import { fetchFlow } from './run';
@@ -57,7 +58,7 @@ const MASK = ':***@';
 
 export function EditRemoteDialog({ d }: { d: Of<'edit'> }) {
   // The remote as listed when the dialog opened: what "changed" is measured against.
-  const [info] = useState(() => remoteInfo(d.tab.project, d.remote));
+  const [info] = useState(() => remoteInfo(refsKey(d.tab), d.remote));
   const shownUrl = info?.displayUrl && info.urls.length ? info.displayUrl : '';
   const shownPush = info?.displayPushUrl ?? '';
   const [name, setName] = useState(d.remote);

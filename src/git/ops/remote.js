@@ -1,3 +1,4 @@
+import { maskDeep } from '../../mask.js';
 import { Refusal } from '../../refusals.js';
 import { optBool, paramsObject } from '../params.js';
 import { parseRecords } from '../parse/graph.js';
@@ -76,7 +77,8 @@ async function trackingOf(git, remote, to) {
   return e ? { ref, oid: e.oid } : null;
 }
 
-const errorOf = (e) => ({ code: e.code, message: e.message, ...(e.extra.reason ? { reason: e.extra.reason } : {}), stderr: e.extra.stderr ?? null });
+/** A failed remote's refusal as a fetch result reports it (a success payload: the url passwords git may quote are masked). */
+const errorOf = (e) => maskDeep({ code: e.code, message: e.message, ...(e.extra.reason ? { reason: e.extra.reason } : {}), stderr: e.extra.stderr ?? null });
 
 function noParams(raw, op) {
   if (raw !== undefined && raw !== null && (typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).length)) {

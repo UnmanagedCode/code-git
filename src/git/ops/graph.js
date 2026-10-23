@@ -1,3 +1,4 @@
+import { maskUrls } from '../../mask.js';
 import { Refusal } from '../../refusals.js';
 import {
   parseCommitMeta, parseCommits, parseNameStatus, parseOids, parseRefs, parseRemotes, parseShortstats, parseStashes, parseWorktrees,
@@ -68,7 +69,7 @@ export const ops = [
         // git < 2.36 has no `worktree list -z`: worktree labels degrade, the rest of the graph does not.
         (e) => {
           if (e.code !== 'GIT_FAILED') throw e;
-          return { worktrees: null, worktreesError: e.extra.stderr || e.message };
+          return { worktrees: null, worktreesError: maskUrls(e.extra.stderr || e.message) };
         },
       );
       const [refsOut, remotesOut, headOid, headRef, stashOut, wt] = await Promise.all([

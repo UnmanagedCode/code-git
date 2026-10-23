@@ -1,3 +1,5 @@
+import { maskDeep } from './mask.js';
+
 // Single source for refusal codes and their HTTP status. Anything that refuses throws a `Refusal`;
 // the route wrapper (src/http/route.js) renders it as `{error, code, …extra}` with this status.
 export const HTTP_STATUS = {
@@ -19,6 +21,9 @@ export const HTTP_STATUS = {
   STASH_UNKNOWN: 404, NOTHING_TO_STASH: 409, PATH_BLOCKED: 409, STASH_MOVED: 409, GIT_TOO_OLD: 409,
   BAD_URL: 400, REMOTE_EXISTS: 409, NO_UPSTREAM: 409, DIRTY_WORKTREE: 409,
   OPERATION_IN_PROGRESS: 409, HAS_MERGES: 409, TOO_MANY_COMMITS: 409, NOT_CONFLICTED: 409, NOT_TEXT_CONFLICT: 409, FILE_CHANGED: 409,
+  SUBMODULE_UNKNOWN: 404, SUBMODULE_UNSAFE: 409, SUBMODULE_NOT_POPULATED: 409, SUBMODULE_EXISTS: 409, SUBMODULE_DIRTY: 409, SUBMODULE_COMMITS_AT_RISK: 409, SUBMODULE_POINTER_MOVED: 409, SUBMODULE_TRANSPORT_BLOCKED: 409,
+  SUBMODULE_NOT_RECORDED: 409,
+  SUBMODULE_CONFLICTED: 409,
 };
 
 export class Refusal extends Error {
@@ -32,5 +37,9 @@ export class Refusal extends Error {
 
   get status() { return HTTP_STATUS[this.code]; }
 
-  toBody() { return { error: this.message, code: this.code, ...this.extra }; }
+  /**
+   * The response body. A url password in any string of it — the message (a toast's title), git's `stderr`, a list of
+   * names — is masked here, where every refusal is rendered, whichever path built it (maskDeep).
+   */
+  toBody() { return maskDeep({ error: this.message, code: this.code, ...this.extra }); }
 }

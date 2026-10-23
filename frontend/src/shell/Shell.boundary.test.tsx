@@ -28,6 +28,7 @@ test('a panel that throws while rendering is contained: the header and the other
     'POST api/ops/diff.files': { ok: true, result: filesResult([], { commit: null }) },
     'POST api/ops/commit.state': { ok: true, result: { merging: false } },
     'POST api/ops/commit.template': { ok: true, result: { path: null, draft: null, problem: null } },
+    'POST api/ops/submodule.list': { ok: true, result: { submodules: [], truncated: false } },
   });
   render(<Shell />);
   act(() => dispatchTabs({ type: 'open', tab: { project: 'app', worktree: null } }));

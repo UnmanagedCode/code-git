@@ -2,7 +2,8 @@ import { api } from './api';
 
 // The backend's API as the UI uses it; shapes are documented in docs/protocol.md.
 
-export interface Target { project: string; worktree: string | null }
+/** A cc checkout, or a submodule inside one: `sub` is the chain of submodule paths, absent for the checkout itself. */
+export interface Target { project: string; worktree: string | null; sub?: string[] }
 
 export interface Repo {
   project: string;
@@ -49,7 +50,9 @@ export interface ActivityEntry {
   code: string | null;
 }
 
-const targetBody = (t: Target) => (t.worktree ? { project: t.project, worktree: t.worktree } : { project: t.project });
+const targetBody = (t: Target) => ({
+  project: t.project, ...(t.worktree ? { worktree: t.worktree } : {}), ...(t.sub?.length ? { sub: t.sub } : {}),
+});
 
 export const listRepos = () => api<{ repos: Repo[] }>('api/repos').then((r) => r.repos);
 export const listWorktrees = (project: string) =>

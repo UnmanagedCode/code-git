@@ -20,20 +20,22 @@ export interface WorkdirWorld {
   summary?: RepoSummary;
   /** diff.file answers by path. */
   fileDiffs?: Record<string, FileDiff>;
-  /** Per op name: a body (sent as the op result), a Response, or a function of the params. */
+  /** Per op name: a body (sent as the op result), a Response, or a function of the params (and the target). */
   answers?: Record<string, unknown>;
 }
 
 const WRITES = ['stage.files', 'stage.unstageFiles', 'stage.discardFiles', 'stage.stageLines', 'stage.unstageLines', 'stage.discardLines',
   'commit.create', 'ignore.add', 'files.restore', 'patch.check', 'patch.apply', 'head.continue', 'head.skip', 'head.abort',
-  'stash.push', 'stash.pushLines', 'stash.apply', 'stash.pop', 'stash.applyFile', 'stash.drop', 'stash.rename', 'stash.branch'];
+  'stash.push', 'stash.pushLines', 'stash.apply', 'stash.pop', 'stash.applyFile', 'stash.drop', 'stash.rename', 'stash.branch',
+  'submodule.add', 'submodule.init', 'submodule.update', 'submodule.sync', 'submodule.setUrl', 'submodule.remove', 'submodule.commitPointer'];
 
 export function workdirWorld(w: WorkdirWorld = {}) {
   const lists = { unstaged: w.unstaged ?? [], staged: w.staged ?? [] };
   const op = (name: string, fallback: (params: Record<string, unknown>) => unknown) => (_u: URL, init?: RequestInit) => {
-    const params = (JSON.parse(String(init?.body)).params ?? {}) as Record<string, unknown>;
+    const body = JSON.parse(String(init?.body)) as { target: unknown; params?: Record<string, unknown> };
+    const params = body.params ?? {};
     const a = w.answers?.[name];
-    const v = a === undefined ? fallback(params) : typeof a === 'function' ? (a as (p: unknown) => unknown)(params) : a;
+    const v = a === undefined ? fallback(params) : typeof a === 'function' ? (a as (p: unknown, target: unknown) => unknown)(params, body.target) : a;
     return v instanceof Response ? v : { ok: true, result: v };
   };
   const routes: Record<string, unknown> = {
@@ -57,6 +59,8 @@ export function workdirWorld(w: WorkdirWorld = {}) {
     })),
     'POST api/ops/graph.page': op('graph.page', () => ({ items: [], nextCursor: null })),
     'GET api/repos/app/worktrees': { worktrees: [] },
+    // The Submodules panel beside the graph.
+    'POST api/ops/submodule.list': op('submodule.list', () => ({ submodules: [], truncated: false })),
     'POST api/ops/commit.state': op('commit.state', () => ({
       merging: w.merging ?? false,
       ...(w.operation !== undefined ? { operation: w.operation } : {}), ...(w.conflicts !== undefined ? { conflicts: w.conflicts } : {}),

@@ -1,4 +1,4 @@
-> See also: [README](../README.md) · [features](features.md) · [protocol](protocol.md) · [graph](graph.md)
+> See also: [README](../README.md) · [features](features.md) · [protocol](protocol.md) · [graph](graph.md) · [submodules](submodules.md)
 
 # Architecture
 
@@ -18,9 +18,9 @@
 | `src/conductor/fetch.js` | `ccFetch`: `CONDUCTOR_URL`, per-attempt deadline, caller abort → `CANCELLED`, connection-only retry |
 | `src/conductor/cc.js` | `projects()`, `worktrees(project)` |
 | `src/conductor/exec.js` | `exec(target, argv, opts)`: cc exec form A + the refusal map; `CC_EXEC_CAPS` |
-| `src/git/validate.js` | Pure input checks: `assertTarget`, `assertRefName`, `assertRev`, `OID_RE` / `assertOid` (the one full-oid check, the diff sources use it too), `assertPath`, `assertSubpath` |
+| `src/git/validate.js` | Pure input checks: `assertTarget` (with `sub`: `submoduleChain`), `assertRefName`, `assertRev`, `OID_RE` / `assertOid` (the one full-oid check, the diff sources use it too), `assertPath`, `assertSubpath` |
 | `src/git/limits.js` | `LIMITS`: per-kind timeout / output cap, stderr cap, activity ring size, cc read deadline |
-| `src/git/runner.js` | `runGit(ctx, args, opts)`: **the** choke point for git |
+| `src/git/runner.js` | `runGit(ctx, args, opts)`: **the** choke point for git; `subArgs(target)` (a submodule target's `-C <path> --git-dir=.git`) |
 | `src/git/locks.js` | `createLocks()`: keyed promise queue |
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
 | `src/git/ops/repo.js` | `repo.summary` |
@@ -32,7 +32,7 @@
 | `src/git/stage/limits.js` | `STAGE_LIMITS`: staging, commit-template, `.gitignore` and patch caps |
 | `src/git/ops/stage.js` | `stage.files`, `stage.unstageFiles`, `stage.discardFiles`; `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` |
 | `src/git/ops/commit.js` | `commit.create`, `commit.state`, `commit.headMessage`, `commit.template` |
-| `src/git/commit/message.js` | `joinMessage`, `splitMessage`, `templateDraft` (pure): the only place a message is split or joined |
+| `src/git/commit/message.js` | `messageParams` (a commit message's params check, shared by `commit.create` and `submodule.commitPointer`), `joinMessage`, `splitMessage`, `templateDraft` (pure): the only place a message is checked, split or joined |
 | `src/git/ops/ignore.js` | `ignore.add`: the root `.gitignore` by whole-file-context `git apply`, optional stop-tracking |
 | `src/git/ignore/pattern.js` | `ignorePattern`, `escapeGlob` (pure): the only builder of ignore patterns |
 | `src/git/ops/files.js` | `files.restore` |
@@ -56,6 +56,8 @@
 | `src/git/sequence/` | What is in progress and the gates around it ([merge](merge.md)): `state.js` (`operationState`: the operation, its incoming commit and rebase progress, the unmerged paths; `readRebase`), `guard.js` (`assertNoOperation`, `assertClean`), `limits.js` (`SEQUENCE_LIMITS`, `REBASE_LIMITS`, `CONFLICT_LIMITS`) |
 | `src/git/parse/unmerged.js` | `parseUnmerged`: `ls-files -u -z` → conflicted paths, their stages and kind — pure |
 | `src/git/parse/refs.js`, `parse/push.js` | `parseTracking`, `parseConflictFiles`; `parsePushPorcelain`, `classifyRemoteFailure` — pure |
+| `src/git/ops/submodule.js` | `submodule.list`, `.add`, `.init`, `.update`, `.sync`, `.setUrl`, `.remove`, `.commitPointer` ([submodules](submodules.md)) |
+| `src/git/submodule/` | `validate.js` (`submodulePath`, `submoduleName`, `submoduleChain`, `isDotGitAlias`), `target.js` (`assertInsideCheckout`: the containment preflight), `gitdir.js` (`gitDirMatches`: the git dir a submodule may have), `list.js` (`listSubmodules`, `parseSubmoduleConfig`, `readGitmodules`, `urlProblem`), `gates.js` (entries known and unblocked, repo-scope `protocol.*`, url checks, `orphanCount`, the symlinked-`.gitmodules` check), `failure.js` (`submoduleFailure`), `url.js` (`submoduleUrl`, `isRelativeUrl`), `limits.js` (`SUBMODULE_LIMITS`) |
 | `src/activity/log.js` | `createActivityLog()`: the ring, its events, cancel |
 | `src/routes/*.js` | One file per feature, each `mount(router, deps)`; `index.js` mounts them |
 
@@ -70,7 +72,7 @@
 | `lib/sse.ts` | One shared `EventSource` on `api/activity/events`; `setEventSourceFactory` is the test seam |
 | `lib/storage.ts` | The only `localStorage` user; keys prefixed `code-git:` |
 | `state/store.ts` | `createStore` + `useStore` (`useSyncExternalStore`) |
-| `state/tabs.ts` | `tabsReducer` (pure), `tabsStore`, `tabKey`, persistence |
+| `state/tabs.ts` | `tabsReducer` (pure), `tabsStore`, `tabKey`, `parentTab`, `refsKey`, `prefsKey`, `isSubChain`, persistence |
 | `state/useRepos.ts`, `useActivity.ts`, `useRepoSummary.ts` | One store per feature; per-checkout state is a map keyed by `tabKey` |
 | `state/shownPanel.ts` | Which on-demand panel each tab shows (`showPanel`, `hidePanel`, `useShownPanel`); `pruneClosedTabs` drops a closed tab's keys from a tab-keyed store |
 | `state/diff.ts` | `diffStore` (per tab: source, list, selection, viewed path, file diffs by `fileKey`), `prefsStore` (persisted `code-git:diff-prefs`), the list/file loaders |
@@ -80,6 +82,8 @@
 | `features/staging/` | Hunk and line staging in the diff: `partial.ts` (`canPartial`, the single UI rule), `selection.ts` (pure `toggle`, `extendRange`, `toRequest`, `hunkRequest`, `previewLines`), `actions.ts` (`applyLines`), `HunkActions`, `SelectionBar` (both take an optional `onStash`) |
 | `features/stash/` | The stash UI ([stash](stash.md#ui-frontendsrcfeaturesstash)): `api.ts`, `run.ts` (`runStashOp`), `views.ts` (the view switch's pure rules), `StashViewSwitch`, `actions.ts` (`STASH_ACTIONS`), `dialogs/`, `StashDialogHost` (mounted by `Shell`); toasts through `trackOp` (`lib/opToast.ts`) |
 | `state/stashDialog.ts` | The one open stash dialog (`save` with a preset, `rename`, `branch`) |
+| `features/submodules/` | The Submodules panel, its menu, dialogs and the pointer prompt on exit ([submodules → UI](submodules.md#ui-frontendsrcfeaturessubmodules)); `SubmoduleDialogHost` mounted by `Shell` |
+| `state/submoduleDialog.ts` | The one open submodule dialog (`add`, `editUrl`, `pointer`) |
 | `state/lineSelection.ts` | Per tab, the selected `h:i` line keys, valid only for the viewed `fileKey` and diff list `generation` |
 | `lib/confirm.ts` | `confirm(opts)` → `Promise<boolean>`: the one pending confirmation, rendered by `ConfirmHost` (`features/workdir/ConfirmDialog.tsx`) |
 | `lib/download.ts` | `downloadBytes` (blob URL → `a.download`), `decodeBase64`: the only object-URL / download-link builder |
@@ -92,7 +96,7 @@
 | `features/branches/` | Branches, tags and HEAD ([refs](refs.md)): `api.ts` (wire types + op wrappers), `run.ts` (`runRefOp`: toast + graph refresh + the Changes panel's state once loaded), `actions.ts` (`BRANCH_ACTIONS`, the cc HEAD gate `withCcHeadAck`), `refInfo.ts` (checked-out / cc-owned reads of the graph's refs), `RefDialogHost.tsx` + `dialogs/`, `TrackingBadge.tsx`, `CreateBranchButton.tsx` |
 | `state/refDialog.ts`, `state/refSelection.ts`, `state/branchTracking.ts` | The pending branch/tag dialog; the refs panel's branch selection per tab (`refSelectionReducer`, `selectedRefs`); ahead/behind per project (`useTracking`) |
 | `features/remotes/` | Remotes ([remotes](remotes.md)): `api.ts` (wire types + op wrappers), `run.ts` (`runRemoteOp`: busy flag + `runRefOp` + remotes refresh; `fetchFlow`, `pullFlow` and their outcome toasts), `pushFlow.ts` (`pushFlow`, `forceFlow`, `pushHead`: the one push path for every surface), `actions.ts` (`REMOTE_ACTIONS`), `RemoteToolbar.tsx`, `RemoteDialog.tsx` (add, edit, push), `RemotesHost.tsx` (the dialogs and the auto-fetch timers, mounted once by the shell), `autoFetch.ts` (`useAutoFetch`, `autoFetchTick`, `setRemoteClock`) |
-| `state/remotes.ts`, `state/remotePrefs.ts`, `state/remoteDialog.ts` | Per project: the `remote.list` answer, which remote op is busy, the last auto-fetch failure (`useRemotes`, refetched when a tab's graph refs change); the persisted pull mode / auto-fetch interval / push-after-commit (`code-git:remotes:<project>`); the open remote dialog |
+| `state/remotes.ts`, `state/remotePrefs.ts`, `state/remoteDialog.ts` | Per `refsKey` (the project; a submodule tab its own repo): the `remote.list` answer, which remote op is busy, the last auto-fetch failure (`useRemotes`, refetched when a tab's graph refs change); the persisted pull mode / auto-fetch interval / push-after-commit (`code-git:remotes:<project>`); the open remote dialog |
 | `features/sequence/` | What is in progress ([merge](merge.md)): `api.ts` (the `Operation` / `Conflict` types, `head.continue` / `skip` / `abort` wrappers), `labels.ts` (`sideLabels`, `operationTitle`, `commitLabel`: pure), `flows.ts` (`runSequenceOp`, `continueFlow`, `skipFlow`, `abortFlow`, `stoppedToast`, `mergeFlow`, `rebaseFlow`, `rebaseDone`, `startFailed`), `actions.ts` (`SEQUENCE_ACTIONS`), `message.ts` (`splitDraft`), `OperationBanner.tsx` (mounted by `WorkdirContent`), `SequenceDialogHost.tsx` (mounted by `Shell`; "Rebase N commits onto…") |
 | `state/sequenceDialog.ts` | The one open merge/rebase dialog |
 | `features/conflicts/` | The three-pane merge tool ([merge → The conflict tool](merge.md#the-conflict-tool)): `diff3.ts` (`splitLines`, `matchLines` — Myers —, `merge3`: pure), `output.ts` (`initialOutput`, `setPick`, `applyEdit`, `unresolved`, `nextBlock` / `prevBlock`, `hasMarkers`: pure), `panel.ts` (`CONFLICT_PANEL`), `open.ts` (`openConflict`, `closeConflict`, `labelsFor`), `state.ts` (the open file per tab), `flows.ts` (`saveConflict`, `markResolved`, `takeSide`, `closeTool`), `actions.ts` (`CONFLICT_FILE_ACTIONS` on `'workdir-file'`), `ConflictTool.tsx` |
@@ -120,6 +124,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 | Aborting, continuing or skipping what is in progress (a toast's action, a menu) | `abortFlow(tab, kind)` (confirms first), `continueFlow`, `skipFlow` (confirms) in `features/sequence/flows.ts`; `stoppedToast(tab, kind, result)` for an outcome that left one in progress | nothing |
 | Asking before a destructive action | `await confirm({title, body, items?, count?, preview?, irreversible?, confirmLabel})` (`lib/confirm.ts`); send nothing unless it resolves true | nothing (the Changes panel mounts `ConfirmHost`) |
 | Opening the stash save dialog (all, selected files, staged, or a line selection) | `openStashSave(tab, preset)` (`features/stash/actions.ts`) | nothing (`Shell` mounts `StashDialogHost`) |
+| Opening a submodule as its own tab | `openSubmodule(tab, entry)` (`features/submodules/actions.ts`); a tab's way back is `backToParent(tab)` (`features/tabs/actions.ts`) | nothing (closing a submodule tab offers the pointer commit by itself) |
 | Context-menu actions | `MenuAction[]` in the feature folder (fields below) | `ACTIONS` in `frontend/src/shell/menus.ts`; render with `<ActionMenuItems context ctx>` inside a `DropdownMenuContent`, or open at the pointer with `openContextMenu({host, context, ctx, at})` and a mounted `<ContextMenuHost host>` |
 | Per-checkout UI state | `frontend/src/state/<feature>.ts`: a `createStore` map keyed by `tabKey` | nothing; add its reset to `frontend/src/test/setup.ts` |
 
@@ -143,6 +148,8 @@ What a later card touches to add a feature — each is one file of its own plus 
 | `branch-drop` | `{source: DragRef, target: DragRef}` — a branch chip dropped on another; `DragRef = {name: full refname, kind: 'local' \| 'remote', short, remote, oid}`. Orders 100–199 are merge and rebase's (`SEQUENCE_ACTIONS`, [merge](merge.md#where-the-actions-are)); Fast-forward is 200, Reset 300 |
 | `branches` | `{refs: Ref[]}` — two or more branches selected in the refs panel (local and remote) |
 
+**Submodule context** (`features/submodules/actions.ts`): `submodule` — `{tab, entry: SubmoduleEntry}`, a row of the Submodules panel.
+
 **Graph stores other cards read** (`frontend/src/state/graphSelection.ts`, `features/graph/drag.ts`):
 
 - `graphSelectionStore`: per `tabKey`, `{ids, anchor, focus, items}`; `items` (also `selectedRows(tab)`) are `{kind: 'commit' | 'stash', oid} | {kind: 'wip', checkout: Target}`, top to bottom.
@@ -151,7 +158,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 **Ref writes other cards build on:**
 
-- **Toasts**: `trackOp(fn, {running, done, failed?, toastRunning?})` in `lib/opToast.ts` for any op the user should see progress of; `done` may return a warning with an action, or `null` for no toast.
+- **Toasts**: `trackOp(fn, {running, done, failed?, toastRunning?, elapsed?})` in `lib/opToast.ts` for any op the user should see progress of; `done` may return a warning with an action, or `null` for no toast; `elapsed` appends the seconds to the running text (a clone).
 - **Remote commands**: every command that talks to a remote runs through `netRun` (`src/git/remote/net.js`: `NET_CONFIG` + `NETWORK_LIMITS`) and turns a whole-command failure into `remoteFailure`; `src/git/remote/push.js` (`remoteName` in `params`, `knownRemote`, `push`).
 - **A rebase that stops on conflicts**: `onRebaseStopped(git, files)` in `src/git/remote/integrate.js` is the single policy point: it stays in progress and the caller answers `{outcome: 'conflicts', files}` ([merge → The stop rule](merge.md#the-stop-rule)). `rebase(git, args, opts)` there runs every rebase.
 - **What is in progress**: `operationState(git)` (`src/git/sequence/state.js`) for an op; `workdirOf(tab).operation` / `.conflicts` in the UI. A start refuses with `assertNoOperation` (`src/git/sequence/guard.js`).
@@ -166,11 +173,11 @@ What a later card touches to add a feature — each is one file of its own plus 
 - `name` matches `^[a-z]+\.[a-zA-Z]+$` and is unique.
 - `kind` is `'read'` or `'write'`.
 - `cancellable`, when given, is a boolean; it defaults to `kind === 'read'`. A write sets `cancellable: true` only where aborting mid-command cannot leave the repo half-changed, and its card states why: `remote.fetch` (atomic ref updates, gc off, no index or worktree), `remote.push`, `tag.push`, `tag.deleteRemote`, `branch.deleteRemote` (atomic remote ref updates). `remote.pull`, `merge.start`, `rebase.start`, `rebase.interactive`, `conflict.save`, `conflict.take`, `head.continue`, `head.skip` and `head.abort` are not: an abort mid-merge or mid-rebase would.
-- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target})` returns JSON. `target` is the call's validated `{project, worktree}` (worktree `null` = main checkout), for an op that names its output after the checkout (`diff.patch`); git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`.
+- `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target})` returns JSON. `target` is the call's validated `{project, worktree, sub?}` (worktree `null` = main checkout; `sub` a submodule chain), for an op that names its output after the checkout (`diff.patch`); git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`.
 
 ## Runner pipeline (`runGit`)
 
-1. argv = `['git', ...BASE_ARGS, ...args]`. `BASE_ARGS` disables the pager, colour, path quoting, fsmonitor and submodule recursion (`submodule.recurse=false`: a repo's `true` would make a discard of a submodule row discard the submodule's own uncommitted work; a later card passes `--recurse-submodules` explicitly), and pins `--work-tree=.`: the checkout cc runs the command in is the working tree, whatever the repo's `core.worktree` says (it resolves after any `-C <subpath>` an op adds). A bare repository then looks like a working tree of its own files, so `repo.summary` (before `status`) and every write check first whether the git dir is the working tree itself — `rev-parse --git-dir` printing exactly `.`, no path parsed — and refuse `BARE_REPO` (`src/git/worktree.js`: `isBare`, `assertWorktree`). Never `core.bare`: the repository sets it (directly or through an `[include]`), so a bare repo saying `false` would pass.
+1. argv = `['git', ...BASE_ARGS, ...subArgs(target), ...args]`. `BASE_ARGS` disables the pager, colour, path quoting, fsmonitor and submodule recursion (`submodule.recurse=false`: a repo's `true` would make a discard of a submodule row discard the submodule's own uncommitted work; only `submodule update`/`sync` pass `--recursive`), and pins `--work-tree=.`: the checkout cc runs the command in is the working tree, whatever the repo's `core.worktree` says (it resolves after `-C`). For a target with a submodule chain, `subArgs` adds `-C <chain> --git-dir=.git` (the explicit git dir stops git walking up from a submodule not cloned yet to the parent: [submodules → Addressing](submodules.md#addressing)); before such an op runs, the route's containment preflight (`assertInsideCheckout`: top levels and each level's git dir) costs three reads plus two per chain level. A bare repository then looks like a working tree of its own files, so `repo.summary` (before `status`) and every write check first whether the git dir is the working tree itself — `rev-parse --git-dir` printing exactly `.`, no path parsed — and refuse `BARE_REPO` (`src/git/worktree.js`: `isBare`, `assertWorktree`). Never `core.bare`: the repository sets it (directly or through an `[include]`), so a bare repo saying `false` would pass.
 2. env = `BASE_ENV` + (`READ_ENV` for reads) + the op's env. An op's env naming a protected variable (`isProtectedEnv`: the names in `PROTECTED_ENV` — `GIT_TERMINAL_PROMPT`, `GCM_INTERACTIVE`, `GIT_ASKPASS`, `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE`, `GIT_LITERAL_PATHSPECS`, `GIT_DIR`, `GIT_WORK_TREE`, `GIT_EXEC_PATH` — and every name starting with a `PROTECTED_ENV_PREFIXES` entry: `GIT_SSH` (`GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT`, …) or `GIT_CONFIG`) throws before anything runs or is logged: a code-git bug, answered 500 `INTERNAL`. `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` stay overridable (an interactive-rebase todo editor, say).
 3. A write takes its **project's** lock (worktrees share refs and objects); reads and other projects never wait.
 4. The activity entry opens (`running`) with its own `AbortController`, combined with the op's signal.
@@ -183,12 +190,12 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 | Input | Check | Then |
 |---|---|---|
-| target | `assertTarget`: only `project`/`worktree` keys; names not `.`/`..` (they would rewrite the cc URL a name is spliced into) | sent as exec form A, so the System is always the project's own |
+| target | `assertTarget`: only `project`/`worktree`/`sub` keys; names not `.`/`..` (they would rewrite the cc URL a name is spliced into); `sub` a chain of `submodulePath`s | `{project, worktree}` sent as exec form A, so the System is always the project's own; `sub` becomes `-C … --git-dir=.git` |
 | a ref to create | `assertRefName` (`git check-ref-format --allow-onelevel` rules, no leading `-`) | — |
 | an object id | `assertOid`: 40 or 64 lowercase hex | sent on stdin or after `--end-of-options` |
 | a revision | `assertRev`: no leading `-`, whitespace or control characters | placed after `--end-of-options` where the subcommand parses options |
 | a path | `assertPath`: relative, no `..` segment, NUL or backslash; a leading `-` is allowed | always after `--`; `GIT_LITERAL_PATHSPECS=1` makes `:(glob)`, `*` and friends literal |
-| a `-C` subpath | `assertSubpath`: `assertPath` + no leading `-` | — |
+| a `-C` subpath | `assertSubpath`: `assertPath` + no leading `-`; a submodule path also `submodulePath` (no empty/`.` segment, no `.git` alias) | — |
 
 **No process or filesystem access in `src/`** except `src/http/static.js` reading `frontend/dist`: git runs only through cc. A test (`exec.test.js` guard) enforces it.
 
@@ -218,7 +225,7 @@ What a later card touches to add a feature — each is one file of its own plus 
   - **Stash** (details: [stash](stash.md)):
     1. `git stash push -- <paths>` and `--staged` restore the worktree with `diff-index -p --cached HEAD | apply --index -R` inside git (the `--index` write-through above). git 2.55 refuses every write-through case the probe tests try (`tests/stash-git-probes.test.js`: "beyond a symbolic link", "pathspec did not match", "untracked working tree files would be overwritten"), but `--staged` fails *after* creating the stash, and an apply with the path still in the index replaces the symlink with a real directory. Every stash op that writes the worktree refuses `PATH_BLOCKED` first, whatever git would do: an untracked or ignored entry (symlink or file) at a proper leading directory of the paths it writes — for a save, the named paths and what they expand to — and, for the two ops that write one named file (`applyFile`, `pushLines`), a directory or a link to a directory at the file itself. A symlink to a file at the final component is left to git, which replaces or deletes the link (or refuses "wrong type") and never writes through it. Not covered: a case-insensitive filesystem whose `core.ignorecase` is false.
     2. The `PATH_BLOCKED` and untracked-collision gates are check-then-act: a symlink or file created between the gate and git's own run is not caught. With `core.ignorecase` the guard lists the leading directories and also each one's parent (a parent's listing names a fully untracked directory `u/` and nothing under it) — the parent listing is the whole repo's untracked set when a path is top-level, which grows with the repo instead of the request (capped: `OUTPUT_TOO_LARGE` past `STASH_LIMITS.pathsMaxOutputBytes`).
-    3. `stash.pushLines` leaves `$GIT_DIR/code-git-stash-index` behind, overwritten on each use and never read by git; two line stashes of one checkout at the same moment would share it.
+    3. `stash.pushLines`' temporary index: **Temporary indexes** below.
     4. Drops address `stash@{n}`, which other sessions can move: `dropVerified` detects a wrong drop and stores that entry back, at the top.
     5. `stash push -u` with an untracked nested repository follows git's own behaviour.
     6. git's apply is not atomic across a stash's tracked and untracked parts: the untracked part is restored after the merge, file by file. The collision gate makes the common failure (a file already there) refuse first.
@@ -264,6 +271,8 @@ What a later card touches to add a feature — each is one file of its own plus 
 | `remote.<r>.followRemoteHEAD` | **Accepted**: git keeps `refs/remotes/<r>/HEAD` symbolic inside the remote's namespace, the one symbolic tracking ref fetch, rename and remove allow |
 | Hooks: pre-push, post-merge, pre-rebase, post-rewrite, prepare-commit-msg, commit-msg, reference-transaction | **Accepted** (the hooks row above) |
 
+  - **Temporary indexes**: `stash.pushLines` (`$GIT_DIR/code-git-stash-index`) and `submodule.commitPointer` (`$GIT_DIR/code-git-pointer-index`, found with `rev-parse --git-path`) build commits on an index of their own (`GIT_INDEX_FILE`). The file stays behind: git has no command that deletes it, and the backend runs nothing but git through cc's exec. Each is overwritten on its next use and never read by git; the pointer one is emptied (`read-tree --empty`) when its op ends, success or failure; the stash one keeps its last tree. The project lock is taken per git **command**, not per op, so two such ops of one checkout at the same moment — two clients' `submodule.commitPointer` — can interleave on the same file: the first commit then holds both pointers and the second fails (nothing to commit, or a hook's verdict on it). Accepted: the outcome is one commit with both requested pointers and an error for the other request, never a pointer nobody asked for.
+  - **Submodules**: the untrusted-config decisions and the residuals (`GIT_ALLOW_PROTOCOL`, hooks and `core.hooksPath` parity, `core.sshCommand`/`gitProxy`/credential parity, nested config, `safe.directory`): [submodules → Security](submodules.md#security-gitmodules-gitconfig-and-a-submodules-own-config-are-untrusted).
   - **A project whose `.git` is a file pointing at another repository's git dir makes code-git act on that repository.** That is git's own model (cc worktrees use `.git` files legitimately) and cc projects are the user's own; the same class as the other hostile-repo residuals. `--work-tree=.` keeps the working tree the checkout's, not the git dir.
 
 ### What each destructive op destroys
@@ -307,8 +316,8 @@ For the undo card: what an op overwrites or deletes, and whether git can give it
 
 ## UI state and routing
 
-- No state library: `createStore` + `useSyncExternalStore`. Each feature owns its store; per-checkout state is keyed by `tabKey` (`project + '\0' + (worktree ?? '')`).
-- Tabs persist under `code-git:tabs`; the active tab is mirrored into `?project=…&worktree=…` with `history.pushState` (which cc's bridge turns into `replaceState`), read on load and on `popstate`.
+- No state library: `createStore` + `useSyncExternalStore`. Each feature owns its store; per-checkout state is keyed by `tabKey` (`project + '\0' + (worktree ?? '')`, then `'\0' + path` per submodule chain entry). State derived from refs that a project's worktrees share (branch tracking, the remotes list and busy state) is keyed by `refsKey` (the project, or a submodule tab's own key); graph prefs by `prefsKey` (the bare project name, or the project then `\0<path>` per chain entry).
+- Tabs persist under `code-git:tabs` (a row with a malformed `sub` is dropped); the active tab is mirrored into `?project=…&worktree=…&sub=…` (one `sub` per chain entry) with `history.pushState` (which cc's bridge turns into `replaceState`), read on load and on `popstate`.
 - Untrusted text (argv, stderr, ref and project names, git messages) renders only as React text children: no raw-HTML API, no `href`/`src`/`style` built from data. `guards.test.ts` scans the sources for both, and for colours that bypass the tokens (literal colours, palette shades, `white`/`black`, non-`var()` arbitrary values) outside the copied `components/ui/`.
 - Palette: `cc-theme-fallback.css` is a one-time snapshot of cc's tokens in `@layer base`; embedded, cc's unlayered `/pluginTheme.css` wins. `palette.test.ts` pins its values and the `@theme inline` block from cc's `docs/plugin-ui.md`.
 
@@ -327,5 +336,6 @@ For the undo card: what an op overwrites or deletes, and whether git can give it
 - **UI** (`frontend/src/**/*.test.{ts,tsx}`, Vitest + happy-dom): `test/stubFetch.ts` (route table; an unstubbed or root-relative request fails), `test/fakeEventSource.ts`, `test/fixtures.ts`, `test/diffFixtures.ts` (`dfile`, `filesResult`, `hunk`, `fdiff`), `test/workdirWorld.ts` (a stubbed backend for the Changes panel and line staging: lists by source kind, the commit reads, every write answered ok unless overridden; `posts(op)`), `test/stashWorld.ts` (workdirWorld with stashes in `graph.refs` and `diff.files` answering a stash's W, I and U commits); `test/setup.ts` resets every store, storage and the URL after each test.
 - `test/workdirWorld.ts` takes `operation` / `conflicts` for `commit.state` (left out of the answer when undefined: an older backend's shape) and answers `head.continue` / `skip` / `abort` ok unless overridden.
 - **Remotes UI**: `test/remotesWorld.ts` (`remotesWorld({head, remotes, answers, upstream})`: graph refs with HEAD on `main` tracking `origin/main`, the tracking and remotes stores, and every remote op stubbed ok unless answered; `posts(op)`). `stubGraph` answers `remote.list` with no remote; `test/workdirWorld.ts` stubs the remotes reads for push-after-commit.
+- `_submodules.js`: `subWorld(t, {nested?, populated?, systemRemote?, allowFile?, ops?})` — a parent repo with submodule `libA` (local bare `libA.git`), itself with `libB` when nested; ops run over HTTP (`startApp`) so the route's preflight runs: `op(name, params, sub?)`, `ok(…)`; `execCalls()`/`execArgv()`, `marker(name)`/`markerScript(name)`/`markers()` (files a hostile command would create), `unclone(name)`, `advance(lib, files)`; `fixtureGit`, `bareRepo` (shared with the Playwright seed). **`protocol.file.allow=always`** is set only per fixture command (`-c`) and in the test System's global config (`hermeticEnv`: the System user's opt-in, which the product honours); `allowFile: false` writes a global config without it. Product code never sets it: `submodule-hostile.test.js` scans every exec. `tests/submodule-git-probes.test.js` runs git directly to pin the behaviours the design rests on. UI side: `test/submoduleWorld.ts` (`submoduleWorld({list(target)})`, `subEntry`, `targets(op)`); `workdirWorld`'s answer functions also receive the call's target.
 - **Graph tests**: `tests/_graphFixture.js` (`buildGraphFixture`: a seeded large history via `git fast-import`); UI side `test/graphData.ts` (row/ref builders) and `test/graphBackend.ts` (`stubGraph(world, extra?)`: the graph ops over a mutable in-memory world, plus `extra` routes for another feature's ops). Tests that mock `@/shell/menus` call `vi.resetModules()` and import the menu modules dynamically: `test/setup.ts` has already loaded the real registry.
-- **Harnesses**: `harness/playwright/` (seeded screenshots, golden path, the diff path, the staging path, the stash path, the graph's visual and perf checks, the merge/rebase card's paths on `sequenceSeed.mjs`, read-only live checks) and `harness/mutation/` (code-mutant routes `server` and `ui`).
+- **Harnesses**: `harness/playwright/` (seeded screenshots, golden path, the diff path, the staging path, the stash path, the submodule path, the graph's visual and perf checks, the merge/rebase card's paths on `sequenceSeed.mjs`, read-only live checks) and `harness/mutation/` (code-mutant routes `server` and `ui`).

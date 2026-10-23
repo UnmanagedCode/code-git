@@ -8,16 +8,24 @@ import { LIMITS } from './limits.js';
 /**
  * Before every subcommand. `--work-tree=.` pins the working tree to the checkout cc runs the command in, so a repo's
  * `core.worktree` cannot redirect reads, staging, discards or restores to another directory. It resolves against the
- * final directory, after any `-C <subpath>` an op adds (the submodule card relies on that). A bare repository would
+ * final directory, after the `-C <subpath>` of subArgs. A bare repository would
  * then look like a working tree of its own files: `repo.summary` and every write first check whether the git dir is
  * the working tree itself (`rev-parse --git-dir` printing `.`; never the repo's own `core.bare`: src/git/worktree.js).
  * `submodule.recurse=false`: a repo setting it true would make restore/checkout/reset recurse into submodules, so
- * discarding a submodule row would throw away the submodule's own uncommitted work. The submodule card passes
- * `--recurse-submodules` explicitly where it wants recursion.
+ * discarding a submodule row would throw away the submodule's own uncommitted work. `submodule update` passes
+ * `--recursive` explicitly, the only command that recurses.
  */
 export const BASE_ARGS = [
   '--no-pager', '-c', 'color.ui=false', '-c', 'core.quotePath=false', '-c', 'core.fsmonitor=false', '-c', 'submodule.recurse=false', '--work-tree=.',
 ];
+
+/**
+ * After BASE_ARGS, for a target inside a submodule: run in the submodule's directory, its `.git` (a gitfile) named
+ * explicitly. Without `--git-dir`, git would walk up from a submodule that is not cloned yet to the parent repository and,
+ * under `--work-tree=.`, treat the submodule's directory as the parent's working tree — writes would land in the
+ * parent's index. With it, such a target exits 128 ("not a git repository").
+ */
+export const subArgs = (target) => (target.sub ? ['-C', target.sub.join('/'), '--git-dir=.git'] : []);
 
 /** Every call: no prompt can hang, an editor launch fails loudly, pathspecs are literal, git's messages are stable. */
 export const BASE_ENV = {
@@ -57,9 +65,9 @@ export function subcommandOf(args) {
 }
 
 /**
- * Runs one git command for an op. `ctx` = {target, op, kind: 'read'|'write', cancellable, signal, opRunId, activity, locks}.
+ * Runs one git command for an op, in `ctx.target` (subArgs for a submodule). `ctx` = {target, op, kind: 'read'|'write', cancellable, signal, opRunId, activity, locks}.
  * Resolves {exitCode, stdout: Buffer, stderr: Buffer, durationMs}; an exit code outside `okExit` throws GIT_FAILED.
- * A write holds its project's lock for the whole command. An op env naming a protected variable (isProtectedEnv) throws.
+ * A write holds its project's lock for the whole command (a submodule's too: its pointer is the project's state). An op env naming a protected variable (isProtectedEnv) throws.
  */
 export async function runGit(ctx, args, { stdin, env: opEnv = {}, timeoutMs, maxOutputBytes, okExit = [0] } = {}) {
   const { target, kind, activity } = ctx;
@@ -68,7 +76,7 @@ export async function runGit(ctx, args, { stdin, env: opEnv = {}, timeoutMs, max
   // An op setting a protected name is a code-git bug: refuse before anything runs.
   const forbidden = Object.keys(opEnv).filter(isProtectedEnv);
   if (forbidden.length) throw new Error(`runGit: ${ctx.op} may not set ${forbidden.join(', ')}`);
-  const argv = ['git', ...BASE_ARGS, ...args];
+  const argv = ['git', ...BASE_ARGS, ...subArgs(target), ...args];
   const env = { ...BASE_ENV, ...(kind === 'read' ? READ_ENV : {}), ...opEnv };
   const stdinBytes = stdin === undefined ? 0 : Buffer.byteLength(stdin);
 

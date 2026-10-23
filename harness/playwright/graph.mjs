@@ -212,9 +212,14 @@ try {
     check(await row(o.D).locator('[data-label-kind=head]').getAttribute('data-drop-active') === '', 'dragging feature/a over main marks main the drop target');
     await shot('drag-light-desktop');
     await page.mouse.up();
-    // The drop menu holds the branches card's entries only (merge and rebase come later, at orders 100–199).
+    // The drop menu, in order: merge and rebase (features/sequence/actions.ts, orders 100–120), then the branches card's
+    // Fast-forward (200) and Reset (300; main is HEAD, so the Reset submenu, not the branch move).
     const dropItems = await menuItems();
-    check(dropItems.join('|') === 'Fast-forward main to feature/a|Reset main to feature/a', `the drop opens the branch-drop menu (${dropItems.join(', ')})`);
+    const DROP_ITEMS = [
+      'Merge feature/a into main', 'Merge feature/a into main (no fast-forward)', 'Squash feature/a into main',
+      'Rebase main onto feature/a', 'Interactive rebase main onto feature/a…', 'Fast-forward main to feature/a', 'Reset main to feature/a',
+    ];
+    check(dropItems.join('|') === DROP_ITEMS.join('|'), `the drop opens the branch-drop menu (${dropItems.join(', ')})`);
 
     // ---- every scheme and viewport ----
     await page.mouse.move(0, 0); // off every chip: no hover dimming in the screenshots

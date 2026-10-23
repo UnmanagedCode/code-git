@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createActivityLog, redactArgv } from '../src/activity/log.js';
-import { maskUrl } from '../src/mask.js';
+import { maskDeep, maskUrl, maskUrls } from '../src/mask.js';
 import { refsWorld } from './_refsWorld.js';
 import { startApp } from './_app.js';
 
@@ -45,4 +45,30 @@ test('end to end: remote.add with a credential url writes it to git config but /
   assert.ok(!body.includes('ss/word'), 'the password never reaches the activity API');
   const listed = (await app.call('POST', '/api/ops/remote.list', { target: { project: 'repo' } })).body.result.remotes.find((x) => x.name === 'up');
   assert.equal(listed.displayUrl, 'https://me:***@h.example/r.git');
+});
+
+test('maskUrls masks every credentialed url inside a text, stopping at whitespace or a quote, and leaves the rest', () => {
+  const text = "Cloning into 'x'...\nfatal: clone of 'https://u:p@ss@host/r.git' into submodule path 'x' failed\nsee ssh://git:k3y@h:22/r and http://plain/h@x";
+  assert.equal(maskUrls(text), "Cloning into 'x'...\nfatal: clone of 'https://u:***@host/r.git' into submodule path 'x' failed\nsee ssh://git:***@h:22/r and http://plain/h@x");
+  assert.equal(maskUrls('no urls here'), 'no urls here');
+});
+
+test("maskUrls: a password holding ' or \" is masked whole (quotes do not end it; whitespace does)", () => {
+  assert.equal(maskUrls("fatal: clone of 'https://u:pa'ss@host/r.git' into submodule path"), "fatal: clone of 'https://u:***@host/r.git' into submodule path");
+  assert.equal(maskUrls('Submodule \'c\' (http://u:pa"ss@h/r.git) registered'), "Submodule 'c' (http://u:***@h/r.git) registered");
+});
+
+test('a user name holding @: maskUrl, maskUrls and redactArgv take the first : after scheme:// and the last @', () => {
+  const url = 'https://a@b:c0ntr4@host/r.git';
+  assert.equal(maskUrl(url), 'https://a@b:***@host/r.git');
+  assert.equal(maskUrls(`fatal: clone of '${url}' into submodule path 'x'`), "fatal: clone of 'https://a@b:***@host/r.git' into submodule path 'x'");
+  assert.deepEqual(redactArgv(['git', 'submodule', 'add', '--', url, 'x']), ['git', 'submodule', 'add', '--', 'https://a@b:***@host/r.git', 'x']);
+  // No password: unchanged (a port colon with no @ after it is not one).
+  for (const plain of ['https://a@host:8080/r.git', 'https://host/r.git', 'git@host:o/r.git']) assert.equal(maskUrl(plain), plain);
+});
+
+test('maskDeep masks every string through arrays and plain objects, and leaves other values', () => {
+  const u = 'https://u:pw1@h/r';
+  assert.deepEqual(maskDeep({ error: `refs ${u}`, names: [u, 'origin'], n: 3, nested: { stderr: u }, ok: true, none: null }),
+    { error: 'refs https://u:***@h/r', names: ['https://u:***@h/r', 'origin'], n: 3, nested: { stderr: 'https://u:***@h/r' }, ok: true, none: null });
 });

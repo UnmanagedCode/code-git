@@ -4,7 +4,7 @@ import { refreshGraph } from '@/state/graph';
 import { getRemotePrefs, remotePrefsStore } from '@/state/remotePrefs';
 import { getRemotes, refreshRemotes, setAutoFetchError, setRemoteBusy } from '@/state/remotes';
 import { useStore } from '@/state/store';
-import { useTabs, type Tab } from '@/state/tabs';
+import { refsKey, useTabs, type Tab } from '@/state/tabs';
 import { activityStore } from '@/state/useActivity';
 import { fetchRemotes, isFetchError } from './api';
 
@@ -28,10 +28,11 @@ export const setRemoteClock = (c: RemoteClock | null): void => { clock = c ?? RE
 const toasted = new Set<string>();
 export const resetAutoFetch = (): void => { toasted.clear(); clock = REAL_CLOCK; };
 
-/** Why a tick does not run now: the page is hidden, a remote op of the project is running, or any write of it is. */
-function skipReason(project: string): string | null {
+/** Why a tick does not run now: the page is hidden, a remote op of the checkout is running, or any write of the project is. */
+function skipReason(tab: Tab): string | null {
+  const { project } = tab;
   if (document.visibilityState !== 'visible') return 'hidden';
-  const busy = getRemotes(project).busy;
+  const busy = getRemotes(refsKey(tab)).busy;
   if (busy.fetch || busy.pull || busy.push) return 'busy';
   const writing = activityStore.get().entries.some((e) => e.status === 'running' && e.kind === 'write' && e.target.project === project);
   return writing ? 'writing' : null;
@@ -39,13 +40,13 @@ function skipReason(project: string): string | null {
 
 /** One auto-fetch of `tab`'s project, unless skipReason says not now. */
 export async function autoFetchTick(tab: Tab): Promise<void> {
-  if (skipReason(tab.project)) return;
-  setRemoteBusy(tab.project, 'fetch', true);
+  if (skipReason(tab)) return;
+  setRemoteBusy(refsKey(tab), 'fetch', true);
   const r = await trackOp(() => fetchRemotes(tab, null), { running: 'Fetching all remotes…', done: () => null, toastRunning: false });
-  setRemoteBusy(tab.project, 'fetch', false);
+  setRemoteBusy(refsKey(tab), 'fetch', false);
   const failure = !r.ok ? r.error.message
     : r.result.remotes.filter(isFetchError).map((x) => `${x.remote}: ${x.error.message}`).join('\n') || null;
-  setAutoFetchError(tab.project, failure);
+  setAutoFetchError(refsKey(tab), failure);
   if (!failure) toasted.delete(tab.project);
   else if (!toasted.has(tab.project)) {
     toasted.add(tab.project);
@@ -61,7 +62,8 @@ export function useAutoFetch(): void {
   const prefs = useStore(remotePrefsStore);
   useEffect(() => {
     const byProject = new Map<string, Tab>();
-    for (const t of open) if (!byProject.has(t.project)) byProject.set(t.project, t);
+    // A project's checkout, never a submodule: a submodule tab's project is fetched through its checkout.
+    for (const t of open) if (!byProject.has(t.project)) byProject.set(t.project, { project: t.project, worktree: t.worktree });
     const timers: unknown[] = [];
     for (const [project, tab] of byProject) {
       const minutes = getRemotePrefs(project).autoFetchMinutes;

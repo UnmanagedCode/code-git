@@ -3,8 +3,8 @@ import { useMemo } from 'react';
 import { getItem, setItem } from '@/lib/storage';
 import { createStore, useStore } from './store';
 
-// Per-project graph preferences (visibility, pins, columns), persisted under `graph:<project>`: refs are shared by
-// every checkout of a project, so its worktree tabs share one record.
+// Per-repo graph preferences (visibility, pins, columns), persisted under `graph:<prefsKey>` (prefsKey in state/tabs.ts):
+// refs are shared by every checkout of a project, so its worktree tabs share one record; a submodule has its own.
 
 export type Section = 'local' | 'remote' | 'tags' | 'stashes';
 const SECTIONS: Section[] = ['local', 'remote', 'tags', 'stashes'];
@@ -48,40 +48,40 @@ export function validatePrefs(raw: unknown): GraphPrefs {
   };
 }
 
-const key = (project: string) => `graph:${project}`;
+const key = (prefsKey: string) => `graph:${prefsKey}`;
 
-export function loadPrefs(project: string): GraphPrefs {
+export function loadPrefs(prefsKey: string): GraphPrefs {
   try {
-    return validatePrefs(JSON.parse(getItem(key(project)) ?? 'null'));
+    return validatePrefs(JSON.parse(getItem(key(prefsKey)) ?? 'null'));
   } catch {
     return DEFAULT_PREFS;
   }
 }
 
-/** Loaded on first read, by project. */
+/** Loaded on first read, by prefsKey. */
 export const graphPrefsStore = createStore<ReadonlyMap<string, GraphPrefs>>(new Map());
 export const resetGraphPrefs = (): void => graphPrefsStore.set(new Map());
 
-export function getPrefs(project: string): GraphPrefs {
+export function getPrefs(prefsKey: string): GraphPrefs {
   const m = graphPrefsStore.get();
-  const have = m.get(project);
+  const have = m.get(prefsKey);
   if (have) return have;
-  const loaded = loadPrefs(project);
-  graphPrefsStore.set(new Map(m).set(project, loaded));
+  const loaded = loadPrefs(prefsKey);
+  graphPrefsStore.set(new Map(m).set(prefsKey, loaded));
   return loaded;
 }
 
-export function updatePrefs(project: string, f: (p: GraphPrefs) => GraphPrefs): void {
-  const next = validatePrefs(f(getPrefs(project)));
-  graphPrefsStore.set((m) => new Map(m).set(project, next));
-  setItem(key(project), JSON.stringify(next));
+export function updatePrefs(prefsKey: string, f: (p: GraphPrefs) => GraphPrefs): void {
+  const next = validatePrefs(f(getPrefs(prefsKey)));
+  graphPrefsStore.set((m) => new Map(m).set(prefsKey, next));
+  setItem(key(prefsKey), JSON.stringify(next));
 }
 
-export function useGraphPrefs(project: string): GraphPrefs {
+export function useGraphPrefs(prefsKey: string): GraphPrefs {
   const m = useStore(graphPrefsStore);
   // Read storage without writing the store during render; the first update stores it.
-  const stored = useMemo(() => loadPrefs(project), [project]);
-  return m.get(project) ?? stored;
+  const stored = useMemo(() => loadPrefs(prefsKey), [prefsKey]);
+  return m.get(prefsKey) ?? stored;
 }
 
 /** `list` with `item` added (at the end) or removed. */

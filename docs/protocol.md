@@ -1,4 +1,4 @@
-> See also: [README](../README.md) · [features](features.md) · [architecture](architecture.md)
+> See also: [README](../README.md) · [features](features.md) · [architecture](architecture.md) · [submodules](submodules.md)
 
 # Protocol
 
@@ -6,7 +6,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 
 ## Conventions
 
-- JSON everywhere under `api/`. A refusal is `{error, code, …extra}` with the status from `HTTP_STATUS` (`src/refusals.js`), the single source for codes.
+- JSON everywhere under `api/`. A refusal is `{error, code, …extra}` with the status from `HTTP_STATUS` (`src/refusals.js`), the single source for codes. A url password in any string of it — `error`, `stderr`, a list of names — is masked (`maskDeep` over `maskUrls`, in `Refusal.toBody`); so are the success payloads that carry git's stderr (`remote.fetch`'s `partial` and per-remote `error`, `graph.refs`' `worktreesError`). Masking runs from the first `:` after `scheme://` to the last `@` of the whitespace-separated token, so a user name holding `@` or a password holding quotes is covered.
 - **State-changing requests** (every non-GET/HEAD under `api/`) must send `Content-Type: application/json` (`/^application\/json\s*(;|$)/i`), else 415 `UNSUPPORTED_MEDIA_TYPE`. Body limit 1 MB (over: 413 `BODY_TOO_LARGE`); malformed JSON: 400 `BAD_REQUEST`.
 - Every response — API, UI, 404, 503, errors, parser-rejected requests — carries `Content-Security-Policy` (`CSP` in `src/http/security.js`) and `X-Content-Type-Options: nosniff`.
 - An unknown `api/` path is a JSON 404 `NOT_FOUND`; no route answers with the UI.
@@ -40,14 +40,15 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 
 ## Ops
 
-`POST api/ops/:name` with `{target: {project, worktree?}, params?}`. No route accepts argv or git options: an op builds its argv from typed params.
+`POST api/ops/:name` with `{target: {project, worktree?, sub?}, params?}`. No route accepts argv or git options: an op builds its argv from typed params. `sub` names a submodule inside the checkout as a chain of paths (`['libs/a', 'b']`: submodule `b` of submodule `libs/a`), omitted for the checkout itself; the runner turns it into `-C <path> --git-dir=.git` and cc never sees it ([submodules → Addressing](submodules.md#addressing)).
 
 | Check (in order) | Refusal |
 |---|---|
 | Body is an object with only `target` and `params` | 400 `BAD_PARAMS` |
-| `target` is `{project, worktree?}` and nothing else; names non-empty, ≤ 200 chars, not `.` or `..`, no NUL or `/` (`assertTarget`) | 400 `BAD_TARGET` |
+| `target` is `{project, worktree?, sub?}` and nothing else; names non-empty, ≤ 200 chars, not `.` or `..`, no NUL or `/`; `sub`, when present, an array of 1…`SUBMODULE_LIMITS.maxDepth` `submodulePath` entries (`assertTarget`, `submoduleChain`) | 400 `BAD_TARGET` |
 | `:name` is a registered op | 404 `UNKNOWN_OP` |
-| The op's own `params` check | 400 `BAD_PARAMS`, `BAD_REF`, `BAD_PATH` |
+| The op's own `params` check | 400 `BAD_PARAMS`, `BAD_REF`, `BAD_PATH`, `BAD_URL` |
+| With `sub`: the chain is a cloned submodule whose real path is inside the checkout and whose git dir, at every level, is the one git gives it (`assertInsideCheckout`: reads under the op run) | 409 `SUBMODULE_NOT_POPULATED` `{path}`, 409 `SUBMODULE_UNSAFE` `{reason: 'escapes' \| 'gitdir', path}` |
 | Running it | the op's refusals, plus the exec refusals below |
 
 **Cancel and disconnect.** An op is `cancellable` when its definition says so; the default is `true` for `kind: 'read'` and `false` for `kind: 'write'`. A cancellable op is aborted by `POST api/activity/:id/cancel` on the entry of its **currently running** command (an entry of one of its already-finished commands answers 409 `NOT_RUNNING`), after which the op's request answers 409 `CANCELLED`; or by its HTTP client going away, in which case nobody receives an answer and the outcome is only in the activity log (the entry ends `cancelled`). A non-cancellable op is aborted by neither: it runs to completion and its outcome lands in the activity log.
@@ -461,6 +462,10 @@ Behaviour, the stop rule and the state detection: [merge](merge.md). The continu
 | `rebase.interactive` | write | `{mode: 'rebase' \| 'pick', base, onto, expect, rows: [{oid, action: 'pick' \| 'reword' \| 'edit' \| 'squash' \| 'fixup' \| 'drop', message?: {summary, description?}}] /* oldest first */, ccOwned?}` | the gates of `rebase.start` (pick: no cc check); `rev-list <base>..<expect>` (rebase) or the plan of the rows (pick); `config --type=bool --get commit.gpgSign`; a carrier per row that takes a message (`log -1`, `commit-tree [-S] -p <parent> -F - --end-of-options <oid>^{tree}`, the message on stdin, the author in env); `<REBASE pins> rebase -i --empty=drop --onto=<onto> --end-of-options <base>` with env `GIT_SEQUENCE_EDITOR='cat >'` and the todo on stdin | as `rebase.start` | as `rebase.start`; `BAD_PARAMS` ([merge → Interactive rebase](merge.md#interactive-rebase)); `TOO_MANY_COMMITS` |
 | `rebase.start` | write | `{onto, upstream, expect, ccOwned?}` | the gates of [merge → Rebase](merge.md#rebase) (`git version`, `assertNoOperation`, `status`, `rev-list --merges --count <upstream>..HEAD`); `<REBASE pins> rebase --onto=<onto> --end-of-options <upstream>`, exit 0 or 1 | `{outcome: 'done' \| 'upToDate' \| 'conflicts' \| 'stopped', files, oid /* HEAD after */, undo /* done: the branch's move */}` | `BARE_REPO`; `GIT_TOO_OLD` (< 2.26); `OPERATION_IN_PROGRESS`; `CONFLICTED`; `NO_HEAD`; `REF_MOVED`; `CC_OWNED_BRANCH` (`head: true`); `DIRTY_WORKTREE`; `REV_UNKNOWN`; `HAS_MERGES`; `CHECKOUT_CONFLICT` (untracked files in the way; aborted); `GIT_FAILED` (aborted, `stderr`) |
 
+### Submodule ops (`src/git/ops/submodule.js`)
+
+`submodule.list` (read, cancellable); `submodule.add`, `submodule.init`, `submodule.update`, `submodule.sync`, `submodule.setUrl`, `submodule.remove`, `submodule.commitPointer` (writes, not cancellable). Paths are relative to the target's repo. Params, argv, gates, refusals and results: [submodules → Ops](submodules.md#ops-srcgitopssubmodulejs).
+
 ### Paging convention (for ops that list)
 
 An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b`, blobs by `cat-file -s` before reading.
@@ -475,7 +480,7 @@ An op that lists pages **by git arguments**, never by slicing output (cc's exec 
 | `id` | Number, increasing |
 | `opRunId` | Shared by the commands of one op call |
 | `op` | Op name |
-| `target` | `{project, worktree}` (`worktree: null` = main checkout) |
+| `target` | `{project, worktree, sub?}` (`worktree: null` = main checkout; `sub` only for a command run in a submodule, the chain it ran in) |
 | `argv` | Exactly what ran, `git` first |
 | `env` | The op's own env overlay (not the base env); values of names matching `/TOKEN\|PASS\|SECRET\|KEY/i` are `[redacted]` |
 | `stdinBytes` | Size of stdin; its content is never recorded |
@@ -483,7 +488,7 @@ An op that lists pages **by git arguments**, never by slicing output (cc's exec 
 | `cancellable` | From the op definition |
 | `startedAt` | ISO time |
 | `durationMs`, `exitCode` | cc's; `null` while running or when the command never ran to an exit |
-| `stderr`, `stderrTruncated` | Decoded as UTF-8 (invalid bytes replaced), the **tail** up to `LIMITS.stderrCap` bytes |
+| `stderr`, `stderrTruncated` | Decoded as UTF-8 (invalid bytes replaced), the **tail** up to `LIMITS.stderrCap` bytes; a url's password inside it is masked (`maskUrls` in `src/mask.js`: git quotes the url a submodule clone failed on) |
 | `status` | `running` → `ok` \| `failed` (exit outside the op's accepted codes, `code: GIT_FAILED`) \| `refused` (a cc refusal) \| `timeout` (`GIT_TIMEOUT`) \| `cancelled` (`CANCELLED`) |
 | `code` | The refusal code, or `null` |
 
@@ -535,7 +540,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `REMOTE_CONFIG_UNSUPPORTED` | 409 | A fetch refspec of the remote code-git cannot map to the tracking refs a push updates, or a remote with no url whose config git reads from a legacy remote file; `remote`, `refspec` |
 | `REMOTE_UNKNOWN` | 404 | The remote name is malformed or not one of `git remote`'s |
 | `PUSH_REJECTED` | 409 | The remote rejected every ref of a push; `rejected`; from `remote.push` also `remote`, `to`, `tracking: {ref, oid} \| null` |
-| `BAD_URL` | 400 | A remote url refused (`remoteUrl` in `src/git/remote/url.js`): not an allowlisted shape, a `<transport>::` helper url, a leading `-`, whitespace or a control character, too long |
+| `BAD_URL` | 400 | A remote or submodule url refused (`remoteUrl` in `src/git/remote/url.js`; `submoduleUrl` in `src/git/submodule/url.js` adds relative `./` / `../` urls): not an allowlisted shape, a `<transport>::` helper url, a leading `-`, whitespace or a control character, too long |
 | `REMOTE_EXISTS` | 409 | A remote of that name exists (`remote.add`, `remote.rename`) |
 | `NO_UPSTREAM` | 409 | Pull or push without a remote, and HEAD's branch (or the branch) has no remote upstream; detached HEAD |
 | `DIRTY_WORKTREE` | 409 | A rebase pull with tracked changes in the working tree or the index; or a rebase's `head.continue` git refused over unstaged changes (the rebase stays; `stderr`) |
@@ -544,7 +549,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `FILE_CHANGED` | 409 | `conflict.save`: the worktree file is no longer what was read; `expect`, `actual` |
 | `TOO_MANY_COMMITS` | 409 | A rebase plan or an interactive rebase over `REBASE_LIMITS.maxCommits` commits; `{count, max}` |
 | `HAS_MERGES` | 409 | A rebase's range (`upstream..HEAD`) holds a merge commit: it is not flattened; rebase it with git |
-| `OPERATION_IN_PROGRESS` | 409 | A merge, rebase, cherry-pick or revert is in progress where an op would start another; `operation` = its kind |
+| `OPERATION_IN_PROGRESS` | 409 | A merge, rebase, cherry-pick or revert is in progress where an op would start another, or — `submodule.commitPointer` — where a commit would conclude it or land in its middle; `operation` = its kind (`merge` \| `rebase` \| `cherry-pick` \| `revert`). "Finish or abort it first" |
 | `PICK_EMPTY` | 409 | A revert or cherry-pick would commit nothing; nothing is left in progress |
 | `NOTHING_IN_PROGRESS` | 409 | `head.abort` / `head.continue` / `head.skip` whose `which` is not the operation in progress (or none is) |
 | `STASH_UNKNOWN` | 404 | The oid is not in the stash list ([stash](stash.md)) |
@@ -552,6 +557,16 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `PATH_BLOCKED` | 409 | A stash op (or `conflict.save`, or `conflict.take` for any path it names, before it writes anything; `conflict.read`, which would read through it) would write through something git cannot write into: a leading directory of a path it writes is an untracked (or ignored) symlink or file (`assertNotBlocked`), or — for `stash.applyFile`, `stash.pushLines`, `conflict.save`, and `conflict.take` on every path where no stage is a gitlink — the file itself is a directory or a link to a directory (`assertFileTarget`); `paths` ([stash → Gates](stash.md#gates)) |
 | `STASH_MOVED` | 409 | The stash list changed while dropping; the entry dropped by mistake was stored back; `{oid, restored}` |
 | `GIT_TOO_OLD` | 409 | The project's System runs a git below the feature's floor (a rebase: 2.26); `{feature, need, have}` |
+| `SUBMODULE_UNKNOWN` | 404 | No `.gitmodules` entry declares that path; `path` |
+| `SUBMODULE_UNSAFE` | 409 | Not acted on: `reason` `name` / `path` / `duplicate` (`.gitmodules` declares the name at another path or the path under another name) / `escapes` (the entry, or a chain resolving outside the checkout; `path`), `gitdir` (a chain level's `.git` names another repository's git dir; `path`), `url` (a url git would clone or resolve against is refused; `names`), `config` (the repo's own config sets `protocol.*`; `keys`), `gitmodules` (`.gitmodules` is a symlink) |
+| `SUBMODULE_NOT_POPULATED` | 409 | The submodule is not cloned (or the chain's directory does not exist); `path` |
+| `SUBMODULE_EXISTS` | 409 | `submodule.add`: `reason` `exists` (the path is in the index, an entry has that path or name, or anything is already on disk at the path) or `gitdir` (a removed submodule of that name kept `.git/modules/<name>`); `path`, `name` |
+| `SUBMODULE_DIRTY` | 409 | `submodule.remove` without `discard`: `{path, modified, untracked, orphaned, staged, gitmodules}`; or an update's checkout over local changes (`stderr`) |
+| `SUBMODULE_COMMITS_AT_RISK` | 409 | `submodule.update` without `discardCommits` would leave commits on no branch; `paths: [{path, count}]` |
+| `SUBMODULE_POINTER_MOVED` | 409 | `submodule.commitPointer`: the submodule's HEAD is not `expect`; `path`, `head` |
+| `SUBMODULE_CONFLICTED` | 409 | `submodule.update` of a gitlink in conflict (git would skip it and exit 0); `paths` |
+| `SUBMODULE_NOT_RECORDED` | 409 | `.gitmodules` declares it but its gitlink is not in the index: `submodule.init` / `update` / `sync`, and `submodule.remove` of such an entry whose directory holds a clone; `paths`. `reason: 'typechange'`: `submodule.remove` where a file or a directory is staged in the gitlink's place |
+| `SUBMODULE_TRANSPORT_BLOCKED` | 409 | git's protocol policy refused the url's transport; `transport`, `stderr` (for `file`: the System's `protocol.file.allow` does not allow it) |
 | `BODY_TOO_LARGE` | 413 | Request body over 1 MB |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A state-changing request that is not JSON |
 | `GIT_FAILED` | 422 | git exited with a code the op does not accept; `exitCode`, `stderr` |
@@ -573,6 +588,7 @@ The document stays at the plugin root; the active tab is in the query string, ne
 | (none) | No URL-named tab: the persisted tabs only |
 | `?project=<name>` | The project's main checkout |
 | `?project=<name>&worktree=<name>` | That worktree |
+| `…&sub=<path>&sub=<path>…` | A submodule tab: one `sub` per chain entry, in order |
 
 ## cc routes consumed
 

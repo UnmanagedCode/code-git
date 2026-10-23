@@ -8,12 +8,13 @@ Shape: `server.js` → `src/app.js` (wiring) → `src/routes/*` → `src/git/ops
 
 | Term | Meaning |
 |---|---|
-| **target** | `{project, worktree}` naming one cc checkout; `worktree: null` = the main checkout. Validated by `assertTarget`, which refuses any other key |
+| **target** | `{project, worktree, sub?}` naming one cc checkout (`worktree: null` = the main checkout), or with `sub` a submodule inside it. Validated by `assertTarget`, which refuses any other key |
+| **sub chain** | A target's `sub`: submodule paths from the checkout down, each relative to the one before; the runner alone turns it into `-C <path> --git-dir=.git`, cc never sees it |
 | **form A** | cc exec addressing by `{project, worktree?}`; cc resolves the directory and the System. code-git uses only this form (never `system`/`cwd`, never `shell`) |
 | **op** | A named backend operation (`repo.summary`) with `kind` read/write, `cancellable`, `params`, `run`. The UI calls ops by name; no route takes argv |
 | **op run** | One call of an op; its commands share an `opRunId` |
 | **activity entry** | One git command as logged: argv, target, status, exit code, stderr tail. Diagnostic only |
-| **tabKey** | `project + '\0' + (worktree ?? '')`: the key of a checkout's UI state |
+| **tabKey** | `project + '\0' + (worktree ?? '')`, then `'\0' + path` per sub chain entry: the key of a checkout's UI state. `refsKey`/`prefsKey` share refs-derived state and graph prefs across a project's worktrees, but not into its submodules |
 | **diff source** | What a diff compares (`commit`, `unstaged`, `staged`, `compare`, `worktree`, `commits`, `pair`); resolved to a **pair** of pinned sides (`tree` oid / `index` / `worktree`) |
 | **System** | Where a project lives (`local`, `docker`, `ssh`, …), from cc's project row |
 

@@ -13,7 +13,7 @@ import { openRemoteDialog } from '@/state/remoteDialog';
 import { useRemotes } from '@/state/remotes';
 import { toggled, updatePrefs, useGraphPrefs, type GraphPrefs, type Section } from '@/state/graphPrefs';
 import { dispatchRefSelection, selectedRefs, useRefSelection } from '@/state/refSelection';
-import type { Tab } from '@/state/tabs';
+import { prefsKey, type Tab } from '@/state/tabs';
 import { CONTEXT, type BranchesCtx, type RefCtx, type RemoteCtx, type StashCtx, type WorktreeCtx } from './contexts';
 import { startBranchDrag, toDragRef, useDropActive } from './drag';
 import { requestJump } from './jump';
@@ -57,7 +57,7 @@ function IconToggle({ label, on, disabled, onClick, children }: { label: string;
 function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const data = useGraphData(tab);
   const listed = useRemotes(tab);
-  const prefs = useGraphPrefs(tab.project);
+  const prefs = useGraphPrefs(prefsKey(tab));
   const selection = useRefSelection(tab);
   const [filter, setFilter] = useState('');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -85,7 +85,7 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const refs = data.refs;
   const f = filter.trim().toLowerCase();
   const match = (s: string) => !f || s.toLowerCase().includes(f);
-  const set = (fn: (p: GraphPrefs) => GraphPrefs) => updatePrefs(tab.project, fn);
+  const set = (fn: (p: GraphPrefs) => GraphPrefs) => updatePrefs(prefsKey(tab), fn);
   const toggleCollapsed = (id: string) => setCollapsed((c) => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const menu = (e: MouseEvent, context: string, ctx: unknown) => {
     e.preventDefault();
@@ -243,7 +243,7 @@ function RefRow({ tab, r, vis, prefs, all, indent = false, selected = false, ord
   const hidden = prefs.hidden.includes(r.name);
   const soloed = prefs.soloed.includes(r.name);
   const pinned = prefs.pinned.includes(r.name);
-  const set = (fn: (p: GraphPrefs) => GraphPrefs) => updatePrefs(tab.project, fn);
+  const set = (fn: (p: GraphPrefs) => GraphPrefs) => updatePrefs(prefsKey(tab), fn);
   const jump = () => { if (r.oid) requestJump(tab, r.oid); };
   const isBranch = r.kind !== 'tag';
   /** Ctrl/⌘ toggles the row into the selection, Shift selects the range; a plain click clears it and jumps. */

@@ -23,6 +23,8 @@ export interface TrackOptions<T> {
    * error); only success is toasted. Default true.
    */
   toastRunning?: boolean;
+  /** Appends the seconds elapsed to the running text, once a second: an op that may take minutes (a clone). */
+  elapsed?: boolean;
 }
 
 const ERROR_MS = 10_000;
@@ -47,6 +49,10 @@ const opts = (t: Partial<ToastText>, id: string | number | undefined, duration?:
 export async function trackOp<T>(fn: () => Promise<T>, o: TrackOptions<T>): Promise<Tracked<T>> {
   const loud = o.toastRunning ?? true;
   const id = loud ? toast.loading(clip(o.running)) : undefined;
+  const started = Date.now();
+  const timer = id !== undefined && o.elapsed
+    ? setInterval(() => toast.loading(clip(`${o.running} ${Math.floor((Date.now() - started) / 1000)} s`), { id }), 1000)
+    : undefined;
   try {
     const result = await fn();
     const d = o.done(result);
@@ -65,5 +71,7 @@ export async function trackOp<T>(fn: () => Promise<T>, o: TrackOptions<T>): Prom
       toast.error(clip(t.title), opts(t, id, ERROR_MS));
     }
     return { ok: false, error };
+  } finally {
+    clearInterval(timer);
   }
 }

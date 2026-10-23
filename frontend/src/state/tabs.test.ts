@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { readRoute, routeSearch, writeRoute } from '@/lib/route';
-import { dispatchTabs, EMPTY, loadTabs, tabKey, tabsReducer, tabsStore, type TabsState } from './tabs';
+import { dispatchTabs, EMPTY, loadTabs, parentTab, prefsKey, refsKey, tabKey, tabsReducer, tabsStore, type TabsState } from './tabs';
 
 const t = (project: string, worktree: string | null = null) => ({ project, worktree });
 const S = (n: number, active: number): TabsState => ({ open: Array.from({ length: n }, (_, i) => t(`p${i}`)), active });
@@ -99,5 +99,61 @@ describe('query-string route', () => {
     writeRoute(t('a', 'wt'));
     expect(history.length).toBe(before + 1);
     expect(location.hash).toBe('');
+  });
+});
+
+describe('submodule tabs', () => {
+  const sub = (s: string[], worktree: string | null = null) => ({ project: 'a', worktree, sub: s });
+
+  test('tabKey distinguishes sub chains and keeps root keys unchanged', () => {
+    expect(tabKey(t('a'))).toBe('a\0');
+    expect(tabKey(t('a', 'wt'))).toBe('a\0wt');
+    const keys = [t('a'), sub(['x']), sub(['x', 'y']), sub(['x/y']), sub(['x'], 'wt'), t('a', 'wt'), sub(['y', 'x'])].map(tabKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(tabKey(sub(['libs/a', 'b']))).toBe('a\0\0libs/a\0b');
+  });
+
+  test('open keeps sub (a copy); an empty or malformed sub opens the checkout', () => {
+    const chain = ['libs/a'];
+    const s = tabsReducer(EMPTY, { type: 'open', tab: sub(chain) });
+    chain.push('b');
+    expect(s.open[0]).toEqual(sub(['libs/a']));
+    const again = tabsReducer(s, { type: 'open', tab: t('a') });
+    expect(again.open).toEqual([sub(['libs/a']), t('a')]);
+    for (const bad of [[], [''], Array(9).fill('x'), 'x', [1]]) {
+      expect(tabsReducer(EMPTY, { type: 'open', tab: { project: 'a', worktree: null, sub: bad } as never }).open[0]).toEqual(t('a'));
+    }
+  });
+
+  test('loadTabs drops malformed sub (keeps the good rows)', () => {
+    localStorage.setItem('code-git:tabs', JSON.stringify({ open: [sub(['x', 'y']), { ...t('a'), sub: [] }, { ...t('b'), sub: 'x' }, { ...t('c'), sub: [''] },
+      { ...t('d'), sub: Array(9).fill('x') }, { ...t('e'), sub: [3] }, t('f')], active: 1 }));
+    expect(loadTabs()).toEqual({ open: [sub(['x', 'y']), t('f')], active: 1 });
+  });
+
+  test('parentTab drops the last chain entry; refsKey and prefsKey are the project for a checkout, the repo for a submodule', () => {
+    expect(parentTab(sub(['x', 'y'], 'wt'))).toEqual(sub(['x'], 'wt'));
+    expect(parentTab(sub(['x'], 'wt'))).toEqual(t('a', 'wt'));
+    expect('sub' in parentTab(sub(['x']))).toBe(false);
+    expect(refsKey(t('a', 'wt'))).toBe('a');
+    expect(refsKey(sub(['x'], 'wt'))).toBe(tabKey(sub(['x'], 'wt')));
+    expect(refsKey(sub(['x']))).not.toBe(refsKey(sub(['x'], 'wt')));
+    expect(prefsKey(t('a', 'wt'))).toBe('a');
+    expect(prefsKey(sub(['libs/a', 'b']))).toBe('a\0libs/a\0b');
+  });
+
+  test('prefsKey: chains that join to the same path differ; a checkout\'s key stays the bare project name', () => {
+    expect(prefsKey(sub(['a/b']))).not.toBe(prefsKey(sub(['a', 'b'])));
+    expect(prefsKey(t('app'))).toBe('app');
+    expect(prefsKey(t('app', 'wt'))).toBe('app');
+    expect(prefsKey(sub(['x']))).not.toBe(prefsKey(t('a')));
+  });
+
+  test('sub round-trips as repeated params', () => {
+    const tab = sub(['libs/a', 'b c&d']);
+    expect(routeSearch(tab)).toBe('?project=a&sub=libs%2Fa&sub=b+c%26d');
+    expect(readRoute(routeSearch(tab))).toEqual(tab);
+    expect(readRoute(routeSearch({ ...tab, worktree: 'wt' }))).toEqual({ ...tab, worktree: 'wt' });
+    expect('sub' in readRoute('?project=a&sub=')!).toBe(false);
   });
 });

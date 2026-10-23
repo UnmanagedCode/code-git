@@ -1,9 +1,9 @@
-import { ArrowDownIcon, ArrowUpIcon, GitBranchIcon, RefreshCwIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, ChevronRightIcon, GitBranchIcon, RefreshCwIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { tabLabel } from '@/features/tabs/actions';
+import { backToParent, tabLabel } from '@/features/tabs/actions';
 import type { RepoSummary } from '@/lib/endpoints';
-import type { Tab } from '@/state/tabs';
+import { dispatchTabs, parentTab, type Tab } from '@/state/tabs';
 import { useRepoSummary } from '@/state/useRepoSummary';
 import { reposStore, systemLabel } from '@/state/useRepos';
 import { useStore } from '@/state/store';
@@ -34,6 +34,37 @@ function Head({ s }: { s: RepoSummary }) {
   );
 }
 
+/** The first `n` entries of a submodule tab's chain: its ancestors, the checkout at 0. */
+const ancestor = (tab: Tab, n: number): Tab => ({ project: tab.project, worktree: tab.worktree, ...(n ? { sub: tab.sub!.slice(0, n) } : {}) });
+/** A tab's own name as a breadcrumb or Back shows it: the last path of its chain, else its tab label. */
+const ownName = (t: Tab): string => t.sub?.at(-1) ?? tabLabel(t);
+
+/** A submodule tab's chain, each ancestor opening (or activating) its repo's tab; then Back to the parent. */
+function SubmoduleTrail({ tab }: { tab: Tab }) {
+  const sub = tab.sub!;
+  const parent = parentTab(tab);
+  return (
+    <>
+      <nav aria-label="Submodule path">
+        <ol className="flex flex-wrap items-center gap-1 text-sm">
+          {sub.map((_, n) => (
+            <li key={n} className="flex items-center gap-1">
+              <button type="button" className="rounded px-1 hover:bg-accent hover:underline" onClick={() => dispatchTabs({ type: 'open', tab: ancestor(tab, n) })}>
+                {ownName(ancestor(tab, n))}
+              </button>
+              <ChevronRightIcon className="size-3.5 text-muted-foreground" aria-hidden />
+            </li>
+          ))}
+          <li><h1 className="text-sm font-semibold" aria-current="page">{sub.at(-1)}</h1></li>
+        </ol>
+      </nav>
+      <Button variant="outline" size="sm" onClick={() => backToParent(tab)}>
+        <ArrowLeftIcon />Back to {ownName(parent)}
+      </Button>
+    </>
+  );
+}
+
 const COUNTS = ['staged', 'unstaged', 'untracked', 'conflicted'] as const;
 
 /** The active checkout at a glance: HEAD, upstream, change counts and System. */
@@ -43,7 +74,7 @@ export function RepoHeader({ tab }: { tab: Tab }) {
   const system = repo ? systemLabel(repo) : null;
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-4 py-2" aria-label="Repository summary">
-      <h1 className="text-sm font-semibold">{tabLabel(tab)}</h1>
+      {tab.sub ? <SubmoduleTrail tab={tab} /> : <h1 className="text-sm font-semibold">{tabLabel(tab)}</h1>}
       {system && <Badge variant="info">{system}</Badge>}
       {summary && (
         <>
