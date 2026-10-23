@@ -1,3 +1,4 @@
+import { maskUrls } from '../../mask.js';
 import { netRun, remoteFailure } from './net.js';
 import {
   assertFetchDestinations, assertNoTrackingSymrefs, fetchSpecs, isHeadAlias, newlyLiveSymrefs, trackedSnapshot,
@@ -45,6 +46,6 @@ export async function fetchRemote(git, remote, { prune = false } = {}) {
     changes,
     pruned: changes.filter((c) => c.new === null).map((c) => c.ref),
     symrefsResolved: newlyLiveSymrefs(before, after).filter((s) => !isHeadAlias(specs, s.ref, s.target)),
-    partial: r.exitCode === 0 ? null : decoder.decode(r.stderr),
+    partial: r.exitCode === 0 ? null : maskUrls(decoder.decode(r.stderr)),
   };
 }

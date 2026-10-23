@@ -1,4 +1,4 @@
-import { maskUrls } from './mask.js';
+import { maskDeep } from './mask.js';
 
 // Single source for refusal codes and their HTTP status. Anything that refuses throws a `Refusal`;
 // the route wrapper (src/http/route.js) renders it as `{error, code, …extra}` with this status.
@@ -39,12 +39,8 @@ export class Refusal extends Error {
   get status() { return HTTP_STATUS[this.code]; }
 
   /**
-   * The response body. A url password inside git's `stderr` (or a `detail` carrying it) is masked here, where every
-   * refusal is rendered, whichever path built it (a clone failure, a timeout's partial stderr, a remote op).
+   * The response body. A url password in any string of it — the message (a toast's title), git's `stderr`, a list of
+   * names — is masked here, where every refusal is rendered, whichever path built it (maskDeep).
    */
-  toBody() {
-    const body = { error: this.message, code: this.code, ...this.extra };
-    for (const k of ['stderr', 'detail']) if (typeof body[k] === 'string') body[k] = maskUrls(body[k]);
-    return body;
-  }
+  toBody() { return maskDeep({ error: this.message, code: this.code, ...this.extra }); }
 }
