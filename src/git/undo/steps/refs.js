@@ -9,10 +9,13 @@ import { shortRef, stale } from './shared.js';
 
 const HEADS = 'refs/heads/';
 
-/** `refs/<anything valid>`: what an upstream must be before it reaches git. */
-function isFullRef(ref) {
-  if (typeof ref !== 'string' || !ref.startsWith('refs/')) return false;
-  try { assertRefName(ref.slice('refs/'.length)); return true; } catch { return false; }
+const UPSTREAM_PREFIXES = ['refs/heads/', 'refs/remotes/'];
+
+/** A branch upstream as git itself tracks one: a valid ref name under refs/heads/ or refs/remotes/. */
+function isBranchUpstream(ref) {
+  const prefix = typeof ref === 'string' ? UPSTREAM_PREFIXES.find((p) => ref.startsWith(p)) : undefined;
+  if (!prefix) return false;
+  try { assertRefName(ref.slice(prefix.length)); return true; } catch { return false; }
 }
 /** git's words when a transaction's compare-and-swap misses (LC_ALL=C). */
 const CAS_RE = /but expected|reference already exists|unable to resolve reference|reference is missing/;
@@ -88,12 +91,30 @@ async function apply(git, step, dir, ctx) {
     // `branch -d` removes a branch's config section; so does deleting it here (its upstream left behind would be
     // inherited by a later branch of that name). Exit 128: there was none.
     if (to === null) await git(['config', '--remove-section', `branch.${name}`], { okExit: [0, 128] });
-    if (from === null && change.upstream) {
-      // The upstream is read from repo config (%(upstream)): only a full refname is passed on.
-      if (!isFullRef(change.upstream)) ctx.warnings.push(`${name}'s upstream ${change.upstream} is not a ref name: not set`);
-      else if ((await refObjects(git, [change.upstream])).has(change.upstream)) await git(['branch', `--set-upstream-to=${change.upstream}`, '--end-of-options', name]);
-      else ctx.warnings.push(`${name}'s upstream ${change.upstream} no longer exists: not set`);
-    }
+    if (from === null && change.upstream) await restoreUpstream(git, name, change.upstream, ctx);
+  }
+}
+
+/**
+ * Sets a restored branch's upstream again. The value is repo config (`%(upstream)`), so only a branch upstream reaches
+ * git; and the ref is already restored by now, so anything that keeps the upstream from being set is a warning, never
+ * a failure of the undo.
+ */
+async function restoreUpstream(git, name, upstream, ctx) {
+  if (!isBranchUpstream(upstream)) {
+    ctx.warnings.push(`${name}'s upstream ${upstream} is not a branch upstream (refs/heads/ or refs/remotes/): not set`);
+    return;
+  }
+  if (!(await refObjects(git, [upstream])).has(upstream)) {
+    ctx.warnings.push(`${name}'s upstream ${upstream} no longer exists: not set`);
+    return;
+  }
+  try {
+    await git(['branch', `--set-upstream-to=${upstream}`, '--end-of-options', name]);
+  } catch (e) {
+    if (e.code !== 'GIT_FAILED') throw e;
+    const why = (e.extra.stderr ?? '').trim().split('\n').at(-1) || e.message;
+    ctx.warnings.push(`${name}'s upstream ${upstream} could not be set: ${why}`);
   }
 }
 

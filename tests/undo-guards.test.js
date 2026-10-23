@@ -214,18 +214,48 @@ test('a failure after a step wrote: appliedSteps on the refusal, the slots clear
   assert.deepEqual(await w.state(), { undo: null, redo: null });
 });
 
-// Invariant: an upstream read from repo config that is not a full refname (`--help`) never reaches git as an option: the
-// undo of a delete restores the branch and warns that its upstream was not restored.
-test('undo of a branch delete whose configured upstream is "--help": the branch back, a warning, no failure', async (t) => {
+/** A branch `gone` at base whose configured upstream reads `merge` (remote "."), deleted; the undo's result and execs. */
+async function deletedWithUpstream(t, merge) {
   const w = await undoWorld(t);
   w.repo.git('branch', 'gone');
-  fs.appendFileSync(path.join(w.repo.dir, '.git', 'config'), '[branch "gone"]\n\tremote = .\n\tmerge = --help\n');
-  assert.equal(w.repo.git('for-each-ref', '--format=%(upstream)', 'refs/heads/gone'), '--help');
+  fs.appendFileSync(path.join(w.repo.dir, '.git', 'config'), `[branch "gone"]\n\tremote = .\n\tmerge = ${merge}\n`);
+  assert.equal(w.repo.git('for-each-ref', '--format=%(upstream)', 'refs/heads/gone'), merge);
   await w.op('branch.delete', { names: ['gone'], force: true });
+  const from = w.cc.state.execCalls.length;
   const r = await w.undo();
+  const argvs = w.cc.state.execCalls.slice(from).map((b) => b.argv.slice(1 + BASE_ARGS.length));
+  return { w, r, argvs };
+}
+
+// Invariant: an upstream read from repo config that is not a branch upstream (`--help`, `refs/tags/v1`) is never looked
+// up or set: the undo of a delete restores the branch and warns, in its own words, that the upstream was not set.
+for (const merge of ['--help', 'refs/tags/v1', 'refs/foo']) {
+  test(`undo of a branch delete whose configured upstream is "${merge}": the branch back, a not-a-branch-upstream warning, no lookup`, async (t) => {
+    const { w, r, argvs } = await deletedWithUpstream(t, merge);
+    assert.equal(w.oid('gone'), w.base);
+    assert.deepEqual(r.warnings, [`gone's upstream ${merge} is not a branch upstream (refs/heads/ or refs/remotes/): not set`]);
+    assert.deepEqual(argvs.filter((a) => a.includes(merge)), [], 'no command named it');
+    assert.throws(() => w.repo.git('config', '--get-regexp', '^branch\\.gone\\.'), 'no branch.gone.* config was written');
+  });
+}
+
+// Invariant: a failure of `branch --set-upstream-to` itself (an upstream git will not track: refs/remotes/<r>/… with no
+// remote <r>) is a warning, not a failure — the ref was already restored, and the entry moves to the redo slot.
+test('undo of a branch delete whose upstream git refuses to track: the branch back, a warning, the entry in redo', async (t) => {
+  const { w, r } = await (async () => {
+    const world = await undoWorld(t);
+    world.repo.git('update-ref', 'refs/remotes/nope/x', world.base);
+    world.repo.git('branch', 'gone');
+    fs.appendFileSync(path.join(world.repo.dir, '.git', 'config'), '[branch "gone"]\n\tremote = .\n\tmerge = refs/remotes/nope/x\n');
+    await world.op('branch.delete', { names: ['gone'], force: true });
+    return { w: world, r: await world.undo() };
+  })();
   assert.equal(w.oid('gone'), w.base);
   assert.equal(r.warnings.length, 1);
-  assert.match(r.warnings[0], /gone's upstream --help .*not set/);
+  assert.match(r.warnings[0], /^gone's upstream refs\/remotes\/nope\/x could not be set: /);
+  const s = await w.state();
+  assert.equal(s.undo, null);
+  assert.ok(s.redo, 'the undo succeeded: its entry is in the redo slot');
 });
 
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})/;
