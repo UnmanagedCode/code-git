@@ -49,8 +49,12 @@ function replaceBlock(out: Output, i: number, content: string, state: BlockState
   };
 }
 
-/** Block `i` set to the picked lines (ours first, then theirs, each in file order); no pick puts its markers back. */
+/**
+ * Block `i` set to the picked lines (ours first, then theirs, each in file order); no pick puts its markers back. An
+ * `edited` block is the user's text: a pick changes nothing.
+ */
 export function setPick(out: Output, conflicts: Conflict[], labels: SideLabels, i: number, picks: Picks): Output {
+  if (out.blocks[i]?.state === 'edited') return out;
   const c = conflicts[i];
   const sorted = { ours: [...new Set(picks.ours)].sort((a, b) => a - b), theirs: [...new Set(picks.theirs)].sort((a, b) => a - b) };
   if (!sorted.ours.length && !sorted.theirs.length) return replaceBlock(out, i, markers(c, labels), 'markers', NO_PICKS);
@@ -60,7 +64,9 @@ export function setPick(out: Output, conflicts: Conflict[], labels: SideLabels, 
 
 /**
  * The blocks after the text changed from `oldText` to `newText` (one edit: the common prefix and suffix are kept): a
- * block before the edit stays, one after it shifts, one the edit touches grows to cover it and becomes `edited`.
+ * block before the edit stays, one after it shifts. The blocks the edit touches become one `edited` range covering them
+ * and the edit — held by the first of them; the others stay, empty, at its end — so the blocks stay disjoint and in
+ * order, and block i is still conflict i's.
  */
 export function applyEdit(blocks: Block[], oldText: string, newText: string): Block[] {
   let p = 0;
@@ -70,10 +76,15 @@ export function applyEdit(blocks: Block[], oldText: string, newText: string): Bl
   while (s < min - p && oldText[oldText.length - 1 - s] === newText[newText.length - 1 - s]) s++;
   const oldEnd = oldText.length - s;
   const delta = newText.length - oldText.length;
-  return blocks.map((b) => {
+  const touched = blocks.flatMap((b, i) => (b.end > p && b.start < oldEnd ? [i] : []));
+  const first = touched[0];
+  const last = touched.at(-1);
+  const merged = first === undefined ? null : { start: Math.min(blocks[first].start, p), end: Math.max(blocks[last!].end, oldEnd) + delta };
+  return blocks.map((b, i) => {
+    if (merged && i === first) return { ...merged, state: 'edited', picks: NO_PICKS };
+    if (merged && touched.includes(i)) return { start: merged.end, end: merged.end, state: 'edited', picks: NO_PICKS };
     if (b.end <= p) return b;
-    if (b.start >= oldEnd) return { ...b, start: b.start + delta, end: b.end + delta };
-    return { start: Math.min(b.start, p), end: Math.max(b.end, oldEnd) + delta, state: 'edited', picks: NO_PICKS };
+    return { ...b, start: b.start + delta, end: b.end + delta };
   });
 }
 

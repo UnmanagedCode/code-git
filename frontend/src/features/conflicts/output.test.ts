@@ -52,3 +52,33 @@ test('navigation: next / previous block, null at either end; unresolved lists th
   expect([prevBlock(out.blocks, 1), prevBlock(out.blocks, 0)]).toEqual([0, null]);
   expect(unresolved(out.blocks)).toEqual([0]);
 });
+
+const disjoint = (blocks: { start: number; end: number }[]) => blocks.every((b, i) => b.start >= 0 && b.start <= b.end && (i === 0 || blocks[i - 1].end <= b.start));
+
+test('an edit spanning two blocks merges them into one edited range: the blocks stay disjoint and increasing, every start ≥ 0', () => {
+  const out = initialOutput(regions, labels);
+  const [b0, b1] = out.blocks;
+  const text = out.text.slice(0, b0.start + 3) + 'JOINED' + out.text.slice(b1.start + 5);
+  const blocks = applyEdit(out.blocks, out.text, text);
+  expect(disjoint(blocks)).toBe(true);
+  expect(blocks.map((b) => b.state)).toEqual(['edited', 'edited']);
+  expect(blocks[0]).toMatchObject({ start: b0.start, end: b1.end - (out.text.length - text.length) });
+  expect(blocks[1].start).toBe(blocks[1].end);
+});
+
+test('a pick on an edited block changes nothing (the text is the user\'s); after a spanning edit the blocks stay valid', () => {
+  const out = initialOutput(regions, labels);
+  const [b0, b1] = out.blocks;
+  const text = out.text.slice(0, b0.start + 3) + 'JOINED' + out.text.slice(b1.start + 5);
+  const edited = { text, blocks: applyEdit(out.blocks, out.text, text) };
+  for (const i of [0, 1]) {
+    const picked = setPick(edited, conflicts, labels, i, { ours: [0], theirs: [0] });
+    expect(picked).toEqual(edited);
+  }
+  // A block the edit did not touch still takes picks, and the result stays disjoint.
+  const one = out.text.slice(0, b0.start + 1) + 'Q' + out.text.slice(b0.start + 1);
+  const partly = { text: one, blocks: applyEdit(out.blocks, out.text, one) };
+  const picked = setPick(partly, conflicts, labels, 1, { ours: [0], theirs: [] });
+  expect(picked.text.endsWith('d\nx\n')).toBe(true);
+  expect(disjoint(picked.blocks)).toBe(true);
+});

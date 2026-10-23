@@ -161,3 +161,11 @@ test('a refused read (PATH_BLOCKED) shows the refusal and Close, no panes', asyn
   expect(screen.queryByRole('textbox', { name: 'Output' })).toBeNull();
   expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
 });
+
+test('typing into a conflict\'s block makes it the user\'s: its line checkboxes and conflict toggle are disabled, the other conflict\'s are not', async () => {
+  await show();
+  const at = output().value.indexOf('o2\n');
+  fireEvent.change(output(), { target: { value: `${output().value.slice(0, at)}mine${output().value.slice(at)}` } });
+  for (const name of ['Take conflict 2 from current', 'Take conflict 2 from incoming', 'Take line 4 from current', 'Take line 4 from incoming']) expect(box(name).disabled).toBe(true);
+  for (const name of ['Take conflict 1 from current', 'Take line 2 from incoming']) expect(box(name).disabled).toBe(false);
+});

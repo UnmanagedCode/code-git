@@ -54,6 +54,8 @@ function SidePane({ f, side, label, onPick, paneRef }: { f: ToolFile; side: Side
   const name = SIDE_NAME[side];
   const conflicts = conflictsOf(f.regions ?? []);
   const picksOf = (i: number) => f.out.blocks[i]?.picks ?? { ours: [], theirs: [] };
+  // A block typed into is the user's text: its picks no longer apply.
+  const typed = (i: number) => f.out.blocks[i]?.state === 'edited';
   const toggleLine = (i: number, within: number, on: boolean) => {
     const p = picksOf(i);
     onPick(i, { ...p, [side]: on ? [...p[side], within] : p[side].filter((x) => x !== within) });
@@ -68,8 +70,8 @@ function SidePane({ f, side, label, onPick, paneRef }: { f: ToolFile; side: Side
       const all = n > 0 && picksOf(r.conflict!)[side].length === n;
       return (
         <label key={r.id} data-conflict={r.conflict} className="flex items-center gap-2 border-y bg-warning/15 px-2 py-0.5 font-sans text-xs text-warning">
-          <input type="checkbox" checked={all} disabled={!n || f.busy} aria-label={`Take conflict ${r.conflict! + 1} from ${name}`} onChange={(e) => toggleAll(r.conflict!, e.target.checked)} />
-          Conflict {r.conflict! + 1}{n ? '' : ` — nothing on the ${name} side`}
+          <input type="checkbox" checked={all} disabled={!n || f.busy || typed(r.conflict!)} aria-label={`Take conflict ${r.conflict! + 1} from ${name}`} onChange={(e) => toggleAll(r.conflict!, e.target.checked)} />
+          Conflict {r.conflict! + 1}{n ? '' : ` — nothing on the ${name} side`}{typed(r.conflict!) ? ' — edited in Output' : ''}
         </label>
       );
     }
@@ -78,7 +80,7 @@ function SidePane({ f, side, label, onPick, paneRef }: { f: ToolFile; side: Side
       <div key={r.id} className={cn('flex items-start gap-1 px-1', inConflict && 'bg-warning/10')}>
         {inConflict ? (
           <input
-            type="checkbox" className="mt-1" disabled={f.busy} aria-label={`Take line ${r.line + 1} from ${name}`}
+            type="checkbox" className="mt-1" disabled={f.busy || typed(r.conflict!)} aria-label={`Take line ${r.line + 1} from ${name}`}
             checked={picksOf(r.conflict!)[side].includes(r.within)} onChange={(e) => toggleLine(r.conflict!, r.within, e.target.checked)}
           />
         ) : <span className="w-3.5 shrink-0" />}
