@@ -103,3 +103,8 @@ test('the sequence writes (continue, skip, abort, and the merge / rebase / confl
     assert.equal(d.cancellable, true, name);
   }
 });
+
+test('the submodule ops: list is a cancellable read', () => {
+  assert.equal(OPS.get('submodule.list')?.kind, 'read');
+  assert.equal(OPS.get('submodule.list').cancellable, true);
+});
