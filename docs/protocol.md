@@ -542,7 +542,7 @@ An op that lists pages **by git arguments**, never by slicing output (cc's exec 
 
 **Events.** `GET api/activity/events` sends `event: activity` with the entry as `data` (JSON) when an entry opens and when it closes, `event: run` with the `OpRun` as `data` when a run opens and when it ends, and a `: ping` comment every `HEARTBEAT_MS` (`src/routes/activity.js`). Treat events as signals: the UI refetches `api/activity` on each.
 
-The log keeps the newest `LIMITS.activityRing` entries, and as many runs, in memory. It is diagnostic: nothing derives repo state from it (the UI times its refreshes by the runs).
+The log keeps the newest `LIMITS.activityRing` entries in memory, and as many runs: over the cap the oldest **ended** runs go, never a running one, so the run ring exceeds `LIMITS.activityRing` only by the runs still running. It is diagnostic: nothing derives repo state from it (the UI times its refreshes by the runs).
 
 ## Refusal codes
 

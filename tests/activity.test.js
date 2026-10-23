@@ -250,3 +250,20 @@ test('the run ring keeps the newest runs, newest last; run snapshots do not alia
   runs[0].status = 'running';
   assert.deepEqual([log.listRuns()[0].target.project, log.listRuns()[0].status], ['p', 'ended']);
 });
+
+// Invariant: the run ring never evicts a running run: it drops the oldest ended runs, exceeding the cap only by the
+// runs still running, and trims back once they end.
+test('the run ring never drops a running run: the oldest ended ones go first, the cap exceeded only by running runs', () => {
+  const { log } = runLog({ ring: 3 });
+  const held = log.openRun({ ...RUN, opRunId: 'held' });
+  for (const id of ['a', 'b', 'c', 'd', 'e']) log.openRun({ ...RUN, opRunId: id }).end();
+  assert.deepEqual(log.listRuns().map((r) => [r.opRunId, r.status]), [['held', 'running'], ['d', 'ended'], ['e', 'ended']]);
+
+  const busy = runLog({ ring: 2 });
+  const runs = ['x', 'y', 'z'].map((id) => busy.log.openRun({ ...RUN, opRunId: id }));
+  assert.deepEqual(busy.log.listRuns().map((r) => r.opRunId), ['x', 'y', 'z'], 'every running run is kept');
+  runs[1].end();
+  assert.deepEqual(busy.log.listRuns().map((r) => [r.opRunId, r.status]), [['x', 'running'], ['z', 'running']]);
+  held.end();
+  assert.deepEqual(log.listRuns().map((r) => [r.opRunId, r.status]), [['held', 'ended'], ['d', 'ended'], ['e', 'ended']]);
+});

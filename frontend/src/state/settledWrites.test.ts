@@ -48,14 +48,30 @@ test('onSettledWrite: overlapping runs fire once, after the last ends, even when
   expect(fn).toHaveBeenCalledTimes(1);
 });
 
-// Invariant: a run running when the watcher starts is still waited for and seen ending.
+// Invariant: a run running when the watcher starts is waited for, and its own end (nothing else added) fires once.
 test('onSettledWrite: a run already running at subscribe time fires when it ends; runs ended before subscribing do not', () => {
   setRuns([ended(1), running(2)]);
   const fn = vi.fn();
   onSettledWrite('app', anyApp, fn);
-  setRuns([ended(1), running(2), ended(3)]);
+  activityStore.set((s) => ({ ...s, entries: [entry({ id: 9 })] }));
   expect(fn).not.toHaveBeenCalled();
-  setRuns([ended(1), ended(2), ended(3)]);
+  setRuns([ended(1), ended(2)]);
+  expect(fn).toHaveBeenCalledTimes(1);
+  setRuns([ended(1), ended(2)]);
+  expect(fn).toHaveBeenCalledTimes(1);
+});
+
+// Invariant: at fire time the high-water mark moves to the newest settled run, so a set of runs ending together fires
+// once, and later unrelated store updates fire nothing.
+test('onSettledWrite: runs ending together fire once; unrelated updates afterwards fire nothing', () => {
+  const fn = vi.fn();
+  onSettledWrite('app', anyApp, fn);
+  setRuns([running(1), running(2)]);
+  setRuns([ended(1), ended(2)]);
+  expect(fn).toHaveBeenCalledTimes(1);
+  activityStore.set((s) => ({ ...s, entries: [entry({ id: 10 })] }));
+  activityStore.set((s) => ({ ...s, entries: [...s.entries, entry({ id: 11 })] }));
+  setRuns([ended(1), ended(2), ended(3, { target: { project: 'other', worktree: null } })]);
   expect(fn).toHaveBeenCalledTimes(1);
 });
 

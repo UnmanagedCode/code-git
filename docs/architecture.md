@@ -332,7 +332,7 @@ What an op overwrites or deletes, and whether git can give it back. The branch, 
 
 ## Activity log
 
-- In memory, per backend process, newest `LIMITS.activityRing` entries. **Diagnostic only**: undo, reflog and every other feature derive state from git, never from this log.
+- In memory, per backend process, newest `LIMITS.activityRing` entries; runs are capped the same way, but only ended runs are dropped (a running one stays until it ends, so `writeRunning` never reads a project idle mid-write). **Diagnostic only**: undo, reflog and every other feature derive state from git, never from this log.
 - Records what ran (argv, an argument that is a url with a password masked by `maskUrl` in `src/mask.js`: `https://u:***@h/r`), where, the op's env overlay with secret-looking values redacted, stdin size (never content), the stderr tail (hook output included, decoded with `TextDecoder` `fatal: false`).
 - `events` (an `EventEmitter`) feeds the SSE route; the UI refetches on each event.
 

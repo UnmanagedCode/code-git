@@ -481,3 +481,18 @@ test('SSE delivers event: run when a write run opens and when it ends; GET api/a
   assert.deepEqual(body.runs.map((r) => [r.opRunId, r.status]), [[open.data.opRunId, 'ended']]);
   assert.ok(body.entries.every((e) => e.opRunId === open.data.opRunId));
 });
+
+// Invariant: a closed event stream unsubscribes both its listeners, `run` included.
+test('closing the event stream removes its activity and run listeners', async (t) => {
+  const w = await world(t);
+  const before = { activity: w.activity.events.listenerCount('activity'), run: w.activity.events.listenerCount('run') };
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const res = await fetch(`${w.url}/api/activity/events`, { signal: controller.signal });
+  assert.equal(res.status, 200);
+  assert.deepEqual([w.activity.events.listenerCount('activity'), w.activity.events.listenerCount('run')], [before.activity + 1, before.run + 1]);
+  controller.abort();
+  // The server sees the close asynchronously: wait for the activity listener (removed in the same stop()) to go.
+  await within((async () => { while (w.activity.events.listenerCount('activity') > before.activity) await new Promise((r) => setImmediate(r)); })(), 'the stream closing');
+  assert.equal(w.activity.events.listenerCount('run'), before.run);
+});

@@ -40,6 +40,13 @@ export function createActivityLog({ ring = LIMITS.activityRing } = {}) {
   let nextRunRecord = 1;
   const snapshot = (e) => ({ ...e, target: copyTarget(e.target), argv: [...e.argv], env: { ...e.env } });
   const runSnapshot = (r) => ({ ...r, target: copyTarget(r.target) });
+  // Over the cap, the oldest *ended* runs go: a running one stays (the UI would read its project as idle mid-write), so
+  // the ring exceeds the cap only by the runs still running.
+  const trimRuns = () => {
+    for (let i = 0, excess = runs.length - ring; excess > 0 && i < runs.length;) {
+      if (runs[i].status === 'ended') { runs.splice(i, 1); excess--; } else i++;
+    }
+  };
 
   return {
     events,
@@ -55,13 +62,14 @@ export function createActivityLog({ ring = LIMITS.activityRing } = {}) {
     openRun({ opRunId, op, kind, target }) {
       const run = { id: nextRunRecord++, opRunId, op, kind, target: copyTarget(target), status: 'running', startedAt: new Date().toISOString(), endedAt: null };
       runs.push(run);
-      if (runs.length > ring) runs.splice(0, runs.length - ring);
+      trimRuns();
       events.emit('run', runSnapshot(run));
       let pending = 0;
       let ending = false;
       const settle = () => {
         if (!ending || pending || run.status !== 'running') return;
         Object.assign(run, { status: 'ended', endedAt: new Date().toISOString() });
+        trimRuns();
         events.emit('run', runSnapshot(run));
       };
       return {
