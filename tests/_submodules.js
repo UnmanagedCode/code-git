@@ -17,6 +17,26 @@ const FILE_OK = ['-c', 'protocol.file.allow=always'];
 /** The test System's global gitconfig without the file-transport opt-in. */
 const GLOBAL_NO_FILE = '[user]\n\tname = T\n\temail = t@example.com\n[commit]\n\tgpgsign = false\n[init]\n\tdefaultBranch = main\n';
 
+/** Fixture git under `env`, the file transport allowed for this command only: `fx(cwd, ...args)` → trimmed stdout. */
+export const fixtureGit = (env) => (cwd, ...args) => execFileSync('git', [...FILE_OK, '-C', cwd, ...args], { encoding: 'utf8', env, stdio: 'pipe' }).trim();
+
+/**
+ * A bare `<root>/<name>.git` on `main` holding one commit of `files`, made in its work clone `<root>/<name>-work`
+ * (`setup(work)` runs before the push, to add submodules); → the bare repo's path.
+ */
+export function bareRepo(fx, root, name, files, setup) {
+  const dir = path.join(root, `${name}.git`);
+  const work = path.join(root, `${name}-work`);
+  fx(root, 'init', '-q', '--bare', '-b', 'main', dir);
+  fx(root, 'clone', '-q', dir, work);
+  for (const [rel, c] of Object.entries(files)) fs.writeFileSync(path.join(work, rel), c);
+  fx(work, 'add', '-A');
+  fx(work, 'commit', '-qm', `${name} base`);
+  setup?.(work);
+  fx(work, 'push', '-q', 'origin', 'HEAD:main');
+  return dir;
+}
+
 /**
  * `opts`: `nested` (default true), `populated` (default true: `submodule update --init --recursive` ran; false: as a
  * fresh clone of the parent, not initialized and not cloned), `systemRemote`
@@ -27,20 +47,10 @@ export async function subWorld(t, { nested = true, populated = true, systemRemot
   const { root, home } = repo;
   if (!allowFile) fs.writeFileSync(path.join(home, '.gitconfig'), GLOBAL_NO_FILE);
   const env = hermeticEnv(home);
+  const git = fixtureGit(env);
   /** A fixture git command in `cwd` (absolute, or relative to the parent repo); trimmed stdout. */
-  const fx = (cwd, ...args) => execFileSync('git', [...FILE_OK, '-C', path.resolve(repo.dir, cwd), ...args], { encoding: 'utf8', env, stdio: 'pipe' }).trim();
-  const bare = (name, files, setup) => {
-    const dir = path.join(root, `${name}.git`);
-    const work = path.join(root, `${name}-work`);
-    fx(root, 'init', '-q', '--bare', '-b', 'main', dir);
-    fx(root, 'clone', '-q', dir, work);
-    for (const [rel, c] of Object.entries(files)) fs.writeFileSync(path.join(work, rel), c);
-    fx(work, 'add', '-A');
-    fx(work, 'commit', '-qm', `${name} base`);
-    setup?.(work);
-    fx(work, 'push', '-q', 'origin', 'HEAD:main');
-    return dir;
-  };
+  const fx = (cwd, ...args) => git(path.resolve(repo.dir, cwd), ...args);
+  const bare = (name, files, setup) => bareRepo(fx, root, name, files, setup);
   const urls = {};
   if (nested) urls.libB = bare('libB', { 'b.txt': 'b\n' });
   urls.libA = bare('libA', { 'a.txt': 'a\n' }, (work) => {

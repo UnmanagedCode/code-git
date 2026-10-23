@@ -70,8 +70,8 @@ function SubmodulesView({ tab }: { tab: Tab }) {
   const usable = list.filter((e) => !e.blocked).map((e) => e.path);
   return (
     <section className="flex flex-col border-b pb-2 text-sm" aria-label="Submodules">
-      <div className="flex items-center gap-1 px-2 pt-2 pb-0.5">
-        <h2 className="flex-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Submodules ({list.length})</h2>
+      <div className="flex flex-wrap items-center gap-x-1 px-2 pt-2 pb-0.5">
+        <h2 className="mr-auto text-xs font-semibold tracking-wide whitespace-nowrap text-muted-foreground uppercase">Submodules ({list.length})</h2>
         <Button variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" onClick={() => openSubmoduleDialog({ kind: 'add', tab })}>
           <PlusIcon />Add…
         </Button>

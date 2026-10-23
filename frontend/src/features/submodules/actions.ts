@@ -75,7 +75,7 @@ function dirtyFacts(e: ApiError): string[] {
     b.untracked && 'Untracked files in the submodule',
     b.orphaned ? `${numbered(b.orphaned, 'commit')} on no branch` : null,
     b.staged && 'A staged pointer change in this repository',
-    b.gitmodules && 'Unstaged changes to .gitmodules: they will be staged with the removal',
+    b.gitmodules && 'Unstaged changes to .gitmodules',
   ].filter((x): x is string => !!x);
 }
 
@@ -90,7 +90,9 @@ function removeAttempt(tab: Tab, entry: SubmoduleEntry, discard: boolean): Promi
         onClick: () => void (async () => {
           const ok = await confirm({
             title: `Discard the work in ${entry.path}?`, irreversible: true, confirmLabel: 'Discard and remove',
-            body: 'Removing it deletes its working tree with:', items: dirtyFacts(e),
+            body: `Removing it deletes its working tree with what is listed.${bodyOf<{ gitmodules: boolean }>(e).gitmodules
+              ? ' .gitmodules will be staged with the removal, its unstaged changes included.' : ''}`,
+            items: dirtyFacts(e),
           });
           if (ok) await removeAttempt(tab, entry, true);
         })(),

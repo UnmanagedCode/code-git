@@ -79,7 +79,8 @@ test('Remove confirms, then retries with discard after SUBMODULE_DIRTY confirm',
   const second = await screen.findByRole('dialog', { name: 'Discard the work in libs/a?' });
   expect(within(second).getByText('Changed files in the submodule')).toBeTruthy();
   expect(within(second).getByText('2 commits on no branch')).toBeTruthy();
-  expect(within(second).getByText('Unstaged changes to .gitmodules: they will be staged with the removal')).toBeTruthy();
+  expect(within(second).getByText('Unstaged changes to .gitmodules')).toBeTruthy();
+  expect(within(second).getByText(/\.gitmodules will be staged with the removal, its unstaged changes included\./)).toBeTruthy();
   expect(within(second).queryByText('Untracked files in the submodule')).toBeNull();
   expect(within(second).getByText('This cannot be undone.')).toBeTruthy();
   await userEvent.click(within(second).getByRole('button', { name: 'Discard and remove' }));

@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
 import { fakeCc } from '../../tests/_fakeCc.js';
 import { diffRepo } from '../../tests/_diffRepo.js';
-import { bareRemote, makeRepo } from '../../tests/_git.js';
+import { bareRemote, hermeticEnv, makeRepo } from '../../tests/_git.js';
+import { bareRepo, fixtureGit } from '../../tests/_submodules.js';
 
 const { bootServer } = await import(BROWSER);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -78,6 +79,22 @@ export async function seed() {
     detached.git('checkout', '-q', '--detach');
     detached.write('a.txt', 'c\n');
 
+    // subs: the submodule path (submodules.mjs). Submodule libs/a (bare a.git, itself with submodule b → b.git) cloned
+    // and checked out; libs/c (bare c.git) declared but not initialized and not cloned; a.git's bare repos beside it.
+    const subs = makeRepo(t, { name: 'subs' });
+    const fx = fixtureGit(hermeticEnv(app.home));
+    const urls = { b: bareRepo(fx, subs.root, 'b', { 'b.txt': 'b\n' }) };
+    urls.a = bareRepo(fx, subs.root, 'a', { 'a.txt': 'a\n' }, (work) => { fx(work, 'submodule', 'add', '-q', urls.b, 'b'); fx(work, 'commit', '-qm', 'add b'); });
+    urls.c = bareRepo(fx, subs.root, 'c', { 'c.txt': 'c\n' });
+    subs.commit({ 'README.md': '# subs\n' }, 'initial');
+    fx(subs.dir, 'submodule', 'add', '-q', urls.a, 'libs/a');
+    fx(subs.dir, 'submodule', 'add', '-q', urls.c, 'libs/c');
+    fx(subs.dir, 'commit', '-qm', 'add libs/a and libs/c');
+    fx(subs.dir, 'submodule', 'update', '-q', '--init', '--recursive');
+    fx(subs.dir, 'submodule', 'deinit', '-q', '-f', 'libs/c');
+    fs.rmSync(path.join(subs.dir, '.git', 'modules', 'libs', 'c'), { recursive: true, force: true });
+    subs.urls = urls;
+
     const plain = path.join(app.root, 'plain');
     fs.mkdirSync(plain);
     const cc = await fakeCc({
@@ -92,6 +109,7 @@ export async function seed() {
         stage: { dir: stage.dir, workspace: 'Web', isGitRepo: true },
         stash: { dir: stash.dir, workspace: 'Web', isGitRepo: true },
         detached: { dir: detached.dir, workspace: 'Web', isGitRepo: true },
+        subs: { dir: subs.dir, workspace: 'Web', isGitRepo: true },
       },
     });
     cleanups.push(() => cc.close());
@@ -102,9 +120,12 @@ export async function seed() {
       diffs,
       stage,
       stash,
+      subs,
       /** While on, every exec is held by the fake cc (until cancelled or released). */
       hold(on) { cc.state.execHook = on ? () => 'hold' : null; },
       nextHeld: () => cc.nextHeld(),
+      /** Releases every exec held so far (turn `hold` off first). */
+      releaseHeld() { for (const h of cc.state.held.splice(0)) h.release(); },
       close: cleanup,
     };
   } catch (e) {

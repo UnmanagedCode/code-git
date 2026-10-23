@@ -1,4 +1,4 @@
-> See also: [README](../README.md) · [protocol](protocol.md) · [architecture](architecture.md)
+> See also: [README](../README.md) · [protocol](protocol.md) · [architecture](architecture.md) · [submodules](submodules.md)
 
 # Features
 
@@ -7,8 +7,8 @@
 - Full-width page: the tab bar, the active checkout's header, the panel slots (`left`, `center`, `right`, `bottom`), and the repo picker dialog. It caps no content width, so it does not read `--cc-session-width`.
 - Follows cc's light/dark theme live when embedded; standalone, follows the OS (`frontend/public/theme-init.js`). No theme toggle of its own.
 - With no tab open the center shows "No repository open." and an **Open a repository** button.
-- The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel and the Compare panel, the right slot the Changes panel or the commit details (Changes while nothing or a single WIP row is selected in the graph, the details for a commit, a stash or several rows), the bottom slot the activity panel.
-- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the Compare picker as dialogs (**Refs**, **Compare**), the commit details open as a dialog when a commit is clicked, and **Changes (n)** beside **Refs** and **Compare** (or a WIP row click, or Ctrl/⌘+Shift+M) opens the Changes panel as a dialog.
+- The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel, the Compare panel and the Submodules panel, the right slot the Changes panel or the commit details (Changes while nothing or a single WIP row is selected in the graph, the details for a commit, a stash or several rows), the bottom slot the activity panel.
+- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the Compare picker as dialogs (**Refs**, **Compare**), the commit details open as a dialog when a commit is clicked, and **Changes (n)** beside **Refs** and **Compare** (or a WIP row click, or Ctrl/⌘+Shift+M) opens the Changes panel as a dialog; **Submodules** opens the Submodules panel as a dialog.
 
 ## Repo picker
 
@@ -37,11 +37,11 @@ A failed listing shows the error with **Retry**.
 
 ## Tabs
 
-- One tab per checkout, labelled `project` or `project/worktree`. Opening an already-open checkout activates its tab.
+- One tab per checkout, labelled `project` or `project/worktree`; a submodule tab adds ` › path` per submodule (`app › libs/a › b`). Opening an already-open checkout activates its tab.
 - Click activates; × closes. Closing the active tab activates its right neighbour, else its left one.
 - **Shortcuts:** Ctrl+1…Ctrl+8 (⌘ on macOS) activate tab 1…8; Ctrl/⌘+9 the last tab. Shift or Alt with them does nothing. Only while focus is inside the plugin frame.
 - **Tab menu** (⋮ button, or right-click the tab): **Close**, **Close others** (only with more than one tab), **Copy name** (`project/worktree` to the clipboard).
-- Tabs persist in `localStorage` key `code-git:tabs`. The active tab is mirrored into the URL query (`?project=…&worktree=…`); loading such a URL opens that checkout beside the persisted tabs, and Back/cc navigation (`popstate`) activates the tab the URL names.
+- Tabs persist in `localStorage` key `code-git:tabs`. The active tab is mirrored into the URL query (`?project=…&worktree=…`, plus `&sub=…` per submodule of a submodule tab); loading such a URL opens that checkout beside the persisted tabs, and Back/cc navigation (`popstate`) activates the tab the URL names.
 
 ## Repo header
 
@@ -49,7 +49,7 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 
 | Field | Shown as |
 |---|---|
-| Title | `project` or `project/worktree` |
+| Title | `project` or `project/worktree`. A submodule tab: a breadcrumb of its chain (each ancestor a button opening or activating that repo's tab), the submodule's path as the title, and **Back to ‹parent›** (opens or activates the parent's tab, closes this one) |
 | System | Badge for a non-local System |
 | HEAD | Branch name; **detached** badge + the first 10 characters of the commit id; or the unborn branch name + **no commits yet** badge |
 | Upstream | `no upstream`, or the upstream name with ↑ahead ↓behind |
@@ -245,3 +245,25 @@ A refusal (nothing to stash, a conflict in progress, a path behind an untracked 
 
 **One file** — **Apply this file** (the details panel's file menu, on a stash) or **Apply file from stash** (the diff's file menu, on All changes or Untracked): the file's change goes into the working tree only, as a patch — all of it or nothing; a file that differs from the stash's base is refused, never overwritten. Pop is whole-stash only.
 
+
+## Submodules
+
+The repo's submodules, in the left slot (below `lg`: the graph toolbar's **Submodules** dialog). Ops, gates and security: [submodules](submodules.md). Every action shows its progress and outcome as a toast and reloads the list, the Changes lists, the header and the graph.
+
+| Element | Behaviour |
+|---|---|
+| Header | **Submodules (n)**, **Add…**, and **Update all** (every unblocked submodule) when there is one |
+| Row | The path; status badges **Uninitialised**, **Not cloned**, **Out of sync** (checked out ≠ recorded), **Modified**, **Untracked**, **Added** (not committed yet), **Conflicted**, **Blocked** (an unsafe name or path, or a directory that resolves outside the checkout: no action is offered), **URL refused** (its url is not one code-git clones from; the reason as the badge's tooltip); the checked-out commit and, when it differs, `→` the recorded one. Right-click or ⋮ opens its menu; double-click opens it |
+| Empty | "No submodules" |
+| **Add…** | Url (http(s), ssh, git, file, an absolute path, `user@host:path`, or relative `./…` / `../…` resolved against the default remote), path (defaults to the url's last segment), optional name and branch. git clones it; the submodule and `.gitmodules` are staged. A refusal stays in the dialog with git's message |
+
+| Menu item | Behaviour |
+|---|---|
+| **Open** | (cloned) Opens the submodule as its own tab: graph, refs, Changes, diff, stash and its own submodules all act on it. Closing that tab by any way, or **Back to ‹parent›**, offers **Commit the new pointer for ‹path› in ‹parent›?** when its HEAD differs from what the parent committed: the message prefilled `Update submodule ‹path›`, **Commit pointer** commits only that pointer (anything else staged stays staged), **Not now** sends nothing |
+| **Initialize** | (not initialized) Registers its url, no network; the toast's **Update** clones it, or says the url is refused |
+| **Update** | Clones if needed and checks out the recorded commit, recursively; the toast counts seconds. Never overwrites local changes (refused with git's message). Commits on no branch the checkout would leave behind: the toast's **Review…** lists them and **Update anyway** retries |
+| **Sync** | (initialized) Copies `.gitmodules`' url into the config (and nested submodules') |
+| **Edit URL…** | Writes a new url to `.gitmodules` (left unstaged) and syncs an initialized submodule |
+| **Remove…** | Asks first (what is removed, and that `.git/modules/‹name›` is kept). Changed or untracked files, commits on no branch, a staged pointer, or unstaged `.gitmodules` changes: the toast's **Review…** lists them in an irreversible confirmation (**Discard and remove**; unstaged `.gitmodules` changes are staged with the removal) |
+
+Refused outright with the server's message: a url with a `<transport>::` helper or a leading `-`, a repository whose own config sets `protocol.*`, and a local-path clone the System's git does not allow (`protocol.file.allow`).
