@@ -63,7 +63,7 @@ Other cc instances (scratch ccs) may listen on other ports: never pick one by po
 
 - Same refusals as `live.mjs`: no `CONDUCTOR_URL`, or `$CONDUCTOR_URL/api/health` not answering `"app":"code-conductor"`, stops it. Find the URL as above.
 - Opens the checkout by URL (`?project=…`), so the picker is never used, and scrolls its graph to the end of the snapshot.
-- What runs: `repo.summary` of each of the project's cc checkouts, the `graph.*` ops, `branch.tracking` and `remote.list` — all `kind: 'read'` with `GIT_OPTIONAL_LOCKS=0` — plus cc's project and worktree listings. The script fails if the page calls any other op or any non-read command lands in the activity log.
+- What runs: `repo.summary` of each of the project's cc checkouts, the `graph.*` ops and the reads the other panels make (`branch.tracking`, `remote.list`, `submodule.list`, the Changes panel's `diff.files` and `commit.*`, `undo.state`) — all `kind: 'read'` with `GIT_OPTIONAL_LOCKS=0` — plus cc's project and worktree listings. The script fails if the page posts an op whose registry `kind` is not `read`, or any non-read command lands in the activity log.
 - Never Rescans, Enables or restarts anything.
 
 ## `live-submodules.mjs` — read-only submodule check

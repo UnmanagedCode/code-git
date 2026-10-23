@@ -1,7 +1,7 @@
 // READ-ONLY graph measurement against a live code-conductor: boots this checkout's backend with CONDUCTOR_URL pointed at
 // it, opens a project's graph by URL and runs the scroll measurement of graph-perf.mjs (graphMeasure.mjs). Everything it
-// drives is a read: repo.summary, the graph.* ops, branch.tracking and remote.list (git with GIT_OPTIONAL_LOCKS=0), cc's
-// project and worktree lists.
+// drives is a read: repo.summary, the graph.* ops and the other panels' reads (git with GIT_OPTIONAL_LOCKS=0), cc's
+// project and worktree lists; any op the registry does not call a read fails it.
 // It never calls a write op, never registers, rescans or enables the plugin. The only gate is the DOM bound.
 // Run: CONDUCTOR_URL=http://127.0.0.1:<cc port> node harness/playwright/live-graph.mjs [project[/worktree]]   (default code-conductor)
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
 import { measureScroll, summarize } from './graphMeasure.mjs';
 import { MAX_ROWS } from './graphLimits.mjs';
+import { OPS } from '../../src/git/ops/index.js';
 
 const cc = process.env.CONDUCTOR_URL;
 if (!cc) throw new Error('CONDUCTOR_URL is not set: point it at the live cc (see harness/playwright/README.md)');
@@ -28,10 +29,13 @@ let report;
 try {
   report = await withPage(async (page) => {
     const writes = [];
-    page.on('request', (r) => { if (/api\/ops\//.test(r.url()) && !/api\/ops\/(repo\.summary|graph\.(refs|page|stats|search|commit)|branch\.tracking|remote\.list)$/.test(r.url())) writes.push(r.url()); });
+    page.on('request', (r) => {
+      const m = /api\/ops\/([^/?]+)$/.exec(r.url());
+      if (m && OPS.get(decodeURIComponent(m[1]))?.kind !== 'read') writes.push(r.url());
+    });
     const m = await measureScroll(page, `${srv.url}/${query}`);
     await page.screenshot({ path: path.join(outDir, 'graph.png'), animations: 'disabled' });
-    if (writes.length) throw new Error(`live-graph: an op outside the read set was called: ${writes.join(', ')}`);
+    if (writes.length) throw new Error(`live-graph: an op the registry does not call a read was posted: ${writes.join(', ')}`);
     const activity = await (await fetch(`${srv.url}/api/activity`)).json();
     if (activity.entries.some((e) => e.kind !== 'read')) throw new Error('live-graph: a non-read command ran');
     return summarize(m, activity.entries.filter((e) => e.target.project === project));
