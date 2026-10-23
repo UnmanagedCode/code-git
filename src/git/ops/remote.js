@@ -336,8 +336,8 @@ export const ops = [
       try {
         assertSomethingPushed(result, remote);
       } catch (e) {
-        // What the UI's force-with-lease confirmation shows and leases against.
-        if (e.code === 'PUSH_REJECTED') e.extra.tracking = await trackingOf(git, remote, to);
+        // Where the push went and what the UI's force-with-lease confirmation shows and leases against.
+        if (e.code === 'PUSH_REJECTED') Object.assign(e.extra, { remote, to, tracking: await trackingOf(git, remote, to) });
         throw e;
       }
       const done = result.updated.find((u) => u.ref === dst);

@@ -70,7 +70,7 @@ test('a non-fast-forward push → PUSH_REJECTED with the tracking ref the UI lea
   const theirs = pushFromElsewhere(w, 'main', { 'r.txt': 'r\n' });
   w.repo.commit({ 'l.txt': 'l\n' }, 'local');
   await assert.rejects(w.op('remote.push', { branch: 'main' }), refused('PUSH_REJECTED', {
-    rejected: [{ ref: 'refs/heads/main', reason: 'fetch first' }], tracking: { ref: 'refs/remotes/origin/main', oid: w.base },
+    rejected: [{ ref: 'refs/heads/main', reason: 'fetch first' }], remote: 'origin', to: 'main', tracking: { ref: 'refs/remotes/origin/main', oid: w.base },
   }));
   assert.equal(onOrigin(w, 'refs/heads/main'), theirs);
 });

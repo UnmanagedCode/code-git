@@ -19,6 +19,9 @@ import { resetRefDialog } from '@/state/refDialog';
 import { resetRefSelection } from '@/state/refSelection';
 import { resetTracking } from '@/state/branchTracking';
 import { resetStashDialog } from '@/state/stashDialog';
+import { resetRemotes } from '@/state/remotes';
+import { resetRemotePrefs } from '@/state/remotePrefs';
+import { resetRemoteDialog } from '@/state/remoteDialog';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
@@ -45,6 +48,9 @@ afterEach(() => {
   resetRefSelection();
   resetTracking();
   resetStashDialog();
+  resetRemotes();
+  resetRemotePrefs();
+  resetRemoteDialog();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();

@@ -76,6 +76,8 @@ export function stubGraph(world: GraphWorld, extra: Parameters<typeof stubFetch>
       return d instanceof Response ? d : { ok: true, result: d };
     },
     'GET api/activity': { entries: [] },
+    // The toolbar's remotes (the remotes card): none unless a test passes its own.
+    'POST api/ops/remote.list': { ok: true, result: { remotes: [] } },
     // The diff the graph opens: its file list only.
     'POST api/ops/diff.files': { ok: true, result: filesResult([]) },
     ...extra,

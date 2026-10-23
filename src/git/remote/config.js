@@ -45,9 +45,9 @@ export async function remoteNames(git) {
 }
 
 /**
- * Every remote: [{name, urls, pushUrls, fetch, displayUrl, legacy}] in `git remote` order. `urls` / `pushUrls` as git
- * counts them (after the last empty value); `fetch` as configured; `displayUrl` the first url (else push url) with its
- * password masked, or null; `legacy` true when git reads the remote from a legacy `.git/remotes` / `.git/branches` file
+ * Every remote: [{name, urls, pushUrls, fetch, displayUrl, displayPushUrl, legacy}] in `git remote` order. `urls` /
+ * `pushUrls` as git counts them (after the last empty value); `fetch` as configured; `displayUrl` the first url (else
+ * push url) and `displayPushUrl` the first push url, a password masked, or null; `legacy` true when git reads the remote from a legacy `.git/remotes` / `.git/branches` file
  * (no url in config and such a file exists).
  */
 export async function listRemotes(git) {
@@ -59,8 +59,8 @@ export async function listRemotes(git) {
     const urls = effective(c.urls);
     const pushUrls = effective(c.pushUrls);
     const legacy = !hasUrl(c.urls) && (await legacyRemoteFile(git, name)) !== null;
-    const shown = urls[0] ?? pushUrls[0];
-    out.push({ name, urls, pushUrls, fetch: c.fetch, displayUrl: shown === undefined ? null : maskUrl(shown), legacy });
+    const masked = (u) => (u === undefined ? null : maskUrl(u));
+    out.push({ name, urls, pushUrls, fetch: c.fetch, displayUrl: masked(urls[0] ?? pushUrls[0]), displayPushUrl: masked(pushUrls[0]), legacy });
   }
   return out;
 }
