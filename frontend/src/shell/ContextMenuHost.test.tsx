@@ -51,3 +51,52 @@ test('a press released before the menu opens leaves nothing to swallow', async (
   fireEvent.pointerUp(item, { pointerId: 9, button: 0 });
   await waitFor(() => expect(ran).toEqual(['hide']));
 });
+
+test('a swallowed release that produces no click leaves no swallow armed: the next real click on an item runs it', async () => {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+  open();
+  await screen.findByRole('menuitem', { name: 'Hide' });
+  // A right-button release: swallowed, and no click follows it.
+  fireEvent.pointerUp(document.body, { pointerId: 1, button: 2 });
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Hide' }));
+  expect(ran).toEqual(['hide']);
+});
+
+test('a key ends an armed click swallow: Enter on an item runs it', async () => {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+  open();
+  const item = await screen.findByRole('menuitem', { name: 'Copy name' });
+  fireEvent.pointerUp(document.body, { pointerId: 1, button: 2 });
+  item.focus();
+  await userEvent.keyboard('{Enter}');
+  expect(ran).toEqual(['copy']);
+});
+
+test('a lost release (no pointerup ever arrives) does not eat the next click: a new press disarms it', async () => {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+  open();
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'Hide' }));
+  expect(ran).toEqual(['hide']);
+});
+
+for (const [what, lose] of [
+  ['the window losing focus', () => fireEvent.blur(window)],
+  ['the page being hidden', () => fireEvent(document, new Event('visibilitychange'))],
+] as const) {
+  test(`a lost release is disarmed by ${what}: that pointer's later release over an item activates it`, async () => {
+    render(<ContextMenuHost host="h" />);
+    fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+    open();
+    await screen.findByRole('menuitem', { name: 'Hide' });
+    lose();
+    // The menu may close with the window's focus: reopen it with no press held. No new pointerdown happens, so only
+    // the blur / visibility change can have disarmed the lost release.
+    act(() => contextMenuStore.set(null));
+    open();
+    fireEvent.pointerUp(await screen.findByRole('menuitem', { name: 'Hide' }), { pointerId: 1, button: 0 });
+    await waitFor(() => expect(ran).toEqual(['hide']));
+  });
+}
