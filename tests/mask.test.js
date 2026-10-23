@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createActivityLog, redactArgv } from '../src/activity/log.js';
-import { maskUrl } from '../src/mask.js';
+import { maskUrl, maskUrls } from '../src/mask.js';
 import { refsWorld } from './_refsWorld.js';
 import { startApp } from './_app.js';
 
@@ -45,4 +45,10 @@ test('end to end: remote.add with a credential url writes it to git config but /
   assert.ok(!body.includes('ss/word'), 'the password never reaches the activity API');
   const listed = (await app.call('POST', '/api/ops/remote.list', { target: { project: 'repo' } })).body.result.remotes.find((x) => x.name === 'up');
   assert.equal(listed.displayUrl, 'https://me:***@h.example/r.git');
+});
+
+test('maskUrls masks every credentialed url inside a text, stopping at whitespace or a quote, and leaves the rest', () => {
+  const text = "Cloning into 'x'...\nfatal: clone of 'https://u:p@ss@host/r.git' into submodule path 'x' failed\nsee ssh://git:k3y@h:22/r and http://plain/h@x";
+  assert.equal(maskUrls(text), "Cloning into 'x'...\nfatal: clone of 'https://u:***@host/r.git' into submodule path 'x' failed\nsee ssh://git:***@h:22/r and http://plain/h@x");
+  assert.equal(maskUrls('no urls here'), 'no urls here');
 });

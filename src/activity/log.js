@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { LIMITS } from '../git/limits.js';
-import { maskUrl } from '../mask.js';
+import { maskUrl, maskUrls } from '../mask.js';
 import { Refusal } from '../refusals.js';
 
 // A diagnostic record of every git command run: what ran, where, and how it ended. Nothing derives
@@ -21,7 +21,7 @@ const copyTarget = (t) => ({ project: t.project, worktree: t.worktree ?? null, .
 /** The tail of `buf` (git's verdict comes last), decoded without trusting it to be UTF-8. */
 export function capStderr(buf, cap = LIMITS.stderrCap) {
   const b = buf ?? Buffer.alloc(0);
-  return { stderr: decoder.decode(b.length > cap ? b.subarray(b.length - cap) : b), stderrTruncated: b.length > cap };
+  return { stderr: maskUrls(decoder.decode(b.length > cap ? b.subarray(b.length - cap) : b)), stderrTruncated: b.length > cap };
 }
 
 /**

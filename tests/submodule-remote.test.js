@@ -73,3 +73,23 @@ test('every network exec carries NET_CONFIG after the sub prefix', async (t) => 
   const prefixes = net.map((a) => a.slice(1 + BASE_ARGS.length, a.indexOf('submodule')));
   assert.deepEqual(prefixes, [['-C', 'libA', '--git-dir=.git', ...NET_CONFIG], ['-C', 'libA', '--git-dir=.git', ...NET_CONFIG], NET_CONFIG]);
 });
+
+test('a credentialed url never reaches the activity log: submodule.setUrl and submodule.add argv show it masked (stderr too)', { skip: NO_HTTP }, async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const url = `http://u:s3cr3t-pw@127.0.0.1:${await closedPort()}/r.git`;
+  assert.equal((await w.op('submodule.setUrl', { path: 'libA', url })).status, 200);
+  const add = await w.op('submodule.add', { url, path: 'cred' });
+  assert.equal(add.body.code, 'REMOTE_UNREACHABLE');
+  // git itself got the real url.
+  assert.ok(w.execArgv().some((a) => a.includes(url)));
+  const log = await w.app.call('GET', '/api/activity');
+  assert.equal(JSON.stringify(log.body).includes('s3cr3t-pw'), false);
+  const masked = `http://u:***@127.0.0.1:${new URL(url).port}/r.git`;
+  const entries = log.body.entries;
+  assert.ok(entries.some((e) => e.op === 'submodule.setUrl' && e.argv.includes(masked)));
+  assert.ok(entries.some((e) => e.op === 'submodule.add' && e.argv.at(-2) === masked && e.argv.at(-1) === 'cred'));
+  // git's own "clone of '<url>' … failed" line: masked in the entry and in the refusal the UI shows.
+  assert.ok(entries.some((e) => e.op === 'submodule.add' && e.stderr.includes(`clone of '${masked}'`)));
+  assert.equal(JSON.stringify(add.body).includes('s3cr3t-pw'), false);
+  assert.match(add.body.stderr, /u:\*\*\*@/);
+});

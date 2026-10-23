@@ -488,7 +488,7 @@ An op that lists pages **by git arguments**, never by slicing output (cc's exec 
 | `cancellable` | From the op definition |
 | `startedAt` | ISO time |
 | `durationMs`, `exitCode` | cc's; `null` while running or when the command never ran to an exit |
-| `stderr`, `stderrTruncated` | Decoded as UTF-8 (invalid bytes replaced), the **tail** up to `LIMITS.stderrCap` bytes |
+| `stderr`, `stderrTruncated` | Decoded as UTF-8 (invalid bytes replaced), the **tail** up to `LIMITS.stderrCap` bytes; a url's password inside it is masked (`maskUrls` in `src/mask.js`: git quotes the url a submodule clone failed on) |
 | `status` | `running` → `ok` \| `failed` (exit outside the op's accepted codes, `code: GIT_FAILED`) \| `refused` (a cc refusal) \| `timeout` (`GIT_TIMEOUT`) \| `cancelled` (`CANCELLED`) |
 | `code` | The refusal code, or `null` |
 
