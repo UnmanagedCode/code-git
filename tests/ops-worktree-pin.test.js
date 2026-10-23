@@ -92,6 +92,7 @@ const WRITES = [
   ['stage.stageLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
   ['stage.unstageLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
   ['stage.discardLines', { path: 'HEAD', hunks: [{ header: '@@ -1 +1 @@', lines: [{ index: 0, text: 'x' }] }] }],
+  ['stash.push', {}],
 ];
 
 for (const bare of ['true', 'false', 'unset', 'include-false', 'newline-path']) {
