@@ -62,7 +62,7 @@ test('Remove confirms, then retries with discard after SUBMODULE_DIRTY confirm',
   const w = await world({
     answers: {
       'submodule.remove': () => (n++ === 0
-        ? json({ error: 'libs/a has work removing it would throw away', code: 'SUBMODULE_DIRTY', path: 'libs/a', modified: true, untracked: false, orphaned: 2, staged: false }, 409)
+        ? json({ error: 'libs/a has work removing it would throw away', code: 'SUBMODULE_DIRTY', path: 'libs/a', modified: true, untracked: false, orphaned: 2, staged: false, gitmodules: true }, 409)
         : { path: 'libs/a', name: 'libs/a' }),
     },
   });
@@ -79,6 +79,8 @@ test('Remove confirms, then retries with discard after SUBMODULE_DIRTY confirm',
   const second = await screen.findByRole('dialog', { name: 'Discard the work in libs/a?' });
   expect(within(second).getByText('Changed files in the submodule')).toBeTruthy();
   expect(within(second).getByText('2 commits on no branch')).toBeTruthy();
+  expect(within(second).getByText('Unstaged changes to .gitmodules: they will be staged with the removal')).toBeTruthy();
+  expect(within(second).queryByText('Untracked files in the submodule')).toBeNull();
   expect(within(second).getByText('This cannot be undone.')).toBeTruthy();
   await userEvent.click(within(second).getByRole('button', { name: 'Discard and remove' }));
   await waitFor(() => expect(w.posts('submodule.remove')).toEqual([{ path: 'libs/a' }, { path: 'libs/a', discard: true }]));

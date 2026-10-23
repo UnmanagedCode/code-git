@@ -177,17 +177,20 @@ export const ops = [
       await assertWorktree(git);
       await assertGitmodulesWritable(git);
       const [e] = await knownEntries(git, [p.path]);
+      // git rm refuses while .gitmodules has unstaged changes: it stages the whole file with the removal.
+      const gitmodules = (await git(['diff', '--quiet', '--no-ext-diff', '--', '.gitmodules'], { okExit: [0, 1] })).exitCode === 1;
       if (!p.discard) {
         const orphaned = e.populated ? await orphanCount(git, e.path, e.recorded) : 0;
         // A pointer staged but not committed (an added submodule, a moved one): `git rm` would need -f.
         const staged = e.recorded !== e.committed;
-        if ((e.populated && (e.modified || e.untracked)) || orphaned > 0 || staged) {
+        if ((e.populated && (e.modified || e.untracked)) || orphaned > 0 || staged || gitmodules) {
           throw new Refusal('SUBMODULE_DIRTY', `${p.path} has work removing it would throw away`, {
-            path: p.path, modified: e.populated && e.modified, untracked: e.populated && e.untracked, orphaned, staged,
+            path: p.path, modified: e.populated && e.modified, untracked: e.populated && e.untracked, orphaned, staged, gitmodules,
           });
         }
       }
       const force = p.discard ? ['-f'] : [];
+      if (gitmodules) await git(['add', '--', '.gitmodules']);
       if (e.initialized || e.populated) await run(git, ['submodule', 'deinit', ...force, '--', p.path]);
       // Removes the gitlink, the directory and the .gitmodules section, and stages .gitmodules. .git/modules/<name> stays.
       await run(git, ['rm', '-q', ...force, '--', p.path]);

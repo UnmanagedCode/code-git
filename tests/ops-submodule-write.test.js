@@ -182,9 +182,9 @@ test('remove refuses SUBMODULE_DIRTY when modified/untracked/orphaned/staged; di
   const w = await subWorld(t, { nested: false });
   const facts = async () => {
     const b = await refusal(w, 'submodule.remove', { path: 'libA' }, 'SUBMODULE_DIRTY');
-    return { modified: b.modified, untracked: b.untracked, orphaned: b.orphaned, staged: b.staged };
+    return { modified: b.modified, untracked: b.untracked, orphaned: b.orphaned, staged: b.staged, gitmodules: b.gitmodules };
   };
-  const none = { modified: false, untracked: false, orphaned: 0, staged: false };
+  const none = { modified: false, untracked: false, orphaned: 0, staged: false, gitmodules: false };
   w.repo.write('libA/a.txt', 'changed\n');
   assert.deepEqual(await facts(), { ...none, modified: true });
   w.fx('libA', 'checkout', '-q', '--', 'a.txt');
@@ -205,6 +205,20 @@ test('remove refuses SUBMODULE_DIRTY when modified/untracked/orphaned/staged; di
   assert.match(w.repo.git('diff', '--cached', '--name-only'), /^\.gitmodules$/m);
   assert.ok(fs.existsSync(w.file('.git/modules/libA')));
   assert.deepEqual(sub(w, ['submodule', 'deinit']), [['submodule', 'deinit', '-f', '--', 'libA']]);
+});
+
+test('remove refuses SUBMODULE_DIRTY {gitmodules} over unstaged .gitmodules changes; discard stages them with the removal', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  await w.ok('submodule.add', { url: w.urls.libA, path: 'two' });
+  w.repo.git('commit', '-qm', 'add two');
+  w.repo.git('config', '-f', '.gitmodules', 'submodule.two.url', '../edited.git');
+  const b = await refusal(w, 'submodule.remove', { path: 'libA' }, 'SUBMODULE_DIRTY');
+  assert.deepEqual([b.gitmodules, b.modified, b.untracked, b.orphaned, b.staged], [true, false, false, 0, false]);
+  assert.equal(w.repo.git('diff', '--name-only'), '.gitmodules');
+  await w.ok('submodule.remove', { path: 'libA', discard: true });
+  assert.equal(w.repo.git('diff', '--name-only'), '');
+  assert.equal(gm(w, 'submodule.libA.path'), null);
+  assert.equal(w.repo.git('show', ':.gitmodules').includes('../edited.git'), true);
 });
 
 test('remove of a clean submodule needs no discard and passes no -f', async (t) => {

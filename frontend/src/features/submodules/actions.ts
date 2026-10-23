@@ -69,12 +69,13 @@ export const sync = (tab: Tab, entry: SubmoduleEntry) => runSubmoduleOp(tab, {
 
 /** The facts of a SUBMODULE_DIRTY refusal, as lines. */
 function dirtyFacts(e: ApiError): string[] {
-  const b = bodyOf<{ modified: boolean; untracked: boolean; orphaned: number; staged: boolean }>(e);
+  const b = bodyOf<{ modified: boolean; untracked: boolean; orphaned: number; staged: boolean; gitmodules: boolean }>(e);
   return [
     b.modified && 'Changed files in the submodule',
     b.untracked && 'Untracked files in the submodule',
     b.orphaned ? `${numbered(b.orphaned, 'commit')} on no branch` : null,
     b.staged && 'A staged pointer change in this repository',
+    b.gitmodules && 'Unstaged changes to .gitmodules: they will be staged with the removal',
   ].filter((x): x is string => !!x);
 }
 
