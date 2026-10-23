@@ -1,12 +1,19 @@
 import { Refusal } from '../../../refusals.js';
 import { assertCcAck } from '../../refs/heads.js';
 import { refObjects } from '../../refs/resolve.js';
+import { assertRefName } from '../../validate.js';
 import { shortRef, stale } from './shared.js';
 
 // `refs`: branches and tags put back to their other value (docs/undo.md → Steps). Every plain ref changes in one
 // `update-ref --stdin -z` transaction, each line a compare-and-swap, so one ref that moved since writes nothing.
 
 const HEADS = 'refs/heads/';
+
+/** `refs/<anything valid>`: what an upstream must be before it reaches git. */
+function isFullRef(ref) {
+  if (typeof ref !== 'string' || !ref.startsWith('refs/')) return false;
+  try { assertRefName(ref.slice('refs/'.length)); return true; } catch { return false; }
+}
 /** git's words when a transaction's compare-and-swap misses (LC_ALL=C). */
 const CAS_RE = /but expected|reference already exists|unable to resolve reference|reference is missing/;
 
@@ -82,7 +89,9 @@ async function apply(git, step, dir, ctx) {
     // inherited by a later branch of that name). Exit 128: there was none.
     if (to === null) await git(['config', '--remove-section', `branch.${name}`], { okExit: [0, 128] });
     if (from === null && change.upstream) {
-      if ((await refObjects(git, [change.upstream])).has(change.upstream)) await git(['branch', `--set-upstream-to=${change.upstream}`, '--end-of-options', name]);
+      // The upstream is read from repo config (%(upstream)): only a full refname is passed on.
+      if (!isFullRef(change.upstream)) ctx.warnings.push(`${name}'s upstream ${change.upstream} is not a ref name: not set`);
+      else if ((await refObjects(git, [change.upstream])).has(change.upstream)) await git(['branch', `--set-upstream-to=${change.upstream}`, '--end-of-options', name]);
       else ctx.warnings.push(`${name}'s upstream ${change.upstream} no longer exists: not set`);
     }
   }

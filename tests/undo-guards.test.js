@@ -214,10 +214,24 @@ test('a failure after a step wrote: appliedSteps on the refusal, the slots clear
   assert.deepEqual(await w.state(), { undo: null, redo: null });
 });
 
+// Invariant: an upstream read from repo config that is not a full refname (`--help`) never reaches git as an option: the
+// undo of a delete restores the branch and warns that its upstream was not restored.
+test('undo of a branch delete whose configured upstream is "--help": the branch back, a warning, no failure', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('branch', 'gone');
+  fs.appendFileSync(path.join(w.repo.dir, '.git', 'config'), '[branch "gone"]\n\tremote = .\n\tmerge = --help\n');
+  assert.equal(w.repo.git('for-each-ref', '--format=%(upstream)', 'refs/heads/gone'), '--help');
+  await w.op('branch.delete', { names: ['gone'], force: true });
+  const r = await w.undo();
+  assert.equal(w.oid('gone'), w.base);
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /gone's upstream --help .*not set/);
+});
+
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})/;
 
 // Invariant: every undo/redo command puts `--end-of-options` or `--` before an oid, ref or path it names (a same-argument
-// `--opt=value` aside; rev-parse takes only hex-led revisions, the ref readers only full `refs/` names); never `git apply --index`; `reset --hard` only for a hard
+// `--opt=value` aside; rev-parse takes only hex-led revisions, `symbolic-ref -q` only a full `refs/` name); never `git apply --index`; `reset --hard` only for a hard
 // reset's plan; no protected env; exec form A only.
 test('argv scan over every undo and redo exec', async (t) => {
   const w = await undoWorld(t);
@@ -264,8 +278,8 @@ test('argv scan over every undo and redo exec', async (t) => {
         const named = OID.test(a) || names.has(a);
         if (!named) return;
         if (sub === 'rev-parse' && OID.test(a)) return;
-        // The shared ref readers (refEntries, symbolicTarget) name full refnames, which can never read as an option.
-        if ((sub === 'for-each-ref' || sub === 'symbolic-ref') && a.startsWith('refs/') && !argv.includes('-m')) return;
+        // symbolicTarget's `symbolic-ref -q <ref>` names a full refname, which can never read as an option.
+        if (sub === 'symbolic-ref' && argv[1] === '-q' && a.startsWith('refs/')) return;
         assert.ok(stop !== -1 && stop < i, `${label}: ${argv.join(' ')}: ${a} before --end-of-options`);
       });
       assert.ok(!(sub === 'apply' && argv.includes('--index')), `${label}: never apply --index`);
