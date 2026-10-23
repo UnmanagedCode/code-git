@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { NET_CONFIG } from '../src/git/remote/net.js';
+import { BASE_ARGS } from '../src/git/runner.js';
 import { endOfOptionsBefore, refsWorld, refused } from './_refsWorld.js';
 import { pushFromElsewhere } from './_remotes.js';
 
@@ -141,4 +143,17 @@ test('params: to needs remote; a lease is {expect: oid | null}; names are checke
     [{ branch: 'main', setUpstream: 'yes' }, 'BAD_PARAMS'],
   ]) await assert.rejects(w.op('remote.push', params), refused(code), JSON.stringify(params));
   assert.deepEqual(w.cc.state.execCalls, []);
+});
+
+test('remote.<name>.mirror=true would refuse every refspec push: each push pins it off and goes through', async (t) => {
+  const w = await world(t);
+  w.repo.git('config', 'remote.origin.mirror', 'true');
+  w.repo.git('branch', 'side');
+  assert.equal((await w.op('remote.push', { branch: 'side', remote: 'origin' })).created, true);
+  assert.equal(onOrigin(w, 'refs/heads/side'), w.base);
+  w.repo.git('tag', 'v1');
+  assert.deepEqual((await w.op('tag.push', { remote: 'origin', names: ['v1'] })).pushed, ['v1']);
+  const raw = w.cc.state.execCalls.map((b) => b.argv.slice(1 + BASE_ARGS.length)).filter((a) => a.includes('push'));
+  assert.equal(raw.length, 2);
+  for (const a of raw) assert.deepEqual(a.slice(NET_CONFIG.length, NET_CONFIG.length + 3), ['-c', 'remote.origin.mirror=false', 'push']);
 });

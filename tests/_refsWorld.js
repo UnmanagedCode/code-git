@@ -46,8 +46,11 @@ export async function refsWorld(t) {
 
 const WRITE_SUBCOMMANDS = new Set(['switch', 'checkout', 'branch', 'update-ref', 'merge', 'reset', 'stash', 'tag', 'push', 'revert', 'cherry-pick', 'fetch', 'rebase']);
 
-/** `argv` without a leading NET_CONFIG (netRun's prefix). */
-export const stripNet = (argv) => (NET_CONFIG.every((a, i) => argv[i] === a) ? argv.slice(NET_CONFIG.length) : argv);
+/** `argv` without a leading NET_CONFIG (netRun's prefix) and, after it, a push's pinned `-c remote.<r>.mirror=false`. */
+export const stripNet = (argv) => {
+  const rest = NET_CONFIG.every((a, i) => argv[i] === a) ? argv.slice(NET_CONFIG.length) : argv;
+  return rest[0] === '-c' && /^remote\..+\.mirror=false$/.test(rest[1] ?? '') ? rest.slice(2) : rest;
+};
 
 export const refused = (code, extra = {}) => (e) => {
   assert.equal(e.code, code, e.message);

@@ -27,6 +27,12 @@ export async function knownRemote(git, name) {
 }
 
 /**
+ * Config pinned on every push: `remote.<name>.mirror=true` would make git refuse any refspec ("--mirror can't be
+ * combined with refspecs"), and a push here always names its refspecs. `-c` beats the repo's value (a boolean: last wins).
+ */
+export const pushConfig = (remote) => ['-c', `remote.${remote}.mirror=false`];
+
+/**
  * `git push --porcelain --no-follow-tags` of `refspecs` (`src:dst`) to `remote` → {updated, rejected, upToDate,
  * unrequested} (splitRequested over parsePushPorcelain): the first three hold only the refspecs' destinations.
  * `--no-follow-tags` keeps a configured `push.followTags` from publishing tags nobody selected. Before anything runs: a
@@ -46,7 +52,7 @@ export async function push(git, remote, refspecs, { setUpstream = false, leases 
     ...(setUpstream ? ['--set-upstream'] : []),
     ...leases.map((l) => `--force-with-lease=${l.ref}:${l.expect ?? ''}`),
   ];
-  const r = await netRun(git, ['push', '--porcelain', '--no-follow-tags', ...options, '--end-of-options', remote, ...refspecs], { okExit: [0, 1, 128] });
+  const r = await netRun(git, [...pushConfig(remote), 'push', '--porcelain', '--no-follow-tags', ...options, '--end-of-options', remote, ...refspecs], { okExit: [0, 1, 128] });
   const parsed = parsePushPorcelain(decoder.decode(r.stdout));
   const reported = parsed.updated.length + parsed.rejected.length + parsed.upToDate.length;
   if (r.exitCode !== 0 && !reported) throw remoteFailure(remote, r, 'push');
