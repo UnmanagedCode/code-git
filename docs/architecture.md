@@ -23,15 +23,17 @@
 | `src/git/runner.js` | `runGit(ctx, args, opts)`: **the** choke point for git; `subArgs(target)` (a submodule target's `-C <path> --git-dir=.git`) |
 | `src/git/locks.js` | `createLocks()`: keyed promise queue |
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
-| `src/git/undo/` | Undo and redo ([undo](undo.md)): `journal.js` (`createJournal`, `targetKey`: the per-checkout undo and redo slots), `record.js` (`journalAround`: what the ops route does around every op) |
+| `src/git/undo/` | Undo and redo ([undo](undo.md)): `journal.js` (`createJournal`, `targetKey`: the per-checkout undo and redo slots), `record.js` (`journalAround`: what the ops route does around every op), `plans.js` (`plans`: the registered ops' builders), `engine.js` (`runPlan`: preflight every step over a projection, then apply), `pushed.js` (`assertNotPushed`), `steps/` (`head`, `refs`, `rename`, `discard`, `patch`; `STEPS`) |
+| `src/git/ops/undo.js` | `undo.state`, `undo.undo`, `undo.redo` |
 | `src/git/ops/repo.js` | `repo.summary` |
 | `src/git/ops/diff.js` | `diff.files`, `diff.file`, `diff.patch`; `patchFilename` |
 | `src/git/diff/source.js` | The diff source descriptor: `parseSource`, `resolveSource`, `pairArgs`, `assertCommitish`, `emptyTree`, `commitOid`; the shared argv `DIFF_CONFIG`, `DIFF_FLAGS`, `FORMAT_PATCH_FLAGS`, `WHITESPACE_FLAGS`; `parseContext` / `contextArg` / `FULL_CONTEXT` |
 | `src/git/diff/noIndex.js` | `assertNoIndexReadsItself`, `readNoIndex`: reading one file's bytes through `diff --no-index /dev/null <path>` |
 | `src/git/worktree.js` | `isBare`, `assertWorktree`: the bare-repository check that `--work-tree=.` makes necessary (git dir = working tree) |
-| `src/git/params.js` | Shared op-param checks: `paramsObject`, `optBool`, `pathList`; `nulPaths` (stdin for `--pathspec-from-file`), `chunkPaths` (argv chunks) |
+| `src/git/params.js` | Shared op-param checks: `paramsObject`, `optBool`, `pathList`; `FROM_STDIN` + `nulPaths` (paths on stdin for `--pathspec-from-file`), `chunkPaths` (argv chunks) |
 | `src/git/stage/limits.js` | `STAGE_LIMITS`: staging, commit-template, `.gitignore` and patch caps |
 | `src/git/ops/stage.js` | `stage.files`, `stage.unstageFiles`, `stage.discardFiles`; `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` |
+| `src/git/stage/discard.js` | Whole-file discard, shared with its redo: `discardGates`, `discardWrites`, `discardPaths`; `worktreeTree` / `discardSnapshot` (the temporary-index snapshot its undo restores from) |
 | `src/git/ops/commit.js` | `commit.create`, `commit.state`, `commit.headMessage`, `commit.template` |
 | `src/git/commit/message.js` | `messageParams` (a commit message's params check, shared by `commit.create` and `submodule.commitPointer`), `joinMessage`, `splitMessage`, `templateDraft` (pure): the only place a message is checked, split or joined |
 | `src/git/ops/ignore.js` | `ignore.add`: the root `.gitignore` by whole-file-context `git apply`, optional stop-tracking |
@@ -280,13 +282,13 @@ What a later card touches to add a feature — each is one file of its own plus 
 
 ### What each destructive op destroys
 
-For the undo card: what an op overwrites or deletes, and whether git can give it back. The branch, tag and HEAD ops: [refs → Undo record](refs.md#undo-record) (their `result.undo` and the table there).
+What an op overwrites or deletes, and whether git can give it back. The branch, tag and HEAD ops: [refs → Undo record](refs.md#undo-record) (their `result.undo` and the table there). Which ops undo and redo actually run: [undo → Per-op plans](undo.md#per-op-plans).
 
 | Op | Destroys | Recoverable from git |
 |---|---|---|
 | `stage.files`, `stage.unstageFiles` | The previous index entries of those paths | Yes: HEAD and the worktree still hold both sides |
-| `stage.discardFiles` — tracked | The worktree content of those paths (returned in `result.tracked`) | No: it is in no object. An undo needs a `hash-object -w` snapshot taken before the discard |
-| `stage.discardFiles` — untracked | The files (returned in `result.untracked`) | No; the same snapshot would be needed |
+| `stage.discardFiles` — tracked | The worktree content of those paths (returned in `result.tracked`) | Until gc: `undo.discard.snapshot`, a commit of their worktree content taken before the discard |
+| `stage.discardFiles` — untracked | The files (returned in `result.untracked`) | Until gc: the same snapshot |
 | `stage.stageLines`, `stage.unstageLines` | Nothing outside the index | Yes |
 | `ignore.add` | With `stopTracking`, the index entries of the matching files (returned in `result.untracked`); the files stay | Yes: `git add` re-tracks them; `.gitignore` gains one line |
 | `files.restore` | That path's index entry and worktree content (an untracked symlink in the way is replaced by a directory) | The index entry yes (HEAD); uncommitted worktree content no |

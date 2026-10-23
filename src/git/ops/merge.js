@@ -9,6 +9,7 @@ import { merge } from '../remote/integrate.js';
 import { assertNoOperation } from '../sequence/guard.js';
 import { SEQUENCE_LIMITS } from '../sequence/limits.js';
 import { assertOid } from '../validate.js';
+import { plans } from '../undo/plans.js';
 import { assertWorktree } from '../worktree.js';
 
 // merge.start (docs/merge.md → Merge): a branch, tag or commit merged into this checkout — fast-forward when possible,
@@ -64,13 +65,17 @@ export const ops = [
       if (merged.conflicts) return result('conflicts', { files: merged.files });
       if (mode === 'squash') return result('squashed', { message: await squashMessage(git) });
       const now = (await ownHead(git)).oid;
-      return result(mode === 'ff' && fastForwardable ? 'fastForward' : 'merged', {
+      const outcome = mode === 'ff' && fastForwardable ? 'fastForward' : 'merged';
+      return result(outcome, {
         oid: now,
         undo: undoRecord({
           refs: own.branch ? [{ ref: own.branch, old: own.oid, new: now }] : [],
           head: { old: { branch: own.branch, oid: own.oid }, new: { branch: own.branch, oid: now } },
+          // A fast-forward makes no commit; a merge makes one, and the merged side's commits are not this op's.
+          created: outcome === 'merged' ? { tip: now, not: [own.oid, oid] } : null,
         }),
       });
     },
+    undo: plans.merge,
   },
 ];

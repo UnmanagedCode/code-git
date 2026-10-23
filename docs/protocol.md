@@ -51,6 +51,8 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | With `sub`: the chain is a cloned submodule whose real path is inside the checkout and whose git dir, at every level, is the one git gives it (`assertInsideCheckout`: reads under the op run) | 409 `SUBMODULE_NOT_POPULATED` `{path}`, 409 `SUBMODULE_UNSAFE` `{reason: 'escapes' \| 'gitdir', path}` |
 | Running it | the op's refusals, plus the exec refusals below |
 
+**The undo journal.** Every write that is not `undo.*` clears the checkout's undo and redo slots before it runs; a registered one that succeeds records its plan ([undo → Journal](undo.md#journal)).
+
 **Cancel and disconnect.** An op is `cancellable` when its definition says so; the default is `true` for `kind: 'read'` and `false` for `kind: 'write'`. A cancellable op is aborted by `POST api/activity/:id/cancel` on the entry of its **currently running** command (an entry of one of its already-finished commands answers 409 `NOT_RUNNING`), after which the op's request answers 409 `CANCELLED`; or by its HTTP client going away, in which case nobody receives an answer and the outcome is only in the activity log (the entry ends `cancelled`). A non-cancellable op is aborted by neither: it runs to completion and its outcome lands in the activity log.
 
 ### `repo.summary` (read, cancellable)
@@ -239,7 +241,8 @@ The ops below change the index or the worktree (`kind: 'write'`, not cancellable
 
 - Then `git restore --worktree --pathspec-from-file=- --pathspec-file-nul` for the tracked paths (from the index: staged changes stay), and `git clean -f -q -- <untracked chunk>` per chunk. Never `-d`, never `-x`.
 - "Discard all" in the UI is this op called with the unstaged and untracked lists the panel showed: a file created after that is never touched.
-- `result`: `{tracked, untracked}` — what was discarded. Neither is recoverable from git (see architecture → What each destructive op destroys).
+- Before the writes (after the gates): the discard snapshot, a dangling commit of the paths' worktree content built in a temporary index ([undo → Record keys](undo.md#record-keys)).
+- `result`: `{tracked, untracked, undo}` — what was discarded; `undo.discard = {snapshot, tracked, untracked}`.
 
 ### Stage selection: `stage.stageLines`, `stage.unstageLines`, `stage.discardLines` (write)
 
@@ -288,7 +291,7 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
   - `summary`: non-empty after trimming, one line (no `\n`/`\r`). Neither field may contain NUL. → `BAD_PARAMS`.
   - `messageOnly` needs `amend` (`BAD_PARAMS`). Booleans default to `false`.
 - Message: `joinMessage` (`src/git/commit/message.js`) — `summary.trim()`, then a blank line and the description with trailing whitespace trimmed (when non-empty), then `\n`. Sent on stdin.
-- Checks: `amend` with an unborn HEAD → 409 `NO_HEAD`. Without `amend`: `git diff --cached --quiet --no-ext-diff --no-textconv --ignore-submodules=none` exits 0 (nothing staged) **and** `git rev-parse -q --verify MERGE_HEAD` exits 1 (no merge in progress) → 409 `NOTHING_TO_COMMIT`. A merge with nothing staged commits.
+- Checks: `amend` with an unborn HEAD → 409 `NO_HEAD`. Without `amend`: `git rev-parse -q --verify MERGE_HEAD` (read for the undo record too) and `git diff --cached --quiet --no-ext-diff --no-textconv --ignore-submodules=none`; nothing staged (exit 0) **and** no merge in progress (exit 1) → 409 `NOTHING_TO_COMMIT`. A merge with nothing staged commits.
 - Runs `git commit [--amend [--only]] [--no-verify] -F -`. No `--cleanup`: the repo's `commit.cleanup` applies; git's default for `-F` is `whitespace`, which keeps `#` lines.
 
 | Mode | Flags | Effect |
@@ -299,7 +302,7 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 | skip hooks | `--no-verify` | No `pre-commit` / `commit-msg` hooks |
 
 - A hook or signing failure → 422 `GIT_FAILED` with git's `stderr` (the hook's output).
-- `result`: `{oid}`, HEAD after the commit (`rev-parse --verify --quiet HEAD^{commit}`).
+- `result`: `{oid, undo}`: `oid` is HEAD after the commit (`rev-parse --verify --quiet HEAD^{commit}`); `undo` has `refs` (HEAD's branch), `head` (before → after) and `created: {tip: oid, not: [HEAD before, MERGE_HEAD when concluding a merge]}`.
 
 ### `commit.state` (read, cancellable)
 
@@ -382,9 +385,13 @@ UndoRecord      { refs: RefChange[], remoteRefs: RemoteRefChange[],
                   head: {old: {branch: refname|null, oid: oid|null}, new: {branch, oid}} | null,
                   worktreeSnapshot: oid | null,
                   stashes: StashChange[] /* the stash ops' ([stash](stash.md#undo-record)); [] here */,
-                  worktreePatch: base64 | null /* stash.applyFile's; null here */ }
+                  worktreePatch: base64 | null /* stash.applyFile's; null here */,
+                  created?: {tip: oid, not: oid[]} | null /* the commits the op made: tip minus what not reaches */,
+                  indexTree?: oid | null /* head.reset mixed: the index's tree before; null when it had unmerged entries */,
+                  discard?: {snapshot: oid, tracked: path[], untracked: path[]} /* stage.discardFiles */ }
+                  /* created / indexTree / discard: present only when set ([undo → Record keys](undo.md#record-keys)) */
 RefChange       { ref /* refs/heads/… | refs/tags/… */, old: oid|null /* null = created */, new: oid|null /* null = deleted */,
-                  upstream?: refname|null /* a deleted branch's upstream */,
+                  upstream?: refname|null /* a deleted branch's upstream; a tracking branch branch.checkout created */,
                   symref?: refname /* a deleted symbolic ref's target: restore with symbolic-ref; old and new are null */ }
 RemoteRefChange { remote, ref /* refs/heads/… | refs/tags/… on the remote */, old: oid|null /* best known */, new: oid|null,
                   tracking?: refname|null /* branch.deleteRemote: the tracking ref here git deleted with it (old is its value) */ }
@@ -447,6 +454,21 @@ Behaviour, the rules and what each op destroys: [remotes](remotes.md). Common ru
 | `remote.peek` | read, cancellable | `{remote, branch /* short */}` | `-c protocol.ext.allow=never -c protocol.fd.allow=never ls-remote --refs --end-of-options <remote> refs/heads/<branch>` (the exact name kept); the tracking ref its fetch refspecs map the branch to | `{oid: oid \| null /* on the remote */, tracking: {ref, oid} \| null, stale: bool /* oid ≠ tracking.oid */}` | `REMOTE_UNKNOWN`, `BAD_REF`, `REMOTE_AUTH_FAILED`, `REMOTE_UNREACHABLE`, `GIT_FAILED` |
 | `remote.pull` | write (**not** cancellable) | `{mode: 'ff' \| 'ffOnly' \| 'rebase', ccOwned?}` | HEAD's branch and `for-each-ref --format=%(upstream)%00%(upstream:remotename) <branch>`; rebase: `status --porcelain=v2 -z --untracked-files=no`; the fetch of that remote (as `remote.fetch`, no prune); `merge-base --is-ancestor`; then a fast-forward `-c merge.autoStash=false merge --ff-only --end-of-options <oid>` (any mode), or diverged — ff: `-c merge.autoStash=false merge --ff --no-edit -m "Merge remote-tracking branch '<remote>/<b>'" --no-stat --end-of-options <oid>` (exit 0 or 1); rebase: `-c rebase.autoStash=false -c rebase.updateRefs=false -c rebase.autoSquash=false -c rebase.backend=merge -c rebase.rebaseMerges=false rebase --end-of-options <oid>` (exit 0 or 1; stopped on conflicts → left in progress). Before anything: `assertNoOperation` | `{mode, upstream: refname, outcome: 'upToDate' \| 'fastForward' \| 'merged' \| 'rebased' \| 'conflicts', files: path[] /* conflicts: the unmerged files, the merge or rebase left in progress */, oid /* HEAD after */, fetch /* that remote's fetch result */, undo}` (`undo.refs` = the fetch's changes + the branch's move; `undo.head` when HEAD moved) | `BARE_REPO`; `NO_HEAD`; `NO_UPSTREAM` (detached, none, local, an unknown remote, or gone after the fetch); `OPERATION_IN_PROGRESS` / `CONFLICTED` (before the fetch); rebase: `CC_OWNED_BRANCH` (`head: true`), `DIRTY_WORKTREE`; ffOnly diverged: `NOT_FAST_FORWARD`; `CHECKOUT_CONFLICT`; the fetch's refusals |
 | `remote.push` | write, **cancellable** | `{branch /* local, short */, remote?, to? /* the branch on the remote; needs remote; default: branch */, setUpstream?, forceWithLease?: {expect: oid \| null /* null: must not exist there */}, ccOwned?}` | no `remote`: the branch's upstream (`%(upstream:remotename)`, `%(upstream:remoteref)`); then `push` (above) of `refs/heads/<branch>:refs/heads/<to>` with `--set-upstream` and `--force-with-lease=refs/heads/<to>:<expect>` as asked | `{remote, branch, to, created, forced, upToDate, upstreamSet, unrequested, undo /* always empty: a push is never undone */}` | `REF_UNKNOWN`; `SYMBOLIC_REF` (the local branch, live or dangling, or its tracking ref); `NO_UPSTREAM` (no `remote` and no upstream branch on a remote); `REMOTE_UNKNOWN`; `CC_OWNED_BRANCH` (`branch` or `to` is `code-conductor/*`); `PUSH_REJECTED` with `remote`, `to` and `tracking: {ref, oid} \| null` (where it went, and the tracking ref here: what a lease is taken against); the push refusals |
+
+### Undo ops (`src/git/ops/undo.js`)
+
+Behaviour, plans and the slot rules: [undo](undo.md). The journal is the backend's own (in memory, per checkout); no op takes a plan from the client.
+
+```
+UndoSlot { id: number, op: string /* the op name */, label: string, confirm: Confirm | null /* for this slot's direction */ }
+Confirm  {kind: 'deletesRefs', refs: refname[]} | {kind: 'discards', paths: path[]} | {kind: 'resetHard'}
+```
+
+| Op | kind | `params` | Runs | `result` | Refusals |
+|---|---|---|---|---|---|
+| `undo.state` | read (cancellable) | none | nothing | `{undo: UndoSlot \| null, redo: UndoSlot \| null}` | — |
+| `undo.undo` | write, **not** cancellable | `{id /* the slot's UndoSlot.id */, ccOwned?}` | `assertNoOperation`; the pushed rule; every step's preflight, then every apply ([undo → Steps](undo.md#steps)) | `{entry: UndoSlot /* confirm for undo */, warnings: string[] /* an upstream not restored */}` | `NOTHING_TO_UNDO`; `UNDO_STALE`; `UNDO_PUSHED` (`oid`, `refs`); `OPERATION_IN_PROGRESS`; `CONFLICTED`; `BARE_REPO`; `DIRTY_WORKTREE`; `CHECKOUT_CONFLICT`; `BRANCH_CHECKED_OUT`; `CC_OWNED_BRANCH` (`head: true` for this HEAD); `SYMBOLIC_REF`; `PATH_BLOCKED`; a failure after a step wrote carries `appliedSteps` |
+| `undo.redo` | write, **not** cancellable | as `undo.undo` | as `undo.undo`, no pushed rule | as `undo.undo` | as `undo.undo` with `NOTHING_TO_REDO`, no `UNDO_PUSHED` |
 
 ### Merge, rebase and conflict ops
 
@@ -556,6 +578,9 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `NOTHING_TO_STASH` | 409 | A save had nothing to stash: git printed "No local changes to save" on stdout (decided from that line, not from whether `refs/stash` moved) |
 | `PATH_BLOCKED` | 409 | A stash op (or `conflict.save`, or `conflict.take` for any path it names, before it writes anything; `conflict.read`, which would read through it) would write through something git cannot write into: a leading directory of a path it writes is an untracked (or ignored) symlink or file (`assertNotBlocked`), or — for `stash.applyFile`, `stash.pushLines`, `conflict.save`, and `conflict.take` on every path where no stage is a gitlink — the file itself is a directory or a link to a directory (`assertFileTarget`); `paths` ([stash → Gates](stash.md#gates)) |
 | `STASH_MOVED` | 409 | The stash list changed while dropping; the entry dropped by mistake was stored back; `{oid, restored}` |
+| `NOTHING_TO_UNDO`, `NOTHING_TO_REDO` | 409 | The checkout's undo (redo) slot is empty ([undo](undo.md)) |
+| `UNDO_STALE` | 409 | The slot no longer holds that `id`; or the checkout changed since the op (HEAD, a ref, the index or a file is not what the plan expects) — the slots are then cleared |
+| `UNDO_PUSHED` | 409 | A commit the op created is reachable from a remote-tracking ref; `oid`, `refs`; the slots are cleared |
 | `GIT_TOO_OLD` | 409 | The project's System runs a git below the feature's floor (a rebase: 2.26); `{feature, need, have}` |
 | `SUBMODULE_UNKNOWN` | 404 | No `.gitmodules` entry declares that path; `path` |
 | `SUBMODULE_UNSAFE` | 409 | Not acted on: `reason` `name` / `path` / `duplicate` (`.gitmodules` declares the name at another path or the path under another name) / `escapes` (the entry, or a chain resolving outside the checkout; `path`), `gitdir` (a chain level's `.git` names another repository's git dir; `path`), `url` (a url git would clone or resolve against is refused; `names`), `config` (the repo's own config sets `protocol.*`; `keys`), `gitmodules` (`.gitmodules` is a symlink) |

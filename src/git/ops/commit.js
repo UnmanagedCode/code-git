@@ -4,8 +4,11 @@ import { joinMessage, messageParams, splitMessage, templateDraft } from '../comm
 import { readNoIndex } from '../diff/noIndex.js';
 import { commitOid } from '../diff/source.js';
 import { bad, optBool, paramsObject } from '../params.js';
+import { ownHead } from '../refs/heads.js';
+import { undoRecord } from '../refs/undo.js';
 import { operationState } from '../sequence/state.js';
 import { STAGE_LIMITS } from '../stage/limits.js';
+import { plans } from '../undo/plans.js';
 import { assertWorktree } from '../worktree.js';
 
 // Commit, amend, and the two reads the commit box needs: HEAD's message (for amend) and the commit.template draft.
@@ -16,9 +19,10 @@ const noParams = (op) => (raw) => {
   return {};
 };
 
-/** Whether a merge is being concluded: a commit is then valid with nothing staged. */
-async function merging(git) {
-  return (await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { okExit: [0, 1] })).exitCode === 0;
+/** MERGE_HEAD's oid while a merge is being concluded (a commit is then valid with nothing staged), else null. */
+async function mergingHead(git) {
+  const r = await git(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { okExit: [0, 1] });
+  return r.exitCode === 0 ? decoder.decode(r.stdout).trim() : null;
 }
 
 async function mustHead(git) {
@@ -81,17 +85,29 @@ export const ops = [
     async run(git, p) {
       await assertWorktree(git);
       if (p.amend) await mustHead(git);
-      else {
+      // A merge being concluded: its other side's commits are not this commit's (the pushed rule, docs/undo.md).
+      const mergeHead = p.amend ? null : await mergingHead(git);
+      if (!p.amend) {
         // Nothing staged and no merge to conclude: git would refuse too, with less to go on.
         const staged = await git(['diff', '--cached', '--quiet', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none'], { okExit: [0, 1] });
-        if (staged.exitCode === 0 && !await merging(git)) throw new Refusal('NOTHING_TO_COMMIT', 'nothing is staged');
+        if (staged.exitCode === 0 && !mergeHead) throw new Refusal('NOTHING_TO_COMMIT', 'nothing is staged');
       }
+      const before = await ownHead(git);
       // No --cleanup: the repo's commit.cleanup applies (git's default for -F is `whitespace`, which keeps `#` lines).
       // `--amend --only` without paths amends the message alone: what is staged stays staged.
       const args = ['commit', ...(p.amend ? ['--amend'] : []), ...(p.messageOnly ? ['--only'] : []), ...(p.noVerify ? ['--no-verify'] : []), '-F', '-'];
       await git(args, { stdin: joinMessage(p.summary, p.description) });
-      return { oid: await mustHead(git) };
+      const oid = await mustHead(git);
+      return {
+        oid,
+        undo: undoRecord({
+          refs: before.branch ? [{ ref: before.branch, old: before.oid, new: oid }] : [],
+          head: { old: before, new: { branch: before.branch, oid } },
+          created: { tip: oid, not: [before.oid, mergeHead].filter(Boolean) },
+        }),
+      };
     },
+    undo: plans.commit,
   },
   {
     name: 'commit.state',

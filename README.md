@@ -41,7 +41,7 @@ docs/                   features, protocol, architecture, GitKraken reference
 .wiki/                  gotchas, decisions, glossary
 ```
 
-Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md). Merge, rebase and conflicts: [docs/merge.md](docs/merge.md). Stash: [docs/stash.md](docs/stash.md). Remotes, fetch, pull and push: [docs/remotes.md](docs/remotes.md). Submodules: [docs/submodules.md](docs/submodules.md).
+Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md). Merge, rebase and conflicts: [docs/merge.md](docs/merge.md). Stash: [docs/stash.md](docs/stash.md). Remotes, fetch, pull and push: [docs/remotes.md](docs/remotes.md). Submodules: [docs/submodules.md](docs/submodules.md). Undo and redo: [docs/undo.md](docs/undo.md).
 
 ## Run
 

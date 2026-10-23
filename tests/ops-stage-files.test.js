@@ -100,7 +100,7 @@ test('discardFiles restores tracked M, D and T files from the index, leaving the
   fs.rmSync(path.join(w.repo.dir, 'b.txt'));
   fs.symlinkSync('a.txt', path.join(w.repo.dir, 'b.txt'));
   const r = await w.op('stage.discardFiles', { tracked: ['a.txt', 'gone.txt', 'b.txt'] });
-  assert.deepEqual(r, { tracked: ['a.txt', 'gone.txt', 'b.txt'], untracked: [] });
+  assert.deepEqual({ tracked: r.tracked, untracked: r.untracked }, { tracked: ['a.txt', 'gone.txt', 'b.txt'], untracked: [] });
   assert.deepEqual(w.status(), { 'a.txt': 'M ' });
   assert.equal(read(w, 'a.txt'), 'a staged\n');
   assert.equal(read(w, 'gone.txt'), 'gone\n');
