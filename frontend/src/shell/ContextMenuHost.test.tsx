@@ -148,3 +148,38 @@ test('another pointer\'s press keeps the swallowed pointer\'s click armed: its d
   fireEvent.click(item);
   await waitFor(() => expect(ran).toEqual(['hide']));
 });
+
+/** A real click as Chromium dispatches it: a PointerEvent carrying its pointer's id. */
+const clickOf = (pointerId: number) => new PointerEvent('click', { bubbles: true, cancelable: true, pointerId });
+
+test('the armed click is the swallowed pointer\'s own: another pointer\'s click runs its item, the first pointer\'s delayed click is still swallowed, then its next click runs', async () => {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+  open();
+  // The opening right-press is released over Hide: swallowed, pointer 1's click armed.
+  fireEvent.pointerUp(await screen.findByRole('menuitem', { name: 'Hide' }), { pointerId: 1, button: 2 });
+  // A second finger's tap on Copy name: a legitimate click, not eaten.
+  fireEvent(screen.getByRole('menuitem', { name: 'Copy name' }), clickOf(2));
+  await waitFor(() => expect(ran).toEqual(['copy']));
+  // Pointer 1's delayed click arrives after it: still swallowed before any handler sees it.
+  const seen = vi.fn();
+  document.body.addEventListener('click', seen);
+  fireEvent(document.body, clickOf(1));
+  document.body.removeEventListener('click', seen);
+  expect(seen).not.toHaveBeenCalled();
+  // Only that one: reopened with no press held, pointer 1's next click runs Hide.
+  act(() => contextMenuStore.set(null));
+  open();
+  fireEvent(await screen.findByRole('menuitem', { name: 'Hide' }), clickOf(1));
+  await waitFor(() => expect(ran).toEqual(['copy', 'hide']));
+});
+
+test('a click with no pointerId (a plain MouseEvent) is swallowed while a click is armed: the safe side', async () => {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+  open();
+  const item = await screen.findByRole('menuitem', { name: 'Hide' });
+  fireEvent.pointerUp(item, { pointerId: 1, button: 2 });
+  fireEvent(item, new MouseEvent('click', { bubbles: true, cancelable: true }));
+  expect(ran).toEqual([]);
+});

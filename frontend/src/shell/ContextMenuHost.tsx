@@ -56,6 +56,11 @@ if (typeof window !== 'undefined') {
   }, true);
   window.addEventListener('click', (e) => {
     if (armedClick === null) return;
+    // A click is a PointerEvent carrying its pointer's id (Chromium): only the swallowed pointer's click is its click.
+    // Another finger's tap runs, and leaves the arm for the first one's delayed click. No id (an engine whose click is
+    // a plain MouseEvent): swallow, as the safe side.
+    const id = (e as Partial<PointerEvent>).pointerId;
+    if (id !== undefined && id !== armedClick) return;
     armedClick = null;
     e.stopPropagation();
     e.preventDefault();

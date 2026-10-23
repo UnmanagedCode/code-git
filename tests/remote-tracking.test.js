@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { push } from '../src/git/remote/push.js';
-import { fetchSpecs, hasUrl, parseFetchRefspec, trackingRefsFor } from '../src/git/remote/tracking.js';
+import { fetchSpecs, hasUrl, legacyRemoteFile, parseFetchRefspec, trackingRefsFor } from '../src/git/remote/tracking.js';
 import { ctxFor, gitFor } from './_ctx.js';
 import { refsWorld, refused } from './_refsWorld.js';
 
@@ -133,6 +133,19 @@ test('hasUrl counts only non-empty url values after the last empty one, as git d
   assert.equal(hasUrl(['']), false);
   assert.equal(hasUrl(['../o.git', '']), false, 'an empty value clears the list');
   assert.equal(hasUrl(['', '../o.git']), true);
+  // Only the *last* empty value counts as the reset.
+  assert.equal(hasUrl(['a', '', 'b', '']), false);
+  assert.equal(hasUrl(['a', '', 'b']), true);
+});
+
+test('legacyRemoteFile refuses a name that is not a valid remote nick before splicing it into --git-path: null, and no command runs', async () => {
+  const calls = [];
+  const git = async (args) => { calls.push(args); return { exitCode: 0, stdout: Buffer.from('.git/remotes/x\n'), stderr: Buffer.alloc(0) }; };
+  for (const name of ['../x', 'a/b', '.', '..', '']) assert.equal(await legacyRemoteFile(git, name), null, JSON.stringify(name));
+  assert.deepEqual(calls, []);
+  // A valid nick does go through rev-parse --git-path and hash-object (the fake answers as if the file exists).
+  assert.equal(await legacyRemoteFile(git, 'origin'), 'remotes/origin');
+  assert.deepEqual(calls.map((a) => a.slice(0, 2)), [['rev-parse', '--git-path'], ['hash-object', '--no-filters']]);
 });
 
 /** Writes a legacy remote file (`remotes` or `branches`) in the repo's git dir. */
