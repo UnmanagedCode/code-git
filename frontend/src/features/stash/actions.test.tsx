@@ -111,7 +111,7 @@ test('Stash changesâ€¦ is on the own checkout\'s WIP menu only; Stash this fileâ
 
 test('Apply this file (details) is offered for a stash commit only and sends {oid, path}', async () => {
   const w = await world({ answers: { 'stash.applyFile': { oid: W, path: 'a.txt', part: 'tracked' } } });
-  const ctx: FileCtx = { tab: APP, commit: W, parent: null, file: { status: 'M', path: 'a.txt', oldPath: null } };
+  const ctx: FileCtx = { tab: APP, commit: W, parent: null, file: { status: 'M', path: 'a.txt', oldPath: null, added: 1, deleted: 0, binary: false, submodule: false } };
   expect(actionsFor('file', { ...ctx, commit: 'f'.repeat(40) }).map((a) => labelOf(a, ctx))).not.toContain('Apply this file');
   await run('file', ctx, 'Apply this file');
   expect(w.posts('stash.applyFile')).toEqual([{ oid: W, path: 'a.txt' }]);

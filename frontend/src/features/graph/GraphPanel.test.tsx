@@ -135,7 +135,7 @@ test('search asks git with the mode and query and marks the matching rows; Enter
   fireEvent.keyDown(box, { key: 'Enter' });
   expect(getSelection(TAB).ids).toEqual([oid(11)]);
   expect(screen.getByLabelText('Match position').textContent).toBe('2 / 2');
-  fireEvent.click(screen.getByRole('button', { name: 'Path' }));
+  fireEvent.click(within(screen.getByRole('group', { name: 'Search by' })).getByRole('button', { name: 'Path' }));
   await act(async () => { vi.advanceTimersByTime(300); });
   await waitFor(() => expect(paramsOf(fetch, 'POST api/ops/graph.search').at(-1)).toEqual({ mode: 'path', query: 'fix', tips: [oid(20)] }));
 });

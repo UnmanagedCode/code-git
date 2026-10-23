@@ -1,13 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { expect, test, vi } from 'vitest';
 import { json, summary } from '@/test/fixtures';
 import { checkout, commit, oid, stash } from '@/test/graphData';
-import { detailOf, linearWorld, stubGraph } from '@/test/graphBackend';
+import { detailOf, linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
+import { dfile, filesResult } from '@/test/diffFixtures';
 import { dispatchSelection, fileIntentStore } from '@/state/graphSelection';
 import { openGraph } from '@/state/graph';
 import { loadSummary } from '@/state/useRepoSummary';
 import { diffStore } from '@/state/diff';
-import { closeDiff } from '@/features/diff/openDiff';
+import { closeDiff, openDiff } from '@/features/diff/openDiff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
@@ -17,16 +19,19 @@ import { BODY_SHOWN, CO_AUTHORS_SHOWN, CommitDetails } from './CommitDetails';
 const TAB = { project: 'app', worktree: null };
 const A = oid(2);
 const P = oid(1);
-const files = [
-  { status: 'A', path: 'src/new.ts', oldPath: null }, { status: 'D', path: 'gone.txt', oldPath: null },
-  { status: 'M', path: 'src/lib/a.ts', oldPath: null }, { status: 'R', path: 'src/b.ts', oldPath: 'b.ts' },
-];
+const cf = (status: string, path: string, oldPath: string | null = null, added: number | null = 1, deleted: number | null = 0) => (
+  { status, path, oldPath, added, deleted, binary: false, submodule: false }
+);
+const files = [cf('A', 'src/new.ts', null, 5, 0), cf('D', 'gone.txt', null, 0, 2), cf('M', 'src/lib/a.ts', null, 3, 1), cf('R', 'src/b.ts', 'b.ts', 0, 0)];
+/** The same files as the commit diff lists them (diff.files), resolved to A against P. */
+const diffFiles = { 'POST api/ops/diff.files': { ok: true, result: filesResult(files.map((f) => dfile({ ...f, status: f.status as 'M' })), { commit: { oid: A, parents: [P] } }) } };
+const fileRow = (path: string) => document.querySelector<HTMLElement>(`li[role="option"][data-path="${CSS.escape(path)}"]`)!;
 const rowsOf = (...ids: string[]): GraphRow[] => ids.map((id) => ({ kind: 'commit', id, item: commit(id) }));
 
-async function show(detail: Parameters<typeof detailOf>[1] | Response, select: string[] = [A]) {
+async function show(detail: Parameters<typeof detailOf>[1] | Response, select: string[] = [A], extra: Parameters<typeof stubGraph>[1] = {}) {
   const world = linearWorld(2);
   world.detail = () => (detail instanceof Response ? detail : detailOf(commit(A, [P], { subject: 'Fix <b>it</b>' }), detail));
-  const fetch = stubGraph(world);
+  const fetch = stubGraph(world, extra);
   await openGraph(TAB);
   const rows = rowsOf(A, P);
   dispatchSelection(TAB, { type: 'click', id: select[0], rows });
@@ -74,20 +79,93 @@ test('signature badges per %G? status; none for N', async () => {
   expect(container.textContent).toBe('');
 });
 
-test('the file list: Path and Tree views, the choice persisted; a click publishes a file-open intent and marks the row', async () => {
-  await show({ files });
+test('the file list: Path and Tree views, the choice persisted, counts from graph.commit; a click publishes a file-open intent, opens the diff and binds the list', async () => {
+  await show({ files }, [A], diffFiles);
   await screen.findByText('4 files');
+  const list = screen.getByRole('listbox', { name: 'Changed files' });
+  expect(within(list).getAllByRole('option')).toHaveLength(4);
   expect(screen.getByText('b.ts → src/b.ts')).toBeTruthy();
+  expect(within(fileRow('src/new.ts')).getByLabelText('5 added, 0 deleted')).toBeTruthy();
+  expect(within(fileRow('gone.txt')).getByLabelText('0 added, 2 deleted')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
   expect(localStorage.getItem('code-git:graph:fileView')).toBe('tree');
   expect(screen.getByText('lib')).toBeTruthy();
   expect(screen.getByText('b.ts → b.ts')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Path' }));
-  fireEvent.click(screen.getByRole('button', { name: /src\/lib\/a\.ts/ }));
+  expect(fileRow('src/lib/a.ts').getAttribute('aria-current')).toBeNull();
+  fireEvent.click(fileRow('src/lib/a.ts'));
   expect(fileIntentStore.get()).toMatchObject({ tab: TAB, commit: A, parent: P, path: 'src/lib/a.ts', oldPath: null, selection: [{ kind: 'commit', oid: A }] });
-  expect(screen.getByRole('button', { name: /src\/lib\/a\.ts/ }).getAttribute('aria-current')).toBe('true');
   expect(shownPanelStore.get().get('app\0')).toBe('diff');
   expect(diffStore.get().get('app\0')).toMatchObject({ source: { kind: 'commit', rev: A }, viewed: 'src/lib/a.ts' });
+  await waitFor(() => expect(fileRow('src/lib/a.ts').getAttribute('aria-current')).toBe('true'));
+  expect(screen.getAllByRole('listbox', { name: 'Changed files' })).toHaveLength(1);
+});
+
+test('bound to the open diff: another file is viewed without a second diff.files; Ctrl-click multi-selects; the menu is the diff\'s', async () => {
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  const fetch = await show({ files }, [A], diffFiles);
+  await screen.findByText('4 files');
+  fireEvent.click(fileRow('src/lib/a.ts'));
+  await waitFor(() => expect(diffStore.get().get('app\0')?.list.result).not.toBeNull());
+  expect(paramsOf(fetch, 'POST api/ops/diff.files')).toHaveLength(1);
+  fireEvent.click(fileRow('gone.txt'));
+  expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'gone.txt', selected: ['gone.txt'] });
+  expect(fileRow('gone.txt').getAttribute('aria-current')).toBe('true');
+  expect(fileIntentStore.get()?.path).toBe('src/lib/a.ts');
+  fireEvent.click(fileRow('src/new.ts'), { ctrlKey: true });
+  expect(diffStore.get().get('app\0')?.selected).toEqual(['gone.txt', 'src/new.ts']);
+  await userEvent.click(screen.getByRole('button', { name: 'Actions for src/new.ts' }));
+  expect(await screen.findByRole('menuitem', { name: 'Copy patch of selection' })).toBeTruthy();
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Copy path' }));
+  // The selection in list order.
+  expect(writeText).toHaveBeenCalledWith('src/new.ts\ngone.txt');
+  // ↓ from the focused row views the next file.
+  fireEvent.keyDown(fileRow('gone.txt'), { key: 'ArrowDown' });
+  expect(diffStore.get().get('app\0')?.viewed).toBe('src/lib/a.ts');
+  expect(paramsOf(fetch, 'POST api/ops/diff.files')).toHaveLength(1);
+});
+
+test('unbound: the row menu is the commit file menu; a merge diffed against parent 2 says so and lists that diff\'s files', async () => {
+  const merge = [cf('M', 'from-side.txt')];
+  await show({ files, parents: [P, oid(9)] }, [A], {
+    'POST api/ops/diff.files': (_u: URL, init?: RequestInit) => {
+      const src = JSON.parse(String(init?.body)).params.source as { parent?: number };
+      return { ok: true, result: filesResult((src.parent === 2 ? merge : files).map((f) => dfile({ ...f, status: 'M' })), { commit: { oid: A, parents: [P, oid(9)] } }) };
+    },
+  });
+  expect(await screen.findByText('Changes against the first parent')).toBeTruthy();
+  fireEvent.contextMenu(fileRow('src/lib/a.ts'));
+  expect(await screen.findByRole('menuitem', { name: /history/i })).toBeTruthy();
+  expect(screen.queryByRole('menuitem', { name: 'Copy patch of selection' })).toBeNull();
+  await userEvent.keyboard('{Escape}');
+  act(() => openDiff(TAB, { kind: 'commit', rev: A, parent: 2 }));
+  expect(await screen.findByText('Changes against parent 2')).toBeTruthy();
+  await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Changed files' })).getAllByRole('option').map((o) => o.getAttribute('data-path'))).toEqual(['from-side.txt']));
+  expect(screen.getByText('1 file')).toBeTruthy();
+});
+
+test("a stash's Staged view binds the stash's details to the index commit's files", async () => {
+  const W = 'e'.repeat(40);
+  const I = 'f'.repeat(40);
+  const world = linearWorld(2);
+  world.refs.stashes = [{ oid: W, parents: [A, I], selector: 'stash@{0}', time: 1, subject: 'On main: wip' }];
+  world.detail = () => detailOf(commit(W, [A, I], { subject: 'On main: wip' }), { files: [cf('M', 'worktree.txt'), cf('M', 'index.txt')] });
+  stubGraph(world, {
+    'POST api/ops/diff.files': (_u: URL, init?: RequestInit) => {
+      const rev = (JSON.parse(String(init?.body)).params.source as { rev: string }).rev;
+      return { ok: true, result: filesResult([dfile({ path: rev === I ? 'index.txt' : 'worktree.txt' })], { commit: { oid: rev, parents: [A] } }) };
+    },
+  });
+  await openGraph(TAB);
+  const rows: GraphRow[] = [{ kind: 'stash', id: `stash:${W}`, stash: world.refs.stashes[0] }, ...rowsOf(A)];
+  dispatchSelection(TAB, { type: 'click', id: `stash:${W}`, rows });
+  render(<CommitDetails tab={TAB} />);
+  await screen.findByText('2 files');
+  act(() => openDiff(TAB, { kind: 'commit', rev: I }));
+  await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Changed files' })).getAllByRole('option').map((o) => o.getAttribute('data-path'))).toEqual(['index.txt']));
+  expect(screen.getByRole('complementary', { name: 'Commit details' })).toBeTruthy();
+  expect(fileRow('index.txt').getAttribute('aria-current')).toBe('true');
 });
 
 test('View changes opens the commit diff; a multi-selection offers the combined diff', async () => {
@@ -102,19 +180,19 @@ test('View changes opens the commit diff; a multi-selection offers the combined 
 });
 
 test('a file list over the cap shows the first FILE_RENDER_CAP and "Show all N"', async () => {
-  const many = Array.from({ length: FILE_RENDER_CAP + 5 }, (_, i) => ({ status: 'M', path: `f${i}.txt`, oldPath: null }));
+  const many = Array.from({ length: FILE_RENDER_CAP + 5 }, (_, i) => cf('M', `f${i}.txt`));
   await show({ files: many });
   await screen.findByText(`${many.length} files`);
-  expect(document.querySelectorAll('[data-file]').length).toBe(FILE_RENDER_CAP);
+  expect(document.querySelectorAll('[data-path]').length).toBe(FILE_RENDER_CAP);
   fireEvent.click(screen.getByRole('button', { name: `Show all ${many.length}` }));
-  expect(document.querySelectorAll('[data-file]').length).toBe(many.length);
+  expect(document.querySelectorAll('[data-path]').length).toBe(many.length);
 });
 
 test('too many changes to list: the metadata renders and the file list says so', async () => {
   await show({ files: null, filesError: { code: 'OUTPUT_TOO_LARGE', message: 'git output exceeded 33554432 bytes', limitBytes: 33554432 } });
   expect(await screen.findByText('Fix <b>it</b>')).toBeTruthy();
   expect(screen.getByRole('alert').textContent).toBe('Too many changes to list.');
-  expect(screen.queryByRole('region', { name: 'Changed files' })).toBeNull();
+  expect(screen.queryByRole('listbox', { name: 'Changed files' })).toBeNull();
 });
 
 test('a merge says its changes are against the first parent; a failed load shows its error', async () => {
@@ -153,10 +231,10 @@ test('impossible author and committer timestamps render — instead of crashing 
 
 test('Tree view renders a file whose path has 20,000 components', async () => {
   const deep = Array.from({ length: 20_000 }, (_, i) => `d${i}`).join('/');
-  await show({ files: [{ status: 'A', path: deep, oldPath: null }] });
+  await show({ files: [cf('A', deep)] });
   await screen.findByText('1 file');
   fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
-  expect(document.querySelector(`[data-file="${deep}"]`)).not.toBeNull();
+  expect(document.querySelector(`[data-path="${deep}"]`)).not.toBeNull();
 });
 
 test('a 1 MB subject and body are cut for display; the whole body shows on request', async () => {
