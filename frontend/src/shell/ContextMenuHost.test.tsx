@@ -183,3 +183,67 @@ test('a click with no pointerId (a plain MouseEvent) is swallowed while a click 
   fireEvent(item, new MouseEvent('click', { bubbles: true, cancelable: true }));
   expect(ran).toEqual([]);
 });
+
+// Each invariant below fails if its disarm line goes: the events carry the armed pointer's id, and a bubble-phase spy
+// shows whether the capture-phase swallow let the event through.
+
+/** Opens the menu during pointer 1's right-press and releases it over Hide: pointer 1's click is armed. */
+async function armPointer1() {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+  open();
+  const item = await screen.findByRole('menuitem', { name: 'Hide' });
+  fireEvent.pointerUp(item, { pointerId: 1, button: 2 });
+  return item;
+}
+/** Whether a pointer-1 click on the body gets past the swallow. */
+function pointer1ClickReachesBody() {
+  const seen = vi.fn();
+  document.body.addEventListener('click', seen);
+  fireEvent(document.body, clickOf(1));
+  document.body.removeEventListener('click', seen);
+  return seen.mock.calls.length > 0;
+}
+
+test('a same-pointer pointerdown clears that pointer\'s armed click: its next click is not swallowed', async () => {
+  const item = await armPointer1();
+  fireEvent.pointerDown(item, { pointerId: 1, button: 0 });
+  expect(pointer1ClickReachesBody()).toBe(true);
+});
+
+test('a keydown ends an armed click: the armed pointer\'s next click is not swallowed', async () => {
+  await armPointer1();
+  fireEvent.keyDown(document, { key: 'Enter' });
+  expect(pointer1ClickReachesBody()).toBe(true);
+});
+
+test('a same-pointer press disarms its own lost release: that pointer\'s next release reaches the item', async () => {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+  open();
+  const item = await screen.findByRole('menuitem', { name: 'Hide' });
+  // The opening release was lost; pointer 1 presses again, on the item.
+  fireEvent.pointerDown(item, { pointerId: 1, button: 0 });
+  const seen = vi.fn();
+  item.addEventListener('pointerup', seen);
+  fireEvent.pointerUp(item, { pointerId: 1, button: 0 });
+  item.removeEventListener('pointerup', seen);
+  expect(seen).toHaveBeenCalledTimes(1);
+});
+
+test('control: with nothing disarming it, the armed pointer\'s click is swallowed (so the three tests above can fail)', async () => {
+  await armPointer1();
+  expect(pointer1ClickReachesBody()).toBe(false);
+});
+
+test('control: without a new press, the opening pointer\'s release is swallowed before it reaches the item', async () => {
+  render(<ContextMenuHost host="h" />);
+  fireEvent.pointerDown(document.body, { pointerId: 1, button: 2 });
+  open();
+  const item = await screen.findByRole('menuitem', { name: 'Hide' });
+  const seen = vi.fn();
+  item.addEventListener('pointerup', seen);
+  fireEvent.pointerUp(item, { pointerId: 1, button: 0 });
+  item.removeEventListener('pointerup', seen);
+  expect(seen).not.toHaveBeenCalled();
+});
