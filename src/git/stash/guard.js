@@ -32,3 +32,14 @@ export async function assertNoUnmerged(git) {
   const r = await git(['ls-files', '-u', '-z']);
   if (r.stdout.length) throw new Refusal('CONFLICTED', 'the index has unresolved conflicts: resolve them first');
 }
+
+/**
+ * CHECKOUT_CONFLICT ({files}) when any of a stash's untracked paths exists in the worktree or the index. `stash apply`
+ * restores the untracked part with a checkout that skips ("already exists, no checkout") an existing file and writes the
+ * rest, after the tracked part was merged: checking first is what keeps a refused apply from writing half of it.
+ */
+export async function assertNoUntrackedCollision(git, untracked) {
+  if (!untracked.length) return;
+  const found = await perChunk(git, ['ls-files', '-c', '-o', '-z'], untracked);
+  if (found.length) throw new Refusal('CHECKOUT_CONFLICT', `${found[0]} already exists: the stash's untracked files would overwrite it`, { files: [...new Set(found)].slice(0, 100) });
+}

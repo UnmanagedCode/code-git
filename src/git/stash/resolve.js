@@ -54,3 +54,16 @@ export async function namesOf(git, args) {
   const r = await git(args, { maxOutputBytes: STASH_LIMITS.pathsMaxOutputBytes });
   return decoder.decode(r.stdout).split('\0').filter(Boolean);
 }
+
+/**
+ * The paths applying stash `s` writes: `tracked` (base → W and base → I, so a staged change undone in the worktree
+ * counts) and `untracked` (the U commit's tree, when there is one).
+ */
+export async function stashPaths(git, s) {
+  const [base, index, untracked] = s.parents;
+  const diff = (to) => namesOf(git, ['diff-tree', '-r', '-z', '--name-only', '--no-renames', '--no-ext-diff', '--no-textconv', base, to]);
+  const [w, i, u] = await Promise.all([
+    diff(s.oid), diff(index), untracked ? namesOf(git, ['ls-tree', '-r', '-z', '--name-only', '--full-tree', untracked]) : [],
+  ]);
+  return { tracked: [...new Set([...w, ...i])], untracked: u };
+}
