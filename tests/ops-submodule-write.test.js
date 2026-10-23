@@ -333,6 +333,36 @@ test('a deinit or rm that fails after the gitlink was put back from HEAD takes i
   }
 });
 
+test("a rollback removes the gitlink it restored even when HEAD's gitlink moves between the restore and the re-read", async (t) => {
+  const w = await subWorld(t, { nested: false });
+  w.repo.git('rm', '-q', '--cached', 'libA');
+  w.repo.write('libA/a.txt', 'dirty\n');
+  const old = w.repo.git('rev-parse', 'HEAD:libA');
+  w.fx('libA', 'commit', '-q', '--allow-empty', '-m', 'new pointer');
+  const next = headOf(w, 'libA');
+  // Hold the first command after the restore; meanwhile commit a moved gitlink to HEAD with plumbing.
+  let restoredSeen = false;
+  w.cc.state.execHook = (b) => {
+    if (restoredSeen) { restoredSeen = false; return 'hold'; }
+    if (b.argv.includes('--cacheinfo') && b.argv.includes(`160000,${old},libA`)) restoredSeen = true;
+    return undefined;
+  };
+  const pending = w.op('submodule.remove', { path: 'libA' });
+  const held = await w.cc.nextHeld();
+  const env = { ...w.env, GIT_INDEX_FILE: path.join(w.root, 'plumbing-index') };
+  const g = (...a) => execFileSync('git', ['-C', w.repo.dir, ...a], { env, encoding: 'utf8' }).trim();
+  g('read-tree', 'HEAD');
+  g('update-index', '--cacheinfo', `160000,${next},libA`);
+  const commit = g('commit-tree', '-p', 'HEAD', '-m', 'moved pointer', g('write-tree'));
+  w.repo.git('update-ref', 'refs/heads/main', commit);
+  w.cc.state.execHook = null;
+  held.release();
+  const r = await pending;
+  assert.equal(r.body.code, 'SUBMODULE_DIRTY');
+  assert.equal(w.repo.git('rev-parse', 'HEAD:libA'), next, 'HEAD moved during the op');
+  assert.equal(w.repo.git('ls-files', '-s', '--', 'libA'), '', 'the restored entry is taken out again');
+});
+
 test('remove of a declared-only entry whose directory holds a clone refuses SUBMODULE_NOT_RECORDED and leaves it', async (t) => {
   const w = await subWorld(t, { nested: false });
   w.fx('.', 'clone', '-q', w.urls.libA, 'loose');
@@ -429,6 +459,8 @@ test('commitPointer refuses OPERATION_IN_PROGRESS during a stopped merge, cherry
     ['cherry-pick', (w, side) => w.git('.', 'cherry-pick', side)],
     ['revert', (w) => { w.repo.commit({ 'conflict.txt': 'later\n' }, 'later'); return w.git('.', 'revert', '--no-edit', 'HEAD~1'); }],
     ['rebase', (w) => w.git('.', 'rebase', '-q', 'side')],
+    // The apply backend (git's default is the merge backend): its state is rebase-apply, not rebase-merge.
+    ['rebase-apply', (w) => w.git('.', 'rebase', '--apply', '-q', 'side')],
   ]) {
     const w = await subWorld(t, { nested: false });
     const side = conflictingBranch(w);
@@ -437,13 +469,14 @@ test('commitPointer refuses OPERATION_IN_PROGRESS during a stopped merge, cherry
     const index = fs.readFileSync(w.file('.git/index'));
     const head = w.repo.git('rev-parse', 'HEAD');
     const b = await refusal(w, 'submodule.commitPointer', { path: 'libA', expect: headOf(w, 'libA'), summary: 's' }, 'OPERATION_IN_PROGRESS');
-    assert.equal(b.operation, operation);
+    assert.equal(b.operation, operation === 'rebase-apply' ? 'rebase' : operation);
     assert.match(b.error, /finish or abort it first/);
     assert.deepEqual(fs.readFileSync(w.file('.git/index')), index, operation);
     assert.equal(w.repo.git('rev-parse', 'HEAD'), head, operation);
     assert.equal(w.execArgv().map(afterBase).some((a) => a[0] === 'read-tree' || a[0] === 'commit'), false, operation);
-    if (operation !== 'rebase') assert.equal(w.git('.', 'rev-parse', '-q', '--verify', { merge: 'MERGE_HEAD', 'cherry-pick': 'CHERRY_PICK_HEAD', revert: 'REVERT_HEAD' }[operation]).status, 0);
-    else assert.ok(fs.existsSync(w.file('.git/rebase-merge')) || fs.existsSync(w.file('.git/rebase-apply')));
+    if (operation === 'rebase') assert.ok(fs.existsSync(w.file('.git/rebase-merge')) && !fs.existsSync(w.file('.git/rebase-apply')));
+    else if (operation === 'rebase-apply') assert.ok(fs.existsSync(w.file('.git/rebase-apply')) && !fs.existsSync(w.file('.git/rebase-merge')));
+    else assert.equal(w.git('.', 'rev-parse', '-q', '--verify', { merge: 'MERGE_HEAD', 'cherry-pick': 'CHERRY_PICK_HEAD', revert: 'REVERT_HEAD' }[operation]).status, 0);
   }
 });
 

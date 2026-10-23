@@ -225,14 +225,14 @@ export const ops = [
       if (isTypeChanged(records, p.path)) {
         throw new Refusal('SUBMODULE_NOT_RECORDED', `${p.path} is staged as something other than a submodule (a file or a directory): unstage that first, then remove it`, { paths: [p.path], reason: 'typechange' });
       }
-      // The gitlink code-git put back from HEAD, taken out again whenever the removal does not complete.
+      // The oid of the gitlink code-git put back from HEAD, taken out again whenever the removal does not complete.
       let restored = null;
       if (!records.length) {
         if (e.committed) {
           // In HEAD, absent from the index at every stage (`git rm --cached`): put the entry back from HEAD, so the
           // removal below runs gated as for any submodule and ends with the same staged deletion.
-          restored = ['update-index', '--add', '--cacheinfo', `160000,${e.committed},${e.path}`];
-          await git(restored);
+          restored = e.committed;
+          await git(['update-index', '--add', '--cacheinfo', `160000,${restored},${e.path}`]);
           [e] = await knownEntries(git, [p.path]);
         } else if (e.populated) {
           throw new Refusal('SUBMODULE_NOT_RECORDED', `${p.path} is cloned but its gitlink is in neither the index nor HEAD: add it back (git add ${p.path}) or delete its directory, then remove it`, { paths: [p.path] });
@@ -258,7 +258,8 @@ export const ops = [
         // Removes the gitlink, the directory and the .gitmodules section, and stages .gitmodules. .git/modules/<name> stays.
         await run(git, ['rm', '-q', ...force, '--', p.path]);
       } catch (err) {
-        if (restored) await takeBack(git, p.path, e.committed);
+        // The oid captured at the restore: `e` was re-read since, and HEAD may have moved meanwhile.
+        if (restored) await takeBack(git, p.path, restored);
         throw err;
       }
       return { path: p.path, name: e.name };
