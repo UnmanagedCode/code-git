@@ -231,8 +231,9 @@ test('undo of a branch delete whose configured upstream is "--help": the branch 
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})/;
 
 // Invariant: every undo/redo command puts `--end-of-options` or `--` before an oid, ref or path it names (a same-argument
-// `--opt=value` aside; rev-parse takes only hex-led revisions, `symbolic-ref -q` only a full `refs/` name); never `git apply --index`; `reset --hard` only for a hard
-// reset's plan; no protected env; exec form A only.
+// `--opt=value` aside; rev-parse takes only hex-led revisions, `symbolic-ref -q` only a full `refs/` name); never
+// `git apply --index`; `reset --hard` only for a hard reset's plan, `reset --keep --end-of-options` for the commit-making
+// ops' (cherry-pick, revert, merge, rebase); no protected env; exec form A only.
 test('argv scan over every undo and redo exec', async (t) => {
   const w = await undoWorld(t);
   const runs = [];
@@ -241,8 +242,8 @@ test('argv scan over every undo and redo exec', async (t) => {
     await fn();
     runs.push({ label, calls: w.cc.state.execCalls.slice(from) });
   };
-  const both = (label) => around(label, async () => { await w.undo(); await w.redo(); });
-  const names = new Set(['f.txt', 'u.txt', 'l.txt', 'side', 'refs/heads/side', 'v1', 'refs/tags/v1', 'trunk', 'main', 'refs/heads/main', 'refs/heads/trunk', 'feature', 'refs/heads/feature']);
+  const both = (label) => around(label, async () => { await w.undo().catch((e) => { throw new Error(`${label}: ${e.message}`); }); await w.redo(); });
+  const names = new Set(['f.txt', 'u.txt', 'l.txt', 'side', 'refs/heads/side', 'v1', 'refs/tags/v1', 'trunk', 'main', 'refs/heads/main', 'refs/heads/trunk', 'feature', 'refs/heads/feature', 'pickme', 'refs/heads/pickme', 'rb', 'refs/heads/rb']);
   w.repo.git('branch', 'feature');
   stage(w, { 'l.txt': 'l\n' });
   await w.op('commit.create', { summary: 'l' });
@@ -267,6 +268,24 @@ test('argv scan over every undo and redo exec', async (t) => {
   await both('hard');
   await w.op('head.reset', { to: head, mode: 'mixed', expect: w.base });
   await both('mixed');
+  // Keep-mode plans: cherry-pick, revert, merge, rebase.
+  w.repo.git('reset', '-q', '--hard');
+  // From base, so the pick lands on another parent (with the fixed test dates it would otherwise be pk itself).
+  w.repo.git('switch', '-q', '-c', 'pickme', w.base);
+  const pk = w.repo.commit({ 'pk.txt': 'pk\n' }, 'pk');
+  w.repo.git('switch', '-q', 'main');
+  await w.op('head.cherryPick', { oid: pk });
+  await both('cherry-pick');
+  await w.op('head.revert', { oid: w.oid('HEAD') });
+  await both('revert');
+  const merged = await w.op('merge.start', { ref: 'refs/heads/pickme', oid: pk, mode: 'noFf', expect: w.oid('HEAD') });
+  assert.equal(merged.outcome, 'merged');
+  await both('merge');
+  w.repo.git('switch', '-q', '-c', 'rb', w.base);
+  const rb = w.repo.commit({ 'rb.txt': 'rb\n' }, 'rb');
+  await w.op('rebase.start', { onto: w.oid('main'), upstream: w.base, expect: rb });
+  await both('rebase');
+  const keepLabels = ['cherry-pick', 'revert', 'merge', 'rebase'];
   for (const { label, calls } of runs) {
     assert.ok(calls.length, label);
     for (const body of calls) {
@@ -287,6 +306,12 @@ test('argv scan over every undo and redo exec', async (t) => {
       const own = Object.entries(body.env ?? {}).filter(([k, v]) => isProtectedEnv(k) && BASE_ENV[k] !== v);
       assert.deepEqual(own, [], `${label}: a protected env name set by the op`);
     }
+  }
+  for (const label of keepLabels) {
+    const { calls } = runs.find((r) => r.label === label);
+    const keeps = calls.map((b) => b.argv.slice(1 + BASE_ARGS.length)).filter((a) => a[0] === 'reset');
+    assert.equal(keeps.length, 2, `${label}: one reset each way`);
+    for (const a of keeps) assert.deepEqual(a.slice(0, 3), ['reset', '--keep', '--end-of-options'], `${label}: ${a.join(' ')}`);
   }
   assert.deepEqual(w.cc.state.violations, []);
 });
