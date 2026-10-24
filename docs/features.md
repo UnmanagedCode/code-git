@@ -232,10 +232,11 @@ The diff has no file list of its own: the list beside it in the right slot drive
 
 | Control | Behaviour |
 |---|---|
-| Hunk / Inline / Split | Hunk: changed hunks with N context lines and their `@@` headers. Inline: the whole file, unified. Split: the whole file, old beside new, each side numbered |
+| Diff scope: Hunk / Full | How much of the file the diff shows, and so what it requests. Hunk (default): the changed hunks with N context lines, each under its `@@` header. Full: the whole file (one `-U<FULL_CONTEXT>` request), no hunk headers |
+| Diff layout: Inline / Split | How it is laid out; render-only, never refetches. Inline (default): one column, old and new line numbers, +/− markers. Split: old beside new, each side numbered (under each `@@` header in Hunk scope). Any scope with any layout |
 | Diff / File | File: the new side's full content (the old side for a deleted file), numbered, no +/− markers |
-| Whitespace | Show all; ignore at line end; ignore amount; ignore all. Reloads the list too |
-| Context lines | 0, 1, 3 (default), 5, 10, 25 — Hunk mode only |
+| Ignore whitespace | Off by default. On: `git diff -w` for the list and the file, so whitespace-only edits are hidden (a file whose only change is whitespace leaves the list). Reloads the list too. Hunk and line staging are off while it is on |
+| Context lines | `CONTEXT_CHOICES` (`state/diff.ts`), default 3 — Hunk scope only |
 | Wrap lines | Wraps long lines instead of scrolling (Split clips them when off) |
 | Syntax highlighting | On by default |
 | ↑ / ↓, "change k of n" | Previous / next change block, scrolled to the centre |
@@ -253,17 +254,17 @@ The diff has no file list of its own: the list beside it in the right slot drive
 | Conflicted | "Conflicted file — resolve it first" |
 | Submodule (gitlink) | "Submodule pointer `<old7> → <new7>`" (— for an absent side), a **dirty** badge for a dirty worktree side |
 | Git LFS pointer | A card with each side's object id (12 characters) and size; **Show pointer** shows the pointer text |
-| Over the file cap | "Too large to display (over N MB)"; in Inline, Split or File view also **Switch to Hunk mode** |
+| Over the file cap | "Too large to display (over N MB)"; in Full scope or File view also **Switch to Hunk** (Hunk scope, Diff view, the layout kept) |
 | Empty file added / deleted | "Empty file added" / "Empty file deleted" |
-| No content change (rename-only, mode-only, whitespace hidden) | "No content changes" + the mode or rename line |
+| No content change (rename-only, mode-only, whitespace hidden by Ignore whitespace) | "No content changes" + the mode or rename line |
 | List over its cap | An alert in the diff: the diff is too large to list; the Changed files panel stays empty, the bound details say "The changed files could not be listed; the diff says why." (no file count) |
 
-**Hunk and line staging** — only on an unstaged or staged diff of a modified (`M`) text file, with **Show all whitespace** and the Diff view (not File view); not on added, deleted, renamed, untracked, binary, submodule, conflicted or LFS-pointer files, nor on commit or compare diffs:
+**Hunk and line staging** — only on an unstaged or staged diff of a modified (`M`) text file, with **Ignore whitespace** off and the Diff view (not File view); not on added, deleted, renamed, untracked, binary, submodule, conflicted or LFS-pointer files, nor on commit or compare diffs:
 
 | Control | Unstaged diff | Staged diff |
 |---|---|---|
-| Hunk header (Hunk mode) | **Stash hunk…** (the file has nothing staged), **Discard hunk…**, **Stage hunk** | **Unstage hunk** |
-| Gutter toggle on each added/removed line (Hunk, Inline, Split) | click selects or unselects ("Select added line N" / "Select removed line N"); Shift-click selects every change line from the last clicked one | same |
+| Hunk header (Hunk scope, either layout) | **Stash hunk…** (the file has nothing staged), **Discard hunk…**, **Stage hunk** | **Unstage hunk** |
+| Gutter toggle on each added/removed line (every scope and layout) | click selects or unselects ("Select added line N" / "Select removed line N"); Shift-click selects every change line from the last clicked one | same |
 | Selection bar ("k lines selected") | **Stage lines**, **Discard lines…**, **Stash lines…** (the file has nothing staged), **Clear** | **Unstage lines**, **Clear** |
 
 - Within a run of removed and added lines, the i-th removed line pairs with the i-th added one (as Split shows them): staging only that pair replaces that line.
