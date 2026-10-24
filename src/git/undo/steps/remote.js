@@ -11,7 +11,17 @@ const ends = (step, dir) => (dir === 'undo' ? { from: step.new, to: step.old } :
 
 /** The keys remoteSnapshot reads; remove's record also holds `branchKeys` / `pushDefault` (what git cleared). */
 const CONFIG_KEYS = ['urls', 'pushUrls', 'fetch', 'extra', 'upstreams'];
-const configOf = (side) => (side === null ? null : Object.fromEntries(CONFIG_KEYS.map((k) => [k, side[k]])));
+/**
+ * A side as compared. `upstreams` as a set (sorted by branch, then merge): an undo re-adds a key into a surviving branch
+ * section but appends an emptied one at the end, so the file order is not the state's.
+ */
+function configOf(side) {
+  if (side === null) return null;
+  const out = Object.fromEntries(CONFIG_KEYS.map((k) => [k, side[k]]));
+  const key = (u) => `${u.branch}\0${u.merge ?? ''}`;
+  out.upstreams = [...side.upstreams].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  return out;
+}
 
 async function snapshotOrNull(git, name) {
   try {

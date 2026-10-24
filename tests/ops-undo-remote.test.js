@@ -181,3 +181,26 @@ test('remote.remove of a branch with only a pushRemote: not in clearedUpstreams,
   await w.undo();
   assert.equal(w.repo.git('config', '--local', '--get-all', 'branch.solo.pushRemote'), 'origin');
 });
+
+/** Branches `names` tracking origin (main already does), in config order. */
+function tracking(w, names) {
+  for (const b of names) {
+    w.repo.git('branch', b);
+    w.repo.git('config', `branch.${b}.remote`, 'origin');
+    w.repo.git('config', `branch.${b}.merge`, `refs/heads/${b}`);
+  }
+}
+
+// Invariant: the upstreams are compared as a set, not in .git/config order: an undo re-adds a key into a branch section
+// that survived (a pushRemote naming another remote pins it) but appends a new section for an emptied one, so the
+// order changes — and the redo still runs, as does the undo after it.
+for (const [label, names, pinned] of [['two branches, the second pinned', ['feat'], 'feat'], ['three branches, the middle one pinned', ['feat', 'tail'], 'feat']]) {
+  test(`remote.remove with ${label} by a surviving pushRemote: remove → undo → redo → undo`, async (t) => {
+    const w = await undoWorld(t);
+    tracking(w, names);
+    w.repo.git('config', `branch.${pinned}.pushRemote`, 'other');
+    const { before } = await roundTrip(w, () => w.op('remote.remove', { name: 'origin' }));
+    await w.undo();
+    assert.deepEqual(w.snap(), before, 'the second undo restores the state before too');
+  });
+}
