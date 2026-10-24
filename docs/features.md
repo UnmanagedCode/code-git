@@ -162,7 +162,7 @@ The graph toolbar's **Repository actions** (⋮) → **Git-flow**: **Initialize�
 | Honoured | Every hook git runs, where git looks for it (`core.hooksPath` included). Nothing skips hooks but the commit box's **Skip Git hooks** (`commit.create`'s `noVerify`) |
 | A failing hook | Blocks the op: `GIT_FAILED` with git's stderr, which holds the hook's output (git sends a hook's stdout to stderr). Shown in the commit box's alert, the op's toast, a dialog's refusal; a git-flow finish's `FLOW_INCOMPLETE` carries it as its cause |
 | A succeeding hook | Its output is on its command's activity entry (**Show output**) |
-| pre-push | git keeps a pre-push hook's stdout on stdout (the push's porcelain output): only what it prints to **stderr** is shown, failing or not |
+| pre-push | git keeps a pre-push hook's stdout on stdout (the push's porcelain output): when the hook fails, the refusal shows that stdout before git's stderr (`push` in `src/git/remote/push.js`); a succeeding one's stdout is not on the activity entry (its stderr is) |
 | post-checkout | Runs after the switch: when it fails, HEAD has already moved |
 | pre-merge-commit | When it fails, git leaves the merge in progress (`MERGE_HEAD`): the Changes panel's banner offers Continue and Abort |
 

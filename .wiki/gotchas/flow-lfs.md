@@ -23,5 +23,5 @@
 
 ## Hooks
 
-- **git sends a hook's stdout to stderr, except pre-push's**: a pre-push hook's stdout goes to git's stdout, which `push --porcelain` output shares, so code-git shows only what it prints to stderr (`tests/hooks.test.js` pins it).
+- **git sends a hook's stdout to stderr, except pre-push's**: a pre-push hook's stdout goes to git's stdout, which `push --porcelain` output shares. A push that failed as a whole reported no ref there, so `push` (`src/git/remote/push.js`) puts that stdout before git's stderr on a `GIT_FAILED` refusal (`tests/hooks.test.js` pins it); the activity entry records stderr only.
 - **post-checkout runs after the switch**: when it fails, `branch.checkout` refuses `GIT_FAILED` but HEAD has moved.

@@ -7,7 +7,7 @@ import { refsWorld, refused } from './_refsWorld.js';
 
 // Hooks are honoured, never skipped (only commit.create's opt-in noVerify skips them), and what they print reaches the
 // user: git sends a hook's stdout to stderr, a failing hook's stderr is GIT_FAILED's `stderr`, and a succeeding one's
-// is on its activity entry (docs/features.md → Hooks).
+// is on its activity entry (docs/features.md → Hooks); a pre-push hook's stdout, which git sends to stdout, is shown too.
 
 const LOUD = (exit) => `#!/bin/sh\necho HOOK-OUT\necho HOOK-ERR >&2\nexit ${exit}\n`;
 const hasBoth = (e) => {
@@ -25,16 +25,11 @@ test('a failing pre-commit hook: GIT_FAILED with its stdout and stderr, and no c
   assert.equal(w.oid('HEAD'), w.base);
 });
 
-test("a failing pre-push hook: GIT_FAILED with its stderr, and the remote unchanged; its stdout is not shown (git sends a pre-push hook's stdout to stdout, which the push parses as porcelain)", async (t) => {
+test("a failing pre-push hook: GIT_FAILED with its stdout and stderr (git sends a pre-push hook's stdout to stdout: the push shows it), and the remote unchanged", async (t) => {
   const w = await refsWorld(t);
   const next = w.repo.commit({ 'p.txt': 'p\n' }, 'p');
   w.repo.hook('pre-push', LOUD(1));
-  await assert.rejects(w.op('remote.push', { branch: 'main' }), (e) => {
-    refused('GIT_FAILED')(e);
-    assert.match(e.extra.stderr, /HOOK-ERR/, 'the hook stderr');
-    assert.doesNotMatch(e.extra.stderr, /HOOK-OUT/, 'the hook stdout is not in stderr (docs/features.md → Hooks)');
-    return true;
-  });
+  await assert.rejects(w.op('remote.push', { branch: 'main' }), (e) => refused('GIT_FAILED')(e) && hasBoth(e));
   assert.equal(w.origin.git('rev-parse', 'main'), w.base);
   assert.notEqual(next, w.base);
 });

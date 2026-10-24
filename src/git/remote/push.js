@@ -41,7 +41,7 @@ export const pushConfig = (remote) => ['-c', `remote.${remote}.mirror=false`];
  * destination whose mapped local ref (per the remote's fetch refspecs) is symbolic, live or dangling, refuses
  * SYMBOLIC_REF; one mapped outside refs/remotes/, or a fetch config code-git cannot map, REMOTE_CONFIG_UNSUPPORTED. A push that reports no
  * ref at all failed as a whole: remoteFailure (REMOTE_AUTH_FAILED / REMOTE_UNREACHABLE with a reason, or GIT_FAILED with
- * git's stderr: a pre-push hook that refused lands here). Rejected refs are the caller's to judge.
+ * git's stderr, after git's stdout when there is any: a pre-push hook that refused lands here, its stdout included). Rejected refs are the caller's to judge.
  * `setUpstream` adds `--set-upstream`; each lease `{ref, expect}` adds `--force-with-lease=<ref>:<expect>` (expect null:
  * the ref must not exist on the remote). Never `--force` and never a `+` refspec: a lease is the only way to overwrite.
  */
@@ -57,7 +57,13 @@ export async function push(git, remote, refspecs, { setUpstream = false, leases 
   const r = await netRun(git, [...pushConfig(remote), 'push', '--porcelain', '--no-follow-tags', ...options, '--end-of-options', remote, ...refspecs], { okExit: [0, 1, 128] });
   const parsed = parsePushPorcelain(decoder.decode(r.stdout));
   const reported = parsed.updated.length + parsed.rejected.length + parsed.upToDate.length;
-  if (r.exitCode !== 0 && !reported) throw remoteFailure(remote, r, 'push');
+  if (r.exitCode !== 0 && !reported) {
+    const e = remoteFailure(remote, r, 'push');
+    // A pre-push hook's stdout is git's stdout, which reported no ref: shown before git's stderr.
+    const out = decoder.decode(r.stdout).trim();
+    if (e.code === 'GIT_FAILED' && out) e.extra.stderr = `${out}\n${e.extra.stderr}`;
+    throw e;
+  }
   return splitRequested(parsed, refspecs.map((s) => s.slice(s.indexOf(':') + 1)));
 }
 
