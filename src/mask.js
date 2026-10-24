@@ -1,8 +1,11 @@
 // Hiding a url's password wherever a url may be shown (remote.list's urls, op results, the activity log's argv and stderr), and
 // spotting the mask echoed back. Pure.
 
+/** A url's `scheme://`: git hands any `<scheme>://` to git-remote-<scheme>, so a scheme may start with a digit. */
+const SCHEME = '[A-Za-z0-9][A-Za-z0-9+.-]*:\\/\\/';
+
 /** A url's `scheme://user` (group 1), then its password span: from the first `:` after `scheme://` up to the last `@`. */
-const PASSWORD_RE = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/[^:]*):[\s\S]*@/;
+const PASSWORD_RE = new RegExp(`^(${SCHEME}[^:]*):[\\s\\S]*@`);
 
 /**
  * `url` with everything from the first `:` after `scheme://` up to its last `@` shown as `***`:
@@ -23,7 +26,7 @@ export const isMaskedUrl = (url) => PASSWORD_RE.test(url) && maskUrl(url) === ur
  * from the first `:` after `scheme://` to the token's last `@`. A password may hold quotes, so a quote does not end it: git
  * quotes the url it failed on in its own messages (`fatal: clone of '<url>' into …`, `Submodule 'x' (<url>) registered`).
  */
-export const maskUrls = (text) => text.replace(/([A-Za-z][A-Za-z0-9+.-]*:\/\/[^:\s]*):\S*@/g, '$1:***@');
+export const maskUrls = (text) => text.replace(new RegExp(`(${SCHEME}[^:\\s]*):\\S*@`, 'g'), '$1:***@');
 
 /** `v` with maskUrls applied to every string in it, through arrays and plain objects (a refusal's body, a git message). */
 export function maskDeep(v) {

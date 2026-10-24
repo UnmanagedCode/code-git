@@ -29,7 +29,9 @@ async function world(t) {
   /** The exec'd commands that write a remote's config. */
   const remoteWrites = () => w.argvs().filter((a) => (a[0] === 'remote' && a.length > 1)
     || (a[0] === 'config' && a.some((x) => ['--add', '--replace-all', '--unset-all', '--remove-section'].includes(x))));
-  return { ...w, call, config, remoteWrites };
+  /** /api/activity's body. */
+  const activity = async () => (await app.call('GET', '/api/activity')).body;
+  return { ...w, call, config, remoteWrites, activity };
 }
 
 /** `body` holds neither password. */
@@ -198,4 +200,36 @@ test('undo and redo of add, edit and remove restore the raw credentials; no resp
   assert.deepEqual(cred(), [[url('two')], [pushUrl('p')]], 're-added with the raw credentials');
   await redo();
   assert.deepEqual(cred(), [[], []]);
+});
+
+/**
+ * Remote `odd`, its url and push url set with git to shapes remote.add refuses: remote.list, remote.remove's result, its
+ * undo and the activity log of that undo (`config --add` of each raw value) show them as `maskedUrl` / `maskedPush`,
+ * never a password, while the undo writes the raw values back.
+ */
+async function masksEverywhere(w, { rawUrl, rawPush, maskedUrl, maskedPush }) {
+  w.repo.git('config', 'remote.odd.url', rawUrl);
+  w.repo.git('config', 'remote.odd.pushurl', rawPush);
+  const list = await w.call('remote.list');
+  lacksSecrets(list);
+  const listed = list.result.remotes.find((r) => r.name === 'odd');
+  assert.deepEqual([listed.urls, listed.pushUrls, listed.displayUrl], [[maskedUrl], [maskedPush], maskedUrl]);
+  const removed = await w.call('remote.remove', { name: 'odd' });
+  lacksSecrets(removed);
+  assert.deepEqual([removed.result.undo.remotes[0].old.urls, removed.result.undo.remotes[0].old.pushUrls], [[maskedUrl], [maskedPush]]);
+  lacksSecrets(await w.call('undo.undo', { id: (await w.call('undo.state')).result.undo.id }));
+  assert.deepEqual([w.config('remote.odd.url'), w.config('remote.odd.pushurl')], [[rawUrl], [rawPush]]);
+  const activity = JSON.stringify(await w.activity());
+  lacksSecrets(activity);
+  for (const shown of [maskedUrl, maskedPush]) assert.ok(activity.includes(JSON.stringify(shown)), `the undo's argv shows ${shown}`);
+}
+
+// Invariant: a url whose scheme starts with a digit (git runs git-remote-<scheme> for any `<scheme>://`) is masked
+// through remote.list, a remote op's undo record and the activity log, as any other.
+test('a scheme starting with a digit (1password://, 9z://) is masked in remote.list, op results and the activity log', async (t) => {
+  const w = await world(t);
+  await masksEverywhere(w, {
+    rawUrl: `1password://user:${PW}@example.invalid/r.git`, rawPush: `9z://user:${PUSH_PW}@example.invalid/p.git`,
+    maskedUrl: '1password://user:***@example.invalid/r.git', maskedPush: '9z://user:***@example.invalid/p.git',
+  });
 });

@@ -18,6 +18,15 @@ test('maskUrl hides everything from the userinfo\'s first : to the authority\'s 
   assert.equal(maskUrl('ssh://u:pw@h:22/r'), 'ssh://u:***@h:22/r');
 });
 
+// Invariant: git hands any `<scheme>://` to git-remote-<scheme>, so a scheme starting with a digit is a url too:
+// maskUrl, maskUrls and redactArgv mask its password.
+test('a scheme starting with a digit: maskUrl, maskUrls and redactArgv mask its password', () => {
+  assert.equal(maskUrl('1password://u:pw@h/r'), '1password://u:***@h/r');
+  assert.equal(maskUrl('9z://u:pw@h/r'), '9z://u:***@h/r');
+  assert.equal(maskUrls("fatal: unable to access '1password://u:pw@h/r/' and 9z://u:pw2@h/r"), "fatal: unable to access '1password://u:***@h/r/' and 9z://u:***@h/r");
+  assert.deepEqual(redactArgv(['git', 'config', '--add', 'remote.o.url', '1password://u:pw@h/r']), ['git', 'config', '--add', 'remote.o.url', '1password://u:***@h/r']);
+});
+
 test('maskUrl leaves urls without a password alone', () => {
   for (const u of ['https://host/r.git', 'https://user@host/r', 'ssh://git@host:22/r.git', 'git@host:o/r.git', '/srv/r.git', 'file:///srv/r', 'origin', '--end-of-options']) {
     assert.equal(maskUrl(u), u, u);
