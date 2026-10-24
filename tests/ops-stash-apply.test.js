@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { hermeticEnv } from './_git.js';
 import { noViolations, refused } from './_ops.js';
-import { blob, exists, outsideLink, read, runs, stashList, stashWorld } from './_stash.js';
+import { blob, exists, outsideLink, read, realIndexRuns, runs, stashList, stashWorld } from './_stash.js';
 
 // stash.apply, stash.pop, stash.applyFile and stash.branch against real git under the hostile config.
 
@@ -105,12 +105,13 @@ test('apply index:true restores the staged part; without it the staged change la
   w.repo.write('b.txt', 'b staged\n');
   w.repo.git('add', 'b.txt');
   const oid = await saved(w, { 'a.txt': 'a2\n' });
+  const from = w.cc.state.execCalls.length;
   const r = await w.op('stash.apply', { oid, index: true });
   assert.deepEqual(r.conflicts, []);
   assert.deepEqual(w.status(), { 'a.txt': ' M', 'b.txt': 'M ' });
   assert.ok(runs(w, 'stash', 'apply').at(-1).includes('--index'));
   // Nothing was staged: no index snapshot is taken.
-  assert.deepEqual(runs(w, 'write-tree'), []);
+  assert.deepEqual(realIndexRuns(w, from, 'write-tree'), []);
   w.repo.git('reset', '-q', '--hard');
   await w.op('stash.apply', { oid });
   assert.deepEqual(w.status(), { 'a.txt': ' M', 'b.txt': ' M' });
@@ -387,20 +388,22 @@ test('Apply with staged changes over a staged a.txt the stash also changes → {
   w.repo.write('a.txt', 'mine\n');
   w.repo.write('b.txt', 'b staged\n');
   w.repo.git('add', 'a.txt', 'b.txt');
+  const from = w.cc.state.execCalls.length;
   const r = await w.op('stash.apply', { oid, index: true });
   assert.deepEqual(r.conflicts, ['a.txt']);
   assert.deepEqual([...new Set(unmergedPaths(w))], ['a.txt']);
   assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
-  assert.equal(runs(w, 'read-tree').length, 0);
+  assert.equal(realIndexRuns(w, from, 'read-tree').length, 0);
 });
 
 test('Apply with staged changes, a conflict with the moved HEAD and unrelated staging → {conflicts}, unmerged entries and staging intact (repro B)', async (t) => {
   const w = await conflicting(t);
+  const from = w.cc.state.execCalls.length;
   const r = await w.op('stash.apply', { oid: w.oid, index: true });
   assert.deepEqual(r.conflicts, ['a.txt']);
   assert.deepEqual([...new Set(unmergedPaths(w))], ['a.txt']);
   assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
-  assert.equal(runs(w, 'read-tree').length, 0);
+  assert.equal(realIndexRuns(w, from, 'read-tree').length, 0);
   assert.match(read(w, 'a.txt'), /^<<<<<<< /);
 });
 
@@ -420,12 +423,13 @@ test('branch (always --index) whose apply conflicts → {conflicts}, the stash k
   w.repo.write('a.txt', 'mine\n');
   w.repo.write('b.txt', 'b staged\n');
   w.repo.git('add', 'a.txt', 'b.txt');
+  const from = w.cc.state.execCalls.length;
   const r = await w.op('stash.branch', { oid, name: 'nb' });
   assert.deepEqual({ conflicts: r.conflicts, dropped: r.dropped }, { conflicts: ['a.txt'], dropped: false });
   assert.equal(w.repo.git('symbolic-ref', 'HEAD'), 'refs/heads/nb');
   assert.deepEqual([...new Set(unmergedPaths(w))], ['a.txt']);
   assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
-  assert.equal(runs(w, 'read-tree').length, 0);
+  assert.equal(realIndexRuns(w, from, 'read-tree').length, 0);
   assert.deepEqual(stashList(w).map((s) => s.oid), [oid]);
 });
 
@@ -437,10 +441,11 @@ test('a refused apply --index without "Index was not unstashed." (no unmerged en
   w.cc.state.execHook = (body) => (body.argv.includes('apply') && body.argv.includes('--index')
     ? { status: 200, body: { exitCode: 1, stdout: '', stderr: Buffer.from('error: something else went wrong\n').toString('base64'), encoding: 'base64', durationMs: 1 } }
     : undefined);
+  const from = w.cc.state.execCalls.length;
   await assert.rejects(w.op('stash.apply', { oid, index: true }), (e) => e.code === 'GIT_FAILED' && e.extra.stderr === 'error: something else went wrong\n');
   // The snapshot was taken (something was staged), and not read back.
-  assert.equal(runs(w, 'write-tree').length, 1);
-  assert.deepEqual(runs(w, 'read-tree'), []);
+  assert.equal(realIndexRuns(w, from, 'write-tree').length, 1);
+  assert.deepEqual(realIndexRuns(w, from, 'read-tree'), []);
   assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
 });
 

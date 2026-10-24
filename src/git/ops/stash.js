@@ -17,13 +17,15 @@ import { identEnv } from '../stash/ident.js';
 import { STASH_LIMITS } from '../stash/limits.js';
 import { branchLabel, checkMessage, reMessage, wMessage } from '../stash/message.js';
 import { dropVerified, listStashes, namesOf, resolveStash, stashPaths } from '../stash/resolve.js';
+import { checkoutState } from '../stash/snapshot.js';
 import { assertGitAtLeast } from '../stash/version.js';
+import { plans } from '../undo/plans.js';
 import { assertOid } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
 
 // Stash: save, apply, drop, rename (docs/protocol.md → Stash ops). Every op is a non-cancellable write: an aborted
 // stash or apply can leave index.lock, a half-applied merge or a half-restored set of untracked files. A stash is named
-// by its full oid (src/git/stash/resolve.js).
+// by its full oid (src/git/stash/resolve.js). Every op but apply is registered for undo (docs/undo.md → Per-op plans).
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const text = (r) => decoder.decode(r.stdout);
@@ -43,19 +45,25 @@ async function assertBornHead(git) {
 const CAP = { maxOutputBytes: STASH_LIMITS.pathsMaxOutputBytes };
 
 /**
- * The paths a save takes out of the worktree, for the guard: the named ones and what they expand to (a directory names
- * its changed files, and its untracked ones with includeUntracked), the staged ones, or every changed tracked one (plus
- * every untracked one with includeUntracked).
+ * The paths a save takes out of the worktree: `guard` (for assertNotBlocked) — the named ones and what they expand to (a
+ * directory names its changed files, and its untracked ones with includeUntracked), the staged ones, or every changed
+ * tracked one (plus every untracked one with includeUntracked); `files` — the same expanded to file names only, never a
+ * named directory (what the undo's checkout state is taken over).
  */
 async function savedPaths(git, p) {
   const untracked = ['ls-files', '--others', '--exclude-standard', '-z'];
   if (p.paths) {
     const changed = await perChunk(git, ['diff-index', '-z', '--name-only', '--no-renames', 'HEAD'], p.paths, CAP);
-    return [...p.paths, ...changed, ...(p.includeUntracked ? await perChunk(git, untracked, p.paths, CAP) : [])];
+    const extra = p.includeUntracked ? await perChunk(git, untracked, p.paths, CAP) : [];
+    return { guard: [...p.paths, ...changed, ...extra], files: [...new Set([...changed, ...extra])] };
   }
-  if (p.staged) return namesOf(git, ['diff', '--cached', '--name-only', '-z', '--no-renames', '--no-relative', '--no-ext-diff', '--no-textconv']);
+  if (p.staged) {
+    const staged = await namesOf(git, ['diff', '--cached', '--name-only', '-z', '--no-renames', '--no-relative', '--no-ext-diff', '--no-textconv']);
+    return { guard: staged, files: staged };
+  }
   const changed = await namesOf(git, ['diff-index', '-z', '--name-only', '--no-renames', 'HEAD']);
-  return p.includeUntracked ? [...changed, ...await namesOf(git, untracked)] : changed;
+  const all = p.includeUntracked ? [...changed, ...await namesOf(git, untracked)] : changed;
+  return { guard: all, files: all };
 }
 
 /**
@@ -77,18 +85,29 @@ async function ownNewStash(git, { before, head, branch, message }) {
   return ours.length === 1 ? ours[0] : null;
 }
 
-const pushUndo = (s) => undoRecord({ stashes: [{ oid: s.oid, old: null, new: { message: s.message }, restore: 'pop' }] });
+/**
+ * A save's undo record: its stash, and the checkout's state over `files` before and after — only when every path the
+ * stash holds is among them (a save racing another writer could hold more: no state, so no undo plan).
+ */
+async function pushUndo(git, s, files, before) {
+  const stashes = [{ oid: s.oid, old: null, new: { message: s.message }, restore: 'pop' }];
+  const { tracked, untracked } = await stashPaths(git, s);
+  const covered = new Set(files);
+  if (![...tracked, ...untracked].every((f) => covered.has(f))) return undoRecord({ stashes });
+  return undoRecord({ stashes, worktreeState: { paths: files, before, after: await checkoutState(git, files) } });
+}
 const NO_CHANGES_RE = /^No local changes to save$/m;
 
 /**
  * The gates before anything writes a stash into the worktree: a resolved index, no leading directory of the stash's
- * paths blocked by an untracked symlink or file, none of its untracked files already there.
+ * paths blocked by an untracked symlink or file, none of its untracked files already there. Resolves those paths.
  */
 async function assertCanApply(git, s) {
   await assertNoUnmerged(git);
   const { tracked, untracked } = await stashPaths(git, s);
   await assertNotBlocked(git, [...tracked, ...untracked]);
   await assertNoUntrackedCollision(git, untracked);
+  return [...tracked, ...untracked];
 }
 
 /**
@@ -168,7 +187,9 @@ export const ops = [
       const head = await assertBornHead(git);
       await assertNoUnmerged(git);
       if (p.staged) await assertGitAtLeast(git, [2, 35], 'stash push --staged');
-      await assertNotBlocked(git, await savedPaths(git, p));
+      const { guard, files } = await savedPaths(git, p);
+      await assertNotBlocked(git, guard);
+      const before = await checkoutState(git, files);
       const mine = { before: await stashTip(git), head, branch: branchLabel(await ownHead(git)), message: p.message };
       // No -q: "No local changes to save" (LC_ALL=C) is how a save that stored nothing is told apart; comparing
       // refs/stash before and after would take another session's push for ours.
@@ -200,8 +221,9 @@ export const ops = [
       // Saved, but another session's stash at the same base with the same subject arrived at the same moment: which
       // entry is this save's cannot be told, so no undo claims one.
       if (!s) return { oid: null, selector: null, unverified: true, undo: undoRecord() };
-      return { oid: s.oid, selector: s.selector, undo: pushUndo(s) };
+      return { oid: s.oid, selector: s.selector, undo: await pushUndo(git, s, files, before) };
     },
+    undo: plans.stashPush,
   },
   {
     // Selected lines of one file, as `git stash -p` does it: the stash is built on a temporary index (I = HEAD's tree,
@@ -238,7 +260,7 @@ export const ops = [
       const message = wMessage(branch, p.message, `${short} ${subject}`);
       const w = await commit(['-p', head, '-p', i, tree], message);
       await git(['stash', 'store', `--message=${message}`, w]);
-      const undo = undoRecord({ stashes: [{ oid: w, old: null, new: { message }, restore: 'pop' }] });
+      const undo = undoRecord({ stashes: [{ oid: w, old: null, new: { message }, restore: 'pop' }], removedPatch: removal.toString('base64') });
       try {
         await git(['apply', '-R', '--whitespace=nowarn', '--no-ignore-whitespace', '-'], { stdin: removal });
       } catch (e) {
@@ -248,6 +270,7 @@ export const ops = [
       }
       return { oid: w, selector: 'stash@{0}', undo };
     },
+    undo: plans.stashPushLines,
   },
   {
     name: 'stash.drop',
@@ -257,6 +280,7 @@ export const ops = [
       const s = await dropVerified(git, p.oid);
       return { oid: p.oid, undo: undoRecord({ stashes: [{ oid: p.oid, old: { message: s.message }, new: null, restore: 'store' }] }) };
     },
+    undo: plans.stashDrop,
   },
   {
     // A stash's message is its W commit's subject and its reflog entry's: rename re-commits W with the new subject
@@ -297,6 +321,7 @@ export const ops = [
         ] }),
       };
     },
+    undo: plans.stashRename,
   },
   {
     name: 'stash.apply',
@@ -318,13 +343,16 @@ export const ops = [
     async run(git, p) {
       await assertWorktree(git);
       const s = await resolveStash(git, p.oid);
-      await assertCanApply(git, s);
+      const paths = await assertCanApply(git, s);
+      const before = await checkoutState(git, paths);
       const { conflicts } = await applyStash(git, s.oid, p.index);
       // As git does: a stash that applied with conflicts is kept.
       if (conflicts.length) return { conflicts, dropped: false, undo: undoRecord() };
       const { stashes, ...drop } = await dropApplied(git, s);
-      return { conflicts, ...drop, undo: undoRecord({ stashes }) };
+      const worktreeState = { paths, before, after: await checkoutState(git, paths) };
+      return { conflicts, ...drop, undo: undoRecord({ stashes, worktreeState }) };
     },
+    undo: plans.stashPop,
   },
   {
     // One file of a stash into the worktree only, as a patch: atomic, and a file that differs from the stash's base is
@@ -351,6 +379,7 @@ export const ops = [
       }
       return { oid: s.oid, path: p.path, part, undo: undoRecord({ worktreePatch: diff.stdout.toString('base64') }) };
     },
+    undo: plans.stashApplyFile,
   },
   {
     // `git stash branch`, step by step: a new branch at the stash's base, switched to, the stash applied with its index,
@@ -370,9 +399,12 @@ export const ops = [
       await assertNoSymref(git, ref);
       const own = await ownHead(git);
       assertCcHeadAck(own, p.ccOwned);
-      await assertCanApply(git, s);
+      const paths = await assertCanApply(git, s);
+      const before = await checkoutState(git, paths);
       const [base] = s.parents;
       await guardOverwrite(git, ['switch', '--no-guess', '--no-track', '-c', p.name, '--end-of-options', base]);
+      // The undo restores this state before it switches back (the switch carried local changes over).
+      const mid = await checkoutState(git, paths);
       const created = { refs: [{ ref, old: null, new: base }], head: { old: { branch: own.branch, oid: own.oid }, new: { branch: ref, oid: base } } };
       let conflicts;
       try {
@@ -384,7 +416,9 @@ export const ops = [
       }
       if (conflicts.length) return { ref, base, conflicts, dropped: false, undo: undoRecord(created) };
       const { stashes, ...drop } = await dropApplied(git, s);
-      return { ref, base, conflicts, ...drop, undo: undoRecord({ ...created, stashes }) };
+      const worktreeState = { paths, before, mid, after: await checkoutState(git, paths) };
+      return { ref, base, conflicts, ...drop, undo: undoRecord({ ...created, stashes, worktreeState }) };
     },
+    undo: plans.stashBranch,
   },
 ];

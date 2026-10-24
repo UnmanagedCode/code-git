@@ -52,7 +52,8 @@ function files(dir) {
 
 /**
  * The checkout's whole state, exactly: HEAD (symbolic or detached), every ref with its target, the index (mode, oid,
- * stage, path), the worktree's files and the branch config (upstreams).
+ * stage, path), the worktree's files, the branch config (upstreams, pushRemote), the stash list (oid and reflog subject,
+ * in order) and every `remote.*` key (pushDefault included).
  */
 export function snapshot(repo, dir) {
   const g = (...args) => { try { return repo.git('-C', dir, ...args); } catch { return null; } };
@@ -63,6 +64,8 @@ export function snapshot(repo, dir) {
     index: g('ls-files', '-s'),
     files: files(dir),
     branchConfig: g('config', '--get-regexp', '^branch\\.'),
+    stashes: g('stash', 'list', '--format=%H %gs'),
+    remoteConfig: g('config', '--get-regexp', '^remote\\.'),
   };
 }
 

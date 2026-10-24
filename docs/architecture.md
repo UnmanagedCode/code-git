@@ -23,7 +23,7 @@
 | `src/git/runner.js` | `runGit(ctx, args, opts)`: **the** choke point for git; `subArgs(target)` (a submodule target's `-C <path> --git-dir=.git`) |
 | `src/git/locks.js` | `createLocks()`: keyed promise queue |
 | `src/git/ops/index.js` | The op registry: `buildRegistry`, `OPS`, `getOp` |
-| `src/git/undo/` | Undo and redo ([undo](undo.md)): `journal.js` (`createJournal`, `targetKey`: the per-checkout undo and redo slots), `record.js` (`journalAround`: what the ops route does around every op), `plans.js` (`plans`: the registered ops' builders), `engine.js` (`runPlan`: preflight every step over a projection, then apply), `pushed.js` (`assertNotPushed`), `steps/` (`head`, `refs`, `rename`, `discard`, `patch`; `STEPS`) |
+| `src/git/undo/` | Undo and redo ([undo](undo.md)): `journal.js` (`createJournal`, `targetKey`: the per-checkout undo and redo slots), `record.js` (`journalAround`: what the ops route does around every op), `plans.js` (`plans`: the registered ops' builders), `engine.js` (`runPlan`: preflight every step over a projection, then apply), `pushed.js` (`assertNotPushed`), `steps/` (`head`, `refs`, `rename`, `discard`, `patch`, `worktree`, `stash`; `STEPS`) |
 | `src/git/ops/undo.js` | `undo.state`, `undo.undo`, `undo.redo` |
 | `src/git/ops/history.js`, `src/git/parse/history.js`, `src/git/history/limits.js` | `history.file`, `history.blame`, `history.reflog`, `history.paths` ([history](history.md)); their pure parsers (`parseFileHistory`, `parseBlame`, `parseReflog`); `HISTORY_LIMITS` |
 | `src/git/ops/repo.js` | `repo.summary` |
@@ -44,7 +44,7 @@
 | `src/git/stage/selection.js` | `buildSelectionPatch` (pure): a hunk/line selection + the file's latin1 diff → the patch to apply; `asShown` |
 | `src/git/stage/readSelection.js` | `selectionParams` (the line-selection request check), `APPLY_MIN_CONTEXT`, `readSelectionPatch` (re-read + build): shared by the line staging ops and `stash.pushLines` |
 | `src/git/ops/stash.js` | `stash.push`, `stash.pushLines`, `stash.apply`, `stash.pop`, `stash.applyFile`, `stash.drop`, `stash.rename`, `stash.branch` ([stash](stash.md)) |
-| `src/git/stash/` | `resolve.js` (`listStashes`, `resolveStash`, `dropVerified`, `stashPaths`), `guard.js` (`assertNotBlocked`, `assertNoUntrackedCollision`, `assertNoUnmerged`), `message.js`, `ident.js` (the commit-tree identity fallback), `version.js` (`assertGitAtLeast`), `limits.js` (`STASH_LIMITS`). The branch-from-stash helpers (`shortBranch`, `ownHead`, `assertCcHeadAck`, `assertNoSymref`, `guardOverwrite`, `parseConflictFiles`) and the undo record (`undoRecord`) are the ref ops' (`src/git/refs/`, `src/git/parse/refs.js`) |
+| `src/git/stash/` | `resolve.js` (`listStashes`, `resolveStash`, `dropVerified`, `stashPaths`), `snapshot.js` (`checkoutState`, `writeCheckoutState`: the stash undo's checkout states), `guard.js` (`assertNotBlocked`, `assertNoUntrackedCollision`, `assertNoUnmerged`), `message.js`, `ident.js` (the commit-tree identity fallback), `version.js` (`assertGitAtLeast`), `limits.js` (`STASH_LIMITS`). The branch-from-stash helpers (`shortBranch`, `ownHead`, `assertCcHeadAck`, `assertNoSymref`, `guardOverwrite`, `parseConflictFiles`) and the undo record (`undoRecord`) are the ref ops' (`src/git/refs/`, `src/git/parse/refs.js`) |
 | `src/git/diff/limits.js` | `DIFF_LIMITS`: the diff caps (list / file / patch bytes, oversize lines, max commits and paths) |
 | `src/git/parse/diff.js` | `parseRawNumstat`, `parseFilePatch`, `detectLfs`, `sideLines` — pure |
 | `src/git/parse/status.js` | `parseStatus`: porcelain v2 `-z` → summary |
@@ -314,13 +314,13 @@ What an op overwrites or deletes, and whether git can give it back. The branch, 
 | `patch.apply` | Nothing it does not change; atomic | Yes: the same patch applied with `-R` |
 | `commit.create` with `amend` | Nothing: HEAD moves to the new commit | Yes: the replaced commit stays in the reflog (`HEAD@{1}`) |
 | `stage.discardLines` | Exactly the lines of the applied patch, from the worktree | Yes, by the op itself: `result.patchB64` applied forward (`git apply`) restores them |
-| `stash.push`, `stash.pushLines` | The saved changes leave the worktree (and the index, unless `keepIndex`); `includeUntracked` removes the untracked files | Yes: the stash holds them (`undo.stashes` `restore: 'pop'`) |
+| `stash.push`, `stash.pushLines` | The saved changes leave the worktree (and the index, unless `keepIndex`); `includeUntracked` removes the untracked files | Yes: the stash holds them; their undo writes back the recorded state (`undo.worktreeState`) or the lines (`undo.removedPatch`) |
 | `stash.apply` | Nothing it does not merge into; git refuses over local changes | The merge into the worktree, no: `undo` is empty |
-| `stash.pop` | As apply, then the stash entry | The entry yes (`restore: 'store'`: its commits stay reachable until gc); the merge no |
+| `stash.pop` | As apply, then the stash entry | Clean: yes, by its undo (`undo.worktreeState` and `restore: 'store'`; the entry back at `stash@{0}`); with conflicts: the entry is kept, the merge no |
 | `stash.applyFile` | Nothing it does not change; atomic | Yes: `undo.worktreePatch` applied with `-R` |
 | `stash.drop` | The stash entry | Until gc: `stash store --message=<old> <oid>` (`restore: 'store'`) |
 | `stash.rename` | The original entry (after the renamed copy is stored) | Yes: `restore: 'drop'` the copy, `restore: 'store'` the original |
-| `stash.branch` | As pop, after creating and switching to a branch | The entry and the ref/HEAD move yes (`undo.refs`, `undo.head`); the merge no |
+| `stash.branch` | As pop, after creating and switching to a branch | Clean: yes, by its undo (`undo.refs`, `undo.head`, `undo.worktreeState` with `mid`); with conflicts: the ref/HEAD move yes, the merge no |
 | `conflict.save` | The worktree content of that path (the conflict markers git wrote, or an earlier resolution) | The markers yes, by re-running the merge's checkout of the path (`checkout -m -- <path>`, while the stages are there); hand edits no |
 | `conflict.take` | Those paths' unmerged stages, any resolution in their worktree files, and — for a side that deleted it — the file | The stages no (they are the operation's; aborting it restores the pre-operation state); the deleted file's other version stays in its stage's blob until gc |
 | `rebase.interactive` with drops | The dropped commits leave the branch | Yes until gc: the branch's old tip (`undo.refs[].old`) still holds them |

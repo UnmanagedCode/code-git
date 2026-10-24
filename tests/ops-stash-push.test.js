@@ -25,7 +25,12 @@ test('push whole: creates a stash with the message and cleans tracked changes', 
   assert.equal(blob(w, `${r.oid}^2:b.txt`), 'b staged');
   assert.equal(blob(w, `${r.oid}^2:a.txt`), 'a');
   assert.deepEqual(w.status(), { 'new.txt': '??' });
-  assert.deepEqual(r.undo, { refs: [], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [{ oid: r.oid, old: null, new: { message: 'On main: my work' }, restore: 'pop' }], worktreePatch: null, remotes: [] });
+  const { worktreeState, ...rest } = r.undo;
+  assert.deepEqual(rest, { refs: [], remoteRefs: [], head: null, worktreeSnapshot: null, stashes: [{ oid: r.oid, old: null, new: { message: 'On main: my work' }, restore: 'pop' }], worktreePatch: null, remotes: [] });
+  // The checkout's states for the undo: over the saved files only (the untracked one stayed), HEAD unmoved.
+  assert.deepEqual([...worktreeState.paths].sort(), ['a.txt', 'b.txt']);
+  assert.deepEqual([worktreeState.before.head, worktreeState.after.head], [w.base, w.base]);
+  assert.equal(worktreeState.after.index, w.repo.git('rev-parse', 'HEAD^{tree}'));
   noViolations(w.cc);
 });
 

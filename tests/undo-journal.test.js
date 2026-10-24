@@ -54,6 +54,20 @@ test('a failed registered op and a conflicts outcome both clear the slots', asyn
   assert.deepEqual(await w.state(), EMPTY);
 });
 
+// Invariant (D1): a registered stash op whose outcome has no plan — a pop that stopped on conflicts — clears the slots.
+test('a stash.pop that stops on conflicts records nothing and clears the slots', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.write('f.txt', 'stashed\n');
+  w.repo.git('stash', 'push', '-q');
+  const oid = w.oid('refs/stash');
+  w.repo.commit({ 'f.txt': 'committed over it\n' }, 'conflicting');
+  await commit(w, 'one');
+  assert.ok((await w.state()).undo);
+  const r = await w.op('stash.pop', { oid });
+  assert.deepEqual(r.conflicts, ['f.txt']);
+  assert.deepEqual(await w.state(), EMPTY);
+});
+
 // Invariant: reads never clear the slots.
 test('reads keep the slots', async (t) => {
   const w = await undoWorld(t);

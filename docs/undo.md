@@ -57,6 +57,8 @@ What the ops route does around every op (`journalAround` in `src/git/undo/record
 | `refs/tags/*` (`refs` step) | `tag.create`, `tag.delete` | the preflight's `holds()` and the transaction's compare-and-swap → `UNDO_STALE` |
 | Tracking refs, for D3 | every plan with `created` | `assertNotPushed` reads them live: a fetch only makes it more accurate (`UNDO_PUSHED`) |
 | An upstream's name only | `branch.delete`, `branch.checkout` restoring `upstream` | a pruned upstream becomes a `warnings[]` entry; the branch is still restored exactly (a degrade, not a misapply) |
+| `refs/heads/*`, HEAD | `stash.branch` | nothing to catch |
+| The stash list, the index, the worktree | the stash plans | nothing to catch: a fetch never touches them |
 
 Pinned by `tests/undo-fetch-neutral.test.js`: the slots survive every fetch shape (moving, pruning, tag-creating, every remote, failed), and each row's refusal changes nothing.
 
@@ -68,16 +70,18 @@ UndoPlan { label    /* "Commit “msg”", "Checkout feature/a": rendered as tex
            confirm: {undo: Confirm | null, redo: Confirm | null},
            steps:   Step[] }                          /* redo runs them in order, undo in reverse */
 Confirm  {kind: 'deletesRefs', refs: refname[]} | {kind: 'discards', paths: path[]} | {kind: 'resetHard'}
+       | {kind: 'dropsStashes', messages: string[]}
 ```
 
 - Plain JSON, kept in the journal as built. The builders are `plans` in `src/git/undo/plans.js`; each op's definition names its own (`undo: plans.commit`).
 - `refHeadSteps` turns a ref-and-HEAD record into steps: HEAD staying on its branch (or detached) and moving → one `head` step in the op's mode, that branch left out of the `refs` step (the reset moves it); HEAD switching branches → a `refs` step first, then a `head` step in `switch` mode, so redo creates a branch before switching to it and undo switches away before deleting it.
-- **Confirm (D4)**, computed from the steps (`confirmsOf`); a direction has at most one, in this precedence:
+- **Confirm (D4)**, computed from the steps (`confirmsOf`); only where something is really lost (R2). A direction has at most one, in this precedence:
 
 | Confirm | Direction | When |
 |---|---|---|
 | `resetHard` | undo and redo | any `head` step in `hard` mode, even on a clean tree |
-| `discards` (`paths`) | redo | a `discard` or `patch` step |
+| `discards` (`paths`) | redo | a `discard` step; a `patch` step without `forward` in a plan with no `stash` step (stash.pushLines' lines are in its stash) |
+| `dropsStashes` (`messages`) | redo (`stash.drop`) | a `stash` step that drops entries and stores none in that direction, in a plan with no `worktree` or `patch` step |
 | `deletesRefs` (`refs`) | undo | a ref the op created (`old: null`); the branch of a first commit on an unborn branch |
 | `deletesRefs` (`refs`) | redo | a ref the op deleted (`new: null`), a deleted symbolic ref |
 
@@ -105,8 +109,27 @@ The registered ops (D2). Mode = the `head` step's mode; ‹old›/‹new› = `u
 | `tag.create`, `tag.delete` | `Create tag <name>` / `Delete tag <names>` | `refs` (the tag object: an annotated tag keeps its message) | — |
 | `stage.discardFiles` | `Discard <path>` / `Discard N files` | `discard` | — |
 | `stage.discardLines` | `Discard lines in <path>` | `patch` | — |
+| `stash.push` | `Stash “m”` / `Stash changes` | `stash` (created W), `worktree` | — |
+| `stash.pushLines` | `Stash lines in <path>` | `stash` (created W), `patch` (`removedPatch`, which the op applied `-R`) | — |
+| `stash.pop` (clean) | `Pop “<stash message>”` (`Pop stash` when the drop met `STASH_MOVED`) | `worktree`, `stash` (removed; absent when not dropped) | — |
+| `stash.drop` | `Drop stash “<stash message>”` | `stash` (removed) | — |
+| `stash.rename` | `Rename stash to “m”` | `stash` (the copy created, the original removed) | — |
+| `stash.applyFile` | `Apply <path> from stash` | `patch` with `forward: true` (`worktreePatch`) | — |
+| `stash.branch` (clean) | `Create branch <name> from stash` | `refs` (create) + `head` switch (`refHeadSteps`), `worktree` (with `mid`), `stash` (removed, when dropped) | — |
 
-An outcome that stops on conflicts, a squash merge, `upToDate`, a checkout of the branch HEAD is already on: no plan (the slots stay cleared).
+What undo and redo do for the stash plans (redo runs the steps in order, undo in reverse):
+
+| Op | Undo | Redo |
+|---|---|---|
+| `stash.push` | writes the pre-push state back, then drops W (verified): in effect a pop | stores W, then writes the post-push state |
+| `stash.pushLines` | applies the removal patch forward (the lines back), then drops W | stores W, then `apply -R` |
+| `stash.pop` | stores the entry back (at the top, R1), then writes the pre-pop state | writes the post-pop state, then drops the entry |
+| `stash.drop` | stores the entry back (at the top) | drops it |
+| `stash.rename` | stores the original, drops the copy | stores the copy, drops the original |
+| `stash.applyFile` | `apply -R` | `apply` |
+| `stash.branch` | stores the stash, writes `mid` (post-switch, pre-apply), switches back, deletes the branch | creates the branch, switches (producing `mid`), writes `after`, drops the stash |
+
+An outcome that stops on conflicts, a squash merge, `upToDate`, a checkout of the branch HEAD is already on: no plan (the slots stay cleared). Stash ops with no plan: a pop or branch that stopped on conflicts; an unverified or failed push; a push whose stash holds a path outside the saved files (a race: no `worktreeState`); `stash.branch` from an unborn HEAD. `stash.apply` is not registered (it clears the slots).
 
 ## Record keys
 
@@ -118,8 +141,17 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 | `indexTree` | `head.reset` mixed | the index's `write-tree` before the reset; `null` when unmerged entries make it fail |
 | `discard` | `stage.discardFiles` | `{snapshot, tracked, untracked}`: `snapshot` is a dangling commit of the paths' worktree content, built before anything is removed |
 | `refs[].upstream` | `branch.checkout` creating a tracking branch | the remote branch it tracks (redo sets it again) |
+| `worktreeState` | `stash.push`, `stash.pop` (clean), `stash.branch` (clean) | `{paths, before, mid?, after}`; each state `{head: oid \| null, index: tree, files: tree}` (`checkoutState`, below); `mid` only for `stash.branch` (after the switch, before the apply) |
+| `removedPatch` | `stash.pushLines` | base64 of the patch whose `apply -R` took the lines out of the worktree |
 
 `commit.create` returns `undo` (`refs`, `head`, `created`) for the first time.
+
+**The checkout state** (`checkoutState` in `src/git/stash/snapshot.js`): `head` = `rev-parse -q --verify HEAD`, `index` = `write-tree` of the real index (the gates already refused unmerged entries), `files` = `worktreeTree(paths)` (the discard snapshot's temporary-index tree, below; no commit). `paths`:
+
+| Op | `paths` | Taken |
+|---|---|---|
+| `stash.push` | the saved files `savedPaths` expands (`files`: changed ∪ untracked or staged, never a named directory); kept only when `stashPaths(stash)` ⊆ `paths` | `before` ahead of `git stash push`, `after` once it succeeded |
+| `stash.pop`, `stash.branch` | `stashPaths(stash)` (`assertCanApply` resolves them) | `before` ahead of the apply (branch: of the switch); branch's `mid` after the switch; `after` after a clean apply and the drop attempt |
 
 **The discard snapshot** (`discardSnapshot` in `src/git/stage/discard.js`): a temporary index at `rev-parse --git-path code-git-discard-index` (`GIT_INDEX_FILE`, not a protected name) → `read-tree --empty` → `update-index --add --remove -z --stdin` over the tracked and untracked paths (their **worktree** content, modes and symlinks; a deleted file is left out) → `write-tree` → `commit-tree --no-gpg-sign` (identity fallback: `identEnv`, `src/git/stash/ident.js`) → the temporary index emptied (`read-tree --empty`: git cannot delete the file). The real index is never touched. The discard itself is `discardGates` + `discardWrites` (`discardPaths` = both: the redo).
 
@@ -138,7 +170,18 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 | `refs` | each ref holds the expected value (absent; an oid, not symbolic; a symbolic ref to the target), else `UNDO_STALE` (`SYMBOLIC_REF` when a symbolic ref stands where a plain ref is expected). A branch it deletes or moves: checked out nowhere, this checkout as the earlier steps leave it included (`BRANCH_CHECKED_OUT`), and `assertCcAck` | one `update-ref --no-deref -m "code-git: <dir>" --stdin -z` transaction (`start`, `create` / `update` / `delete` lines with their old values, `prepare`, `commit`): a compare-and-swap miss writes nothing → `UNDO_STALE`. A symbolic ref: `symbolic-ref -m … --end-of-options <ref> <target>` / `symbolic-ref --delete --end-of-options <ref>`. A deleted branch: `config --remove-section branch.<name>` (as `branch -d`). A restored branch with `upstream`: `branch --set-upstream-to=<up> --end-of-options <name>` when it is a full refname — `refs/<valid name>`, any namespace (it comes from repo config: `%(upstream)`; a remote's fetch refspec may map its branches to `refs/other/*`) — and that ref still exists; otherwise (not a ref name, gone), or when `--set-upstream-to` refuses it (a tag, a remote no longer configured), a `warnings[]` entry: the ref is already restored, so the undo still succeeds |
 | `rename` | the current name holds the oid (`UNDO_STALE`), the other name is absent and not a dangling symbolic ref; branch.rename's guards: checked out in another checkout never, a checked-out `code-conductor/*` branch not even here (`BRANCH_CHECKED_OUT`); `assertCcAck` for both names | `branch -m --end-of-options <cur> <other>`: its config and every HEAD on it follow |
 | `discard` | undo: every tracked path's worktree equals its index (`diff --quiet -- <chunk>`), every untracked path is absent (`ls-files -c -o -z -- <chunk>` empty), else `UNDO_STALE`; `assertNotBlocked` over every path. Redo: the paths' worktree tree (built as the snapshot) equals the snapshot's tree (`UNDO_STALE`), then the discard's own gates | undo: `restore --source=<snapshot> --worktree --pathspec-from-file=- --pathspec-file-nul` (a tracked path the snapshot lacks is deleted again); never `apply --index`. Redo: `discardPaths` |
-| `patch` | `assertWorktree`, `assertNotBlocked([path])`; `apply --whitespace=nowarn --no-ignore-whitespace [-R] --check -` exits 0, else `UNDO_STALE` | undo: `apply` forward of the stored patch; redo: `apply -R`. The worktree only |
+| `patch` | `assertWorktree`, `assertNotBlocked([path])`; `apply --whitespace=nowarn --no-ignore-whitespace [-R] --check -` exits 0, else `UNDO_STALE` | lines the op took out with `apply -R` (no `forward`): undo `apply`, redo `apply -R`; `forward: true` (the op applied it forward: `stash.applyFile`): undo `apply -R`, redo `apply`. The worktree only |
+| `worktree` `{paths, before, mid?, after}` | the checkout as this direction starts — undo expects `after`, redo `before`: `assertWorktree`; HEAD's oid = `head` (`UNDO_STALE`); `diff-index --cached --quiet --end-of-options <index> --` (`UNDO_STALE`); `assertNotBlocked(paths)` (`PATH_BLOCKED`); `worktreeTree(paths)` = `files` (`UNDO_STALE`; a `GIT_FAILED` there — a path that is a directory now — too) | `writeCheckoutState` from `after.files` to `mid ?? before` (undo), from `(mid ?? before).files` to `after` (redo). HEAD is never moved: in `stash.branch` the `head` step's switch does, producing `mid` |
+| `stash` `{entries: [{oid, message, side: 'created' \| 'removed'}]}` | this direction stores the removed entries (undo) or the created ones (redo) and drops the rest (`stashSides`): each drop on the list (`listStashes`), each store not on it, and its commit present (`cat-file -e --end-of-options <oid>^{commit}`), else `UNDO_STALE` ("no longer on the stash list" / "already back" / "its commits were pruned") | stores first (`stash store --message=<message> <oid>`: at `stash@{0}`, R1; `stash store` takes no `--end-of-options`), then drops (`dropVerified`: `STASH_MOVED` propagates, nothing lost) |
+
+**Writing a checkout state** (`writeCheckoutState(git, fromFiles, to)`): on a temporary index at `rev-parse --git-path code-git-undo-index` (`GIT_INDEX_FILE`):
+
+1. `read-tree --end-of-options <fromFiles>`
+2. `update-index --refresh` — exit 1: a file no longer matches `fromFiles` → `UNDO_STALE` (never `-q`: it exits 0 regardless)
+3. `read-tree -m -u --end-of-options <fromFiles> <to.files>` — a two-way merge: changed paths written with modes and symlinks, removed paths deleted with their emptied directories, an untracked file in the way refused
+4. `read-tree --empty` (the temporary index emptied, always)
+
+Then the real index: `read-tree --end-of-options <to.index>` (no `-u`). Never `apply --index`.
 
 ## Running a plan
 
@@ -194,4 +237,7 @@ Wire shapes: [protocol → Undo ops](protocol.md#undo-ops-srcgitopsundojs).
 - **Undo of a commit that concluded a merge** leaves its changes staged without `MERGE_HEAD`: the merge is no longer in progress.
 - **Snapshots are dangling commits**: a `gc` that prunes them makes the undo of a hard reset or a discard fail (`GIT_FAILED`).
 - **A fetch is never undone**, and it keeps the slots: an undo after it relies on the preflights above.
-- **Stash and remote-config ops are not registered**: their `undo` records (`stashes`, `worktreePatch`, `remotes`) are not undoable from the UI yet, and the ops clear the slots.
+- **A stash put back lands at `stash@{0}`** (R1): git stores only at the top, so an undone drop of an older entry, a popped or renamed one comes back first in the list with a new reflog date; its oid, message and contents are exact.
+- **The checkout states' trees are unreachable objects**: a `gc` that prunes them (after `gc.pruneExpire`) makes a stash undo fail (`GIT_FAILED`); a pruned stash commit refuses `UNDO_STALE`.
+- **A stash undo replaces the whole index** with the recorded tree (its preflight checked it equals the expected one): stat data is rebuilt on the next refresh; intent-to-add and skip-worktree bits are not kept.
+- **Remote-config ops are not registered**: their `undo.remotes` record is not undoable from the UI yet, and they clear the slots.

@@ -386,10 +386,12 @@ UndoRecord      { refs: RefChange[], remoteRefs: RemoteRefChange[],
                   worktreeSnapshot: oid | null,
                   stashes: StashChange[] /* the stash ops' ([stash](stash.md#undo-record)); [] here */,
                   worktreePatch: base64 | null /* stash.applyFile's; null here */,
+                  worktreeState?: {paths, before, mid?, after} /* stash.push, pop, branch: each {head, index, files} */,
+                  removedPatch?: base64 /* stash.pushLines */,
                   created?: {tip: oid, not: oid[]} | null /* the commits the op made: tip minus what not reaches */,
                   indexTree?: oid | null /* head.reset mixed: the index's tree before; null when it had unmerged entries */,
                   discard?: {snapshot: oid, tracked: path[], untracked: path[]} /* stage.discardFiles */ }
-                  /* created / indexTree / discard: present only when set ([undo → Record keys](undo.md#record-keys)) */
+                  /* created / indexTree / discard / worktreeState / removedPatch: present only when set ([undo → Record keys](undo.md#record-keys)) */
 RefChange       { ref /* refs/heads/… | refs/tags/… */, old: oid|null /* null = created */, new: oid|null /* null = deleted */,
                   upstream?: refname|null /* a deleted branch's upstream; a tracking branch branch.checkout created */,
                   symref?: refname /* a deleted symbolic ref's target: restore with symbolic-ref; old and new are null */ }

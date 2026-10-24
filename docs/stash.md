@@ -95,21 +95,27 @@ Selected hunks or lines of one file. Same request as the line staging ops (`sele
 
 ## Undo record
 
-Every op returns `result.undo`: the ref ops' record (`undoRecord`, `src/git/refs/undo.js`; [refs → Undo record](refs.md#undo-record)) — `refs`, `remoteRefs`, `head`, `worktreeSnapshot` — whose two stash keys the stash ops fill (empty for every ref op). The stash ops are not registered for undo yet ([undo](undo.md)): the tables below are what an undo would need, and each stash write clears the checkout's undo and redo slots.
+Every op returns `result.undo`: the ref ops' record (`undoRecord`, `src/git/refs/undo.js`; [refs → Undo record](refs.md#undo-record)) — `refs`, `remoteRefs`, `head`, `worktreeSnapshot` — whose stash keys the stash ops fill (empty for every ref op). Every stash op but `stash.apply` is registered for undo: the plans, steps and confirmations are in [undo → Per-op plans](undo.md#per-op-plans); `stash.apply` clears the checkout's undo and redo slots.
 
-| Key | Shape | Undo |
+| Key | Shape | Set by |
 |---|---|---|
-| `stashes` | `[{oid, old: {message} \| null, new: {message} \| null, restore}]` | `restore: 'store'` → `stash store --message=<old.message> <oid>` (a dropped entry back, at the top); `'pop'` → apply that oid, then drop it (a save undone); `'drop'` → drop that oid (a rename's copy) |
-| `worktreePatch` | base64 \| null | `git apply -R` of those bytes |
+| `stashes` | `[{oid, old: {message} \| null, new: {message} \| null, restore}]` — `old: null` an entry the op created, `new: null` one it removed; `restore` names what putting it back takes (`'store'`, `'pop'`, `'drop'`) | push, pushLines, drop, rename, pop and branch when dropped |
+| `worktreePatch` | base64 \| null | applyFile: the patch it applied |
+| `removedPatch` | base64 | pushLines: the patch whose `apply -R` took the lines out |
+| `worktreeState` | `{paths, before, mid?, after}`, each `{head, index, files}` | push, pop (clean), branch (clean): [undo → Record keys](undo.md#record-keys) |
 
 | Op | `undo` |
 |---|---|
-| push, pushLines | `stashes: [{oid: <new>, old: null, new, restore: 'pop'}]`; an unverified push, and a failed push that stored a stash (the refusal names it): none |
+| push | `stashes: [{oid: <new>, old: null, new, restore: 'pop'}]`, `worktreeState`; an unverified push, and a failed push that stored a stash (the refusal names it): neither |
+| pushLines | `stashes` as push, `removedPatch` |
 | drop; pop when dropped | `stashes: [{oid, old, new: null, restore: 'store'}]` |
+| pop (clean) | plus `worktreeState` |
 | rename | `[{oid: <new>, restore: 'drop'}, {oid: <original>, restore: 'store'}]` |
 | applyFile | `worktreePatch` |
-| branch | `refs: [{ref, old: null, new: <base>}]`, `head: {old: {branch, oid}, new: {branch: ref, oid: base}}`, plus the dropped entry when dropped |
-| apply; the worktree effect of pop and branch | empty: a merge into the worktree is not undoable |
+| branch | `refs: [{ref, old: null, new: <base>}]`, `head: {old: {branch, oid}, new: {branch: ref, oid: base}}`, plus the dropped entry when dropped and, when clean, `worktreeState` with `mid` |
+| apply; a pop or branch that stopped on conflicts | empty (branch: `refs` and `head` only) |
+
+**Undo in short** (R1, R2): a stash put back lands at `stash@{0}` with a new reflog date (oid, message and contents exact); only the redo of a drop asks first (it drops the listed stash), and the undo of a branch (it deletes the branch).
 
 ## UI (`frontend/src/features/stash/`)
 
