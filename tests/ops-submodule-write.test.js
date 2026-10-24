@@ -221,6 +221,52 @@ test('setUrl: the current url\'s mask echoed back changes nothing; any other mas
   }
 });
 
+// Invariant: only a url carrying the *** mask can be setUrl's no-op — a password-less url equal to the stored one is
+// written to .gitmodules and, the submodule being initialized, synced, as any other url.
+test('setUrl: the stored password-less url sent back unchanged is still written and synced', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const plain = 'https://example.invalid/libA.git';
+  for (const url of [w.urls.libA, plain]) {
+    // The stored value: the fixture's local path first, then a plain https url.
+    if (url === plain) w.repo.git('config', '-f', '.gitmodules', 'submodule.libA.url', plain);
+    const before = w.execCalls().length;
+    assert.deepEqual(await w.ok('submodule.setUrl', { path: 'libA', url }), { path: 'libA', url });
+    const after = w.execArgv().slice(before).map(afterBase);
+    assert.ok(after.some((a) => a.join('\0') === ['config', '--file', '.gitmodules', 'submodule.libA.url', url].join('\0')), JSON.stringify(after));
+    assert.ok(after.some((a) => a.join('\0') === ['submodule', 'sync', '--', 'libA'].join('\0')), JSON.stringify(after));
+    assert.equal(local(w, 'submodule.libA.url'), url);
+  }
+});
+
+// Invariant: a masked url sent to setUrl for a declared submodule whose .gitmodules section has no url is refused
+// BAD_URL (nothing written), never an internal error.
+test('setUrl: a masked url for a submodule declared without a url is BAD_URL', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  w.repo.git('config', '-f', '.gitmodules', 'submodule.nourl.path', 'nourl');
+  w.repo.git('update-index', '--add', '--cacheinfo', `160000,${w.repo.git('rev-parse', 'HEAD')},nourl`);
+  const listed = byPathOf(await w.ok('submodule.list')).nourl;
+  assert.equal(listed.url, null);
+  assert.equal(listed.blocked, null);
+  const gitmodules = fs.readFileSync(w.file('.gitmodules'), 'utf8');
+  const before = w.execCalls().length;
+  await refusal(w, 'submodule.setUrl', { path: 'nourl', url: maskedUrl }, 'BAD_URL');
+  assert.equal(w.execArgv().slice(before).some((a) => a.includes(maskedUrl)), false);
+  assert.equal(fs.readFileSync(w.file('.gitmodules'), 'utf8'), gitmodules);
+});
+
+// Invariant: submodule.add refuses a url whose password is the *** mask (BAD_URL) before any exec — nothing cloned,
+// .gitmodules untouched — and the refusal does not echo the url.
+test('add refuses a masked url BAD_URL before any exec', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const gitmodules = fs.readFileSync(w.file('.gitmodules'), 'utf8');
+  const before = w.execCalls().length;
+  const b = await refusal(w, 'submodule.add', { url: maskedUrl, path: 'cred' }, 'BAD_URL');
+  assert.equal(w.execCalls().length, before);
+  assert.ok(!JSON.stringify(b).includes(maskedUrl), JSON.stringify(b));
+  assert.equal(fs.existsSync(w.file('cred')), false);
+  assert.equal(fs.readFileSync(w.file('.gitmodules'), 'utf8'), gitmodules);
+});
+
 test('a symlinked .gitmodules is refused before add, setUrl or remove writes through it', async (t) => {
   const w = await subWorld(t, { nested: false });
   const outside = path.join(w.root, 'outside-gitmodules');
