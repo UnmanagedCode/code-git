@@ -1,6 +1,8 @@
 import type { ApiError } from '@/lib/api';
 import { confirm, type ConfirmOptions } from '@/lib/confirm';
 import { runRefOp } from '@/features/branches/run';
+import { refreshTracking } from '@/state/branchTracking';
+import { refreshRemotes } from '@/state/remotes';
 import { refreshUndo, undoOf } from '@/state/undo';
 import { activeTab, tabsStore, type Tab } from '@/state/tabs';
 import { workdirOf } from '@/state/workdir';
@@ -12,7 +14,8 @@ import { REDO_KEY, UNDO_KEY } from './keys';
 const VERB: Record<UndoDir, string> = { undo: 'Undo', redo: 'Redo' };
 const PAST: Record<UndoDir, string> = { undo: 'Undid', redo: 'Redid' };
 const OTHER: Record<UndoDir, UndoDir> = { undo: 'redo', redo: 'undo' };
-const short = (ref: string) => ref.replace(/^refs\/(?:heads|tags)\//, '');
+const short = (ref: string) => ref.replace(/^refs\/(?:heads|tags|remotes)\//, '');
+const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /** Why undo and redo are off for `tab` right now, or null: an operation or conflicts in progress. */
 export function blockedReason(tab: Tab): string | null {
@@ -28,6 +31,11 @@ export function confirmOptions(dir: UndoDir, slot: UndoSlot, c: UndoConfirm): Co
   const confirmLabel = VERB[dir];
   if (c.kind === 'deletesRefs') return { title, body: `This deletes ${c.refs.length === 1 ? 'this ref' : 'these refs'}:`, items: c.refs.map(short), count: c.refs.length, confirmLabel };
   if (c.kind === 'discards') return { title, body: 'This discards the changes in these files again:', items: c.paths, count: c.paths.length, confirmLabel };
+  if (c.kind === 'dropsStashes') return { title, body: `This drops ${plural(c.messages.length, 'this stash', 'these stashes')}:`, items: c.messages, count: c.messages.length, confirmLabel };
+  if (c.kind === 'deletesRemote') {
+    if (!c.refs.length) return { title, body: `This removes the remote ${c.name}.`, confirmLabel };
+    return { title, body: `This removes the remote ${c.name} and deletes ${plural(c.refs.length, 'its tracking ref', 'its tracking refs')}:`, items: c.refs.map(short), count: c.refs.length, confirmLabel };
+  }
   return { title, body: 'This runs a hard reset: the index and the tracked files are replaced. Untracked files are kept.', confirmLabel };
 }
 
@@ -40,7 +48,8 @@ function ccBranches(e: ApiError): string[] | null {
 
 /**
  * Runs `tab`'s undo (redo) slot: its confirmation first when it has one (Cancel sends nothing), then the op through
- * runRefOp (toast, graph and Changes refresh). Done: "Undid …" with the counter-action. A code-conductor/* refusal
+ * runRefOp (toast, graph and Changes refresh; a `remote.*` entry also refetches the remotes and the tracking, which a
+ * config-only change leaves the graph unaware of). Done: "Undid …" with the counter-action. A code-conductor/* refusal
  * offers Review…, which asks and retries with the acknowledgement.
  */
 export async function undoFlow(tab: Tab, dir: UndoDir = 'undo'): Promise<void> {
@@ -70,6 +79,10 @@ export async function undoFlow(tab: Tab, dir: UndoDir = 'undo'): Promise<void> {
         };
       },
     }, () => runUndo(tab, dir, slot.id, ccOwned));
+    if (slot.op.startsWith('remote.')) {
+      void refreshRemotes(tab);
+      void refreshTracking(tab);
+    }
     await refreshUndo(tab);
   };
   await go();

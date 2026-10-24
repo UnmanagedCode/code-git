@@ -14,7 +14,7 @@ import { activityStore } from '@/state/useActivity';
 import { opRun } from '@/test/fixtures';
 import { linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
 import type { UndoSlot, UndoState } from './api';
-import { UNDO_SHELL_KEYS } from './flows';
+import { confirmOptions, UNDO_SHELL_KEYS } from './flows';
 import { UndoButtons } from './UndoButtons';
 
 const TAB = { project: 'app', worktree: null };
@@ -27,14 +27,15 @@ function Harness() {
   return <><input aria-label="Field" /><div role="group" aria-label="Header"><UndoButtons tab={TAB} /></div><ConfirmHost /><Toasts /></>;
 }
 
-/** The graph backend, undo.state answering `states` in turn (the last repeats), and undo.undo / undo.redo answering `run`. */
-function world(states: UndoState[], run: (dir: 'undo' | 'redo') => Response | unknown = (dir) => ({ ok: true, result: { entry: states[0][dir], warnings: [] } })) {
+/** The graph backend, undo.state answering `states` in turn (the last repeats), undo.undo / undo.redo answering `run`, and `extra` routes. */
+function world(states: UndoState[], run: (dir: 'undo' | 'redo') => Response | unknown = (dir) => ({ ok: true, result: { entry: states[0][dir], warnings: [] } }), extra: Parameters<typeof stubGraph>[1] = {}) {
   let n = 0;
   const fetch = stubGraph(linearWorld(2), {
     'POST api/ops/undo.state': () => ({ ok: true, result: states[Math.min(n++, states.length - 1)] }),
     'POST api/ops/undo.undo': () => run('undo'),
     'POST api/ops/undo.redo': () => run('redo'),
     'POST api/ops/commit.state': { ok: true, result: { merging: false, operation: null, conflicts: [] } },
+    ...extra,
   });
   act(() => dispatchTabs({ type: 'open', tab: TAB }));
   render(<Harness />);
@@ -148,4 +149,66 @@ test('disabled during an operation in progress', async () => {
   fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
   await act(async () => {});
   expect(w.posts('undo.undo')).toEqual([]);
+});
+
+// Invariant: the stash-drop confirmation lists the stash messages it drops; the remote-removal one names the remote and
+// lists its tracking refs by short name.
+test('confirmOptions: dropsStashes lists the messages, deletesRemote the remote and its tracking refs', () => {
+  const drop = slot({ op: 'stash.drop', label: 'Drop stash “On main: wip”' });
+  expect(confirmOptions('redo', drop, { kind: 'dropsStashes', messages: ['On main: wip'] })).toMatchObject({
+    title: 'Redo Drop stash “On main: wip”?', items: ['On main: wip'], count: 1, confirmLabel: 'Redo',
+  });
+  const remove = slot({ op: 'remote.remove', label: 'Remove remote up' });
+  const c = confirmOptions('redo', remove, { kind: 'deletesRemote', name: 'up', refs: ['refs/remotes/up/HEAD', 'refs/remotes/up/main'] });
+  expect(c).toMatchObject({ title: 'Redo Remove remote up?', items: ['up/HEAD', 'up/main'], count: 2, confirmLabel: 'Redo' });
+  expect(c.body).toContain('up');
+  expect(confirmOptions('redo', remove, { kind: 'deletesRemote', name: 'up', refs: [] }).items ?? []).toEqual([]);
+});
+
+// Invariant: a stash message is untrusted text: in the slot's title and its confirmation it renders as text, never markup.
+test('a stash message with markup renders as text', async () => {
+  const hostile = '<img src=x onerror=alert(1)>';
+  world([{ undo: null, redo: slot({ op: 'stash.drop', label: `Drop stash “${hostile}”`, confirm: { kind: 'dropsStashes', messages: [hostile] } }) }]);
+  await waitFor(() => expect(button('Redo').hasAttribute('disabled')).toBe(false));
+  await userEvent.click(button('Redo'));
+  const dialog = await screen.findByRole('dialog');
+  expect(within(dialog).getByText(hostile)).toBeTruthy();
+  expect(document.querySelector('img')).toBe(null);
+  act(() => settleConfirm(false));
+});
+
+// Invariant (R2): a stash drop's redo asks first and Cancel sends nothing; a stash save's undo (no confirm) sends at once.
+test('a drop-redo slot confirms (cancel sends nothing); a push-undo slot sends at once', async () => {
+  const w = world([{ undo: slot({ id: 5, op: 'stash.push', label: 'Stash changes' }), redo: slot({ id: 6, op: 'stash.drop', label: 'Drop stash “m”', confirm: { kind: 'dropsStashes', messages: ['m'] } }) }]);
+  await waitFor(() => expect(button('Redo').hasAttribute('disabled')).toBe(false));
+  await userEvent.click(button('Redo'));
+  await waitFor(() => expect(confirmStore.get()?.opts.items).toEqual(['m']));
+  act(() => settleConfirm(false));
+  await act(async () => {});
+  expect(w.posts('undo.redo')).toEqual([]);
+  await userEvent.click(button('Undo'));
+  await waitFor(() => expect(w.posts('undo.undo')).toEqual([{ id: 5 }]));
+  expect(confirmStore.get()).toBe(null);
+});
+
+// Invariant: undoing or redoing a remote.* entry refetches the remotes list and the branches' tracking (a config-only
+// change moves no ref the graph would notice); another entry does not.
+test('after a remote.* undo, remote.list and branch.tracking are refetched; after a commit undo, not', async () => {
+  const states: UndoState[] = [{ undo: slot({ id: 1, op: 'commit.create' }), redo: null }, { undo: slot({ id: 2, op: 'remote.edit', label: 'Edit remote origin' }), redo: null }];
+  const w = world(states, () => ({ ok: true, result: { entry: slot(), warnings: [] } }), {
+    'POST api/ops/remote.list': { ok: true, result: { remotes: [] } },
+    'POST api/ops/branch.tracking': { ok: true, result: { branches: {} } },
+  });
+  const listed = () => w.fetch.count('POST api/ops/remote.list');
+  const tracked = () => w.fetch.count('POST api/ops/branch.tracking');
+  await waitFor(() => expect(button('Undo').hasAttribute('disabled')).toBe(false));
+  const [l0, t0] = [listed(), tracked()];
+  await userEvent.click(button('Undo'));
+  await waitFor(() => expect(w.posts('undo.undo')).toEqual([{ id: 1 }]));
+  await waitFor(() => expect(button('Undo').getAttribute('title')).toMatch(/Edit remote origin/));
+  expect([listed(), tracked()]).toEqual([l0, t0]);
+  await userEvent.click(button('Undo'));
+  await waitFor(() => expect(w.posts('undo.undo')).toEqual([{ id: 1 }, { id: 2 }]));
+  await waitFor(() => expect(listed()).toBe(l0 + 1));
+  await waitFor(() => expect(tracked()).toBe(t0 + 1));
 });

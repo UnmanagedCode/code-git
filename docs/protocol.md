@@ -465,12 +465,16 @@ Behaviour, plans and the slot rules: [undo](undo.md). The journal is the backend
 ```
 UndoSlot { id: number, op: string /* the op name */, label: string, confirm: Confirm | null /* for this slot's direction */ }
 Confirm  {kind: 'deletesRefs', refs: refname[]} | {kind: 'discards', paths: path[]} | {kind: 'resetHard'}
+       | {kind: 'dropsStashes', messages: string[] /* the stash messages it drops: untrusted text */}
+       | {kind: 'deletesRemote', name: string, refs: refname[] /* the tracking refs it deletes */}
 ```
+
+A label, a confirm and a refusal's message carry remote names, ref names, paths and stash messages, never a url (a url may hold a password).
 
 | Op | kind | `params` | Runs | `result` | Refusals |
 |---|---|---|---|---|---|
 | `undo.state` | read (cancellable) | none | nothing | `{undo: UndoSlot \| null, redo: UndoSlot \| null}` | — |
-| `undo.undo` | write, **not** cancellable | `{id /* the slot's UndoSlot.id */, ccOwned?}` | `assertNoOperation`; the pushed rule; every step's preflight, then every apply ([undo → Steps](undo.md#steps)) | `{entry: UndoSlot /* confirm for undo */, warnings: string[] /* an upstream not restored */}` | `NOTHING_TO_UNDO`; `UNDO_STALE`; `UNDO_PUSHED` (`oid`, `refs`); `OPERATION_IN_PROGRESS`; `CONFLICTED`; `BARE_REPO`; `DIRTY_WORKTREE`; `CHECKOUT_CONFLICT`; `BRANCH_CHECKED_OUT`; `CC_OWNED_BRANCH` (`head: true` for this HEAD); `SYMBOLIC_REF`; `PATH_BLOCKED`; a failure after a step wrote carries `appliedSteps` |
+| `undo.undo` | write, **not** cancellable | `{id /* the slot's UndoSlot.id */, ccOwned?}` | `assertNoOperation`; the pushed rule; every step's preflight, then every apply ([undo → Steps](undo.md#steps)) | `{entry: UndoSlot /* confirm for undo */, warnings: string[] /* an upstream not restored */}` | `NOTHING_TO_UNDO`; `UNDO_STALE`; `UNDO_PUSHED` (`oid`, `refs`); `OPERATION_IN_PROGRESS`; `CONFLICTED`; `BARE_REPO`; `DIRTY_WORKTREE`; `CHECKOUT_CONFLICT`; `BRANCH_CHECKED_OUT`; `CC_OWNED_BRANCH` (`head: true` for this HEAD); `SYMBOLIC_REF`; `PATH_BLOCKED`; `REMOTE_EXISTS` / `REMOTE_CONFIG_UNSUPPORTED` (a remote rename's gates); `STASH_MOVED` (a stash drop raced: nothing lost); a failure after a step wrote carries `appliedSteps` |
 | `undo.redo` | write, **not** cancellable | as `undo.undo` | as `undo.undo`, no pushed rule | as `undo.undo` | as `undo.undo` with `NOTHING_TO_REDO`, no `UNDO_PUSHED` |
 
 ### History ops (`src/git/ops/history.js`; all reads, cancellable)
