@@ -22,7 +22,8 @@ import { assertOid } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
 
 // Remote ops (docs/remotes.md, docs/protocol.md → Remote ops): the remotes' config, fetch, pull and branch push. Every
-// name and url is checked before any exec; `--end-of-options` precedes every user-named argument.
+// name and url is checked before any exec (remote.edit's masked url: before any write); `--end-of-options` precedes
+// every user-named argument.
 
 const REMOTES = 'refs/remotes/';
 const HEADS = 'refs/heads/';
