@@ -90,6 +90,35 @@ test("file history: the change view's toolbar shows the change's +added −delet
   expect(within(screen.getByRole('toolbar', { name: 'Change view' })).queryByLabelText(/added/)).toBeNull();
 });
 
+// Invariant: the history viewer carries the shared Diff scope, Diff layout and Ignore whitespace toggles: Hunk+Split
+// renders split rows under a header per hunk, Full asks diff.file for the whole file, Ignore whitespace asks with "all".
+test('file history: the viewer shows the scope and layout groups and Ignore whitespace; each drives its view or request', async () => {
+  open();
+  const f = stubFetch({
+    'POST api/ops/history.file': { ok: true, result: { items: [item(5)], nextCursor: null, truncated: false } },
+    'POST api/ops/diff.file': { ok: true, result: { ...fileDiff, hunks: [hunk(1, 1, [' a', '-b', '+B', ' c']), hunk(9, 9, ['-x', '+y'])] } },
+  });
+  render(<HistoryPanel tab={TAB} />);
+  act(() => openFileHistory(TAB, { path: 'c.txt', rev: REV }));
+  const toolbar = await screen.findByRole('toolbar', { name: 'Change view' });
+  const viewer = () => document.querySelector('[data-history-viewer]')!;
+  const pick = (g: string, name: string) => userEvent.click(within(within(toolbar).getByRole('group', { name: g, exact: true })).getByRole('button', { name, exact: true }));
+  await waitFor(() => expect(viewer().querySelector('[data-view=unified]')).toBeTruthy());
+  expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 3, whitespace: 'none' });
+  await pick('Diff layout', 'Split');
+  await waitFor(() => expect(viewer().querySelector('[data-view=split]')).toBeTruthy());
+  expect(viewer().querySelectorAll('[data-hunk-header]')).toHaveLength(2);
+  expect(viewer().querySelectorAll('[data-side=old]').length).toBe(viewer().querySelectorAll('[data-side=new]').length);
+  await pick('Diff scope', 'Full');
+  await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 'full', whitespace: 'none' }));
+  await waitFor(() => expect(viewer().querySelector('[data-view=split]')).toBeTruthy());
+  expect(viewer().querySelectorAll('[data-hunk-header]')).toHaveLength(0);
+  const ws = within(toolbar).getByRole('button', { name: 'Ignore whitespace', exact: true });
+  await userEvent.click(ws);
+  expect(ws.getAttribute('aria-pressed')).toBe('true');
+  await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 'full', whitespace: 'all' }));
+});
+
 const blame: BlamePage = {
   total: 4,
   lines: [
