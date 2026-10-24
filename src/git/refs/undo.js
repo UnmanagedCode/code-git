@@ -29,3 +29,16 @@ export function undoRecord({
     ...Object.fromEntries(Object.entries(optional).filter(([, v]) => v !== undefined)),
   };
 }
+
+/** A remote snapshot side with its `extra` values withheld (null): a proxy, a header or a command may hold a secret. */
+const withheld = (side) => (side?.extra ? { ...side, extra: side.extra.map(([v]) => [v, null]) } : side);
+
+/**
+ * An op's result as the ops route answers it: `undo.remotes[].old` / `.new` `extra` values withheld. A copy: the journal
+ * built its plan from the raw result first (src/git/undo/record.js), so an undo still writes the values back exactly.
+ */
+export function forTheWire(result) {
+  const remotes = result?.undo?.remotes;
+  if (!remotes?.length) return result;
+  return { ...result, undo: { ...result.undo, remotes: remotes.map((r) => ({ ...r, old: withheld(r.old), new: withheld(r.new) })) } };
+}

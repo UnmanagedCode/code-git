@@ -288,38 +288,54 @@ test('confirm shapes of the remote plans', async (t) => {
 });
 
 // Invariant: a credentialed url never leaves the journal: undo.state, the undo/redo results, a refusal's body and the
-// activity log carry remote names only (git's argv masked as user:***@), through add, edit and remove both ways.
-test('credentials: a password in a url never reaches undo.state, undo/redo results, refusals or /api/activity', async (t) => {
+// activity log carry remote names only (git's argv masked as user:***@), through add, edit and remove both ways. A
+// remote's other config values (`extra`: a proxy with a password) reach no response at all — not even the remote ops' own
+// results, which still carry the urls — while the journal keeps them raw: undoing a remove restores the proxy exactly.
+test('credentials: a password in a url or a proxy never reaches undo.state, undo/redo results, refusals, op results or /api/activity', async (t) => {
   const w = await refsWorld(t);
   const app = await startApp(t);
   const target = { project: 'repo' };
   const PW = 'S3cretPW';
+  const PROXY_PW = 'Pr0xyPW';
+  const proxy = `http://proxyuser:${PROXY_PW}@proxy.invalid:8080`;
   const url = (n) => `https://user:${PW}@example.invalid/${n}.git`;
   const seen = [];
+  const results = [];
   const call = async (op, params, status = 200) => {
     const r = await app.call('POST', `/api/ops/${op}`, { target, params });
     assert.equal(r.status, status, `${op}: ${JSON.stringify(r.body)}`);
     return r.body;
   };
   const watched = async (op, params, status) => { const body = await call(op, params, status); seen.push(body); return body; };
+  const remoteOp = async (op, params) => { const body = await call(op, params); results.push(body); return body; };
   const state = () => watched('undo.state');
   const undo = async () => watched('undo.undo', { id: (await state()).result.undo.id });
   const redo = async () => watched('undo.redo', { id: (await state()).result.redo.id });
-  await call('remote.add', { name: 'cred', url: url('one') });
+  const proxyOf = (name) => w.repo.git('config', '--get', `remote.${name}.proxy`);
+  await remoteOp('remote.add', { name: 'cred', url: url('one') });
   await undo();
   await redo();
-  await call('remote.edit', { name: 'cred', url: url('two') });
+  w.repo.git('config', 'remote.cred.proxy', proxy);
+  const edited = await remoteOp('remote.edit', { name: 'cred', url: url('two') });
+  assert.deepEqual(edited.result.undo.remotes[0].old.extra, [['proxy', null]], 'the proxy is named, its value withheld');
   await undo();
   await redo();
-  await call('remote.remove', { name: 'cred' });
+  await remoteOp('remote.rename', { name: 'cred', newName: 'cred2' });
   await undo();
   await redo();
-  await call('remote.add', { name: 'stale', url: url('three') });
+  assert.equal(proxyOf('cred2'), proxy);
+  await remoteOp('remote.remove', { name: 'cred2' });
+  await undo();
+  assert.equal(proxyOf('cred2'), proxy, 'undoing the remove wrote the raw proxy back');
+  await redo();
+  await remoteOp('remote.add', { name: 'stale', url: url('three') });
   w.repo.git('config', 'remote.stale.url', url('changed'));
   const refusal = await watched('undo.undo', { id: (await state()).result.undo.id }, 409);
   assert.equal(refusal.code, 'UNDO_STALE');
-  for (const body of seen) assert.ok(!JSON.stringify(body).includes(PW), JSON.stringify(body));
+  for (const body of seen) for (const secret of [PW, PROXY_PW]) assert.ok(!JSON.stringify(body).includes(secret), JSON.stringify(body));
+  for (const body of results) assert.ok(!JSON.stringify(body).includes(PROXY_PW), JSON.stringify(body));
   const activity = JSON.stringify((await app.call('GET', '/api/activity')).body);
-  assert.ok(!activity.includes(PW), 'the activity log never holds the password');
+  for (const secret of [PW, PROXY_PW]) assert.ok(!activity.includes(secret), 'the activity log never holds a password');
   assert.ok(activity.includes('https://user:***@example.invalid/one.git'), 'the undo/redo argv shows the url masked');
+  assert.ok(activity.includes('http://proxyuser:***@proxy.invalid:8080'), 'the restored proxy\'s argv shows it masked');
 });

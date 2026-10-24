@@ -156,10 +156,20 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 | `refs[].upstream` | `branch.checkout` creating a tracking branch | the remote branch it tracks (redo sets it again) |
 | `worktreeState` | `stash.push`, `stash.pop` (clean), `stash.branch` (clean) | `{paths, before, mid?, after}`; each state `{head: oid \| null, index: tree, files: tree}` (`checkoutState`, below); `mid` only for `stash.branch` (after the switch, before the apply) |
 | `removedPatch` | `stash.pushLines` | base64 of the patch whose `apply -R` took the lines out of the worktree |
-| `remotes[].old` / `.new` `.extra` | every remote snapshot (`remoteSnapshot`) | `[[var, value]]`: every other `remote.<n>.<var>` (`prune`, `tagopt`, `proxy`, …), raw, in config order |
+| `remotes[].old` / `.new` `.extra` | every remote snapshot (`remoteSnapshot`) | `[[var, value]]`: every other `remote.<n>.<var>` (`prune`, `tagopt`, `proxy`, …), raw, in config order — in the journal's plan only; on the wire each value is `null` (below) |
 | `remotes[].old.pushRemotes`, `.pushDefault` | `remote.remove` | the branches whose `branch.<b>.pushRemote`, and whether `remote.pushDefault`, named it **and that git cleared**: read before and again after `remote remove` (as `deletedRefs`) |
 
 `commit.create` returns `undo` (`refs`, `head`, `created`) for the first time.
+
+**What crosses the wire.** The journal builds its plan from the op's raw result (`journalAround`); the ops route then answers `forTheWire(result)` (`src/git/refs/undo.js`), a copy:
+
+| Value | In the plan (memory) | In the op's HTTP answer |
+|---|---|---|
+| `remotes[].old` / `.new` `.extra` values (a proxy, a header, a command: may hold a secret) | raw | `null`; the variable names are kept |
+| `remotes[].old` / `.new` `.urls`, `.pushUrls` | raw | raw (card 2026-0017) |
+| `undo.state`, `undo.undo` / `undo.redo` results, their refusals | — | `{id, op, label, confirm}` and warnings: remote names, ref names, paths, stash messages, never a config value |
+
+git's argv carries each value as its own argument, so the activity log masks a url's password there (`redactArgv`).
 
 **The checkout state** (`checkoutState` in `src/git/stash/snapshot.js`): `head` = `rev-parse -q --verify HEAD`, `index` = `write-tree` of the real index (the gates already refused unmerged entries), `files` = `worktreeTree(paths)` (the discard snapshot's temporary-index tree, below; no commit). `paths`:
 
