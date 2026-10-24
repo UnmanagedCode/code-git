@@ -293,6 +293,22 @@ test('Context lines is disabled in Full scope; scope and layout are disabled in 
   expect(ignoreWs().getAttribute('aria-pressed')).toBe('true');
 });
 
+// Invariant: File view renders the file layout ([data-view=file]), never an inline or split diff, whatever the layout
+// and scope chosen for Diff view.
+test.each([
+  ['hunk', 'Hunk', 'inline', 'Inline'], ['hunk', 'Hunk', 'split', 'Split'], ['full', 'Full', 'inline', 'Inline'], ['full', 'Full', 'split', 'Split'],
+] as const)('File view renders the file layout, not a diff, from %s scope with %s layout', async (scope, scopeLabel, layout, layoutLabel) => {
+  await openA();
+  await pick('Diff scope', scopeLabel);
+  await pick('Diff layout', layoutLabel);
+  await userEvent.click(within(group('View')).getByRole('button', { name: 'File' }));
+  await waitFor(() => expect(panel().querySelector('[data-view=file]')).toBeTruthy());
+  expect(panel().querySelector('[data-view=unified]')).toBeNull();
+  expect(panel().querySelector('[data-view=split]')).toBeNull();
+  expect(panel().querySelectorAll('[data-hunk-header]')).toHaveLength(0);
+  expect(prefsStore.get()).toMatchObject({ view: 'file', scope, layout });
+});
+
 // Invariant: a file over the output cap in Full scope offers Switch to Hunk, which sets Hunk scope and Diff view and
 // keeps the layout.
 test('over the cap, Switch to Hunk sets scope hunk and view diff and keeps the layout', async () => {

@@ -4,6 +4,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 import { actionsFor, labelOf } from '@/shell/menus';
+import { setPrefs } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { dispatchTabs, tabKey } from '@/state/tabs';
 import { EMPTY_GRAPH, graphStore } from '@/state/graph';
@@ -117,6 +118,26 @@ test('file history: the viewer shows the scope and layout groups and Ignore whit
   await userEvent.click(ws);
   expect(ws.getAttribute('aria-pressed')).toBe('true');
   await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 'full', whitespace: 'all' }));
+});
+
+// Invariant: the history viewer's File view renders the file layout ([data-view=file]), never an inline or split diff,
+// whichever layout is chosen.
+test.each(['inline', 'split'] as const)('file history: File view renders the file layout, not a diff, with %s chosen', async (layout) => {
+  open();
+  stubFetch({
+    'POST api/ops/history.file': { ok: true, result: { items: [item(5)], nextCursor: null, truncated: false } },
+    'POST api/ops/diff.file': { ok: true, result: { ...fileDiff, hunks: [hunk(1, 1, [' a', '-b', '+B', ' c'])] } },
+  });
+  act(() => setPrefs({ layout }));
+  render(<HistoryPanel tab={TAB} />);
+  act(() => openFileHistory(TAB, { path: 'c.txt', rev: REV }));
+  const toolbar = await screen.findByRole('toolbar', { name: 'Change view' });
+  const viewer = () => document.querySelector('[data-history-viewer]')!;
+  await waitFor(() => expect(viewer().querySelector(`[data-view=${layout === 'split' ? 'split' : 'unified'}]`)).toBeTruthy());
+  await userEvent.click(within(within(toolbar).getByRole('group', { name: 'View' })).getByRole('button', { name: 'File' }));
+  await waitFor(() => expect(viewer().querySelector('[data-view=file]')).toBeTruthy());
+  expect(viewer().querySelector('[data-view=unified]')).toBeNull();
+  expect(viewer().querySelector('[data-view=split]')).toBeNull();
 });
 
 const blame: BlamePage = {
