@@ -18,6 +18,8 @@ import { ops as conflict } from './conflict.js';
 import { ops as submodule } from './submodule.js';
 import { ops as undo } from './undo.js';
 import { ops as history } from './history.js';
+import { ops as flow } from './flow.js';
+import { ops as lfs } from './lfs.js';
 
 // The op registry. A feature adds `ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run, undo?,
 // journal?}]` and one entry in the list below. A write registers for undo with `undo(params, result) → UndoPlan | null`
@@ -47,7 +49,7 @@ export function buildRegistry(lists) {
   return map;
 }
 
-export const OPS = buildRegistry([repo, diff, graph, stage, commit, ignore, files, patch, branch, tag, head, stash, remote, merge, rebase, conflict, submodule, undo, history]);
+export const OPS = buildRegistry([repo, diff, graph, stage, commit, ignore, files, patch, branch, tag, head, stash, remote, merge, rebase, conflict, submodule, undo, history, flow, lfs]);
 
 export function getOp(registry, name) {
   const op = registry.get(name);
