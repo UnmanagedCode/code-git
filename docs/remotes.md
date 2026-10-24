@@ -132,6 +132,6 @@ Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote
 - **A remote tag cannot be deleted while a fetch refspec maps tags onto themselves** (`+refs/tags/*:refs/tags/*`): git would delete the local tag through that mapping too, so `tag.deleteRemote` refuses `REMOTE_CONFIG_UNSUPPORTED`. Pushing a tag under it works (git writes the tag the value it was pushed from).
 - **Rename needs the default refspec**; anything else is renamed with git.
 - **Edit refuses a url list with several values.**
-- **A url whose password is literally `***` is read as the mask** (`isMaskedUrl`): add refuses it `BAD_URL`, and so does edit, unless it equals the current value's mask — then the field counts as unchanged and nothing is written. Set such a password with git.
+- **A url whose password span is exactly `***` is read as the mask** (`isMaskedUrl`; the span runs from the first `:` after `scheme://` to the value's last `@`): add refuses it `BAD_URL`, and so does edit, unless it equals the current value's mask — then the field counts as unchanged and nothing is written. Set such a password with git. A span that only holds the mask is not refused: `https://user:***@h/r@` (its span is `***@h/r`) is accepted and stored as typed.
 - **Remove's undo restores each key's values, not their place in `.git/config`**: the section comes back at the end of the file ([undo → Residuals](undo.md#residuals)).
 - **No progress**: cc's exec is buffered; a long fetch shows an elapsed timer until `NETWORK_LIMITS.timeoutMs`.

@@ -14,7 +14,7 @@
 | `src/http/static.js` | `serveDist(distDir)`: the `ASSET_RE` allowlist, `inside()` realpath check, 503 while unbuilt |
 | `src/http/route.js` | `route(fn)`: a throw becomes a refusal response; `sendError` |
 | `src/refusals.js` | `Refusal` and `HTTP_STATUS` (the code table) |
-| `src/mask.js` | `maskUrl`: a url's password shown as `***`, the one masking used for every url the browser gets (remote.list, the remote ops' undo records, `resolvedUrl`) and activity argv; `isMaskedUrl`: a url whose password is that mask (remote.add / remote.edit refuse it); `maskUrls` / `maskDeep` for text and refusal bodies |
+| `src/mask.js` | `maskUrl`: a url's password shown as `***`, the one masking used for every url the browser gets (remote.list, the remote ops' undo records, `resolvedUrl`) and activity argv; `isMaskedUrl`: a url whose password is that mask (remote.add / remote.edit refuse it); `maskUrls` / `maskDeep` for text and refusal bodies. One hand-written scanner from each `://` (`nextUrl`), linear in the input: no regex looks for a scheme's start |
 | `src/conductor/fetch.js` | `ccFetch`: `CONDUCTOR_URL`, per-attempt deadline, caller abort → `CANCELLED`, connection-only retry |
 | `src/conductor/cc.js` | `projects()`, `worktrees(project)` |
 | `src/conductor/exec.js` | `exec(target, argv, opts)`: cc exec form A + the refusal map; `CC_EXEC_CAPS` |
@@ -335,7 +335,7 @@ What an op overwrites or deletes, and whether git can give it back. The branch, 
 ## Activity log
 
 - In memory, per backend process, newest `LIMITS.activityRing` entries; runs are capped the same way, but only ended runs are dropped (a running one stays until it ends, so `writeRunning` never reads a project idle mid-write). **Diagnostic only**: undo, reflog and every other feature derive state from git, never from this log.
-- Records what ran (argv, through `redactArgv`: an argument that is a url with a password masked by `maskUrl` in `src/mask.js`: `https://u:***@h/r`; the value of a `git config` write to a `remote.<name>.<var>` key other than `url` / `pushurl` / `fetch` replaced by `***`, the key kept), where, the op's env overlay with secret-looking values redacted, stdin size (never content), the stderr tail (hook output included, decoded with `TextDecoder` `fatal: false`).
+- Records what ran (argv, through `redactArgv`: a url's password masked (`src/mask.js`) — by `maskUrl` in git's own options and every argument of a `VALUE_SUBCOMMANDS` command (`src/activity/log.js`: the whole argument is a url or value), by `maskUrls` in any other argument (a commit message keeps its shape): `https://u:***@h/r`; the value of a `git config` write to a `remote.<name>.<var>` key other than `url` / `pushurl` / `fetch` replaced by `***`, the key kept), where, the op's env overlay with secret-looking values redacted, stdin size (never content), the stderr tail (hook output included, decoded with `TextDecoder` `fatal: false`).
 - `events` (an `EventEmitter`) feeds the SSE route; the UI refetches on each event.
 
 ### Write op runs
