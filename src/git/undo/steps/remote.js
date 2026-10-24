@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { branchRemotes, pushDefaultOf, pushRemotesOf, remoteSnapshot, writeRemoteConfig } from '../../remote/config.js';
+import { clearableKeys, localBranchKeys, pushDefaultOf, remoteSnapshot, writeRemoteConfig } from '../../remote/config.js';
 import { parseFetchRefspec, trackedSnapshot } from '../../remote/tracking.js';
 import { stale } from './shared.js';
 
@@ -9,7 +9,7 @@ import { stale } from './shared.js';
 
 const ends = (step, dir) => (dir === 'undo' ? { from: step.new, to: step.old } : { from: step.old, to: step.new });
 
-/** The keys remoteSnapshot reads; remove's record also holds `pushRemotes` / `pushDefault` (what git cleared). */
+/** The keys remoteSnapshot reads; remove's record also holds `branchKeys` / `pushDefault` (what git cleared). */
 const CONFIG_KEYS = ['urls', 'pushUrls', 'fetch', 'extra', 'upstreams'];
 const configOf = (side) => (side === null ? null : Object.fromEntries(CONFIG_KEYS.map((k) => [k, side[k]])));
 
@@ -26,19 +26,18 @@ async function preflight(git, step, dir, ctx) {
   const { from, to } = ends(step, dir);
   const { name } = step;
   if (!isDeepStrictEqual(configOf(await snapshotOrNull(git, name)), configOf(from))) throw stale(`remote ${name} changed since`);
-  if (from?.pushRemotes) {
-    // Exactly the recorded push keys, as upstreams: one added since would be left naming a removed remote.
-    const now = await pushRemotesOf(git, name);
-    const sorted = (list) => [...list].sort();
-    if (!isDeepStrictEqual(sorted(now.pushRemotes), sorted(from.pushRemotes)) || now.pushDefault !== from.pushDefault) {
-      throw stale(`the push remote config naming ${name} changed since`);
+  if (from?.branchKeys) {
+    // Removing it again: git would clear exactly the recorded keys (one added since would be left naming a removed
+    // remote; one changed since is not the record's to unset).
+    const sorted = (keys) => keys.map(([k, v]) => `${k}\0${v}`).sort();
+    if (!isDeepStrictEqual(sorted(await clearableKeys(git, name)), sorted(from.branchKeys)) || (await pushDefaultOf(git) === name) !== from.pushDefault) {
+      throw stale(`the branch or push config naming ${name} changed since`);
     }
   }
   if (from === null) {
-    // Creating it back: the branch keys it restores must not have been set again meanwhile.
-    const branches = await branchRemotes(git);
-    for (const { branch } of to.upstreams) if (branches.get(branch)?.remote) throw stale(`${branch} has an upstream again`);
-    for (const branch of to.pushRemotes ?? []) if (branches.get(branch)?.pushRemote) throw stale(`${branch} has a push remote again`);
+    // Creating it back: no key it writes back may have been set again meanwhile (it would gain a second value).
+    const set = new Set((await localBranchKeys(git)).map(([k]) => k));
+    for (const [k] of to.branchKeys ?? []) if (set.has(k)) throw stale(`${k} is set again`);
     if (to.pushDefault && await pushDefaultOf(git) !== null) throw stale('remote.pushDefault is set again');
   }
   if (to === null) {

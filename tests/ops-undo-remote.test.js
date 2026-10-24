@@ -81,7 +81,48 @@ test('remote.remove with upstream and push keys in the global config: undo and r
   fs.appendFileSync(global, '[branch "main"]\n\tremote = origin\n\tpushRemote = origin\n[remote]\n\tpushDefault = origin\n');
   const globalBefore = fs.readFileSync(global, 'utf8');
   const { result } = await roundTrip(w, () => w.op('remote.remove', { name: 'origin' }));
-  assert.deepEqual(result.undo.remotes[0].old.upstreams, [{ branch: 'main', merge: 'refs/heads/main' }], 'the repo\'s own upstream, cleared by git');
-  assert.deepEqual([result.undo.remotes[0].old.pushRemotes, result.undo.remotes[0].old.pushDefault], [[], false], 'no push key git could not clear');
+  const old = result.undo.remotes[0].old;
+  assert.deepEqual(old.branchKeys, [['branch.main.remote', 'origin'], ['branch.main.merge', 'refs/heads/main']], 'only the repo\'s own keys git cleared');
+  assert.equal(old.pushDefault, false, 'no push key git could not clear');
   assert.equal(fs.readFileSync(global, 'utf8'), globalBefore);
 });
+
+/** Moves main's `branch.main.remote = origin` out of the repo's own config into `scope`, keeping the local merge → the file it lives in. */
+function remoteElsewhere(w, scope) {
+  w.repo.git('config', '--unset', 'branch.main.remote');
+  const line = '[branch "main"]\n\tremote = origin\n';
+  if (scope === 'global') {
+    const file = path.join(w.repo.home, '.gitconfig');
+    fs.appendFileSync(file, line);
+    return file;
+  }
+  if (scope === 'include') {
+    const file = path.join(w.repo.root, 'included.cfg');
+    fs.writeFileSync(file, line);
+    w.repo.git('config', 'include.path', file);
+    return file;
+  }
+  w.repo.git('config', 'extensions.worktreeConfig', 'true');
+  w.repo.git('config', '--worktree', 'branch.main.remote', 'origin');
+  return path.join(w.repo.dir, '.git', 'config.worktree');
+}
+
+// Invariant: git picks the branches to clear by their effective branch.<b>.remote (any scope) and unsets .remote and
+// .merge in the repo's own config; the record is that diff — here the local merge alone, the remote living in a global,
+// included or worktree config — so undo writes the local merge back exactly, redo clears it again, and the other file
+// is never touched.
+for (const scope of ['global', 'include', 'worktree']) {
+  test(`remote.remove with main's remote in the ${scope} config and its merge local: undo restores the merge, redo clears it`, async (t) => {
+    const w = await undoWorld(t);
+    const file = remoteElsewhere(w, scope);
+    assert.equal(w.repo.git('config', 'branch.main.remote'), 'origin', 'the effective upstream remote is origin');
+    const fileBefore = fs.readFileSync(file, 'utf8');
+    const { result } = await roundTrip(w, () => w.op('remote.remove', { name: 'origin' }));
+    assert.deepEqual(result.undo.remotes[0].old.branchKeys, [['branch.main.merge', 'refs/heads/main']]);
+    assert.deepEqual(result.clearedUpstreams, [{ branch: 'main', merge: 'refs/heads/main' }]);
+    assert.equal(fs.readFileSync(file, 'utf8'), fileBefore, `the ${scope} file is untouched`);
+    await w.undo();
+    assert.equal(w.repo.git('config', '--local', '--get-all', 'branch.main.merge'), 'refs/heads/main', 'the local merge is back, once');
+    assert.equal(fs.readFileSync(file, 'utf8'), fileBefore);
+  });
+}

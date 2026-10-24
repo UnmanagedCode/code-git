@@ -81,26 +81,69 @@ export async function listRemotes(git) {
   return out;
 }
 
+/** The `branch.<b>.<var>` variables naming a remote that `git remote remove` clears. */
+const BRANCH_VARS = new Set(['remote', 'merge', 'pushremote']);
+/** `branch.<b>.<var>` → {branch, v} (`v` lower case). */
+const branchKey = (key) => ({ branch: key.slice('branch.'.length, key.lastIndexOf('.')), v: key.slice(key.lastIndexOf('.') + 1).toLowerCase() });
+
+/** The BRANCH_VARS keys as [[key, value]] in config order: the repo's own file (`--local`, includes not followed), or every scope. */
+async function branchKeysIn(git, { local }) {
+  const r = await git(['config', ...(local ? ['--local'] : []), '-z', '--get-regexp', '^branch\\.'], { okExit: [0, 1] });
+  return parseConfigZ(decoder.decode(r.stdout)).filter(([key]) => BRANCH_VARS.has(branchKey(key).v));
+}
+
 /**
- * Every branch's remote keys in the repo's own config (`--local`: the file `git remote remove` and `rename` edit; a key in
- * the global config is not one they clear, nor one an undo writes back): Map(branch → {remote, merge (the first),
- * pushRemote}), each null when unset.
+ * The repo's own `branch.<b>.remote` / `.merge` / `.pushRemote` keys as [[key, value]], in config order (`--local`: the
+ * file `git remote remove` and `rename` edit; a key in another file is not one they clear, nor one an undo writes back).
+ */
+export const localBranchKeys = (git) => branchKeysIn(git, { local: true });
+
+/**
+ * Every branch's remote keys in the repo's own config: Map(branch → {remote, merge (the first), pushRemote}), each null
+ * when unset.
  */
 export async function branchRemotes(git) {
-  const r = await git(['config', '--local', '-z', '--get-regexp', '^branch\\.'], { okExit: [0, 1] });
   const branches = new Map();
   const field = { remote: 'remote', merge: 'merge', pushremote: 'pushRemote' };
-  for (const [key, value] of parseConfigZ(decoder.decode(r.stdout))) {
-    const dot = key.lastIndexOf('.');
-    const f = field[key.slice(dot + 1).toLowerCase()];
-    if (!f) continue;
-    const branch = key.slice('branch.'.length, dot);
+  for (const [key, value] of await localBranchKeys(git)) {
+    const { branch, v } = branchKey(key);
     const b = branches.get(branch) ?? { remote: null, merge: null, pushRemote: null };
-    if (f === 'merge') b.merge ??= value;
-    else b[f] = value;
+    if (v === 'merge') b.merge ??= value;
+    else b[field[v]] = value;
     branches.set(branch, b);
   }
   return branches;
+}
+
+/**
+ * The local keys `git remote remove <remote>` would unset now, as [[key, value]] in config order: it picks the branches
+ * by their effective `branch.<b>.remote` / `.pushRemote` (every scope, the last value wins) and unsets `.remote` and
+ * `.merge` (resp. `.pushRemote`) in the repo's own file.
+ */
+export async function clearableKeys(git, remote) {
+  const effective = new Map();
+  for (const [key, value] of await branchKeysIn(git, { local: false })) {
+    const { branch, v } = branchKey(key);
+    if (v !== 'merge') effective.set(`${branch}\0${v}`, value);
+  }
+  const names = (branch, v) => effective.get(`${branch}\0${v}`) === remote;
+  return (await localBranchKeys(git)).filter(([key]) => {
+    const { branch, v } = branchKey(key);
+    return v === 'pushremote' ? names(branch, 'pushremote') : names(branch, 'remote');
+  });
+}
+
+/** The upstreams a list of cleared branch keys held → [{branch, merge (the first, or null)}], in key order. */
+export function upstreamsIn(keys) {
+  const out = new Map();
+  for (const [key, value] of keys) {
+    const { branch, v } = branchKey(key);
+    if (v === 'pushremote') continue;
+    const u = out.get(branch) ?? { branch, merge: null };
+    if (v === 'merge') u.merge ??= value;
+    out.set(branch, u);
+  }
+  return [...out.values()];
 }
 
 /**
@@ -117,11 +160,6 @@ export async function pushDefaultOf(git) {
   return r.exitCode === 0 ? decoder.decode(r.stdout).replace(/\n$/, '') : null;
 }
 
-/** What else names `remote` for pushing, in the repo's own config: {pushRemotes: the branches whose `branch.<b>.pushRemote` it is, pushDefault: whether `remote.pushDefault` is}. */
-export async function pushRemotesOf(git, remote) {
-  const pushRemotes = [...await branchRemotes(git)].filter(([, b]) => b.pushRemote === remote).map(([branch]) => branch);
-  return { pushRemotes, pushDefault: await pushDefaultOf(git) === remote };
-}
 
 /**
  * One remote's config as an undo record keeps it: {urls, pushUrls, fetch, extra, upstreams} (raw values: a restore
@@ -185,9 +223,10 @@ const byVar = (extra) => extra.reduce((m, [v, value]) => m.set(v, [...(m.get(v) 
  * Writes remote `name`'s config from record side `from` to side `to` (docs/undo.md → Steps, `remote`). Each value is its
  * own argument after its key — never `key=value` nor `-c` — so a url is masked in the activity log and a leading `-` is
  * stored as given (git stops parsing options at the key).
- * - `to` null: the section removed, then the branch keys and pushDefault `from` holds unset (exit 5 tolerated).
+ * - `to` null: the section removed, then the branch keys (`branchKeys`) and pushDefault `from` holds unset (exit 5
+ *   tolerated). Only a remove's record holds them: an add's undo never touches a branch key.
  * - `from` null: each list added in order — urls, fetch refspecs, push urls (`remote add` then `set-url --push` order),
- *   the extra keys — then each upstream's `branch.<b>.remote` / `.merge`, each `branch.<b>.pushRemote`, pushDefault.
+ *   the extra keys — then each of `to.branchKeys` (the local keys git cleared) and pushDefault.
  * - both: each list or extra variable that differs set to `to`'s values.
  */
 export async function writeRemoteConfig(git, name, from, to) {
@@ -195,11 +234,7 @@ export async function writeRemoteConfig(git, name, from, to) {
   if (to === null) {
     await git(['config', '--remove-section', `remote.${name}`]);
     const unset = (k) => git(['config', '--unset-all', k], { okExit: [0, 5] });
-    for (const { branch } of from.upstreams) {
-      await unset(`branch.${branch}.remote`);
-      await unset(`branch.${branch}.merge`);
-    }
-    for (const branch of from.pushRemotes ?? []) await unset(`branch.${branch}.pushRemote`);
+    for (const k of new Set((from.branchKeys ?? []).map(([k]) => k))) await unset(k);
     if (from.pushDefault) await unset('remote.pushDefault');
     return;
   }
@@ -207,11 +242,7 @@ export async function writeRemoteConfig(git, name, from, to) {
     const add = (k, v) => git(['config', '--add', k, v]);
     for (const field of ['urls', 'fetch', 'pushUrls']) for (const v of to[field]) await add(key(LIST_VARS[field]), v);
     for (const [v, value] of to.extra) await add(key(v), value);
-    for (const { branch, merge } of to.upstreams) {
-      await add(`branch.${branch}.remote`, name);
-      if (merge !== null) await add(`branch.${branch}.merge`, merge);
-    }
-    for (const branch of to.pushRemotes ?? []) await add(`branch.${branch}.pushRemote`, name);
+    for (const [k, value] of to.branchKeys ?? []) await add(k, value);
     if (to.pushDefault) await add('remote.pushDefault', name);
     return;
   }

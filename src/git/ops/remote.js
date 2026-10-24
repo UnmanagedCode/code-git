@@ -7,7 +7,8 @@ import { assertCcAck, assertCcHeadAck, assertNotSymbolic, ownHead, readHeads } f
 import { assertNoSymref, refEntries } from '../refs/resolve.js';
 import { undoRecord } from '../refs/undo.js';
 import {
-  assertNewRemote, assertNotLegacy, listRemotes, multiValued, pushRemotesOf, remoteNames, remoteSnapshot, renameGates, renameRemote, upstreamsOf,
+  assertNewRemote, assertNotLegacy, listRemotes, localBranchKeys, multiValued, pushDefaultOf, remoteNames, remoteSnapshot, renameGates, renameRemote,
+  upstreamsIn,
 } from '../remote/config.js';
 import { fetchRemote } from '../remote/fetch.js';
 import { fastForward, merge, rebase } from '../remote/integrate.js';
@@ -173,23 +174,27 @@ export const ops = [
       const old = await remoteSnapshot(git, name);
       await assertNotLegacy(git, name, old);
       const tracking = await trackingRefsOf(git, name);
-      const pushing = await pushRemotesOf(git, name);
+      const [keysBefore, defaultBefore] = [await localBranchKeys(git), await pushDefaultOf(git)];
       await git(['remote', 'remove', '--end-of-options', name]);
       // git deletes the refs/remotes/ refs the refspecs map, except those another remote's refspecs also map: re-read.
       const left = await refEntries(git, [...tracking.keys()]);
       const deleted = [...tracking].filter(([ref]) => !left.has(ref));
-      // The upstream / pushRemote / pushDefault keys git cleared (never one it could not), re-read as the refs: only those
-      // are the undo's to write back, and the redo's to expect.
-      const [stillUp, still] = await Promise.all([upstreamsOf(git, name), pushRemotesOf(git, name)]);
-      const cleared = {
-        upstreams: old.upstreams.filter((u) => !stillUp.some((x) => x.branch === u.branch)),
-        pushRemotes: pushing.pushRemotes.filter((b) => !still.pushRemotes.includes(b)),
-        pushDefault: pushing.pushDefault && !still.pushDefault,
-      };
+      // What git cleared, re-read as the refs: the repo's own branch keys before minus after (git picks the branches by
+      // their effective remote, in any scope, and unsets the keys in this file only), and pushDefault. Only those are the
+      // undo's to write back, and the redo's to expect.
+      const keysAfter = await localBranchKeys(git);
+      const kept = [...keysAfter];
+      const branchKeys = keysBefore.filter(([k, v]) => {
+        const i = kept.findIndex(([k2, v2]) => k2 === k && v2 === v);
+        if (i === -1) return true;
+        kept.splice(i, 1);
+        return false;
+      });
+      const cleared = { branchKeys, pushDefault: defaultBefore === name && await pushDefaultOf(git) !== name };
       return {
         name,
         deletedRefs: deleted.map(([ref]) => ref),
-        clearedUpstreams: cleared.upstreams,
+        clearedUpstreams: upstreamsIn(branchKeys),
         undo: undoRecord({
           refs: deleted.map(([ref, e]) => (e.symref ? { ref, old: null, new: null, symref: e.symref } : { ref, old: e.oid, new: null })),
           remotes: [{ name, old: { ...old, ...cleared }, new: null }],

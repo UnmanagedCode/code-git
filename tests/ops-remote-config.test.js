@@ -174,7 +174,9 @@ test('remote.remove deletes its tracking refs (kept: one another remote maps) an
     name: 'origin', new: null,
     old: {
       urls: [w.origin.dir], pushUrls: ['/push.git'], fetch: [DEFAULT('origin')], extra: [],
-      upstreams: [{ branch: 'main', merge: 'refs/heads/main' }, { branch: 'feat', merge: 'refs/heads/feat' }], pushRemotes: [], pushDefault: false,
+      upstreams: [{ branch: 'main', merge: 'refs/heads/main' }, { branch: 'feat', merge: 'refs/heads/feat' }],
+      branchKeys: [['branch.main.remote', 'origin'], ['branch.main.merge', 'refs/heads/main'], ['branch.feat.remote', 'origin'], ['branch.feat.merge', 'refs/heads/feat']],
+      pushDefault: false,
     },
   }]);
 });
