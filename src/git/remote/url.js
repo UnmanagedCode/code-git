@@ -54,6 +54,13 @@ export function assertNotMasked(url) {
 }
 
 /**
+ * A url remote.edit was sent: a remoteUrl, or a url holding the mask (isMaskedUrl) passed on unchecked — the op either
+ * finds it equal to the current value's mask (unchanged: nothing written) or refuses it (assertNotMasked), so it never
+ * reaches git. A remote whose stored value remoteUrl refuses (`<transport>::<url>`, set with git) keeps its echoed mask.
+ */
+export const editedUrl = (s) => (typeof s === 'string' && isMaskedUrl(s) ? s : remoteUrl(s));
+
+/**
  * A name for a new (or renamed) remote, else BAD_REF: remoteName's shape (no leading `-`, whitespace or control
  * character), git's own rule, a valid `refs/remotes/<name>/…` (assertRefName), and no `=`: a push pins
  * `-c remote.<name>.mirror=false` (pushConfig), which git splits at the first `=`, so such a name would pin nothing.

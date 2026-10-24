@@ -4,14 +4,18 @@
 /** A url's `scheme://`: git hands any `<scheme>://` to git-remote-<scheme>, so a scheme may start with a digit. */
 const SCHEME = '[A-Za-z0-9][A-Za-z0-9+.-]*:\\/\\/';
 
-/** A url's `scheme://user` (group 1), then its password span: from the first `:` after `scheme://` up to the last `@`. */
-const PASSWORD_RE = new RegExp(`^(${SCHEME}[^:]*):[\\s\\S]*@`);
+/**
+ * The first url in a value — anywhere in it: git stores `<transport>::<url>` too — as `scheme://user` (group 1), then its
+ * password span: from the first `:` after `scheme://` up to the value's last `@`.
+ */
+const PASSWORD_RE = new RegExp(`(${SCHEME}[^:]*):[\\s\\S]*@`);
 
 /**
- * `url` with everything from the first `:` after `scheme://` up to its last `@` shown as `***`:
- * `https://u:p@ss/word@host/r` → `https://u:***@host/r`. A user name may hold `@` (`https://a@b:c@host/r`) and a password
- * `/` and `@`, so the first `:` and the last `@` are taken (a path holding a `:` and an `@` is masked too: the safe side).
- * A url without a `:` before an `@` after `scheme://` is returned unchanged.
+ * `url` (a stored value) with everything from the first `:` after its first `scheme://` up to its last `@` shown as `***`:
+ * `https://u:p@ss/word@host/r` → `https://u:***@host/r`, `foo::https://u:pw@host/r` → `foo::https://u:***@host/r`. A user
+ * name may hold `@` (`https://a@b:c@host/r`) and a password `/` and `@`, so the first `:` and the last `@` are taken (a path
+ * holding a `:` and an `@` is masked too: the safe side). A value without a `:` before an `@` after `scheme://` is returned
+ * unchanged.
  */
 export const maskUrl = (url) => url.replace(PASSWORD_RE, '$1:***@');
 

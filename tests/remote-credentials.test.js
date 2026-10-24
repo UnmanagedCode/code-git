@@ -233,3 +233,35 @@ test('a scheme starting with a digit (1password://, 9z://) is masked in remote.l
     maskedUrl: '1password://user:***@example.invalid/r.git', maskedPush: '9z://user:***@example.invalid/p.git',
   });
 });
+
+const HELPER_URL = `foo::https://user:${PW}@example.invalid/r.git`;
+const HELPER_PUSH = `ext::https://user:${PUSH_PW}@example.invalid/p.git`;
+const HELPER_MASKED = 'foo::https://user:***@example.invalid/r.git';
+const HELPER_PUSH_MASKED = 'ext::https://user:***@example.invalid/p.git';
+
+// Invariant: a `<transport>::<url>` value git stores (remote.add refuses one) has the url after `::` masked through
+// remote.list, a remote op's undo record and the activity log.
+test('a <transport>::<url> value is masked after the :: in remote.list, op results and the activity log', async (t) => {
+  const w = await world(t);
+  await masksEverywhere(w, { rawUrl: HELPER_URL, rawPush: HELPER_PUSH, maskedUrl: HELPER_MASKED, maskedPush: HELPER_PUSH_MASKED });
+});
+
+// Invariant: for a `<transport>::<url>` remote, echoing remote.list's masked value is unchanged (nothing written, the raw
+// value kept), the other field still written; a changed masked value is refused BAD_URL with nothing written.
+test('remote.edit of a <transport>::<url> remote: the echoed mask is unchanged, a changed mask is refused', async (t) => {
+  const w = await world(t);
+  w.repo.git('config', 'remote.odd.url', HELPER_URL);
+  w.repo.git('config', 'remote.odd.pushurl', HELPER_PUSH);
+  lacksSecrets(await w.call('remote.edit', { name: 'odd', url: HELPER_MASKED }));
+  lacksSecrets(await w.call('remote.edit', { name: 'odd', url: HELPER_MASKED, pushUrl: HELPER_PUSH_MASKED }));
+  assert.deepEqual(w.remoteWrites(), [], 'no set-url ran');
+  assert.deepEqual([w.config('remote.odd.url'), w.config('remote.odd.pushurl')], [[HELPER_URL], [HELPER_PUSH]]);
+  for (const params of [{ url: 'foo::https://user:***@other.invalid/r.git' }, { pushUrl: 'ext::https://user:***@example.invalid/q.git' }]) {
+    const body = await w.call('remote.edit', { name: 'odd', ...params }, 400);
+    assert.equal(body.code, 'BAD_URL', JSON.stringify(params));
+    lacksSecrets(body);
+  }
+  await w.call('remote.edit', { name: 'odd', url: HELPER_MASKED, pushUrl: '/push.git' });
+  assert.deepEqual(w.remoteWrites(), [['remote', 'set-url', '--push', '--end-of-options', 'odd', '/push.git']]);
+  assert.deepEqual([w.config('remote.odd.url'), w.config('remote.odd.pushurl')], [[HELPER_URL], ['/push.git']]);
+});

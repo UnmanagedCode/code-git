@@ -15,7 +15,7 @@ import { fastForward, merge, rebase } from '../remote/integrate.js';
 import { netRun, remoteFailure } from '../remote/net.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
 import { fetchSpecs, trackingRefsFor, trackingRefsOf } from '../remote/tracking.js';
-import { assertNotMasked, newRemoteName, remoteUrl } from '../remote/url.js';
+import { assertNotMasked, editedUrl, newRemoteName, remoteUrl } from '../remote/url.js';
 import { assertClean, assertNoOperation } from '../sequence/guard.js';
 import { plans } from '../undo/plans.js';
 import { assertOid } from '../validate.js';
@@ -131,8 +131,8 @@ export const ops = [
       if (p.url === undefined && p.pushUrl === undefined) throw new Refusal('BAD_PARAMS', 'remote.edit needs url or pushUrl');
       return {
         name: remoteName(p.name),
-        url: p.url === undefined ? undefined : remoteUrl(p.url),
-        pushUrl: p.pushUrl === undefined || p.pushUrl === null ? p.pushUrl : remoteUrl(p.pushUrl),
+        url: p.url === undefined ? undefined : editedUrl(p.url),
+        pushUrl: p.pushUrl === undefined || p.pushUrl === null ? p.pushUrl : editedUrl(p.pushUrl),
       };
     },
     async run(git, p) {

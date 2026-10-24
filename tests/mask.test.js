@@ -27,6 +27,19 @@ test('a scheme starting with a digit: maskUrl, maskUrls and redactArgv mask its 
   assert.deepEqual(redactArgv(['git', 'config', '--add', 'remote.o.url', '1password://u:pw@h/r']), ['git', 'config', '--add', 'remote.o.url', '1password://u:***@h/r']);
 });
 
+// Invariant: a url embedded in a value (`<transport>::<url>`, a value git stores though remote.add refuses it) is masked
+// as a url alone is, isMaskedUrl agrees with what maskUrl produces for it, and redactArgv masks it as an argument.
+test('a <transport>::<url> value: maskUrl masks the url after ::, isMaskedUrl agrees, redactArgv masks it', () => {
+  assert.equal(maskUrl('foo::https://u:pw@h/r'), 'foo::https://u:***@h/r');
+  assert.equal(maskUrl('ext::https://u:p@ss@h/r'), 'ext::https://u:***@h/r');
+  assert.equal(maskUrl('1foo::9z://u:pw@h/r'), '1foo::9z://u:***@h/r');
+  assert.equal(maskUrl('foo::https://h/r'), 'foo::https://h/r');
+  assert.equal(isMaskedUrl('foo::https://u:***@h/r'), true);
+  assert.equal(isMaskedUrl('foo::https://u:pw@h/r'), false);
+  assert.equal(isMaskedUrl(maskUrl('foo::https://u:pw@h/r')), true);
+  assert.deepEqual(redactArgv(['git', 'config', '--add', 'remote.o.url', 'foo::https://u:pw@h/r']), ['git', 'config', '--add', 'remote.o.url', 'foo::https://u:***@h/r']);
+});
+
 test('maskUrl leaves urls without a password alone', () => {
   for (const u of ['https://host/r.git', 'https://user@host/r', 'ssh://git@host:22/r.git', 'git@host:o/r.git', '/srv/r.git', 'file:///srv/r', 'origin', '--end-of-options']) {
     assert.equal(maskUrl(u), u, u);
