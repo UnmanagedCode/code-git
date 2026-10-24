@@ -78,3 +78,85 @@ test('remote.add / edit / rename / remove answer undo.remotes with every url and
   lacksSecrets(remove);
   assert.deepEqual(remove.result.undo.remotes.map((r) => [r.name, side(r.old), side(r.new)]), [['cred2', [[masked('two')], [masked('p')]], null]]);
 });
+
+/** A remote `cred` (url `one`, push url `p`, both credentialed) added through the API; the exec log's length before the next call. */
+async function credRemote(w) {
+  await w.call('remote.add', { name: 'cred', url: url('one'), pushUrl: pushUrl('p') });
+  return w.remoteWrites().length;
+}
+
+// Invariant: an edit field equal to the mask of the remote's single current value counts as not sent: no set-url runs,
+// git config keeps the raw credential (url and push url alike), and the other field is still written.
+test('remote.edit with a field echoing the masked current url keeps the stored credential and writes nothing for it', async (t) => {
+  const w = await world(t);
+  const before = await credRemote(w);
+  lacksSecrets(await w.call('remote.edit', { name: 'cred', url: masked('one') }));
+  lacksSecrets(await w.call('remote.edit', { name: 'cred', pushUrl: masked('p') }));
+  lacksSecrets(await w.call('remote.edit', { name: 'cred', url: masked('one'), pushUrl: masked('p') }));
+  assert.deepEqual(w.remoteWrites().slice(before), [], 'no set-url ran');
+  assert.deepEqual([w.config('remote.cred.url'), w.config('remote.cred.pushurl')], [[url('one')], [pushUrl('p')]]);
+  await w.call('remote.edit', { name: 'cred', url: masked('one'), pushUrl: '/push.git' });
+  assert.deepEqual(w.remoteWrites().slice(before), [['remote', 'set-url', '--push', '--end-of-options', 'cred', '/push.git']], 'only the push url was set');
+  assert.deepEqual([w.config('remote.cred.url'), w.config('remote.cred.pushurl')], [[url('one')], ['/push.git']]);
+});
+
+// Invariant: an edit of the push url alone leaves the credentialed url as it was in git config.
+test('remote.edit of the push url only keeps the credentialed url', async (t) => {
+  const w = await world(t);
+  await credRemote(w);
+  lacksSecrets(await w.call('remote.edit', { name: 'cred', pushUrl: pushUrl('q') }));
+  assert.deepEqual([w.config('remote.cred.url'), w.config('remote.cred.pushurl')], [[url('one')], [pushUrl('q')]]);
+  lacksSecrets(await w.call('remote.edit', { name: 'cred', pushUrl: null }));
+  assert.deepEqual([w.config('remote.cred.url'), w.config('remote.cred.pushurl')], [[url('one')], []]);
+});
+
+// Invariant: an edit field that still holds the mask but differs from the current value's mask (another host, path or
+// user; or a remote with no push url) is refused BAD_URL before any write: the stored password is never spliced into
+// it, and the refusal never echoes a password.
+test('remote.edit keeping the mask but changing the url → BAD_URL, nothing written', async (t) => {
+  const w = await world(t);
+  const before = await credRemote(w);
+  for (const params of [
+    { url: 'https://user:***@other.invalid/one.git' },
+    { url: masked('elsewhere') },
+    { url: 'https://other:***@example.invalid/one.git' },
+    { pushUrl: 'https://user:***@other.invalid/p.git' },
+    { url: masked('one'), pushUrl: masked('one') },
+  ]) {
+    const body = await w.call('remote.edit', { name: 'cred', ...params }, 400);
+    assert.equal(body.code, 'BAD_URL', JSON.stringify(params));
+    lacksSecrets(body);
+  }
+  assert.deepEqual(w.remoteWrites().slice(before), [], 'nothing written');
+  assert.deepEqual([w.config('remote.cred.url'), w.config('remote.cred.pushurl')], [[url('one')], [pushUrl('p')]]);
+  w.repo.git('config', '--unset-all', 'remote.cred.pushurl');
+  assert.equal((await w.call('remote.edit', { name: 'cred', pushUrl: masked('p') }, 400)).code, 'BAD_URL', 'no push url to echo');
+  assert.deepEqual(w.config('remote.cred.pushurl'), []);
+});
+
+// Invariant: remote.add refuses a url or push url that holds the mask BAD_URL, before any remote is written.
+test('remote.add with a masked url or push url → BAD_URL before any remote write', async (t) => {
+  const w = await world(t);
+  for (const params of [{ url: masked('one') }, { url: '/srv/r.git', pushUrl: masked('p') }]) {
+    const body = await w.call('remote.add', { name: 'pasted', ...params }, 400);
+    assert.equal(body.code, 'BAD_URL', JSON.stringify(params));
+  }
+  assert.deepEqual(w.remoteWrites(), []);
+  assert.deepEqual(w.config('remote.pasted.url'), []);
+});
+
+// Invariant: the unchanged rule fires only on a single-valued list: the mask of one value of a multi-valued url or push
+// url list is still refused REMOTE_CONFIG_UNSUPPORTED, as any edit of that list is.
+test('remote.edit with the masked url of a multi-valued list still refuses REMOTE_CONFIG_UNSUPPORTED', async (t) => {
+  const w = await world(t);
+  w.repo.git('remote', 'add', 'multi', url('one'));
+  w.repo.git('config', '--add', 'remote.multi.url', url('two'));
+  w.repo.git('config', '--add', 'remote.multi.pushurl', pushUrl('p'));
+  w.repo.git('config', '--add', 'remote.multi.pushurl', pushUrl('q'));
+  for (const params of [{ url: masked('one') }, { url: masked('two') }, { pushUrl: masked('p') }]) {
+    const body = await w.call('remote.edit', { name: 'multi', ...params }, 409);
+    assert.equal(body.code, 'REMOTE_CONFIG_UNSUPPORTED', JSON.stringify(params));
+    lacksSecrets(body);
+  }
+  assert.deepEqual(w.remoteWrites(), []);
+});

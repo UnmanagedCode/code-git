@@ -1,3 +1,4 @@
+import { isMaskedUrl } from '../../mask.js';
 import { Refusal } from '../../refusals.js';
 import { assertRefName } from '../validate.js';
 import { remoteName } from './push.js';
@@ -41,6 +42,15 @@ export function remoteUrl(s) {
   const scp = SCP_RE.exec(s);
   if (scp && !scp[2].startsWith('-') && !scp[3].startsWith('//')) return s;
   throw bad('expected an http(s)/ssh/git/file url, an absolute path or user@host:path');
+}
+
+/**
+ * `url` (a remoteUrl, or null / undefined: not sent), else BAD_URL when its password is the `***` mask code-git shows
+ * (isMaskedUrl): a url copied from the UI and pasted back would store the mask as the password. Never echoes the url.
+ */
+export function assertNotMasked(url) {
+  if (url && isMaskedUrl(url)) throw bad('its password is ***, the mask code-git shows: type the real password');
+  return url;
 }
 
 /**
