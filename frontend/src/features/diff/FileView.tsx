@@ -3,33 +3,13 @@ import { ArrowDownIcon, ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, WrapTextIcon
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { setPrefs, type DiffMode, type DiffPrefs, type FileState } from '@/state/diff';
-import type { DiffFile, FileDiff, Whitespace } from './api';
+import { CONTEXT_CHOICES, setPrefs, type DiffPrefs, type FileState } from '@/state/diff';
+import type { DiffFile, FileDiff } from './api';
 import type { Marks, StagingView } from './CodeLine';
+import { DiffRows } from './DiffRows';
+import { DiffToggles, Seg } from './DiffToggles';
 import { fileLabel, STATUS_LABEL } from './FileList';
-import { FileContentView } from './FileContentView';
-import { SplitView } from './SplitView';
-import { UnifiedView } from './UnifiedView';
-import type { ViewRow } from './viewRows';
-
-export const CONTEXT_CHOICES = [0, 1, 3, 5, 10, 25];
-const WHITESPACE: { value: Whitespace; label: string }[] = [
-  { value: 'none', label: 'Show all whitespace' }, { value: 'eol', label: 'Ignore at line end' },
-  { value: 'change', label: 'Ignore amount' }, { value: 'all', label: 'Ignore all whitespace' },
-];
-const MODES: { value: DiffMode; label: string }[] = [{ value: 'hunk', label: 'Hunk' }, { value: 'inline', label: 'Inline' }, { value: 'split', label: 'Split' }];
-
-function Seg<V extends string>({ label, value, options, onPick, disabled }: { label: string; value: V; options: { value: V; label: string }[]; onPick: (v: V) => void; disabled?: boolean }) {
-  return (
-    <div className="flex rounded-md border p-0.5" role="group" aria-label={label}>
-      {options.map((o) => (
-        <Button key={o.value} variant={value === o.value ? 'secondary' : 'ghost'} size="sm" className="h-6 px-2 text-xs" aria-pressed={value === o.value} disabled={disabled} onClick={() => onPick(o.value)}>
-          {o.label}
-        </Button>
-      ))}
-    </div>
-  );
-}
+import { layoutFor, type ViewRow } from './viewRows';
 
 const Note = ({ children }: { children: ReactNode }) => <div className="flex flex-col items-start gap-2 p-4 text-sm text-muted-foreground">{children}</div>;
 const short = (oid: string | null) => (oid ? oid.slice(0, 7) : '—');
@@ -83,8 +63,8 @@ function Body({ file, state, forced, prefs, rows, marks, onForce, staging, onOpe
       return (
         <Note>
           <p role="alert">Too large to display{state.error.limitBytes ? ` (over ${mb(state.error.limitBytes)})` : ''}</p>
-          {(prefs.mode !== 'hunk' || prefs.view !== 'diff') && (
-            <Button variant="outline" size="sm" onClick={() => setPrefs({ mode: 'hunk', view: 'diff' })}>Switch to Hunk mode</Button>
+          {(prefs.scope !== 'hunk' || prefs.view !== 'diff') && (
+            <Button variant="outline" size="sm" onClick={() => setPrefs({ scope: 'hunk', view: 'diff' })}>Switch to Hunk</Button>
           )}
         </Note>
       );
@@ -103,9 +83,7 @@ function Body({ file, state, forced, prefs, rows, marks, onForce, staging, onOpe
     );
   }
   if (d.binary) return <Note><p>Binary file — not shown</p></Note>;
-  const view = prefs.view === 'file'
-    ? <FileContentView rows={rows} marks={marks} wrap={prefs.wrap} />
-    : prefs.mode === 'split' ? <SplitView rows={rows} marks={marks} wrap={prefs.wrap} staging={staging} /> : <UnifiedView rows={rows} marks={marks} wrap={prefs.wrap} staging={staging} />;
+  const view = <DiffRows rows={rows} layout={layoutFor(prefs)} marks={marks} wrap={prefs.wrap} staging={staging} />;
   if (d.lfs) {
     const side = (label: string, p: { oid: string; size: number } | null) => (
       <div className="flex gap-2"><span className="w-10 text-muted-foreground">{label}</span>{p ? <span className="font-mono text-foreground">{p.oid.slice(0, 12)} · {p.size} bytes</span> : <span>—</span>}</div>
@@ -147,12 +125,9 @@ export function FileView(props: FileViewProps) {
         {modeChange && <span className="shrink-0 font-mono text-muted-foreground">{modeChange}</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2 border-b px-2 py-1" role="toolbar" aria-label="Diff options">
-        <Seg label="Diff mode" value={prefs.mode} options={MODES} onPick={(mode) => setPrefs({ mode })} disabled={!inDiff} />
+        <DiffToggles prefs={prefs} disabled={!inDiff} />
         <Seg label="View" value={prefs.view} options={[{ value: 'diff', label: 'Diff' }, { value: 'file', label: 'File' }]} onPick={(view) => setPrefs({ view })} />
-        <select aria-label="Whitespace" className="h-7 rounded-md border bg-background px-1 text-xs" value={prefs.whitespace} onChange={(e) => setPrefs({ whitespace: e.target.value as Whitespace })}>
-          {WHITESPACE.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
-        </select>
-        <select aria-label="Context lines" className="h-7 rounded-md border bg-background px-1 text-xs disabled:opacity-50" value={prefs.context} disabled={!inDiff || prefs.mode !== 'hunk'} onChange={(e) => setPrefs({ context: Number(e.target.value) })}>
+        <select aria-label="Context lines" className="h-7 rounded-md border bg-background px-1 text-xs disabled:opacity-50" value={prefs.context} disabled={!inDiff || prefs.scope !== 'hunk'} onChange={(e) => setPrefs({ context: Number(e.target.value) })}>
           {CONTEXT_CHOICES.map((c) => <option key={c} value={c}>{c} lines of context</option>)}
         </select>
         <Button variant={prefs.wrap ? 'secondary' : 'ghost'} size="icon-sm" className="size-7" aria-label="Wrap lines" aria-pressed={prefs.wrap} onClick={() => setPrefs({ wrap: !prefs.wrap })}><WrapTextIcon /></Button>

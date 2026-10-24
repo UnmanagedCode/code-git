@@ -25,19 +25,45 @@ export interface DiffTabState {
   generation: number;
 }
 
-export type DiffMode = 'hunk' | 'inline' | 'split';
-export interface DiffPrefs { mode: DiffMode; view: 'diff' | 'file'; context: number; whitespace: Whitespace; wrap: boolean; syntax: boolean }
+/** How much of the file a diff shows: its hunks at the chosen context, or the whole file. Decides the request. */
+export type DiffScope = 'hunk' | 'full';
+/** How a diff is laid out: one column, or old beside new. Render-only. */
+export type DiffLayout = 'inline' | 'split';
+export interface DiffPrefs {
+  scope: DiffScope; layout: DiffLayout; ignoreWhitespace: boolean; view: 'diff' | 'file'; context: number; wrap: boolean; syntax: boolean;
+}
 
-export const DEFAULT_PREFS: DiffPrefs = { mode: 'hunk', view: 'diff', context: 3, whitespace: 'none', wrap: false, syntax: true };
+export const CONTEXT_CHOICES = [0, 1, 3, 5, 10, 25];
+export const DEFAULT_PREFS: DiffPrefs = { scope: 'hunk', layout: 'inline', ignoreWhitespace: false, view: 'diff', context: 3, wrap: false, syntax: true };
 const PREFS_KEY = 'diff-prefs';
 
+const oneOf = <T>(allowed: readonly T[], v: unknown, fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);
+const bool = (v: unknown, fallback: boolean): boolean => (typeof v === 'boolean' ? v : fallback);
+
+/** A stored value as prefs: each known key validated on its own (else its default); every other key is dropped. */
+export function parsePrefs(raw: string | null): DiffPrefs {
+  let v: unknown;
+  try { v = JSON.parse(raw ?? 'null'); } catch { v = null; }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return DEFAULT_PREFS;
+  const o = v as Record<string, unknown>;
+  const d = DEFAULT_PREFS;
+  return {
+    scope: oneOf(['hunk', 'full'] as const, o.scope, d.scope),
+    layout: oneOf(['inline', 'split'] as const, o.layout, d.layout),
+    ignoreWhitespace: bool(o.ignoreWhitespace, d.ignoreWhitespace),
+    view: oneOf(['diff', 'file'] as const, o.view, d.view),
+    context: oneOf(CONTEXT_CHOICES, o.context, d.context),
+    wrap: bool(o.wrap, d.wrap),
+    syntax: bool(o.syntax, d.syntax),
+  };
+}
+
 function loadPrefs(): DiffPrefs {
-  try {
-    const v = JSON.parse(getItem(PREFS_KEY) ?? 'null') as Partial<DiffPrefs> | null;
-    return v && typeof v === 'object' ? { ...DEFAULT_PREFS, ...v } : DEFAULT_PREFS;
-  } catch {
-    return DEFAULT_PREFS;
-  }
+  const raw = getItem(PREFS_KEY);
+  const prefs = parsePrefs(raw);
+  // A stored value with unknown or invalid keys is rewritten once, normalized.
+  if (raw !== null && raw !== JSON.stringify(prefs)) setItem(PREFS_KEY, JSON.stringify(prefs));
+  return prefs;
 }
 
 /** Global, persisted as `code-git:diff-prefs`. */
@@ -69,14 +95,16 @@ const toError = (e: unknown): DiffError => {
   };
 };
 
-/** Context a request uses: the chosen one in Hunk mode, the whole file in Inline, Split and File view. */
-export const contextFor = (p: DiffPrefs): number | 'full' => (p.view === 'diff' && p.mode === 'hunk' ? p.context : 'full');
+/** Context a request uses: the chosen one in Hunk scope, the whole file in Full scope and File view. */
+export const contextFor = (p: DiffPrefs): number | 'full' => (p.view === 'diff' && p.scope === 'hunk' ? p.context : 'full');
+/** The wire value of the Ignore whitespace toggle: on is git's `-w`. */
+export const whitespaceFor = (p: DiffPrefs): Whitespace => (p.ignoreWhitespace ? 'all' : 'none');
 export const fileKey = (path: string, context: number | 'full', ws: Whitespace): string => `${path}\0${context}\0${ws}`;
 
 /** A fresh diff for `tab`: `preloaded` is a list already fetched for `source` (the Compare panel validates first). */
 export function startDiff(tab: Tab, source: DiffSource, opts: { path?: string; preloaded?: DiffFilesResult } = {}): void {
   const prev = diffStore.get().get(tabKey(tab));
-  const ws = prefsStore.get().whitespace;
+  const ws = whitespaceFor(prefsStore.get());
   const state: DiffTabState = {
     source,
     list: { loading: !opts.preloaded, error: null, result: opts.preloaded ?? null, whitespace: ws },
@@ -117,7 +145,7 @@ export async function loadList(tab: Tab, keepPath?: string | null): Promise<void
   const cur = diffStore.get().get(tabKey(tab));
   if (!cur) return;
   const generation = cur.generation + 1;
-  const ws = prefsStore.get().whitespace;
+  const ws = whitespaceFor(prefsStore.get());
   const keep = keepPath ?? cur.viewed;
   put(tab, (s) => ({ ...s, generation, files: new Map(), list: { ...s.list, loading: true, error: null, whitespace: ws } }));
   const fresh = (s: DiffTabState) => s.generation === generation;

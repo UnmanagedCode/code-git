@@ -201,10 +201,10 @@ test('a file is loaded against the pinned pair diff.files returned, not the orig
   });
 });
 
-const group = (name: string) => within(panel()).getByRole('group', { name, exact: true });
-const pick = (g: string, name: string) => userEvent.click(within(group(g)).getByRole('button', { name, exact: true }));
+const group = (name: string) => within(panel()).getByRole('group', { name });
+const pick = (g: string, name: string) => userEvent.click(within(group(g)).getByRole('button', { name }));
 const pressed = (g: string) => within(group(g)).getAllByRole('button').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent);
-const ignoreWs = () => within(panel()).getByRole('button', { name: 'Ignore whitespace', exact: true });
+const ignoreWs = () => within(panel()).getByRole('button', { name: 'Ignore whitespace' });
 
 // Invariant: the toolbar offers independent Diff scope (Hunk | Full) and Diff layout (Inline | Split) groups and one
 // Ignore whitespace toggle, in place of Diff mode and the Whitespace select; each keeps its own pressed state.
@@ -285,7 +285,7 @@ test('Context lines is disabled in Full scope; scope and layout are disabled in 
   expect(contextSelect().disabled).toBe(false);
   await pick('Diff scope', 'Full');
   expect(contextSelect().disabled).toBe(true);
-  await userEvent.click(within(group('View')).getByRole('button', { name: 'File', exact: true }));
+  await userEvent.click(within(group('View')).getByRole('button', { name: 'File' }));
   const disabled = (g: string) => within(group(g)).getAllByRole('button').map((b) => (b as HTMLButtonElement).disabled);
   expect([...disabled('Diff scope'), ...disabled('Diff layout')]).toEqual([true, true, true, true]);
   expect((ignoreWs() as HTMLButtonElement).disabled).toBe(false);

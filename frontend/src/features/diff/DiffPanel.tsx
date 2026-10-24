@@ -13,7 +13,7 @@ import { useFileView } from '@/state/fileView';
 import { clearLineSelection, setLineSelection, useLineSelection } from '@/state/lineSelection';
 import { useStore } from '@/state/store';
 import {
-  contextFor, diffStore, fileKey, forceFile, loadFile, loadList, prefsStore, setSelection,
+  contextFor, diffStore, fileKey, forceFile, loadFile, loadList, prefsStore, setSelection, whitespaceFor,
 } from '@/state/diff';
 import { tabKey, type Tab } from '@/state/tabs';
 import { workdirOf, workdirStore } from '@/state/workdir';
@@ -30,7 +30,7 @@ import { closeDiff, openDiff } from './openDiff';
 import { copyPatch, downloadPatch, patchPaths, patchSource } from './patch';
 import { SearchBar } from './SearchBar';
 import { useDiffKeys } from './useDiffKeys';
-import { buildRows, findMatches, highlightSides } from './viewRows';
+import { buildRows, findMatches, highlightSides, layoutFor } from './viewRows';
 
 const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`;
 
@@ -53,27 +53,30 @@ function DiffView({ tab }: { tab: Tab }) {
   const ordered = useMemo(() => orderedFiles(files, view), [files, view]);
   const file = files.find((f) => f.path === state?.viewed) ?? null;
   const context = contextFor(prefs);
-  const key = file ? fileKey(file.path, context, prefs.whitespace) : null;
+  const ws = whitespaceFor(prefs);
+  const key = file ? fileKey(file.path, context, ws) : null;
   const fileState = key ? state?.files.get(key) : undefined;
   const forced = !!file && !!state?.forced.includes(file.path);
-  const wantFile = !!file && !file.binary && file.status !== 'U' && (!file.oversized || forced) && list?.whitespace === prefs.whitespace;
-  const layout = prefs.view === 'file' ? 'file' : prefs.mode;
+  const wantFile = !!file && !file.binary && file.status !== 'U' && (!file.oversized || forced) && list?.whitespace === ws;
+  // Scope decides the request (context) and the hunk headers; layout only how the rows render.
+  const layout = layoutFor(prefs);
+  const headers = prefs.scope === 'hunk';
 
   useEffect(() => { rootRef.current?.focus({ preventScroll: true }); }, []);
-  // The whitespace choice changes numstat too: the list is reloaded for it.
+  // Ignore whitespace changes numstat too: the list is reloaded for it.
   useEffect(() => {
-    if (list && !list.loading && list.whitespace !== prefs.whitespace) void loadList(tab);
-  }, [prefs.whitespace, list?.whitespace, list?.loading]);
+    if (list && !list.loading && list.whitespace !== ws) void loadList(tab);
+  }, [ws, list?.whitespace, list?.loading]);
   useEffect(() => {
-    if (wantFile && file && !fileState) void loadFile(tab, file, context, prefs.whitespace);
+    if (wantFile && file && !fileState) void loadFile(tab, file, context, ws);
   }, [key, wantFile, !!fileState]);
-  useEffect(() => { setChangeIndex(0); }, [key, layout]);
+  useEffect(() => { setChangeIndex(0); }, [key, layout, headers]);
   useEffect(() => { if (searchOpen) inputRef.current?.focus(); }, [searchOpen]);
 
   const diff = fileState?.diff ?? null;
   const lang = file ? languageFor(file.path) : null;
   const segs = useMemo(() => (diff && prefs.syntax ? highlightSides(diff.hunks, lang, tokenize) : null), [diff, lang, tokenize, prefs.syntax]);
-  const rows = useMemo(() => (diff ? buildRows(diff, layout, segs) : []), [diff, layout, segs]);
+  const rows = useMemo(() => (diff ? buildRows(diff, layout, headers, segs) : []), [diff, layout, headers, segs]);
   const changeCount = useMemo(() => (diff ? changeBlocks(diff.hunks).length : 0), [diff]);
   const matches = useMemo(() => (searchOpen ? findMatches(rows, query) : []), [rows, query, searchOpen]);
   const current = matches.length ? Math.min(matchIndex, matches.length - 1) : -1;
@@ -83,7 +86,7 @@ function DiffView({ tab }: { tab: Tab }) {
     const c = matches[current];
     return { byCell, current: c ? { cellId: c.cellId, range: c } : null };
   }, [matches, current]);
-  useEffect(() => { setMatchIndex(0); }, [query, key, layout]);
+  useEffect(() => { setMatchIndex(0); }, [query, key, layout, headers]);
 
   // Hunk and line staging (features/staging), for an unstaged or staged diff of a modified file only.
   const generation = state?.generation ?? 0;

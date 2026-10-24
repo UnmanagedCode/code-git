@@ -102,7 +102,7 @@ test('file history: the viewer shows the scope and layout groups and Ignore whit
   act(() => openFileHistory(TAB, { path: 'c.txt', rev: REV }));
   const toolbar = await screen.findByRole('toolbar', { name: 'Change view' });
   const viewer = () => document.querySelector('[data-history-viewer]')!;
-  const pick = (g: string, name: string) => userEvent.click(within(within(toolbar).getByRole('group', { name: g, exact: true })).getByRole('button', { name, exact: true }));
+  const pick = (g: string, name: string) => userEvent.click(within(within(toolbar).getByRole('group', { name: g })).getByRole('button', { name }));
   await waitFor(() => expect(viewer().querySelector('[data-view=unified]')).toBeTruthy());
   expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 3, whitespace: 'none' });
   await pick('Diff layout', 'Split');
@@ -113,7 +113,7 @@ test('file history: the viewer shows the scope and layout groups and Ignore whit
   await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 'full', whitespace: 'none' }));
   await waitFor(() => expect(viewer().querySelector('[data-view=split]')).toBeTruthy());
   expect(viewer().querySelectorAll('[data-hunk-header]')).toHaveLength(0);
-  const ws = within(toolbar).getByRole('button', { name: 'Ignore whitespace', exact: true });
+  const ws = within(toolbar).getByRole('button', { name: 'Ignore whitespace' });
   await userEvent.click(ws);
   expect(ws.getAttribute('aria-pressed')).toBe('true');
   await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 'full', whitespace: 'all' }));

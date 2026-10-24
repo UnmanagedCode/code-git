@@ -14,7 +14,7 @@ function Half({ cell, marks, wrap, side, staging }: { cell: Cell | null; marks: 
   );
 }
 
-/** Split mode: the old side beside the new, each with its own line numbers; with `staging`, a gutter toggle per change. */
+/** Split layout: the old side beside the new (under each hunk's header in Hunk scope), each with its own line numbers; with `staging`, a gutter toggle per change. */
 export function SplitView({ rows, marks, wrap, staging }: { rows: ViewRow[]; marks: Marks; wrap: boolean; staging?: StagingView }) {
   return (
     <div className="font-mono text-xs leading-5" data-view="split">
