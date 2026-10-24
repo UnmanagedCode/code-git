@@ -245,17 +245,18 @@ test('commit.template: core.commentString is preferred, and core.commentChar is 
   assert.deepEqual((await w.op('commit.template')).draft, { summary: '; semicolon line', description: '' });
 });
 
-test('commit.template: a FIFO template, directly or through a symlink, refuses PROBE_TIMEOUT promptly', { timeout: 10_000 }, async (t) => {
+test('commit.template: a FIFO template, or a symlink to one, refuses PROBE_TIMEOUT promptly (git opens a FIFO behind a link it is given)', { timeout: 10_000 }, async (t) => {
   shortProbe(t);
   const w = await world(t);
   const fifo = path.join(w.repo.root, 'tmpl-pipe');
   mkfifo(fifo);
   fs.symlinkSync(fifo, path.join(w.repo.root, 'tmpl-link'));
   for (const name of ['tmpl-pipe', 'tmpl-link']) {
-    w.repo.git('config', 'commit.template', path.join(w.repo.root, name));
+    const at = path.join(w.repo.root, name);
+    w.repo.git('config', 'commit.template', at);
     const { e, ms } = await rejection(w.op('commit.template'));
     assert.equal(e.code, 'PROBE_TIMEOUT', `${name}: ${e.message}`);
-    assert.equal(e.extra.path, fifo, name);
+    assert.equal(e.extra.path, at, name);
     assert.ok(ms < 5000, `${name} refused after ${ms} ms`);
   }
 });

@@ -13,4 +13,11 @@ export const DIFF_LIMITS = {
   maxCommits: 1000,
   /** Paths in one diff.patch selection. */
   maxPaths: 1000,
+  /**
+   * The bound on noIndex.js's stat-only `--raw` probe. A regular file is only stat-ed (no open, no hash: ~1 ms for a
+   * 118 MiB file with git 2.55, against 232 ms for `hash-object` reading it), so this covers process spawn and cc's exec
+   * round trip, not file size; a FIFO, which git opens, is refused PROBE_TIMEOUT within it. The content read after a
+   * `file` verdict keeps the kind's timeout. Read at call time.
+   */
+  probeTimeoutMs: 10_000,
 };
