@@ -2,7 +2,8 @@
 // drives the UI's read path only (the picker, repo.summary — `git status` with GIT_OPTIONAL_LOCKS=0 — and the reads an
 // open tab makes: the graph, branch.tracking, remote.list). On a checkout whose project lives on a non-local System it
 // also asks the remote where HEAD's upstream branch is (remote.peek: `git ls-remote`, a read) and what is in progress
-// (commit.state: operation and conflicts). It never calls a write
+// (commit.state: operation and conflicts), what git-lfs it has (lfs.status: `lfs version` and plain git) and its git-flow
+// settings (flow.config), and opens its LFS dialog. It never calls a write
 // op (the script fails if any is posted), never registers or enables the plugin.
 // Run: CONDUCTOR_URL=http://127.0.0.1:<cc port> node harness/playwright/live.mjs [project[/worktree] …]
 // Default checkouts: code-git and test, plus each one's first worktree by name, as cc lists them at run time (worktrees
@@ -211,6 +212,36 @@ try {
       console.log(`note: ${label(c)} (${system}): commit.state → ${state.status} ${JSON.stringify(r ?? state.body)}`);
       check(state.status === 200 && typeof r.merging === 'boolean' && r.operation === null && Array.isArray(r.conflicts) && r.conflicts.length === 0,
         `${label(c)}: commit.state answers merging, operation null and conflicts [] (nothing in progress)`);
+    }
+
+    // git-lfs and git-flow on a non-local System, read-only: lfs.status runs `lfs version` and plain git (never a git-lfs
+    // command that writes), flow.config reads gitflow.* and the heads. Then the LFS dialog opens (it posts lfs.status only).
+    for (const c of opened) {
+      const system = projects.find((p) => p.name === c.project)?.system ?? 'local';
+      if (system === 'local') continue;
+      const lfs = await readOp('lfs.status', c);
+      const r = lfs.body.result;
+      console.log(`note: ${label(c)} (${system}): lfs.status → ${lfs.status} ${JSON.stringify(r ?? lfs.body)}`);
+      check(lfs.status === 200 && r.available === true && /^\d+\.\d+\.\d+$/.test(r.version) && r.supported === true
+        && typeof r.filters === 'boolean' && (r.attributes === 'unsupported' ? r.patterns === null : Array.isArray(r.patterns)),
+      `${label(c)}: lfs.status reports a supported git-lfs (${r?.version}) and the root .gitattributes patterns`);
+      const flow = await readOp('flow.config', c);
+      const f = flow.body.result;
+      console.log(`note: ${label(c)} (${system}): flow.config → ${flow.status} ${JSON.stringify(f ?? flow.body)}`);
+      check(flow.status === 200 && typeof f.initialized === 'boolean' && typeof f.defaults?.develop === 'string'
+        && ['feature', 'release', 'hotfix', 'versionTag'].every((k) => k in f.prefixes), `${label(c)}: flow.config answers well-formed settings`);
+      const index = opened.indexOf(c) + 1;
+      if (index > 8) continue;
+      await page.keyboard.press(`Control+${index}`);
+      await page.getByRole('heading', { name: label(c), exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Repository actions', exact: true }).click();
+      await page.getByRole('menu').getByRole('menuitem', { name: 'LFS…', exact: true }).click();
+      const lfsDialog = page.getByRole('dialog', { name: 'Git LFS', exact: true });
+      await lfsDialog.getByText(`git-lfs ${r.version} on this project's System.`, { exact: true }).waitFor();
+      check(true, `${label(c)}: the LFS dialog shows the System's git-lfs`);
+      await shot(`lfs-${label(c).replace('/', '_')}`);
+      await lfsDialog.getByRole('button', { name: 'Close', exact: true }).first().click();
+      await lfsDialog.waitFor({ state: 'detached' });
     }
 
     const activity = page.getByRole('region', { name: 'Activity' });

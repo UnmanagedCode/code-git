@@ -21,8 +21,10 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Submodules | Status of each submodule (uninitialised, not cloned, out of sync, modified, untracked, added, conflicted, blocked); add, initialize, update (recursive), sync, edit url, remove; open one as its own tab, with an offer to commit its new pointer in the parent on the way out. [docs/submodules.md](docs/submodules.md) |
 | Undo / redo | The checkout's last commit, checkout, branch / tag change, reset, cherry-pick, revert, merge, rebase, discard, stash op (but apply) or remote-config change, undone and redone from the header, Ctrl/⌘+Z / Ctrl/⌘+Shift+Z or the palette; refused once a created commit is on a remote; a fetch keeps it. [docs/undo.md](docs/undo.md) |
 | History | A file's history across renames with each commit's change, blame with author colours, and the reflog of HEAD or a branch. [docs/history.md](docs/history.md) |
+| Git-flow | Initialize (the `gitflow.*` settings), start and finish feature, release and hotfix branches from the toolbar's **Repository actions** menu, a flow branch's menu or the palette; finish merges `--no-ff`, tags a release or hotfix, deletes the branch, and changes nothing when a merge would conflict. Native: no git-flow extension needed. [docs/gitflow.md](docs/gitflow.md) |
+| LFS | The System's git-lfs: tracked patterns of the root `.gitattributes`, track and untrack, the LFS files (on request), pull, prune behind a confirmation. [docs/lfs.md](docs/lfs.md) |
 | Command palette | Ctrl/⌘+P: every command by name, with a second step to pick a branch, a tab or a file; Ctrl/⌘+/ lists every shortcut |
-| Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it |
+| Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it. Hooks always run (only a commit can skip them); a failing one blocks with its output ([docs/features.md → Hooks](docs/features.md#hooks)) |
 
 Details: [docs/features.md](docs/features.md).
 
@@ -44,7 +46,7 @@ docs/                   features, protocol, architecture, GitKraken reference
 .wiki/                  gotchas, decisions, glossary
 ```
 
-Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md). Merge, rebase and conflicts: [docs/merge.md](docs/merge.md). Stash: [docs/stash.md](docs/stash.md). Remotes, fetch, pull and push: [docs/remotes.md](docs/remotes.md). Submodules: [docs/submodules.md](docs/submodules.md). Undo and redo: [docs/undo.md](docs/undo.md). File history, blame and the reflog: [docs/history.md](docs/history.md).
+Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts: [docs/protocol.md](docs/protocol.md). The commit graph: [docs/graph.md](docs/graph.md). Branches, tags and HEAD: [docs/refs.md](docs/refs.md). Merge, rebase and conflicts: [docs/merge.md](docs/merge.md). Stash: [docs/stash.md](docs/stash.md). Remotes, fetch, pull and push: [docs/remotes.md](docs/remotes.md). Submodules: [docs/submodules.md](docs/submodules.md). Undo and redo: [docs/undo.md](docs/undo.md). File history, blame and the reflog: [docs/history.md](docs/history.md). Git-flow: [docs/gitflow.md](docs/gitflow.md). Git LFS: [docs/lfs.md](docs/lfs.md).
 
 ## Run
 
@@ -67,7 +69,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 | `npm test` | typecheck, then backend, then UI tests |
 | `npm run test:server` | `node --test "tests/*.test.js"` |
 | `npm run test:ui` | `vitest run --config frontend/vitest.config.ts` |
-| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `stash.mjs` / `remotes.mjs` / `operations.mjs` / `merge.mjs` / `rebase.mjs` / `conflicts.mjs` / `submodules.mjs` / `history.mjs` / `palette.mjs` | screenshots / golden path / the diff path / the staging path / the stash path / the remotes path / the merge-and-rebase in-progress path / the merge and rebase starts / the interactive editor / the merge tool / the submodule path / file history, blame and the reflog / the palette, the shortcut sheet and undo/redo on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
+| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `stash.mjs` / `remotes.mjs` / `operations.mjs` / `merge.mjs` / `rebase.mjs` / `conflicts.mjs` / `submodules.mjs` / `history.mjs` / `palette.mjs` / `flow.mjs` / `lfs.mjs` | screenshots / golden path / the diff path / the staging path / the stash path / the remotes path / the merge-and-rebase in-progress path / the merge and rebase starts / the interactive editor / the merge tool / the submodule path / file history, blame and the reflog / the palette, the shortcut sheet and undo/redo / the git-flow path / the LFS path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
 | `node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" baseline` | mutation trust gates ([harness/mutation/README.md](harness/mutation/README.md)) |
 
 ## Known limitations
@@ -98,3 +100,5 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **The merge tool merges with its own three-way diff**, which can draw conflicts differently from git's merge (no merge drivers, `-X` options or renames); files over 512 KiB a side, binary or non-UTF-8 files are resolved by taking a side.
 - **Rebase needs git ≥ 2.26** on the project's System, and refuses a range holding merge commits (`HAS_MERGES`).
 - **`git am` in progress, and a multi-commit cherry-pick or revert left stopped after a manual commit, are not shown** as in progress; a branch or tag named `MERGE_HEAD`, `CHERRY_PICK_HEAD` or `REVERT_HEAD` reads as that operation ([docs/merge.md → Known limitations](docs/merge.md#known-limitations)).
+- **git-flow finish needs git ≥ 2.38, and main and develop free of other checkouts** (a release or hotfix is finished from the checkout that holds the production branch); a finish that stops after its first write is not rolled back ([docs/gitflow.md → Known limitations](docs/gitflow.md#known-limitations)).
+- **LFS needs git-lfs ≥ 3.2.0 on the project's System**, whose filter config is the System's (code-git never runs `git lfs install`); git-lfs may create `.git/lfs` and install its hooks on any LFS write, a file listing included, and when git runs its filter. Patterns are read from the root `.gitattributes` only ([docs/lfs.md](docs/lfs.md)).
