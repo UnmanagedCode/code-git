@@ -34,6 +34,9 @@ import { resetConflictTool } from '@/features/conflicts/state';
 import { resetSubmoduleExit } from '@/features/submodules/exit';
 import { resetSubmodules } from '@/features/submodules/state';
 import { resetSubmoduleDialog } from '@/state/submoduleDialog';
+import { resetFlow } from '@/features/flow/state';
+import { resetFlowDialog } from '@/state/flowDialog';
+import { resetLfsDialog } from '@/state/lfsDialog';
 import { installFakeEventSource } from './fakeEventSource';
 
 beforeEach(() => installFakeEventSource());
@@ -81,6 +84,9 @@ afterEach(() => {
   resetSubmoduleExit();
   resetSubmoduleDialog();
   resetSubmodules();
+  resetFlow();
+  resetFlowDialog();
+  resetLfsDialog();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();

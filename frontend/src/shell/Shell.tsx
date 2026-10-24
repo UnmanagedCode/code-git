@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { FolderGit2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RefDialogHost } from '@/features/branches/RefDialogHost';
+import { FlowHost } from '@/features/flow/FlowHost';
+import { LfsHost } from '@/features/lfs/LfsHost';
 import { RemotesHost } from '@/features/remotes/RemotesHost';
 import { RepoPicker } from '@/features/repos/RepoPicker';
 import { StashDialogHost } from '@/features/stash/StashDialogHost';
@@ -69,6 +71,8 @@ export function Shell() {
       <RemotesHost />
       <SequenceDialogHost />
       <SubmoduleDialogHost />
+      <FlowHost />
+      <LfsHost />
       <CommandPalette />
       <ShortcutSheet />
     </div>

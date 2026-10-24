@@ -5,6 +5,8 @@ import { STASH_COMMANDS } from '@/features/stash/commands';
 import { TAB_COMMANDS } from '@/features/tabs/commands';
 import { UNDO_COMMANDS } from '@/features/undo/commands';
 import { WORKDIR_COMMANDS } from '@/features/workdir/commands';
+import { FLOW_COMMANDS } from '@/features/flow/commands';
+import { LFS_COMMANDS } from '@/features/lfs/commands';
 import { loadSummary } from '@/state/useRepoSummary';
 import { refreshGraph } from '@/state/graph';
 import type { Tab } from '@/state/tabs';
@@ -46,7 +48,7 @@ const SHELL_COMMANDS: Command[] = [
   { id: 'shell.refresh', title: 'Refresh', group: 'View', run: (tab) => { void loadSummary(tab); void refreshGraph(tab, 'manual'); } },
 ];
 
-export const COMMANDS: Command[] = [...SHELL_COMMANDS, ...UNDO_COMMANDS, ...WORKDIR_COMMANDS, ...HISTORY_COMMANDS, ...BRANCH_COMMANDS, ...REMOTE_COMMANDS, ...STASH_COMMANDS, ...TAB_COMMANDS];
+export const COMMANDS: Command[] = [...SHELL_COMMANDS, ...UNDO_COMMANDS, ...WORKDIR_COMMANDS, ...HISTORY_COMMANDS, ...BRANCH_COMMANDS, ...REMOTE_COMMANDS, ...STASH_COMMANDS, ...FLOW_COMMANDS, ...LFS_COMMANDS, ...TAB_COMMANDS];
 
 /** Whether `query`'s characters appear in `text` in order (case-insensitive); the empty query matches everything. */
 export function subsequence(query: string, text: string): boolean {

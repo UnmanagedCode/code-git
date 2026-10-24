@@ -31,9 +31,13 @@ const ERROR_MS = 10_000;
 const DESCRIPTION_MAX = 600;
 
 const asApiError = (e: unknown): ApiError => (e instanceof ApiError ? e : new ApiError(0, e instanceof Error ? e.message : String(e)));
-/** The backend's git stderr on a refusal (GIT_FAILED, CHECKOUT_CONFLICT, the push refusals), when it sent one. */
+/**
+ * The backend's git stderr on a refusal (GIT_FAILED, CHECKOUT_CONFLICT, the push refusals), when it sent one; for a
+ * refusal wrapping another (FLOW_INCOMPLETE), its `cause`'s.
+ */
 export const stderrOf = (e: ApiError): string | undefined => {
-  const s = (e.body as { stderr?: unknown } | undefined)?.stderr;
+  const body = e.body as { stderr?: unknown; cause?: { stderr?: unknown } } | undefined;
+  const s = body?.stderr ?? body?.cause?.stderr;
   return typeof s === 'string' && s.trim() ? s.trim() : undefined;
 };
 

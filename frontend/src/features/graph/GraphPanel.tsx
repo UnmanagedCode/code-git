@@ -9,6 +9,7 @@ import { setCssPx } from '@/lib/cssVars';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
 import { CreateBranchButton } from '@/features/branches/CreateBranchButton';
+import { RepoMenuButton } from '@/features/repoMenu/RepoMenuButton';
 import { RemoteToolbar } from '@/features/remotes/RemoteToolbar';
 import { anchorOf, ContextMenuHost, openContextMenu } from '@/shell/ContextMenuHost';
 import { runPrimary } from '@/shell/menus';
@@ -413,6 +414,7 @@ function GraphView({ tab }: { tab: Tab }) {
           </DropdownMenu>
           <RemoteToolbar tab={tab} />
           <CreateBranchButton tab={tab} />
+          <RepoMenuButton tab={tab} />
           <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Refresh graph" onClick={() => void refreshGraph(tab, 'manual')}>
             <RefreshCwIcon className={data.status === 'loading' ? 'animate-spin' : undefined} />
           </Button>
