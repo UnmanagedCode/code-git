@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createActivityLog, redactArgv } from '../src/activity/log.js';
 import { BASE_ARGS } from '../src/git/runner.js';
-import { maskDeep, maskUrl, maskUrls } from '../src/mask.js';
+import { isMaskedUrl, maskDeep, maskUrl, maskUrls } from '../src/mask.js';
 import { refsWorld } from './_refsWorld.js';
 import { startApp } from './_app.js';
 
@@ -21,6 +21,15 @@ test('maskUrl hides everything from the userinfo\'s first : to the authority\'s 
 test('maskUrl leaves urls without a password alone', () => {
   for (const u of ['https://host/r.git', 'https://user@host/r', 'ssh://git@host:22/r.git', 'git@host:o/r.git', '/srv/r.git', 'file:///srv/r', 'origin', '--end-of-options']) {
     assert.equal(maskUrl(u), u, u);
+  }
+});
+
+// Invariant: isMaskedUrl holds exactly for a url maskUrl leaves unchanged that has a password span, i.e. one whose
+// password is the mask `***` itself; a raw password, none at all, or a password merely starting with *** is not masked.
+test('isMaskedUrl: true only when the password span is exactly *** (what maskUrl shows)', () => {
+  for (const u of ['https://u:***@h/r', 'https://a@b:***@h/r', 'https://:***@h/r', 'ssh://u:***@h:22/r']) assert.equal(isMaskedUrl(u), true, u);
+  for (const u of ['https://u:pw@h/r', 'https://u@h/r', 'https://h/r', 'git@h:o/r.git', 'u:***@h:r', '/srv/r.git', 'https://u:***x@h/r', 'https://u:x***@h/r']) {
+    assert.equal(isMaskedUrl(u), false, u);
   }
 });
 

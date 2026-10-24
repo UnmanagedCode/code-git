@@ -1,4 +1,8 @@
-// Hiding a url's password wherever a url may be shown (remote.list's display urls, the activity log's argv and stderr). Pure.
+// Hiding a url's password wherever a url may be shown (remote.list's urls, op results, the activity log's argv and stderr), and
+// spotting the mask echoed back. Pure.
+
+/** A url's `scheme://user` (group 1), then its password span: from the first `:` after `scheme://` up to the last `@`. */
+const PASSWORD_RE = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/[^:]*):[\s\S]*@/;
 
 /**
  * `url` with everything from the first `:` after `scheme://` up to its last `@` shown as `***`:
@@ -6,7 +10,13 @@
  * `/` and `@`, so the first `:` and the last `@` are taken (a path holding a `:` and an `@` is masked too: the safe side).
  * A url without a `:` before an `@` after `scheme://` is returned unchanged.
  */
-export const maskUrl = (url) => url.replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/[^:]*):[\s\S]*@/, '$1:***@');
+export const maskUrl = (url) => url.replace(PASSWORD_RE, '$1:***@');
+
+/**
+ * Whether `url`'s password is the mask itself (`https://u:***@host/r`): what maskUrl shows, echoed back. A real password
+ * that is literally `***` reads as masked too.
+ */
+export const isMaskedUrl = (url) => PASSWORD_RE.test(url) && maskUrl(url) === url;
 
 /**
  * `text` with every `scheme://user:password@` inside it masked as maskUrl does, within each whitespace-separated token:
