@@ -153,3 +153,31 @@ for (const [v, { setup, left }] of Object.entries(MULTI)) {
     if (v === 'remote') assert.deepEqual(old.branchKeys, [['branch.main.merge', 'refs/heads/main']], 'the single-valued merge was cleared');
   });
 }
+
+// Invariant: an add's undo never touches a branch key — an upstream naming the remote that existed before the add
+// (branch.side.remote / .merge) is left exactly as it was by the undo (only the section goes) and by the redo.
+test('remote.add over a pre-existing upstream naming it: undo removes only the section, the upstream stays', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('branch', 'side');
+  w.repo.git('config', 'branch.side.remote', 'extra');
+  w.repo.git('config', 'branch.side.merge', 'refs/heads/side');
+  const upstream = () => w.repo.git('config', '--local', '--get-regexp', '^branch\\.side\\.');
+  const before = upstream();
+  await roundTrip(w, () => w.op('remote.add', { name: 'extra', url: path.join(w.repo.root, 'e.git') }));
+  await w.undo();
+  assert.equal(upstream(), before, 'the upstream is exactly as before the add');
+  assert.throws(() => w.repo.git('config', '--get', 'remote.extra.url'), 'the section is gone');
+});
+
+// Invariant: a branch.<b>.pushRemote key is not an upstream: a branch with only a pushRemote naming the remote is left out
+// of clearedUpstreams, while branchKeys records its pushRemote and the undo restores it.
+test('remote.remove of a branch with only a pushRemote: not in clearedUpstreams, recorded and restored', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('branch', 'solo');
+  w.repo.git('config', 'branch.solo.pushRemote', 'origin');
+  const { result } = await roundTrip(w, () => w.op('remote.remove', { name: 'origin' }));
+  assert.deepEqual(result.clearedUpstreams, [{ branch: 'main', merge: 'refs/heads/main' }]);
+  assert.ok(result.undo.remotes[0].old.branchKeys.some(([k, v]) => k === 'branch.solo.pushremote' && v === 'origin'), 'the pushRemote is recorded');
+  await w.undo();
+  assert.equal(w.repo.git('config', '--local', '--get-all', 'branch.solo.pushRemote'), 'origin');
+});
