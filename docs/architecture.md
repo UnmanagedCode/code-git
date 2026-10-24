@@ -126,7 +126,8 @@ What a later card touches to add a feature — each is one file of its own plus 
 | To add | Create | Register in |
 |---|---|---|
 | A backend op | `src/git/ops/<feature>.js` exporting `ops = [{name, kind, cancellable?, params, run, undo?}]` | the list passed to `buildRegistry` in `src/git/ops/index.js` |
-| Register an op's undo | an `undo(params, result) → UndoPlan \| null` field on the write's own definition ([undo → Registering an op](undo.md#registering-an-op)) | nothing |
+| Register an op's undo | an `undo(params, result) → UndoPlan \| null` field on the write's own definition ([undo → Registering an op](undo.md#registering-an-op)) | `FETCH_AUDITED` in `tests/undo-fetch-neutral.test.js` and the audit table in [undo → Fetch neutrality](undo.md#fetch-neutrality) |
+| Make a write journal-neutral | `journal: 'neutral'` on the write's own definition (no `undo`): it neither records nor clears the slots | only when every registered plan refuses after it ([undo → Fetch neutrality](undo.md#fetch-neutrality)) |
 | Backend routes (rarely: ops go through `api/ops/:name`) | `src/routes/<feature>.js` exporting `mount(router, deps)` | `mountRoutes` in `src/routes/index.js` |
 | A panel | a `PanelDef` (`{id, slot, title, component, order, onDemand?}`) in `frontend/src/features/<feature>/` | `PANELS` in `frontend/src/shell/panels.ts` |
 | A panel shown on demand (the diff) | a `PanelDef` with `onDemand: true`; show it with `showPanel(tab, id)` (`state/shownPanel.ts`) | `PANELS`; while shown it replaces its slot's other panels for that tab |
@@ -195,6 +196,7 @@ What a later card touches to add a feature — each is one file of its own plus 
 - `kind` is `'read'` or `'write'`.
 - `cancellable`, when given, is a boolean; it defaults to `kind === 'read'`. A write sets `cancellable: true` only where aborting mid-command cannot leave the repo half-changed, and its card states why: `remote.fetch` (atomic ref updates, gc off, no index or worktree), `remote.push`, `tag.push`, `tag.deleteRemote`, `branch.deleteRemote` (atomic remote ref updates). `remote.pull`, `merge.start`, `rebase.start`, `rebase.interactive`, `conflict.save`, `conflict.take`, `head.continue`, `head.skip` and `head.abort` are not: an abort mid-merge or mid-rebase would.
 - `undo`, when given, is a function, and only on a write ([undo → Registering an op](undo.md#registering-an-op)).
+- `journal`, when given, is `'neutral'`, on a write without `undo`.
 - `params(raw)` validates and returns typed params or throws a `Refusal`; `run(git, params, {target, journal})` returns JSON. `target` is the call's validated `{project, worktree, sub?}` (worktree `null` = main checkout; `sub` a submodule chain), for an op that names its output after the checkout (`diff.patch`); `journal` is the undo journal, read only by the `undo.*` ops; git still runs only through `git`. `git(args, opts)` is `runGit` bound to the call's context. One op may run several commands; each gets its own activity entry with the call's `opRunId`. For a write, the route opens the call's run first (`activity.openRun`), counts each `git` call through `run.track`, and calls `run.end()` in a `finally` ([Write op runs](#write-op-runs)).
 
 ## Runner pipeline (`runGit`)

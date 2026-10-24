@@ -15,7 +15,13 @@ undo(params, result) → UndoPlan | null
 - Checked by `buildRegistry` at load: a non-function, or an `undo` on a read, throws.
 - It reads the op's `params` and `result` (`result.undo`, the record of [refs → Undo record](refs.md#undo-record)); it never runs git.
 - `null`, or a plan without steps, records nothing (an outcome that stopped on conflicts, a no-op).
-- A later card registers its op the same way; it adds a step kind only when none of the existing ones fits.
+- A later card registers its op the same way; it adds a step kind only when none of the existing ones fits, and extends the fetch audit ([Fetch neutrality](#fetch-neutrality)): `FETCH_AUDITED` in `tests/undo-fetch-neutral.test.js` must equal the set of ops with an `undo`.
+
+A write that must leave the journal alone declares `journal: 'neutral'` instead:
+
+- Checked by `buildRegistry`: any other value, `journal` on a read, or beside an `undo` throws at load.
+- `journalAround` passes it straight through: no clear, no generation bump, nothing recorded — success or failure.
+- The only one: `remote.fetch` (manual and auto-fetch). Its write op run (activity, `onSettledWrite`) is unchanged.
 
 ## Journal
 
@@ -34,11 +40,25 @@ What the ops route does around every op (`journalAround` in `src/git/undo/record
 |---|---|---|
 | A read | nothing | nothing |
 | `undo.*` | nothing | the undo op moves its own entry (below) |
+| `journal: 'neutral'` (`remote.fetch`) | nothing | nothing |
 | Any other write | **both slots cleared** | success with a plan: the plan goes in the undo slot (redo stays empty). Failure, `null` or an empty plan: the slots stay empty |
 
-- A write not registered for undo clears the slots too: `stash.push` leaves every ref where it was, so a compare-and-swap on refs alone could not tell that an undo would now lose work.
+- A write not registered for undo clears the slots too: `stage.files` leaves every ref where it was, so a compare-and-swap on refs alone could not tell that an undo would now lose work.
 - A plan builder that throws is a code-git bug: logged, the op's result still answered, nothing recorded.
 - **Generations**: each clear bumps the checkout's generation. A write records only under the generation its own clear returned, and an undo moves its entry only if no write cleared the slots while it ran — so two writes racing on one checkout never leave an older one's plan in the slot.
+
+## Fetch neutrality
+
+`remote.fetch` neither records nor clears (R3). That holds only because every registered plan refuses — never misapplies — once a fetch moved refs. A code-git fetch writes `refs/remotes/*` and `refs/tags/*` only (`assertFetchDestinations`, `src/git/remote/tracking.js`), plus `FETCH_HEAD` and objects.
+
+| A plan reads | Ops | A fetch's move is caught by |
+|---|---|---|
+| `refs/heads/*`, HEAD | commit, reset, cherry-pick, revert, merge, rebase, continue / skip, checkout, branch create / rename / delete / move / fast-forward | nothing to catch: a fetch never writes them |
+| `refs/tags/*` (`refs` step) | `tag.create`, `tag.delete` | the preflight's `holds()` and the transaction's compare-and-swap → `UNDO_STALE` |
+| Tracking refs, for D3 | every plan with `created` | `assertNotPushed` reads them live: a fetch only makes it more accurate (`UNDO_PUSHED`) |
+| An upstream's name only | `branch.delete`, `branch.checkout` restoring `upstream` | a pruned upstream becomes a `warnings[]` entry; the branch is still restored exactly (a degrade, not a misapply) |
+
+Pinned by `tests/undo-fetch-neutral.test.js`: the slots survive every fetch shape (moving, pruning, tag-creating, every remote, failed), and each row's refusal changes nothing.
 
 ## Plans
 
@@ -173,4 +193,5 @@ Wire shapes: [protocol → Undo ops](protocol.md#undo-ops-srcgitopsundojs).
 - **A restored branch gets back its upstream only**; other `branch.<name>.*` config (a description, `pushRemote`) is not kept.
 - **Undo of a commit that concluded a merge** leaves its changes staged without `MERGE_HEAD`: the merge is no longer in progress.
 - **Snapshots are dangling commits**: a `gc` that prunes them makes the undo of a hard reset or a discard fail (`GIT_FAILED`).
+- **A fetch is never undone**, and it keeps the slots: an undo after it relies on the preflights above.
 - **Stash and remote-config ops are not registered**: their `undo` records (`stashes`, `worktreePatch`, `remotes`) are not undoable from the UI yet, and the ops clear the slots.

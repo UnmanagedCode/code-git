@@ -206,6 +206,9 @@ export const ops = [
   {
     name: 'remote.fetch',
     kind: 'write',
+    // Neither recorded nor clearing the undo slots (R3): it writes only tracking refs and tags, which every registered
+    // plan re-checks before it runs (docs/undo.md → Fetch neutrality). The auto-fetch is this op too.
+    journal: 'neutral',
     // Objects are written before refs and each ref update is atomic: an abort leaves a consistent subset of tracking refs
     // updated and at most a temporary pack, never a touched index or worktree. gc and maintenance are off (fetchArgs).
     cancellable: true,

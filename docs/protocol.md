@@ -51,7 +51,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | With `sub`: the chain is a cloned submodule whose real path is inside the checkout and whose git dir, at every level, is the one git gives it (`assertInsideCheckout`: reads under the op run) | 409 `SUBMODULE_NOT_POPULATED` `{path}`, 409 `SUBMODULE_UNSAFE` `{reason: 'escapes' \| 'gitdir', path}` |
 | Running it | the op's refusals, plus the exec refusals below |
 
-**The undo journal.** Every write that is not `undo.*` clears the checkout's undo and redo slots before it runs; a registered one that succeeds records its plan ([undo → Journal](undo.md#journal)).
+**The undo journal.** Every write that is not `undo.*` or `remote.fetch` (journal-neutral) clears the checkout's undo and redo slots before it runs; a registered one that succeeds records its plan ([undo → Journal](undo.md#journal)).
 
 **Cancel and disconnect.** An op is `cancellable` when its definition says so; the default is `true` for `kind: 'read'` and `false` for `kind: 'write'`. A cancellable op is aborted by `POST api/activity/:id/cancel` on the entry of its **currently running** command (an entry of one of its already-finished commands answers 409 `NOT_RUNNING`), after which the op's request answers 409 `CANCELLED`; or by its HTTP client going away, in which case nobody receives an answer and the outcome is only in the activity log (the entry ends `cancelled`). A non-cancellable op is aborted by neither: it runs to completion and its outcome lands in the activity log.
 

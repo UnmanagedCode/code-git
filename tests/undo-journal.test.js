@@ -16,12 +16,16 @@ const commit = async (w, summary = 'c', at = null) => {
 const EMPTY = { undo: null, redo: null };
 
 // Invariant (D1): a write that is not registered for undo clears both slots, even one that leaves every ref as it was.
-test('an unregistered write — stash.push, stage.files, remote.fetch — clears both slots', async (t) => {
+test('an unregistered write — stage.files, stash.apply, remote.pull — clears both slots', async (t) => {
   const w = await undoWorld(t);
   const writes = [
-    ['stash.push', () => { w.repo.write('f.txt', 'dirty\n'); return {}; }],
     ['stage.files', () => { w.repo.write('s.txt', 's\n'); return { paths: ['s.txt'] }; }],
-    ['remote.fetch', () => ({ remote: null })],
+    ['stash.apply', () => {
+      w.repo.write('f.txt', 'stashed\n');
+      w.repo.git('stash', 'push', '-q');
+      return { oid: w.oid('refs/stash') };
+    }],
+    ['remote.pull', () => ({ mode: 'ff' })],
   ];
   for (const [name, setup] of writes) {
     await commit(w, `before-${name.replace('.', '-')}`);
@@ -109,7 +113,7 @@ test('a commit made with raw git after the op: UNDO_STALE, nothing moves, the sl
   assert.deepEqual(await w.state(), EMPTY);
 });
 
-// Invariant: the route wraps every op: over HTTP a commit records, undo.state shows it, stash.push clears it, and a backend
+// Invariant: the route wraps every op: over HTTP a commit records, undo.state shows it, stage.files clears it, and a backend
 // with a fresh journal (a restart) answers NOTHING_TO_UNDO.
 test('over HTTP: a commit records, an unregistered write clears, a fresh backend has nothing to undo', async (t) => {
   const repo = makeRepo(t);
@@ -127,7 +131,7 @@ test('over HTTP: a commit records, an unregistered write clears, a fresh backend
   const none = await fresh.call('POST', '/api/ops/undo.undo', { target, params: { id: s.undo.id } });
   assert.deepEqual([none.status, none.body.code], [409, 'NOTHING_TO_UNDO']);
   repo.write('a.txt', 'dirty\n');
-  assert.equal((await first.call('POST', '/api/ops/stash.push', { target, params: {} })).status, 200);
+  assert.equal((await first.call('POST', '/api/ops/stage.files', { target, params: { paths: ['a.txt'] } })).status, 200);
   assert.deepEqual((await first.call('POST', '/api/ops/undo.state', { target })).body.result, EMPTY);
 });
 

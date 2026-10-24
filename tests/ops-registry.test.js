@@ -136,3 +136,12 @@ test('the ops registered for undo are exactly the decided list', () => {
     'merge.start', 'rebase.interactive', 'rebase.start', 'stage.discardFiles', 'stage.discardLines', 'tag.create', 'tag.delete',
   ]);
 });
+
+// Invariant (R3): `journal: 'neutral'` is accepted on a write only; any other value, on a read, or beside an undo throws at load.
+test("journal: 'neutral' is a write-only flag, refused with another value, on a read or with an undo", () => {
+  const write = op({ name: 'n.write', kind: 'write', journal: 'neutral' });
+  assert.equal(buildRegistry([[write]]).get('n.write').journal, 'neutral');
+  assert.throws(() => buildRegistry([[op({ journal: 'neutral' })]]), /op registry: test\.op: journal/);
+  for (const journal of ['skip', true, null, '']) assert.throws(() => buildRegistry([[op({ kind: 'write', journal })]]), /op registry: test\.op: journal/, String(journal));
+  assert.throws(() => buildRegistry([[op({ kind: 'write', journal: 'neutral', undo: () => null })]]), /op registry: test\.op: journal/);
+});

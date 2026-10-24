@@ -114,7 +114,7 @@ Never `git pull`: a fetch of the upstream's remote (`fetchRemote`, the same chec
 
 ## Undo
 
-Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote-ops-srcgitopsremotejs)). The remote ops are not registered for undo yet ([undo](undo.md)): the table below is what an undo would need, and each of these writes clears the checkout's undo and redo slots.
+Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote-ops-srcgitopsremotejs)). The remote ops are not registered for undo yet ([undo](undo.md)): the table below is what an undo would need, and each of these writes but `remote.fetch` clears the checkout's undo and redo slots. `remote.fetch` (the auto-fetch too) is journal-neutral: never undone, and it keeps the slots ([undo → Fetch neutrality](undo.md#fetch-neutrality)).
 
 | Op | Destroys | Recoverable |
 |---|---|---|
@@ -122,7 +122,7 @@ Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote
 | `remote.edit` | the replaced url / push url | write `undo.remotes[].old` back |
 | `remote.rename` | the old name | rename back |
 | `remote.remove` | the remote's config, its tracking refs, the upstream config naming it | locally: re-add from `undo.remotes[].old` (urls, push urls, fetch refspecs, each `branch.<b>.remote`/`.merge`), `update-ref` each `undo.refs[]` (a symbolic one with `symbolic-ref`) |
-| `remote.fetch` | the tracking refs' previous positions, pruned refs | `update-ref` each `undo.refs[]` back to `old` (until the next fetch) |
+| `remote.fetch` | the tracking refs' previous positions, pruned refs | not undoable (journal-neutral); `undo.refs[]` holds each ref's `old` |
 | `remote.pull` | HEAD's position (rebase: the original commits stay in the reflog) | `reset --hard <undo.head.old.oid>` locally; the fetch's refs as `remote.fetch` |
 | `head.abort` `merge` | the conflicted merge's partial result | — |
 
