@@ -10,16 +10,40 @@ const isAlnum = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >=
 const isSchemeChar = (c) => isAlnum(c) || c === '+' || c === '.' || c === '-';
 const isLineEnd = (c) => c === '\n' || c === '\r';
 
+/** What may come right before a url in a text: whitespace, a quote, an opening bracket, `,` or `=`. */
+const URL_BOUNDARY = new Set(["'", '"', '`', '(', '[', '<', ',', '=']);
+
+/** The index of the start of the `[A-Za-z0-9+.-]` run ending at `end - 1` (`end` when there is none). */
+function runStart(s, end) {
+  let i = end;
+  while (i > 0 && isSchemeChar(s[i - 1])) i--;
+  return i;
+}
+
+/**
+ * Whether a url may start at `at` in a text: the text's start, after a URL_BOUNDARY character or whitespace, or after a
+ * `<transport>::` that itself starts there (`ext::https://…`). Not after a lone `:`: a `://` inside a password
+ * (`https://u:pw://x@h`) is no new url.
+ */
+function boundaryAt(s, at) {
+  if (at === 0 || URL_BOUNDARY.has(s[at - 1]) || WS.test(s[at - 1])) return true;
+  if (at < 2 || s[at - 1] !== ':' || s[at - 2] !== ':') return false;
+  const helper = runStart(s, at - 2);
+  return helper < at - 2 && (helper === 0 || URL_BOUNDARY.has(s[helper - 1]) || WS.test(s[helper - 1]));
+}
+
 /**
  * The next url in `s` whose `://` is at or after `from`: {start, sep} — `sep` the index of its `://`, `start` its scheme's
- * first character — or null. A scheme is a run of `[A-Za-z0-9+.-]` starting with a letter or digit (git hands any
- * `<scheme>://` to git-remote-<scheme>, a digit first too). Each run is read once: runs end at the `/` and `:` around them.
+ * first character — or null. A scheme is a run of `[A-Za-z0-9+.-]` holding a letter or digit, its start the first one
+ * (git hands any `<scheme>://` to git-remote-<scheme>, a digit first too). `inText`: the run must also start at a url
+ * boundary (boundaryAt). Each run is read once: runs end at the `/` and `:` around them.
  */
-function nextUrl(s, from) {
+function nextUrl(s, from, inText = false) {
   for (let sep = s.indexOf(SEP, from); sep !== -1; sep = s.indexOf(SEP, sep + 1)) {
-    let start = -1;
-    for (let i = sep - 1; i >= 0 && isSchemeChar(s[i]); i--) if (isAlnum(s[i])) start = i;
-    if (start !== -1) return { start, sep };
+    const run = runStart(s, sep);
+    let start = run;
+    while (start < sep && !isAlnum(s[start])) start++;
+    if (start < sep && (!inText || boundaryAt(s, run))) return { start, sep };
   }
   return null;
 }
@@ -119,8 +143,8 @@ export function maskUrls(text) {
   if (!text.includes(SEP)) return text;
   let out = '';
   let done = 0;
-  for (let url = nextUrl(text, 0); url;) {
-    const next = nextUrl(text, url.sep + 1);
+  for (let url = nextUrl(text, 0, true); url;) {
+    const next = nextUrl(text, url.sep + 1, true);
     const span = textSpan(text, url.sep, next ? next.start : text.length);
     if (span) {
       out += `${text.slice(done, span.from)}***`;

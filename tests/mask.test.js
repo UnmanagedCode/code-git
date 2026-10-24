@@ -48,6 +48,20 @@ test('a scheme of digits only (123://) is masked by maskUrl and maskUrls', () =>
   assert.equal(isMaskedUrl('123://u:***@h/r'), true);
 });
 
+// Invariant: in a text, a `://` starts a url only at a url boundary (the text's start, whitespace, a quote, ( [ < , = or a
+// `<transport>::`): one inside a password (`https://u:pw://x@h`) is part of it, so the password is masked whole, as maskUrl
+// masks the same value.
+test('maskUrls: a :// inside a password is not a new url; maskUrl and maskUrls agree on it', () => {
+  const url = 'https://u:pw://x@h.example.invalid/r';
+  assert.equal(maskUrl(url), 'https://u:***@h.example.invalid/r');
+  assert.equal(maskUrls(`fatal: unable to access '${url}/': URL rejected`), "fatal: unable to access 'https://u:***@h.example.invalid/r/': URL rejected");
+  for (const [text, masked] of [
+    ['(https://u:pw@h/r)', '(https://u:***@h/r)'], ['[https://u:pw@h/r]', '[https://u:***@h/r]'], ['<https://u:pw@h/r>', '<https://u:***@h/r>'],
+    ['a,https://u:pw@h/r', 'a,https://u:***@h/r'], ['--url=https://u:pw@h/r', '--url=https://u:***@h/r'], ['"https://u:pw@h/r"', '"https://u:***@h/r"'],
+    ['foo::https://u:pw@h/r', 'foo::https://u:***@h/r'], ["'ext::https://u:pw@h/r'", "'ext::https://u:***@h/r'"],
+  ]) assert.equal(maskUrls(text), masked, text);
+});
+
 // Invariant: a text password span never crosses another scheme://: a credential-less url followed by a credentialed
 // one on the same line keeps its own text, and the second url keeps its scheme and user name.
 test('maskUrls: a password span never crosses into the next url', () => {
@@ -193,12 +207,16 @@ test('maskUrls: a spaced password holding digits first or an @ is masked whole, 
 });
 
 // Invariant: the stderr the activity log keeps (capStderr) and a refusal's body (toBody) mask a password holding a space.
-test('a password holding a space never reaches capStderr or a refusal body', () => {
-  const line = "fatal: unable to access 'https://user:S3 CRET@h/r/': The requested URL returned error: 403\n";
-  const masked = "fatal: unable to access 'https://user:***@h/r/': The requested URL returned error: 403\n";
-  assert.equal(capStderr(Buffer.from(line)).stderr, masked);
-  const body = new Refusal('GIT_FAILED', `git failed: ${line}`, { stderr: line }).toBody();
-  assert.deepEqual([body.error, body.stderr], [`git failed: ${masked}`, masked]);
+test('a password holding a space or a :// never reaches capStderr or a refusal body', () => {
+  for (const [line, masked] of [
+    ["fatal: unable to access 'https://user:S3 CRET@h/r/': The requested URL returned error: 403\n", "fatal: unable to access 'https://user:***@h/r/': The requested URL returned error: 403\n"],
+    ["fatal: unable to access 'https://u:pw://x@h.example.invalid/r/': URL rejected: Port number was not a decimal number between 0 and 65535\n",
+      "fatal: unable to access 'https://u:***@h.example.invalid/r/': URL rejected: Port number was not a decimal number between 0 and 65535\n"],
+  ]) {
+    assert.equal(capStderr(Buffer.from(line)).stderr, masked);
+    const body = new Refusal('GIT_FAILED', `git failed: ${line}`, { stderr: line }).toBody();
+    assert.deepEqual([body.error, body.stderr], [`git failed: ${masked}`, masked]);
+  }
 });
 
 test('a user name holding @: maskUrl, maskUrls and redactArgv take the first : after scheme:// and the last @', () => {
