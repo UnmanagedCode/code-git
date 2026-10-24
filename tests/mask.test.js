@@ -254,6 +254,17 @@ test('maskUrls masks the password in git\'s "unable to look up <userinfo>@<host>
   assert.equal(maskUrls('fatal: unable to look up u:pw@h (port 9418)\nfatal: unable to look up v:pw2@h2 (port 9418)'), 'fatal: unable to look up u:***@h (port 9418)\nfatal: unable to look up v:***@h2 (port 9418)');
 });
 
+// Invariant: a look-up's authority runs to the first ` (port ` or next look-up after its first @, so a decoded password
+// holding ` (port ` or the look-up text itself (git 2.55 prints both as below) is masked to the authority's last @; and
+// two look-ups on one line with no port and no line break between them are masked separately.
+test('maskUrls: a look-up authority ends after its first @ — at the next (port or look-up — and masks to its last @', () => {
+  const tail = ' (port 9418) (Name or service not known)';
+  assert.equal(maskUrls(`fatal: unable to look up u:p (port 1@h.example.invalid${tail}`), `fatal: unable to look up u:***@h.example.invalid${tail}`);
+  assert.equal(maskUrls(`fatal: unable to look up u:x unable to look up y@h.example.invalid${tail}`), `fatal: unable to look up u:***@h.example.invalid${tail}`);
+  assert.equal(maskUrls('unable to look up u:p@h unable to look up v:pw@h2'), 'unable to look up u:***@h unable to look up v:***@h2');
+  assert.equal(maskUrls(`unable to look up u:p@ss@h${tail}`), `unable to look up u:***@h${tail}`);
+});
+
 // Invariant: a mask never stands for nothing: an empty password (`https://user:@h/r`) is left as it is, in a text and in
 // a value, never given an inserted `***`.
 test('an empty password is left as it is: no *** is inserted', () => {
@@ -313,6 +324,8 @@ const HOSTILE = {
   'many look-ups': 'unable to look up '.repeat(11_000),
   'many look-ups of userinfo, no port': 'unable to look up u:p@h '.repeat(8_000),
   'many look-ups on one line': 'unable to look up u:p@h (port 1) '.repeat(6_000),
+  'look-ups with ports before any @': `${'unable to look up u: (port '.repeat(7_000)}@h`,
+  'look-ups of @ only': 'unable to look up @'.repeat(10_000),
   'many %3A': '%3A'.repeat(66_000),
   'many %40': '%40'.repeat(66_000),
   'a password of %40s': `https://u%3A${'%40'.repeat(66_000)}`,

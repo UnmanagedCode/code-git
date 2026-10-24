@@ -182,23 +182,26 @@ const LOOKUP_PORT = ' (port ';
 const indexOr = (s, needle, from) => { const i = s.indexOf(needle, from); return i === -1 ? s.length : i; };
 
 /**
- * `text` with the password in each LOOKUP line's host masked as a url's is: from its first `:` to its last `@` before
- * ` (port ` (a decoded password may hold a space), the line's end or the next LOOKUP — never empty. A git:// url's
- * userinfo reaches git's message so, with no scheme for a url mask to find (remoteUrl refuses one; git config may hold
- * it). Each forward search is reused until passed, and hosts never overlap: linear.
+ * `text` with the password in each LOOKUP's host masked as a url's is: from its first `:` to its last `@`, never empty.
+ * The host (the url's authority, decoded: a password may hold a space, ` (port ` or LOOKUP itself) runs to the first
+ * ` (port ` or next LOOKUP after its first `@`, else the line's end. A git:// url's userinfo reaches git's message so, with
+ * no scheme for a url mask to find (remoteUrl refuses one; git config may hold it). Every forward search is reused until
+ * passed and hosts never overlap: linear.
  */
 function maskLookups(text) {
   if (!text.includes(LOOKUP)) return text;
   let out = '';
   let done = 0;
-  const ends = { port: -1, lf: -1, cr: -1 };
+  const found = { lf: -1, cr: -1, at: -1, port: -1, lookup: -1 };
+  const after = (key, needle, from) => {
+    if (found[key] < from) found[key] = indexOr(text, needle, from);
+    return found[key];
+  };
   for (let at = text.indexOf(LOOKUP); at !== -1;) {
     const from = at + LOOKUP.length;
-    const next = text.indexOf(LOOKUP, from);
-    if (ends.port < from) ends.port = indexOr(text, LOOKUP_PORT, from);
-    if (ends.lf < from) ends.lf = indexOr(text, '\n', from);
-    if (ends.cr < from) ends.cr = indexOr(text, '\r', from);
-    const end = Math.min(ends.port, ends.lf, ends.cr, next === -1 ? text.length : next);
+    const lineEnd = Math.min(after('lf', '\n', from), after('cr', '\r', from));
+    const first = after('at', '@', from);
+    const end = first >= lineEnd ? lineEnd : Math.min(lineEnd, after('port', LOOKUP_PORT, first), after('lookup', LOOKUP, first));
     let colon = -1;
     let last = -1;
     for (let i = from; i < end; i++) {
@@ -209,7 +212,7 @@ function maskLookups(text) {
       out += `${text.slice(done, colon + 1)}***`;
       done = last;
     }
-    at = next;
+    at = text.indexOf(LOOKUP, end);
   }
   return out + text.slice(done);
 }
