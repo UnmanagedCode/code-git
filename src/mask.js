@@ -10,6 +10,17 @@ const isAlnum = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >=
 const isSchemeChar = (c) => isAlnum(c) || c === '+' || c === '.' || c === '-';
 const isLineEnd = (c) => c === '\n' || c === '\r';
 
+/**
+ * The length of the userinfo delimiter `ch` at `i`: 1 for `ch`, 3 for its percent-encoding `enc` in any case (git's ssh,
+ * git and http transports decode the userinfo: `%3A` is its `:`, `%40` its `@`), else 0.
+ */
+function delimAt(s, i, ch, enc) {
+  if (s[i] === ch) return 1;
+  return s[i] === '%' && i + 2 < s.length && s[i + 1] === enc[0] && s[i + 2].toUpperCase() === enc[1] ? 3 : 0;
+}
+const colonAt = (s, i) => delimAt(s, i, ':', '3A');
+const atAt = (s, i) => delimAt(s, i, '@', '40');
+
 /** What may come right before a url in a text: whitespace, a quote, an opening bracket, `,` or `=`. */
 const URL_BOUNDARY = new Set(["'", '"', '`', '(', '[', '<', ',', '=']);
 
@@ -50,16 +61,20 @@ function nextUrl(s, from, inText = false) {
 
 /**
  * A stored value's password span: {from, to} — from after the first `:` past its first url's `scheme://` (the url may
- * be anywhere in it: git stores `<transport>::<url>` too) up to the value's last `@` — or null, an empty one too. A user name may hold `@`
+ * be anywhere in it: git stores `<transport>::<url>` too) up to the value's last `@` — or null, an empty one too. A
+ * `%3A` counts as the `:` and a `%40` as an `@` (delimAt). A user name may hold `@`
  * (`https://a@b:c@host/r`) and a password `/`, `@` and whitespace, so the first `:` and the last `@` are taken (a path
  * holding a `:` and an `@` is masked too: the safe side).
  */
 function valueSpan(v) {
   const url = v.includes(SEP) ? nextUrl(v, 0) : null;
   if (!url) return null;
-  const colon = v.indexOf(':', url.sep + SEP.length);
-  const at = v.lastIndexOf('@');
-  return colon !== -1 && at > colon + 1 ? { from: colon + 1, to: at } : null;
+  let colon = url.sep + SEP.length;
+  while (colon < v.length && !colonAt(v, colon)) colon++;
+  let at = v.length - 1;
+  while (at > colon && !atAt(v, at)) at--;
+  const from = colon + colonAt(v, colon);
+  return colon < v.length && at > from ? { from, to: at } : null;
 }
 
 /**
@@ -92,10 +107,10 @@ const PORT_END = new Set([...AUTHORITY_END].filter((c) => c !== ':'));
  * `@` → null (the `@` is inside a password).
  */
 function authorityEnd(s, at, end) {
-  let i = at + 1;
-  while (i < end && s[i] !== '@' && !WS.test(s[i]) && !AUTHORITY_END.has(s[i])) i++;
-  if (i === end || WS.test(s[i])) return 'weak';
-  return s[i] === '@' ? null : 'strong';
+  let i = at + atAt(s, at);
+  while (i < end && !atAt(s, i) && !WS.test(s[i]) && !AUTHORITY_END.has(s[i])) i++;
+  if (i >= end || WS.test(s[i])) return 'weak';
+  return atAt(s, i) ? null : 'strong';
 }
 
 /** Whether the text at `from` (up to `end`) reads as a port: digits, then a PORT_END character, a line end or `end`. */
@@ -107,7 +122,8 @@ function portAt(s, from, end) {
 
 /**
  * The password span of the url whose `://` is at `sep` in a text, never reaching `bound` (the next url's scheme):
- * {from, to} or null, never empty. `scheme://user` holds no whitespace and ends at the first `:`. A password that stops at
+ * {from, to} or null, never empty. `scheme://user` holds no whitespace and ends at the first `:`; a `%3A` counts as a
+ * `:` and a `%40` as an `@` throughout (delimAt). A password that stops at
  * whitespace (or starts with it, or with a port: portAt) ends at the last `@` of its token. One going on past whitespace
  * on the same line ends at the `@` that ends its url's authority (authorityEnd), never at one inside it: the first strong
  * `@` on the line, else the token's own last `@` when strong, else the first weak `@` after the token, else the token's
@@ -115,19 +131,19 @@ function portAt(s, from, end) {
  */
 function textSpan(s, sep, bound) {
   let colon = sep + SEP.length;
-  while (colon < bound && s[colon] !== ':' && !WS.test(s[colon])) colon++;
-  if (colon >= bound || s[colon] !== ':') return null;
-  const from = colon + 1;
+  while (colon < bound && !colonAt(s, colon) && !WS.test(s[colon])) colon++;
+  if (colon >= bound || !colonAt(s, colon)) return null;
+  const from = colon + colonAt(s, colon);
   const span = (to) => (to > from ? { from, to } : null);
   let i = from;
   let tokenAt = -1;
-  for (; i < bound && !WS.test(s[i]); i++) if (s[i] === '@') tokenAt = i;
+  for (; i < bound && !WS.test(s[i]); i++) if (atAt(s, i)) tokenAt = i;
   const spaced = i > from && i < bound && !isLineEnd(s[i]) && !portAt(s, from, bound);
   if (!spaced) return tokenAt === -1 ? null : span(tokenAt);
   let strong = -1;
   let weak = -1;
   for (; i < bound && !isLineEnd(s[i]) && strong === -1; i++) {
-    if (s[i] !== '@') continue;
+    if (!atAt(s, i)) continue;
     const end = authorityEnd(s, i, bound);
     if (end === 'strong') strong = i;
     if (end === 'weak' && weak === -1) weak = i;

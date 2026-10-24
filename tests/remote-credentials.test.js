@@ -312,3 +312,47 @@ test('remote.fetch of a git:// remote set with git: git\'s look-up error reaches
   lacksSecrets(activity);
   assert.ok(activity.includes('user:***@h.example.invalid (port 9418)'), 'the activity log shows the look-up masked');
 });
+
+// Invariant: git's ssh, git and http transports percent-decode the userinfo, so `%3A` is its `:` and `%40` its `@`
+// (any case): a url using either or both is masked through remote.list, a remote op's undo record and the activity log.
+test('percent-encoded userinfo delimiters (%3A, %40) are masked in remote.list, op results and the activity log', async (t) => {
+  for (const shape of [
+    { rawUrl: `ssh://user%3A${PW}@example.invalid/r.git`, rawPush: `https://user%3a${PUSH_PW}@example.invalid/p.git`,
+      maskedUrl: 'ssh://user%3A***@example.invalid/r.git', maskedPush: 'https://user%3a***@example.invalid/p.git' },
+    { rawUrl: `ssh://user:${PW}%40example.invalid/r.git`, rawPush: `https://user:${PUSH_PW}%40example.invalid/p.git`,
+      maskedUrl: 'ssh://user:***%40example.invalid/r.git', maskedPush: 'https://user:***%40example.invalid/p.git' },
+    { rawUrl: `ssh://user%3A${PW}%40example.invalid/r.git`, rawPush: `git+ssh://user%3a${PUSH_PW}%40example.invalid/p.git`,
+      maskedUrl: 'ssh://user%3A***%40example.invalid/r.git', maskedPush: 'git+ssh://user%3a***%40example.invalid/p.git' },
+  ]) await t.test(shape.maskedUrl, async (st) => masksEverywhere(await world(st), shape));
+});
+
+// Invariant: for a remote whose url and push url use encoded delimiters, echoing remote.list's masked values is unchanged
+// (no set-url, the raw values kept); a changed masked value is refused BAD_URL.
+test('remote.edit of a remote with encoded delimiters: the echoed mask is unchanged, a changed mask refused', async (t) => {
+  const w = await world(t);
+  const raw = [`ssh://user%3A${PW}@example.invalid/r.git`, `https://user:${PUSH_PW}%40example.invalid/p.git`];
+  w.repo.git('remote', 'add', 'enc', raw[0]);
+  w.repo.git('config', 'remote.enc.pushurl', raw[1]);
+  const listed = (await w.call('remote.list')).result.remotes.find((r) => r.name === 'enc');
+  lacksSecrets(await w.call('remote.edit', { name: 'enc', url: listed.displayUrl, pushUrl: listed.displayPushUrl }));
+  assert.deepEqual(w.remoteWrites(), [], 'no set-url ran');
+  assert.deepEqual([w.config('remote.enc.url'), w.config('remote.enc.pushurl')], [[raw[0]], [raw[1]]]);
+  const body = await w.call('remote.edit', { name: 'enc', url: 'ssh://user%3A***@other.invalid/r.git' }, 400);
+  assert.equal(body.code, 'BAD_URL');
+  assert.deepEqual(w.config('remote.enc.url'), [raw[0]]);
+});
+
+// Invariant: a git:// url whose userinfo is percent-encoded (`%40` for its @) is refused BAD_URL by add and edit too.
+test('remote.add / remote.edit with encoded userinfo in a git:// url → BAD_URL, nothing written', async (t) => {
+  const w = await world(t);
+  const before = await credRemote(w);
+  for (const git of [`git://user:${PW}%40h.example.invalid/r`, `git://user%3A${PW}%40h.example.invalid/r`, 'git://user%40h.example.invalid/r']) {
+    for (const [op, params] of [['remote.add', { name: 'g', url: git }], ['remote.edit', { name: 'cred', pushUrl: git }]]) {
+      const body = await w.call(op, params, 400);
+      assert.equal(body.code, 'BAD_URL', `${op} ${git}`);
+      lacksSecrets(body);
+    }
+  }
+  assert.deepEqual(w.remoteWrites().slice(before), []);
+  assert.deepEqual(w.config('remote.g.url'), []);
+});

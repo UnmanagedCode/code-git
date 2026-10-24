@@ -17,6 +17,8 @@ const HELPER_RE = /^[A-Za-z0-9][A-Za-z0-9+.-]*::/;
 const SCHEME_RE = /^(?:https?|ssh|git\+ssh|ssh\+git|git|file):\/\/(.+)$/i;
 /** The userinfo (`user[:password]@`) at the start of a url's part after `://`. */
 const USERINFO_RE = /^[^@/]*@/;
+/** Whether a url's part after `://` has userinfo: an `@` in its authority, or a `%40` (git decodes the authority first). */
+const hasUserinfo = (rest) => /@|%40/.test(rest.split('/', 1)[0]);
 /** scp-like `[user@]host:path`: git reads it so when a `:` comes before any `/`. A bracketed host may hold `:`. */
 const SCP_RE = /^(?:([^@/:]+)@)?(\[[^\]/]+\]|[^@/:[\]]+):(.+)$/;
 
@@ -38,7 +40,7 @@ export function remoteUrl(s) {
   const scheme = SCHEME_RE.exec(s);
   if (scheme) {
     // git prints a git:// url's whole authority back in its errors (`unable to look up user:pw@host`).
-    if (/^git:/i.test(s) && USERINFO_RE.test(scheme[1])) throw bad('a git:// url cannot carry a user name or password: the git protocol does not authenticate');
+    if (/^git:/i.test(s) && hasUserinfo(scheme[1])) throw bad('a git:// url cannot carry a user name or password: the git protocol does not authenticate');
     const host = scheme[1].replace(USERINFO_RE, '');
     if (host.startsWith('-')) throw bad('the host starts with -');
     return s;

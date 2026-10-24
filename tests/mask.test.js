@@ -41,6 +41,21 @@ test('a <transport>::<url> value: maskUrl masks the url after ::, isMaskedUrl ag
   assert.deepEqual(redactArgv(['git', 'config', '--add', 'remote.o.url', 'foo::https://u:pw@h/r']), ['git', 'config', '--add', 'remote.o.url', 'foo::https://u:***@h/r']);
 });
 
+// Invariant: `%3A` (any case) is a userinfo `:` and `%40` a userinfo `@` (git percent-decodes the userinfo): maskUrl masks
+// a password delimited by either, isMaskedUrl agrees with its output, and maskUrls masks one inside a git message.
+test('percent-encoded userinfo delimiters: maskUrl, isMaskedUrl and maskUrls treat %3A as : and %40 as @', () => {
+  for (const [raw, masked] of [
+    ['ssh://ALICE%3ASECRET@H/r', 'ssh://ALICE%3A***@H/r'], ['ssh://ALICE%3aSECRET@H/r', 'ssh://ALICE%3a***@H/r'],
+    ['ssh://ALICE:SECRET%40H/r', 'ssh://ALICE:***%40H/r'], ['git://ALICE%3ASECRET%40H/r', 'git://ALICE%3A***%40H/r'],
+    ['https://u:p@ss%40h/r', 'https://u:***%40h/r'], ['ssh://ALICE%3A%40H/r', 'ssh://ALICE%3A%40H/r'],
+  ]) {
+    assert.equal(maskUrl(raw), masked, raw);
+    assert.equal(isMaskedUrl(masked), masked !== raw, masked);
+    assert.equal(maskUrls(`fatal: unable to access '${raw}/': 403`), `fatal: unable to access '${masked}/': 403`, raw);
+  }
+  assert.equal(maskUrls('see ssh://ALICE:SECRET%40H/r and https://v:pw@h2/r'), 'see ssh://ALICE:***%40H/r and https://v:***@h2/r');
+});
+
 // Invariant: a scheme of digits only is a scheme: its url's password is masked in a value and in a text.
 test('a scheme of digits only (123://) is masked by maskUrl and maskUrls', () => {
   assert.equal(maskUrl('123://u:pw@h/r'), '123://u:***@h/r');
@@ -298,6 +313,11 @@ const HOSTILE = {
   'many look-ups': 'unable to look up '.repeat(11_000),
   'many look-ups of userinfo, no port': 'unable to look up u:p@h '.repeat(8_000),
   'many look-ups on one line': 'unable to look up u:p@h (port 1) '.repeat(6_000),
+  'many %3A': '%3A'.repeat(66_000),
+  'many %40': '%40'.repeat(66_000),
+  'a password of %40s': `https://u%3A${'%40'.repeat(66_000)}`,
+  'a spaced password of %40s': `https://u%3Ap ${'x%40'.repeat(50_000)}`,
+  'many encoded urls': 'a://b%3Ac%40 '.repeat(15_000),
 };
 
 // Invariant: masking runs in linear time: each masking function finishes every hostile ~200k-character input (a

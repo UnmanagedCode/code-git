@@ -29,10 +29,10 @@ test('remoteUrl refuses (BAD_URL) every <transport>:: helper url, a leading -, w
 // the git protocol cannot authenticate, and git prints the userinfo back in its errors — without echoing the url; a
 // git:// url without userinfo, and userinfo in any other scheme, are accepted as before.
 test('remoteUrl refuses (BAD_URL) userinfo in a git:// url, never echoing it', () => {
-  for (const url of ['git://u:Zq7pw@h.example/r', 'git://u@h.example/r', 'GIT://u:Zq7pw@h/r', 'git://:Zq7pw@h:9418/r', 'git://u:Zq7pw@127.0.0.1/r']) {
+  for (const url of ['git://u:Zq7pw@h.example/r', 'git://u@h.example/r', 'GIT://u:Zq7pw@h/r', 'git://:Zq7pw@h:9418/r', 'git://u:Zq7pw@127.0.0.1/r', 'git://u:Zq7pw%40h.example/r', 'git://u%3AZq7pw%40h.example/r', 'git://u%40h.example/r']) {
     assert.throws(() => remoteUrl(url), (e) => e.code === 'BAD_URL' && !e.message.includes('Zq7pw') && !e.message.includes('h.example'), url);
   }
-  for (const url of ['git://h/r.git', 'git://h:9418/r', 'git://h/a@b.git', 'https://u:Zq7pw@h/r', 'ssh://u:Zq7pw@h/r', 'u@h:r.git']) assert.equal(remoteUrl(url), url, url);
+  for (const url of ['git://h/r.git', 'git://h:9418/r', 'git://h/a@b.git', 'git://h/a%40b.git', 'https://u:Zq7pw@h/r', 'ssh://u:Zq7pw@h/r', 'u@h:r.git']) assert.equal(remoteUrl(url), url, url);
 });
 
 test('newRemoteName: git\'s refs/remotes/<name>/… rule; a bad name is BAD_REF, never REMOTE_UNKNOWN', () => {
