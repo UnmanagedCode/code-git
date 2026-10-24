@@ -15,6 +15,8 @@ export const URL_MAX = 2048;
  */
 const HELPER_RE = /^[A-Za-z0-9][A-Za-z0-9+.-]*::/;
 const SCHEME_RE = /^(?:https?|ssh|git\+ssh|ssh\+git|git|file):\/\/(.+)$/i;
+/** The userinfo (`user[:password]@`) at the start of a url's part after `://`. */
+const USERINFO_RE = /^[^@/]*@/;
 /** scp-like `[user@]host:path`: git reads it so when a `:` comes before any `/`. A bracketed host may hold `:`. */
 const SCP_RE = /^(?:([^@/:]+)@)?(\[[^\]/]+\]|[^@/:[\]]+):(.+)$/;
 
@@ -24,7 +26,8 @@ const bad = (why) => new Refusal('BAD_URL', `invalid remote url: ${why}`);
  * A remote url to write into config, else BAD_URL. Accepted: `http(s)://`, `ssh://`, `git+ssh://`, `ssh+git://`,
  * `git://` and `file://` urls, an absolute path, and scp-like `[user@]host:path` (host with no `/`, path not starting
  * `//`). Refused: anything else, any `<transport>::` helper url, a leading `-`, whitespace or a control character, a
- * host starting with `-` (ssh would read it as an option), and more than URL_MAX characters.
+ * host starting with `-` (ssh would read it as an option), a `git://` url carrying userinfo (the git protocol cannot
+ * authenticate, and git prints the userinfo in its errors where no url mask finds it), and more than URL_MAX characters.
  */
 export function remoteUrl(s) {
   if (typeof s !== 'string' || s === '') throw bad('empty');
@@ -34,7 +37,9 @@ export function remoteUrl(s) {
   if (HELPER_RE.test(s)) throw bad('a <transport>:: url runs a remote helper');
   const scheme = SCHEME_RE.exec(s);
   if (scheme) {
-    const host = scheme[1].replace(/^[^@/]*@/, '');
+    // git prints a git:// url's whole authority back in its errors (`unable to look up user:pw@host`).
+    if (/^git:/i.test(s) && USERINFO_RE.test(scheme[1])) throw bad('a git:// url cannot carry a user name or password: the git protocol does not authenticate');
+    const host = scheme[1].replace(USERINFO_RE, '');
     if (host.startsWith('-')) throw bad('the host starts with -');
     return s;
   }

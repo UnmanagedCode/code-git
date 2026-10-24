@@ -280,3 +280,21 @@ test('remote.edit with a 500k-character url answers BAD_URL promptly', async (t)
   }
   assert.deepEqual(w.config('remote.cred.url'), [url('one')]);
 });
+
+// Invariant: remote.add and remote.edit refuse a git:// url or push url carrying userinfo BAD_URL before anything is
+// written, and the refusal holds no password.
+test('remote.add / remote.edit with a credentialed git:// url → BAD_URL, nothing written', async (t) => {
+  const w = await world(t);
+  const before = await credRemote(w);
+  const git = `git://user:${PW}@h.example.invalid/r`;
+  for (const [op, params] of [
+    ['remote.add', { name: 'g', url: git }], ['remote.add', { name: 'g', url: '/srv/r.git', pushUrl: git }],
+    ['remote.edit', { name: 'cred', url: git }], ['remote.edit', { name: 'cred', pushUrl: git }],
+  ]) {
+    const body = await w.call(op, params, 400);
+    assert.equal(body.code, 'BAD_URL', `${op} ${JSON.stringify(params)}`);
+    lacksSecrets(body);
+  }
+  assert.deepEqual(w.remoteWrites().slice(before), [], 'nothing written');
+  assert.deepEqual([w.config('remote.g.url'), w.config('remote.cred.url'), w.config('remote.cred.pushurl')], [[], [url('one')], [pushUrl('p')]]);
+});
