@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import { CellCode, Chunked, HunkHeader, LineNo, LineToggle, MARKER, NoToggle, ROW_BG, type Marks, type StagingView } from './CodeLine';
 import type { ViewRow } from './viewRows';
 
-/** Hunk and Inline modes: one column, old and new line numbers, a +/− marker; with `staging`, a gutter toggle per change. */
+/** Inline layout (Hunk or Full scope): one column, old and new line numbers, a +/− marker; with `staging`, a gutter toggle per change. */
 export function UnifiedView({ rows, marks, wrap, staging }: { rows: ViewRow[]; marks: Marks; wrap: boolean; staging?: StagingView }) {
   return (
     <div className={cn('font-mono text-xs leading-5', !wrap && 'w-max min-w-full')} data-view="unified">

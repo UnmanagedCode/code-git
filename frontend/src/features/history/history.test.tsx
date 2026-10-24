@@ -4,6 +4,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 import { actionsFor, labelOf } from '@/shell/menus';
+import { setPrefs } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { dispatchTabs, tabKey } from '@/state/tabs';
 import { EMPTY_GRAPH, graphStore } from '@/state/graph';
@@ -88,6 +89,55 @@ test("file history: the change view's toolbar shows the change's +added −delet
   await userEvent.click(within(screen.getByRole('listbox', { name: 'File history' })).getAllByRole('option')[1]);
   expect(await within(screen.getByRole('toolbar', { name: 'Change view' })).findByText('binary')).toBeTruthy();
   expect(within(screen.getByRole('toolbar', { name: 'Change view' })).queryByLabelText(/added/)).toBeNull();
+});
+
+// Invariant: the history viewer carries the shared Diff scope, Diff layout and Ignore whitespace toggles: Hunk+Split
+// renders split rows under a header per hunk, Full asks diff.file for the whole file, Ignore whitespace asks with "all".
+test('file history: the viewer shows the scope and layout groups and Ignore whitespace; each drives its view or request', async () => {
+  open();
+  const f = stubFetch({
+    'POST api/ops/history.file': { ok: true, result: { items: [item(5)], nextCursor: null, truncated: false } },
+    'POST api/ops/diff.file': { ok: true, result: { ...fileDiff, hunks: [hunk(1, 1, [' a', '-b', '+B', ' c']), hunk(9, 9, ['-x', '+y'])] } },
+  });
+  render(<HistoryPanel tab={TAB} />);
+  act(() => openFileHistory(TAB, { path: 'c.txt', rev: REV }));
+  const toolbar = await screen.findByRole('toolbar', { name: 'Change view' });
+  const viewer = () => document.querySelector('[data-history-viewer]')!;
+  const pick = (g: string, name: string) => userEvent.click(within(within(toolbar).getByRole('group', { name: g })).getByRole('button', { name }));
+  await waitFor(() => expect(viewer().querySelector('[data-view=unified]')).toBeTruthy());
+  expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 3, whitespace: 'none' });
+  await pick('Diff layout', 'Split');
+  await waitFor(() => expect(viewer().querySelector('[data-view=split]')).toBeTruthy());
+  expect(viewer().querySelectorAll('[data-hunk-header]')).toHaveLength(2);
+  expect(viewer().querySelectorAll('[data-side=old]').length).toBe(viewer().querySelectorAll('[data-side=new]').length);
+  await pick('Diff scope', 'Full');
+  await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 'full', whitespace: 'none' }));
+  await waitFor(() => expect(viewer().querySelector('[data-view=split]')).toBeTruthy());
+  expect(viewer().querySelectorAll('[data-hunk-header]')).toHaveLength(0);
+  const ws = within(toolbar).getByRole('button', { name: 'Ignore whitespace' });
+  await userEvent.click(ws);
+  expect(ws.getAttribute('aria-pressed')).toBe('true');
+  await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ context: 'full', whitespace: 'all' }));
+});
+
+// Invariant: the history viewer's File view renders the file layout ([data-view=file]), never an inline or split diff,
+// whichever layout is chosen.
+test.each(['inline', 'split'] as const)('file history: File view renders the file layout, not a diff, with %s chosen', async (layout) => {
+  open();
+  stubFetch({
+    'POST api/ops/history.file': { ok: true, result: { items: [item(5)], nextCursor: null, truncated: false } },
+    'POST api/ops/diff.file': { ok: true, result: { ...fileDiff, hunks: [hunk(1, 1, [' a', '-b', '+B', ' c'])] } },
+  });
+  act(() => setPrefs({ layout }));
+  render(<HistoryPanel tab={TAB} />);
+  act(() => openFileHistory(TAB, { path: 'c.txt', rev: REV }));
+  const toolbar = await screen.findByRole('toolbar', { name: 'Change view' });
+  const viewer = () => document.querySelector('[data-history-viewer]')!;
+  await waitFor(() => expect(viewer().querySelector(`[data-view=${layout === 'split' ? 'split' : 'unified'}]`)).toBeTruthy());
+  await userEvent.click(within(within(toolbar).getByRole('group', { name: 'View' })).getByRole('button', { name: 'File' }));
+  await waitFor(() => expect(viewer().querySelector('[data-view=file]')).toBeTruthy());
+  expect(viewer().querySelector('[data-view=unified]')).toBeNull();
+  expect(viewer().querySelector('[data-view=split]')).toBeNull();
 });
 
 const blame: BlamePage = {

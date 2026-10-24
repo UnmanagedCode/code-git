@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 
-/** A hunk header's buttons (Hunk mode): Stash hunk… + Discard hunk… + Stage hunk on an unstaged diff, Unstage hunk on a staged one. */
+/** A hunk header's buttons (Hunk scope, either layout): Stash hunk… + Discard hunk… + Stage hunk on an unstaged diff, Unstage hunk on a staged one. */
 export function HunkActions({ section, busy, onAction, onStash }: {
   section: 'unstaged' | 'staged'; busy: boolean; onAction: (a: 'stage' | 'unstage' | 'discard') => void; onStash?: () => void;
 }) {

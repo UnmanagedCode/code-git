@@ -1,5 +1,5 @@
 // The history card's golden path on the `hist` world (historySeed.mjs), in light then dark, each on a fresh seed: the
-// palette's File history… → the rename rows → the viewer (Diff with its line counts, then File) → Blame (author colours) → a 1500-line blame
+// palette's File history… → the rename rows → the viewer (Diff with its line counts, then File; Hunk+Split; Ignore whitespace) → Blame (author colours) → a 1500-line blame
 // paging as it scrolls → Show in graph → the Reflog and its row menu → a branch's Show reflog. Screenshots at desktop
 // and phone width into out/history/. Fails on a console error or a ≥400 response other than the two host URLs.
 // Run: node harness/playwright/history.mjs   (needs `npm run prepare` first, for frontend/dist)
@@ -77,6 +77,21 @@ for (const scheme of ['light', 'dark']) {
       await viewer.locator('[data-view="file"]').waitFor();
       check(await viewer.locator('[data-row="file"]').count() === 4, 'File view shows the whole file at that commit');
       await page.getByRole('toolbar', { name: 'Change view', exact: true }).getByRole('button', { name: 'Diff', exact: true }).click();
+      // The shared diff toggles: Hunk+Split shows split rows under a hunk header; Ignore whitespace presses and keeps the edit.
+      const changeView = page.getByRole('toolbar', { name: 'Change view', exact: true });
+      await changeView.getByRole('group', { name: 'Diff layout', exact: true }).getByRole('button', { name: 'Split', exact: true }).click();
+      await viewer.locator('[data-view="split"] [data-hunk-header]').first().waitFor();
+      check(await changeView.getByRole('group', { name: 'Diff scope', exact: true }).getByRole('button', { name: 'Hunk', exact: true }).getAttribute('aria-pressed') === 'true'
+        && await viewer.locator('[data-side="old"]').count() === await viewer.locator('[data-side="new"]').count(), 'the viewer shows Hunk+Split: a hunk header over two columns');
+      await shot('history-hunk-split-desktop');
+      const ignoreWs = changeView.getByRole('button', { name: 'Ignore whitespace', exact: true });
+      await ignoreWs.click();
+      check(await ignoreWs.getAttribute('aria-pressed') === 'true', 'the viewer\'s Ignore whitespace presses');
+      await viewer.locator('[data-view="split"] [data-side="new"]').first().waitFor();
+      await shot('history-ignore-ws-desktop');
+      await ignoreWs.click();
+      await changeView.getByRole('group', { name: 'Diff layout', exact: true }).getByRole('button', { name: 'Inline', exact: true }).click();
+      await viewer.locator('[data-view="unified"]').waitFor();
 
       // 3. Blame: three authors, a colour each
       await page.getByRole('group', { name: 'History or blame', exact: true }).getByRole('button', { name: 'Blame', exact: true }).click();

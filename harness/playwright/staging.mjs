@@ -1,5 +1,6 @@
 // The staging path, asserted on the seeded `stage` and `detached` projects (seed.mjs): the Changes panel lists (line
-// counts; the open diff's row marked, ↓ viewing the next file), a hunk and two lines staged from the diff, lines
+// counts; the open diff's row marked, ↓ viewing the next file), Ignore whitespace hiding staging, a hunk staged in
+// Hunk+Split and two lines staged from the diff, lines
 // discarded after a confirmation, the Discard all dialog cancelled, a commit with the template pre-filled, a message-only
 // amend, Tree with a folder staged and unstaged and a row staged, the detached banner, and the Changes dialog on a phone. Each step is checked
 // against git itself. Runs in light then dark, each on a fresh seed; screenshots go to out/staging-*.png.
@@ -83,11 +84,31 @@ for (const scheme of ['light', 'dark']) {
       await page.waitForFunction(() => document.querySelector('[aria-label="Viewed file"]')?.textContent?.includes('src/app.js'));
       await body.locator('[data-hunk-header]').nth(1).waitFor();
 
-      // 3. Stage the first hunk: the index gets line 3's change only.
+      // 2b. Ignore whitespace on: no line toggles and no hunk buttons (a -w patch cannot be staged); off brings them back.
+      const ignoreWs = diff.getByRole('button', { name: 'Ignore whitespace', exact: true });
+      const lineToggles = body.getByRole('button', { name: /^Select (added|removed) line/ });
+      await ignoreWs.click();
+      await page.waitForFunction(() => document.querySelectorAll('[data-diff-body] [aria-label^="Select "]').length === 0);
+      await body.locator('[data-hunk-header]').nth(1).waitFor();
+      check(await ignoreWs.getAttribute('aria-pressed') === 'true' && await lineToggles.count() === 0 && await diff.getByRole('button', { name: 'Stage hunk', exact: true }).count() === 0,
+        `${scheme}: Ignore whitespace on offers no line toggles and no Stage hunk`);
+      await shot('ignore-ws');
+      await ignoreWs.click();
+      await diff.getByRole('button', { name: 'Stage hunk', exact: true }).nth(1).waitFor();
+      check(await lineToggles.count() === 5, `${scheme}: Ignore whitespace off brings the toggles and Stage hunk back`);
+
+      // 3. Hunk+Split: Stage hunk on the first header; the index gets line 3's change only. Then back to Inline.
+      const layout = (name) => diff.getByRole('group', { name: 'Diff layout', exact: true }).getByRole('button', { name, exact: true });
+      await layout('Split').click();
+      await body.locator('[data-view=split] [data-hunk-header]').nth(1).waitFor();
+      check(await diff.getByRole('button', { name: 'Stage hunk', exact: true }).count() === 2 && await lineToggles.count() === 5, `${scheme}: Hunk+Split offers Stage hunk per header and the line toggles`);
+      await shot('hunk-split');
       await diff.getByRole('button', { name: 'Stage hunk', exact: true }).first().click();
       await staged.getByRole('option', { name: /src\/app\.js/ }).waitFor();
       const afterHunk = STAGE_BASE.map((l, i) => (i === 2 ? 'const l3 = 300;' : l));
-      check(indexOf('src/app.js') === lines(afterHunk), `${scheme}: Stage hunk staged exactly the first hunk`);
+      check(indexOf('src/app.js') === lines(afterHunk), `${scheme}: Stage hunk in Hunk+Split staged exactly the first hunk`);
+      await layout('Inline').click();
+      await body.locator('[data-view=unified]').waitFor();
 
       // 4. Select two lines of the remaining hunk (l25's pair) and stage them; `extra` stays unstaged.
       await body.locator('[data-hunk-header]').first().waitFor();

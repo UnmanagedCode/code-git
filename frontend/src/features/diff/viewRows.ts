@@ -1,3 +1,4 @@
+import type { DiffPrefs } from '@/state/diff';
 import type { FileDiff, Hunk } from './api';
 import { highlightLines, type Seg, type Tokenize } from './highlight';
 import { displayText, isDeletion, sideLines, splitRows, unifiedRows, type LineRef } from './model';
@@ -17,7 +18,9 @@ export type ViewRow =
   | { type: 'split'; id: string; left: Cell | null; right: Cell | null; change: number | null }
   | { type: 'file'; id: string; cell: Cell };
 
-export type Layout = 'hunk' | 'inline' | 'split' | 'file';
+/** What the views render: a diff layout, or File view. */
+export type Layout = 'inline' | 'split' | 'file';
+export const layoutFor = (p: DiffPrefs): Layout => (p.view === 'file' ? 'file' : p.layout);
 
 export interface SideSegs { old: Seg[][]; new: Seg[][] }
 
@@ -38,7 +41,8 @@ function sideIndexes(hunks: Hunk[]): Map<string, { old?: number; new?: number }>
   return out;
 }
 
-export function buildRows(fd: FileDiff, layout: Layout, segs: SideSegs | null): ViewRow[] {
+/** `headers`: a hunk row before each hunk (Hunk scope); File view has none. */
+export function buildRows(fd: FileDiff, layout: Layout, headers: boolean, segs: SideSegs | null): ViewRow[] {
   const at = sideIndexes(fd.hunks);
   const cell = (ref: LineRef, side: 'old' | 'new', prefix: string): Cell => {
     const text = displayText(ref.line);
@@ -58,7 +62,6 @@ export function buildRows(fd: FileDiff, layout: Layout, segs: SideSegs | null): 
         return { type: 'file' as const, id: c.id, cell: { ...c, kind: 'context' as const, emphasis: [] } };
       }));
   }
-  const headers = layout === 'hunk';
   if (layout === 'split') {
     return splitRows(fd.hunks, headers).map((r, i) => (r.type === 'hunk'
       ? { type: 'hunk', id: `h${r.hunk}`, hunk: r.hunk, header: r.header }

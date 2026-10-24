@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { prefsStore } from '@/state/diff';
+import { prefsStore, whitespaceFor } from '@/state/diff';
 import { tabKey, type Tab } from '@/state/tabs';
 import { useRepoSummary } from '@/state/useRepoSummary';
 import { listDiffFiles, type DiffSource } from './api';
@@ -31,7 +31,7 @@ function Compare({ tab }: { tab: Tab }) {
     setBusy(true);
     setError(null);
     try {
-      const preloaded = await listDiffFiles(tab, source, prefsStore.get().whitespace);
+      const preloaded = await listDiffFiles(tab, source, whitespaceFor(prefsStore.get()));
       openDiff(tab, source, { preloaded });
     } catch (e) {
       setError({ where, message: e instanceof Error ? e.message : String(e) });

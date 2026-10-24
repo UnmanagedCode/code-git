@@ -103,16 +103,71 @@ test('a staged diff offers Unstage hunk and Unstage lines only', async () => {
   await waitFor(() => expect(w.posts('stage.unstageLines')).toHaveLength(2));
 });
 
-test('Inline and Split select lines too, against the whole-file context', async () => {
+// Invariant: Hunk scope in Split layout keeps the hunk buttons: Stage hunk on a header stages exactly that hunk, at the
+// chosen context.
+test('Hunk+Split offers Stage hunk per header and posts stage.stageLines with context 3 for that hunk', async () => {
   const w = await show({ kind: 'unstaged' });
-  setPrefs({ mode: 'split' });
+  act(() => setPrefs({ layout: 'split' }));
+  await waitFor(() => expect(diff().querySelector('[data-view=split]')).toBeTruthy());
+  expect(within(diff()).getAllByRole('button', { name: 'Stage hunk' })).toHaveLength(2);
+  expect(toggles()).toHaveLength(4);
+  await userEvent.click(within(diff()).getAllByRole('button', { name: 'Stage hunk' })[1]);
+  await waitFor(() => expect(w.posts('stage.stageLines')).toEqual([
+    { path: 'src/a.ts', context: 3, hunks: [{ header: H2, lines: [{ index: 0, text: 'x' }, { index: 1, text: 'y' }] }] },
+  ]));
+});
+
+// Invariant: Full scope, in either layout, offers line toggles but no hunk buttons, and selects lines against the
+// whole-file context.
+test.each(['split', 'inline'] as const)('Full scope (%s) offers no hunk buttons and selects lines against the whole-file context', async (layout) => {
+  const w = await show({ kind: 'unstaged' });
+  act(() => setPrefs({ scope: 'full', layout }));
+  await waitFor(() => expect(diff().querySelector(`[data-view=${layout === 'split' ? 'split' : 'unified'}]`)).toBeTruthy());
   await waitFor(() => expect(toggles().length).toBe(4));
   expect(within(diff()).queryByRole('button', { name: 'Stage hunk' })).toBeNull();
   await userEvent.click(btn('Select added line 10'));
   await userEvent.click(btn('Stage lines'));
   await waitFor(() => expect(w.posts('stage.stageLines')).toEqual([{ path: 'src/a.ts', context: 'full', hunks: [{ header: H2, lines: [{ index: 1, text: 'y' }] }] }]));
-  act(() => setPrefs({ mode: 'inline' }));
-  await waitFor(() => expect(toggles().length).toBe(4));
+});
+
+// Invariant: with Ignore whitespace on, no scope/layout combination offers a gutter toggle, a selection bar or a hunk
+// button; turning it off brings them back.
+test('with Ignore whitespace on, no combination offers staging affordances; off brings them back', async () => {
+  await show({ kind: 'unstaged' });
+  await userEvent.click(btn('Select added line 2'));
+  expect(within(diff()).getByRole('toolbar', { name: 'Line selection' })).toBeTruthy();
+  await userEvent.click(btn('Ignore whitespace'));
+  for (const scope of ['hunk', 'full'] as const) {
+    for (const layout of ['inline', 'split'] as const) {
+      act(() => setPrefs({ scope, layout }));
+      await rendered();
+      expect(toggles()).toEqual([]);
+      expect(within(diff()).queryByRole('toolbar', { name: 'Line selection' })).toBeNull();
+      expect(within(diff()).queryByRole('button', { name: /hunk/ })).toBeNull();
+    }
+  }
+  act(() => setPrefs({ scope: 'hunk', layout: 'inline' }));
+  await userEvent.click(btn('Ignore whitespace'));
+  await waitFor(() => expect(toggles()).toHaveLength(4));
+  expect(within(diff()).getAllByRole('button', { name: 'Stage hunk' })).toHaveLength(2);
+  // The list reloaded for each whitespace flip: the earlier selection is gone.
+  expect(within(diff()).queryByRole('toolbar', { name: 'Line selection' })).toBeNull();
+});
+
+// Invariant: a line selection belongs to the diff it was made on: a layout flip (same request) keeps it, a scope flip
+// (another request) shows none.
+test('a line selection survives a layout flip and is not carried into the other scope', async () => {
+  await show({ kind: 'unstaged' });
+  await userEvent.click(btn('Select added line 2'));
+  act(() => setPrefs({ layout: 'split' }));
+  await waitFor(() => expect(diff().querySelector('[data-view=split]')).toBeTruthy());
+  expect(btn('Select added line 2').getAttribute('aria-pressed')).toBe('true');
+  expect(within(diff()).getByRole('toolbar', { name: 'Line selection' }).textContent).toContain('1 line selected');
+  act(() => setPrefs({ scope: 'full' }));
+  await waitFor(() => expect(within(diff()).queryAllByRole('button', { name: 'Stage hunk' })).toEqual([]));
+  await waitFor(() => expect(toggles()).toHaveLength(4));
+  expect(within(diff()).queryByRole('toolbar', { name: 'Line selection' })).toBeNull();
+  expect(btn('Select added line 2').getAttribute('aria-pressed')).toBe('false');
 });
 
 test('a refused selection (STALE_DIFF) is shown in the diff header', async () => {
@@ -132,11 +187,12 @@ test.each([
   expect(within(diff()).queryByRole('button', { name: /hunk/ })).toBeNull();
 });
 
+// Invariant: File view, and Diff view with Ignore whitespace on, offer no line toggles.
 test('no affordances with whitespace ignored or in File view', async () => {
   await show({ kind: 'unstaged' });
   act(() => setPrefs({ view: 'file' }));
   await waitFor(() => expect(toggles()).toEqual([]));
-  act(() => setPrefs({ view: 'diff', whitespace: 'all' }));
+  act(() => setPrefs({ view: 'diff', ignoreWhitespace: true }));
   await rendered();
   expect(toggles()).toEqual([]);
 });

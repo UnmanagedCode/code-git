@@ -1,6 +1,8 @@
 // The diff viewer, asserted on the seeded `diffs` project (tests/_diffRepo.js): sources from the Compare panel, the
-// file list that drives it from the right slot (counts, Tree, the phone's Files (n) dialog), the three modes, File
-// view, search and change navigation, every file-state placeholder, a patch download, untrusted text, and Esc. Runs in light then dark; screenshots go to out/diff-*.png (desktop, plus phone for Hunk and Split).
+// file list that drives it from the right slot (counts, Tree, the phone's Files (n) dialog), every Diff scope × Diff
+// layout combination, Ignore whitespace, the prefs persisted and a legacy stored value cleaned, File view, search and
+// change navigation, every file-state placeholder, a patch download, untrusted text, and Esc. Runs in light then dark;
+// screenshots go to out/diff-*.png (desktop, plus phone for Hunk+Split and Full+Split).
 // Run: node harness/playwright/diff.mjs   (needs `npm run prepare` first, for frontend/dist)
 import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -40,7 +42,8 @@ try {
     const files = filesPanel.getByRole('listbox', { name: 'Changed files', exact: true });
     const option = (name) => files.getByRole('option', { name });
     const body = diff.locator('[data-diff-body]');
-    const mode = (name) => diff.getByRole('group', { name: 'Diff mode' }).getByRole('button', { name, exact: true });
+    const scope = (name) => diff.getByRole('group', { name: 'Diff scope', exact: true }).getByRole('button', { name, exact: true });
+    const layout = (name) => diff.getByRole('group', { name: 'Diff layout', exact: true }).getByRole('button', { name, exact: true });
 
     for (const scheme of ['light', 'dark']) {
       const shot = async (name) => {
@@ -91,41 +94,98 @@ try {
       await shot('tree');
       await filesPanel.getByRole('group', { name: 'File view', exact: true }).getByRole('button', { name: 'Path', exact: true }).click();
 
-      // 2. Hunk: syntax tokens, word emphasis on a del and an add row, hunk headers.
+      // 2–4. Each Diff scope × Diff layout: syntax tokens and word emphasis on both sides everywhere; two hunk headers in
+      // Hunk scope, none in Full; Inline one column (Full: every file line plus the 2 deleted ones); Split two equal
+      // columns, checked at phone width with and without Wrap.
       await option(/src\/app\.ts/).click();
-      await mode('Hunk').click();
-      await body.locator('[data-token]').first().waitFor();
-      check(await body.locator('[data-token]').count() > 0, `${scheme}: Hunk mode is syntax-highlighted`);
-      check(await body.locator('[data-row=del] [data-emphasis]').count() > 0 && await body.locator('[data-row=add] [data-emphasis]').count() > 0, `${scheme}: word emphasis on a deleted and an added row`);
-      check(await body.locator('[data-hunk-header]').count() === 2, `${scheme}: Hunk mode shows its hunk headers`);
-      await shot('hunk');
-      await phoneShot('hunk');
-
-      // 3. Inline: the whole file plus its deleted lines.
-      await mode('Inline').click();
-      await body.locator('[data-view=unified]').waitFor();
-      await page.waitForFunction(() => document.querySelectorAll('[data-diff-body] [data-hunk-header]').length === 0);
       const appLines = readFileSync(path.join(world.diffs.repo.dir, 'src/app.ts'), 'utf8').split('\n').length - 1;
-      check(await body.locator('[data-row]').count() === appLines + 2, `${scheme}: Inline shows every line of the file plus the 2 deleted ones`);
-      await shot('inline');
+      for (const [s, l] of [['Hunk', 'Inline'], ['Hunk', 'Split'], ['Full', 'Inline'], ['Full', 'Split']]) {
+        const name = `${s.toLowerCase()}-${l.toLowerCase()}`;
+        await scope(s).click();
+        await layout(l).click();
+        check(await scope(s).getAttribute('aria-pressed') === 'true' && await layout(l).getAttribute('aria-pressed') === 'true', `${scheme}: ${name}: both toggles pressed`);
+        const headers = s === 'Hunk' ? 2 : 0;
+        if (l === 'Inline') {
+          const rows = s === 'Full' ? appLines + 2 : null;
+          await page.waitForFunction(({ headers, rows }) => {
+            const v = document.querySelector('[data-diff-body] [data-view=unified]');
+            return !!v && v.querySelectorAll('[data-hunk-header]').length === headers && (rows === null || v.querySelectorAll('[data-row]').length === rows);
+          }, { headers, rows });
+          if (rows !== null) check(true, `${scheme}: ${name} shows every line of the file plus the 2 deleted ones`);
+        } else {
+          await page.waitForFunction((headers) => {
+            const v = document.querySelector('[data-diff-body] [data-view=split]');
+            return !!v && v.querySelectorAll('[data-hunk-header]').length === headers && v.querySelectorAll('[data-side=new]').length > 0;
+          }, headers);
+          check(await body.locator('[data-side=old]').count() === await body.locator('[data-side=new]').count(), `${scheme}: ${name} has an old and a new column per row`);
+        }
+        check(await body.locator('[data-hunk-header]').count() === headers, `${scheme}: ${name} shows ${headers} hunk headers`);
+        await body.locator('[data-token]').first().waitFor();
+        check(await body.locator('[data-token]').count() > 0, `${scheme}: ${name} is syntax-highlighted`);
+        const [oldSide, newSide] = l === 'Inline' ? ['[data-row=del]', '[data-row=add]'] : ['[data-side=old]', '[data-side=new]'];
+        check(await body.locator(`${oldSide} [data-emphasis]`).count() > 0 && await body.locator(`${newSide} [data-emphasis]`).count() > 0, `${scheme}: ${name} emphasises words on both sides`);
+        await shot(name);
+        if (l === 'Split') {
+          await page.setViewportSize(PHONE);
+          await body.scrollIntoViewIfNeeded();
+          const firstRow = body.locator('[data-side=new]').first();
+          const h0 = (await firstRow.boundingBox()).height;
+          await diff.getByRole('button', { name: 'Wrap lines', exact: true }).click();
+          await body.scrollIntoViewIfNeeded();
+          const h1 = (await firstRow.boundingBox()).height;
+          check(h1 > h0 * 1.5, `${scheme}: ${name}: Wrap wraps a long line (row ${h0}px → ${h1}px)`);
+          await shot(`${name}-wrap-phone`);
+          await diff.getByRole('button', { name: 'Wrap lines', exact: true }).click();
+          await body.scrollIntoViewIfNeeded();
+          await shot(`${name}-phone`);
+          await page.setViewportSize(DESKTOP);
+        }
+      }
 
-      // 4. Split: two numbered sides with emphasis on both; Wrap.
-      await mode('Split').click();
-      await body.locator('[data-view=split]').waitFor();
-      check(await body.locator('[data-side=old] [data-emphasis]').count() > 0 && await body.locator('[data-side=new] [data-emphasis]').count() > 0, `${scheme}: Split emphasises both sides`);
-      check(await body.locator('[data-side=old]').count() === await body.locator('[data-side=new]').count(), `${scheme}: Split has an old and a new column per row`);
-      await shot('split');
-      await page.setViewportSize(PHONE);
-      const firstRow = body.locator('[data-side=new]').first();
-      const h0 = (await firstRow.boundingBox()).height;
-      await diff.getByRole('button', { name: 'Wrap lines' }).click();
-      await body.scrollIntoViewIfNeeded();
-      const h1 = (await firstRow.boundingBox()).height;
-      check(h1 > h0 * 1.5, `${scheme}: Wrap wraps a long line (row ${h0}px → ${h1}px)`);
-      await shot('split-wrap-phone');
-      await diff.getByRole('button', { name: 'Wrap lines' }).click();
-      await shot('split-phone');
-      await page.setViewportSize(DESKTOP);
+      // 4b. Ignore whitespace: w.txt's change is whitespace only ('a b' → 'a  b'), so under git's -w it is no change at
+      // all and leaves the list; off, it is listed (+1 −1) and shows its change again.
+      const ignoreWs = diff.getByRole('button', { name: 'Ignore whitespace', exact: true });
+      await scope('Hunk').click();
+      await layout('Inline').click();
+      await option(/w\.txt/).click();
+      await body.locator('[data-row=add]').first().waitFor();
+      check(await body.locator('[data-row=del]').count() === 1 && await body.locator('[data-row=add]').count() === 1, `${scheme}: w.txt shows its whitespace change`);
+      check((await option(/w\.txt/).textContent()).includes('+1 −1'), `${scheme}: w.txt's row counts +1 −1`);
+      await ignoreWs.click();
+      check(await ignoreWs.getAttribute('aria-pressed') === 'true', `${scheme}: Ignore whitespace is pressed`);
+      await option(/w\.txt/).waitFor({ state: 'detached' });
+      await option(/src\/app\.ts/).click();
+      await body.locator('[data-row=add]').first().waitFor();
+      check(await option(/w\.txt/).count() === 0 && await option(/src\/app\.ts/).count() === 1, `${scheme}: Ignore whitespace drops the whitespace-only w.txt from the list and keeps src/app.ts`);
+      await shot('ignore-ws');
+      await ignoreWs.click();
+      await option(/w\.txt/).waitFor();
+      await option(/w\.txt/).click();
+      await body.locator('[data-row=add]').first().waitFor();
+      check(await ignoreWs.getAttribute('aria-pressed') === 'false' && (await option(/w\.txt/).textContent()).includes('+1 −1'), `${scheme}: Ignore whitespace off brings w.txt's change back`);
+
+      // 4c. Full+Split and Ignore whitespace survive a reload; a stored legacy value (mode, whitespace) loads as the
+      // defaults and is rewritten without its legacy keys.
+      const reopen = async () => {
+        await page.reload();
+        await page.getByRole('textbox', { name: 'Commit (sha or ref)' }).fill('HEAD~1');
+        await page.getByRole('button', { name: 'Show commit' }).click();
+        await files.waitFor();
+        await scope('Hunk').waitFor();
+      };
+      const isPressed = async (b) => (await b.getAttribute('aria-pressed')) === 'true';
+      await scope('Full').click();
+      await layout('Split').click();
+      await ignoreWs.click();
+      await reopen();
+      check(await isPressed(scope('Full')) && await isPressed(layout('Split')) && await isPressed(ignoreWs), `${scheme}: Full, Split and Ignore whitespace persist across a reload`);
+      await page.evaluate(() => localStorage.setItem('code-git:diff-prefs', JSON.stringify({ mode: 'split', whitespace: 'eol' })));
+      await reopen();
+      check(await isPressed(scope('Hunk')) && await isPressed(layout('Inline')) && !(await isPressed(ignoreWs)), `${scheme}: a legacy stored mode / whitespace loads as Hunk+Inline, whitespace shown`);
+      const storedPrefs = JSON.parse(await page.evaluate(() => localStorage.getItem('code-git:diff-prefs')));
+      check(!('mode' in storedPrefs) && !('whitespace' in storedPrefs) && storedPrefs.scope === 'hunk', `${scheme}: the stored prefs were rewritten without mode / whitespace`);
+      await option(/src\/app\.ts/).click();
+      await body.locator('[data-hunk-header]').first().waitFor();
 
       // 5. File view: content without markers.
       await diff.getByRole('group', { name: 'View' }).getByRole('button', { name: 'File', exact: true }).click();
@@ -134,7 +194,7 @@ try {
       check(await body.locator('[data-row=file]').count() === appLines && fileText.includes('foo(baz)') && !fileText.includes('foo(bar)'), `${scheme}: File view shows the new content only`);
       await shot('file-view');
       await diff.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Diff', exact: true }).click();
-      await mode('Hunk').click();
+      await scope('Hunk').click();
       await body.locator('[data-hunk-header]').first().waitFor();
 
       // 6. Search and change navigation.

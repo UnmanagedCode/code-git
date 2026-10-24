@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Shell } from '@/shell/Shell';
-import { diffStore } from '@/state/diff';
+import { diffStore, prefsStore, setPrefs } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { dispatchTabs, tabKey } from '@/state/tabs';
 import { dfile, fdiff, filesResult, hunk, OID } from '@/test/diffFixtures';
@@ -42,7 +42,7 @@ function world(list: DiffFilesResult | Response | ((body: { target: { project: s
       const p = JSON.parse(String(init?.body)).params.path as string;
       const r = byPath[p];
       if (!r) throw new Error(`no diff stubbed for ${p}`);
-      return r instanceof Response ? r : { ok: true, result: r };
+      return r instanceof Response ? r.clone() : { ok: true, result: r };
     },
   });
   const posts = (op: string) => fetch.calls.filter((c) => c.url.pathname.endsWith(`/ops/${op}`)).map((c) => (c.body as { params: Record<string, unknown> }).params);
@@ -201,13 +201,128 @@ test('a file is loaded against the pinned pair diff.files returned, not the orig
   });
 });
 
-test('Inline asks for the full file; Hunk asks for the chosen context', async () => {
+const group = (name: string) => within(panel()).getByRole('group', { name });
+const pick = (g: string, name: string) => userEvent.click(within(group(g)).getByRole('button', { name }));
+const pressed = (g: string) => within(group(g)).getAllByRole('button').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent);
+const ignoreWs = () => within(panel()).getByRole('button', { name: 'Ignore whitespace' });
+
+// Invariant: the toolbar offers independent Diff scope (Hunk | Full) and Diff layout (Inline | Split) groups and one
+// Ignore whitespace toggle, in place of Diff mode and the Whitespace select; each keeps its own pressed state.
+test('Diff scope and Diff layout groups and an Ignore whitespace button replace Diff mode and the Whitespace select', async () => {
+  await openA();
+  expect(within(panel()).queryByRole('group', { name: 'Diff mode' })).toBeNull();
+  expect(within(panel()).queryByRole('combobox', { name: 'Whitespace' })).toBeNull();
+  expect(within(group('Diff scope')).getAllByRole('button').map((b) => b.textContent)).toEqual(['Hunk', 'Full']);
+  expect(within(group('Diff layout')).getAllByRole('button').map((b) => b.textContent)).toEqual(['Inline', 'Split']);
+  expect([pressed('Diff scope'), pressed('Diff layout'), ignoreWs().getAttribute('aria-pressed')]).toEqual([['Hunk'], ['Inline'], 'false']);
+  await pick('Diff scope', 'Full');
+  expect([pressed('Diff scope'), pressed('Diff layout')]).toEqual([['Full'], ['Inline']]);
+  await pick('Diff layout', 'Split');
+  expect([pressed('Diff scope'), pressed('Diff layout')]).toEqual([['Full'], ['Split']]);
+  await userEvent.click(ignoreWs());
+  expect([pressed('Diff scope'), pressed('Diff layout'), ignoreWs().getAttribute('aria-pressed')]).toEqual([['Full'], ['Split'], 'true']);
+  await pick('Diff scope', 'Hunk');
+  expect([pressed('Diff scope'), pressed('Diff layout'), ignoreWs().getAttribute('aria-pressed')]).toEqual([['Hunk'], ['Split'], 'true']);
+});
+
+// Invariant: scope alone decides the request (Full: the whole file; Hunk: the chosen context); layout is render-only,
+// so flipping it posts no diff.file.
+test('Full asks for the full file; Hunk asks for the chosen context; a layout flip posts no new diff.file', async () => {
   const { posts } = await openA();
   await waitFor(() => expect(posts('diff.file')).toHaveLength(1));
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Context lines' }), '10');
   await waitFor(() => expect(posts('diff.file').at(-1)?.context).toBe(10));
-  await userEvent.click(screen.getByRole('button', { name: 'Inline' }));
+  const n = posts('diff.file').length;
+  await pick('Diff layout', 'Split');
+  await waitFor(() => expect(panel().querySelector('[data-view=split]')).toBeTruthy());
+  await pick('Diff layout', 'Inline');
+  await waitFor(() => expect(panel().querySelector('[data-view=unified]')).toBeTruthy());
+  expect(posts('diff.file')).toHaveLength(n);
+  await pick('Diff scope', 'Full');
   await waitFor(() => expect(posts('diff.file').at(-1)?.context).toBe('full'));
+  const m = posts('diff.file').length;
+  await pick('Diff layout', 'Split');
+  await waitFor(() => expect(panel().querySelector('[data-view=split]')).toBeTruthy());
+  expect(posts('diff.file')).toHaveLength(m);
+});
+
+// Invariant: Ignore whitespace on reloads the file list and the file with whitespace "all"; off asks with "none" again.
+test('Ignore whitespace on reloads the list and the file with whitespace all; off asks with none', async () => {
+  const { posts } = await openA();
+  const commitLists = () => posts('diff.files').filter((p) => (p.source as { kind: string }).kind === 'commit');
+  await waitFor(() => expect(posts('diff.file')).toHaveLength(1));
+  expect(commitLists().map((p) => p.whitespace)).toEqual(['none']);
+  expect(posts('diff.file')[0].whitespace).toBe('none');
+  await userEvent.click(ignoreWs());
+  await waitFor(() => expect(posts('diff.file').at(-1)?.whitespace).toBe('all'));
+  expect(commitLists().map((p) => p.whitespace)).toEqual(['none', 'all']);
+  await userEvent.click(ignoreWs());
+  await waitFor(() => expect(posts('diff.file').at(-1)?.whitespace).toBe('none'));
+  expect(commitLists().map((p) => p.whitespace)).toEqual(['none', 'all', 'none']);
+});
+
+// Invariant: Hunk scope in Split layout shows a hunk header above each hunk, and the old and new sides in two columns.
+test('Hunk+Split renders a hunk header per hunk and both columns', async () => {
+  await openA();
+  await pick('Diff layout', 'Split');
+  await waitFor(() => expect(panel().querySelector('[data-view=split]')).toBeTruthy());
+  const view = panel().querySelector('[data-view=split]')!;
+  expect(view.querySelectorAll('[data-hunk-header]')).toHaveLength(3);
+  expect([...view.querySelectorAll('[data-hunk-header]')].map((h) => h.textContent)).toEqual(A_DIFF.hunks.map((h) => h.header));
+  expect(view.querySelectorAll('[data-side=old]').length).toBe(view.querySelectorAll('[data-side=new]').length);
+  expect(view.querySelectorAll('[data-side=old]').length).toBeGreaterThan(0);
+  await pick('Diff scope', 'Full');
+  await waitFor(() => expect(panel().querySelectorAll('[data-hunk-header]')).toHaveLength(0));
+  expect(panel().querySelector('[data-view=split]')).toBeTruthy();
+});
+
+// Invariant: Context lines applies to Hunk scope only; File view disables scope and layout but not Ignore whitespace.
+test('Context lines is disabled in Full scope; scope and layout are disabled in File view while Ignore whitespace stays enabled', async () => {
+  await openA();
+  const contextSelect = () => screen.getByRole('combobox', { name: 'Context lines' }) as HTMLSelectElement;
+  expect(contextSelect().disabled).toBe(false);
+  await pick('Diff layout', 'Split');
+  expect(contextSelect().disabled).toBe(false);
+  await pick('Diff scope', 'Full');
+  expect(contextSelect().disabled).toBe(true);
+  await userEvent.click(within(group('View')).getByRole('button', { name: 'File' }));
+  const disabled = (g: string) => within(group(g)).getAllByRole('button').map((b) => (b as HTMLButtonElement).disabled);
+  expect([...disabled('Diff scope'), ...disabled('Diff layout')]).toEqual([true, true, true, true]);
+  expect((ignoreWs() as HTMLButtonElement).disabled).toBe(false);
+  await userEvent.click(ignoreWs());
+  expect(ignoreWs().getAttribute('aria-pressed')).toBe('true');
+});
+
+// Invariant: File view renders the file layout ([data-view=file]), never an inline or split diff, whatever the layout
+// and scope chosen for Diff view.
+test.each([
+  ['hunk', 'Hunk', 'inline', 'Inline'], ['hunk', 'Hunk', 'split', 'Split'], ['full', 'Full', 'inline', 'Inline'], ['full', 'Full', 'split', 'Split'],
+] as const)('File view renders the file layout, not a diff, from $0 scope with $2 layout', async (scope, scopeLabel, layout, layoutLabel) => {
+  await openA();
+  await pick('Diff scope', scopeLabel);
+  await pick('Diff layout', layoutLabel);
+  await userEvent.click(within(group('View')).getByRole('button', { name: 'File' }));
+  await waitFor(() => expect(panel().querySelector('[data-view=file]')).toBeTruthy());
+  expect(panel().querySelector('[data-view=unified]')).toBeNull();
+  expect(panel().querySelector('[data-view=split]')).toBeNull();
+  expect(panel().querySelectorAll('[data-hunk-header]')).toHaveLength(0);
+  expect(prefsStore.get()).toMatchObject({ view: 'file', scope, layout });
+});
+
+// Invariant: a file over the output cap in Full scope offers Switch to Hunk, which sets Hunk scope and Diff view and
+// keeps the layout.
+test('over the cap, Switch to Hunk sets scope hunk and view diff and keeps the layout', async () => {
+  const tooLarge = json({ error: 'git output exceeded', code: 'OUTPUT_TOO_LARGE', limitBytes: 32 * 1024 * 1024 }, 422);
+  await openA([dfile()], { 'src/a.ts': tooLarge });
+  await pick('Diff layout', 'Split');
+  await screen.findByText(/^Too large to display/);
+  expect(screen.queryByRole('button', { name: 'Switch to Hunk' })).toBeNull();
+  await pick('Diff scope', 'Full');
+  await userEvent.click(await screen.findByRole('button', { name: 'Switch to Hunk' }));
+  expect(prefsStore.get()).toMatchObject({ scope: 'hunk', layout: 'split', view: 'diff' });
+  act(() => setPrefs({ view: 'file' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Switch to Hunk' }));
+  expect(prefsStore.get()).toMatchObject({ scope: 'hunk', layout: 'split', view: 'diff' });
 });
 
 test('Split renders the old and the new side in their own columns', async () => {
