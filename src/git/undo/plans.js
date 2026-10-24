@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { stashSides } from './steps/stash.js';
 
 // The registered ops' undo builders (docs/undo.md → Per-op plans): each turns an op's params and result (its
@@ -213,8 +214,10 @@ function remoteAddPlan(params, result) {
   return plan(`Add remote ${params.name}`, [remoteStep(result.undo.remotes[0])]);
 }
 
+/** Null when the edit wrote nothing (every field echoed unchanged): no entry whose undo does nothing. */
 function remoteEditPlan(params, result) {
-  return plan(`Edit remote ${params.name}`, [remoteStep(result.undo.remotes[0])]);
+  const r = result.undo.remotes[0];
+  return isDeepStrictEqual(r.old, r.new) ? null : plan(`Edit remote ${params.name}`, [remoteStep(r)]);
 }
 
 function remoteRenamePlan(params) {

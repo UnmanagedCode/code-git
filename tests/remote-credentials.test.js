@@ -160,3 +160,15 @@ test('remote.edit with the masked url of a multi-valued list still refuses REMOT
   }
   assert.deepEqual(w.remoteWrites(), []);
 });
+
+// Invariant: an edit that wrote nothing (every field echoed unchanged) records no undo entry, so the slots it cleared stay
+// empty; an edit that wrote something is recorded.
+test('remote.edit that ends up writing nothing records no undo entry', async (t) => {
+  const w = await world(t);
+  await credRemote(w);
+  assert.ok((await w.call('undo.state')).result.undo, 'the add is undoable');
+  await w.call('remote.edit', { name: 'cred', url: masked('one'), pushUrl: masked('p') });
+  assert.deepEqual((await w.call('undo.state')).result, { undo: null, redo: null });
+  await w.call('remote.edit', { name: 'cred', url: masked('one'), pushUrl: '/push.git' });
+  assert.equal((await w.call('undo.state')).result.undo.label, 'Edit remote cred');
+});
