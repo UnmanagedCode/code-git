@@ -41,6 +41,20 @@ test('a <transport>::<url> value: maskUrl masks the url after ::, isMaskedUrl ag
   assert.deepEqual(redactArgv(['git', 'config', '--add', 'remote.o.url', 'foo::https://u:pw@h/r']), ['git', 'config', '--add', 'remote.o.url', 'foo::https://u:***@h/r']);
 });
 
+// Invariant: a scheme of digits only is a scheme: its url's password is masked in a value and in a text.
+test('a scheme of digits only (123://) is masked by maskUrl and maskUrls', () => {
+  assert.equal(maskUrl('123://u:pw@h/r'), '123://u:***@h/r');
+  assert.equal(maskUrls("fatal: unable to access '123://u:pw@h/r/'"), "fatal: unable to access '123://u:***@h/r/'");
+  assert.equal(isMaskedUrl('123://u:***@h/r'), true);
+});
+
+// Invariant: a text password span never crosses another scheme://: a credential-less url followed by a credentialed
+// one on the same line keeps its own text, and the second url keeps its scheme and user name.
+test('maskUrls: a password span never crosses into the next url', () => {
+  assert.equal(maskUrls('https://a:p https://b:x@h/r failed'), 'https://a:p https://b:***@h/r failed');
+  assert.equal(maskUrls('https://a:p q 9z://b:x@h/r'), 'https://a:p q 9z://b:***@h/r');
+});
+
 test('maskUrl leaves urls without a password alone', () => {
   for (const u of ['https://host/r.git', 'https://user@host/r', 'ssh://git@host:22/r.git', 'git@host:o/r.git', '/srv/r.git', 'file:///srv/r', 'origin', '--end-of-options']) {
     assert.equal(maskUrl(u), u, u);
