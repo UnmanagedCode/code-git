@@ -87,11 +87,17 @@ export const isProtectedEnv = (name) => PROTECTED_ENV.includes(name) || PROTECTE
 
 const STATUS_OF = { CANCELLED: 'cancelled', GIT_TIMEOUT: 'timeout' };
 
-/** The subcommand of an op's `args`, past any leading `-c <key=value>` pairs (netRun's, a pull's config overrides). */
+/**
+ * The subcommand of an op's `args`, past any leading `-c <key=value>` pairs (netRun's, a pull's config overrides) and
+ * the LFS ops' `--no-literal-pathspecs` (src/git/ops/lfs.js).
+ */
 export function subcommandOf(args) {
   let i = 0;
-  while (args[i] === '-c') i += 2;
-  return args[i];
+  for (;;) {
+    if (args[i] === '-c') i += 2;
+    else if (args[i] === '--no-literal-pathspecs') i += 1;
+    else return args[i];
+  }
 }
 
 /**

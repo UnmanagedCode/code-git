@@ -134,6 +134,7 @@ test('a GIT_FAILED message names the subcommand, past leading -c pairs', async (
   await assert.rejects(runGit(ctxFor(APP), ['rev-parse', '--verify', 'nope']), (e) => e.message === 'git rev-parse exited with 128');
   await assert.rejects(runGit(ctxFor(APP), ['-c', 'a.b=1', '-c', 'c.d=2', 'rev-parse', '--verify', 'nope']), (e) => e.message === 'git rev-parse exited with 128');
   assert.equal(subcommandOf(['-c', 'protocol.ext.allow=never', 'push', '-c']), 'push');
+  assert.equal(subcommandOf(['-c', 'protocol.ext.allow=never', '--no-literal-pathspecs', 'lfs', 'pull']), 'lfs', "the LFS ops' pathspec switch");
 });
 
 test('writes on one project are serialized; reads and other projects are not held behind them', async (t) => {

@@ -1,0 +1,22 @@
+{
+ "files": [
+  {
+   "name": "a.bin",
+   "size": 4,
+   "checkout": true,
+   "downloaded": true,
+   "oid_type": "sha256",
+   "oid": "2c8b08da5ce60398e1f19af0e5dccc744df274b826abe585eaba68c525434806",
+   "version": "https://git-lfs.github.com/spec/v1"
+  },
+  {
+   "name": "assets/b.psd",
+   "size": 8,
+   "checkout": false,
+   "downloaded": false,
+   "oid_type": "sha256",
+   "oid": "89eaf5ec9a1b0935bcd304dbd8c7872c789736c7036ad40a492668ba11360bef",
+   "version": "https://git-lfs.github.com/spec/v1"
+  }
+ ]
+}
