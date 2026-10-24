@@ -147,6 +147,23 @@ test('maskUrls: a password holding a space is masked within its line; a second u
   ]) assert.equal(maskUrls(kept), kept, kept);
 });
 
+// Invariant: a whitespace-bearing password ends at the @ that ends the url's authority (a host-like run, then / : ? #
+// a quote or a closing bracket) — not at an @ inside the password, and not cut short by digits a space follows (only
+// digits then / ? # a quote, a closing bracket or the line's end read as a port); the over-mask guards still hold.
+test('maskUrls: a spaced password holding digits first or an @ is masked whole, up to the @ that ends the authority', () => {
+  assert.equal(maskUrls('https://user:1234 5678@h/r/'), 'https://user:***@h/r/');
+  assert.equal(maskUrls("fatal: unable to access 'https://user:1234 5678@h/r/': 403"), "fatal: unable to access 'https://user:***@h/r/': 403");
+  assert.equal(maskUrls('https://user:p@ss word@h/r'), 'https://user:***@h/r');
+  assert.equal(maskUrls("fatal: clone of 'https://user:p@ss word@h/r' into submodule path 'x' failed"), "fatal: clone of 'https://user:***@h/r' into submodule path 'x' failed");
+  assert.equal(maskUrls('https://user:p@ss word@h:8443/r and https://b:p2@h2/r'), 'https://user:***@h:8443/r and https://b:***@h2/r');
+  for (const kept of [
+    'https://h:8443/r failed for git@host',
+    "fatal: unable to access 'https://h:8443': denied to me@corp.example/x",
+    "Submodule 'x' (https://h:8443) registered for git@host/x",
+  ]) assert.equal(maskUrls(kept), kept, kept);
+  assert.equal(maskUrls("'https://u:pw x@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com");
+});
+
 // Invariant: the stderr the activity log keeps (capStderr) and a refusal's body (toBody) mask a password holding a space.
 test('a password holding a space never reaches capStderr or a refusal body', () => {
   const line = "fatal: unable to access 'https://user:S3 CRET@h/r/': The requested URL returned error: 403\n";

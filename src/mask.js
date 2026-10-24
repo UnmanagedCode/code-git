@@ -57,25 +57,36 @@ export function isMaskedUrl(url) {
   return span !== null && url.slice(span.from, span.to) === '***';
 }
 
-/** Whether the `@` at `at` is the last of its whitespace-separated token (a url's authority ends there). */
-function lastInToken(s, at) {
+/** What ends a url's authority after its host: a path, a port, a query, a fragment, a quote or a closing bracket. */
+const AUTHORITY_END = new Set(['/', ':', '?', '#', "'", '"', ')', ']', '>']);
+/** What may follow a port's digits: AUTHORITY_END but another `:`. */
+const PORT_END = new Set([...AUTHORITY_END].filter((c) => c !== ':'));
+
+/**
+ * How the `@` at `at` would end a url's authority, read up to `end`: its host-like run (no `@`, whitespace or
+ * AUTHORITY_END character) followed by an AUTHORITY_END character → 'strong'; by whitespace or `end` → 'weak'; by another
+ * `@` → null (the `@` is inside a password).
+ */
+function authorityEnd(s, at, end) {
   let i = at + 1;
-  while (i < s.length && s[i] !== '@' && !WS.test(s[i])) i++;
-  return i === s.length || s[i] !== '@';
+  while (i < end && s[i] !== '@' && !WS.test(s[i]) && !AUTHORITY_END.has(s[i])) i++;
+  if (i === end || WS.test(s[i])) return 'weak';
+  return s[i] === '@' ? null : 'strong';
 }
 
-/** Whether a password span at `from` reads as a port, not a password: digits, then no letter, digit or `_`. */
-function portAt(s, from) {
+/** Whether the text at `from` (up to `end`) reads as a port: digits, then a PORT_END character, a line end or `end`. */
+function portAt(s, from, end) {
   let i = from;
-  while (i < s.length && s[i] >= '0' && s[i] <= '9') i++;
-  return i > from && !(i < s.length && (isAlnum(s[i]) || s[i] === '_'));
+  while (i < end && s[i] >= '0' && s[i] <= '9') i++;
+  return i > from && (i === end || isLineEnd(s[i]) || PORT_END.has(s[i]));
 }
 
 /**
  * The password span of the url whose `://` is at `sep` in a text, never reaching `bound` (the next url's scheme):
- * {from, to} or null. `scheme://user` holds no whitespace and ends at the first `:`; the span ends at the last `@` of the
- * token it starts in; else — a password holding whitespace, not starting with whitespace or a port — at the first `@` on
- * the line that is the last `@` of its own token.
+ * {from, to} or null. `scheme://user` holds no whitespace and ends at the first `:`. The span ends at the last `@` of the
+ * token it starts in when that `@` strongly ends the authority (authorityEnd). Else, when the password goes on past
+ * whitespace on the same line — not starting with whitespace or a port (portAt) — at the first `@` on the line that
+ * strongly ends an authority, else the token's own last `@`, else the first `@` on the line that weakly ends one.
  */
 function textSpan(s, sep, bound) {
   let colon = sep + SEP.length;
@@ -85,10 +96,18 @@ function textSpan(s, sep, bound) {
   let i = from;
   let tokenAt = -1;
   for (; i < bound && !WS.test(s[i]); i++) if (s[i] === '@') tokenAt = i;
+  if (tokenAt !== -1 && authorityEnd(s, tokenAt, bound) === 'strong') return { from, to: tokenAt };
+  const spaced = i > from && i < bound && !isLineEnd(s[i]) && !portAt(s, from, bound);
+  if (!spaced) return tokenAt === -1 ? null : { from, to: tokenAt };
+  let weak = -1;
+  for (; i < bound && !isLineEnd(s[i]); i++) {
+    if (s[i] !== '@') continue;
+    const end = authorityEnd(s, i, bound);
+    if (end === 'strong') return { from, to: i };
+    if (end === 'weak' && weak === -1) weak = i;
+  }
   if (tokenAt !== -1) return { from, to: tokenAt };
-  if (i === from || portAt(s, from)) return null;
-  for (; i < bound && !isLineEnd(s[i]); i++) if (s[i] === '@' && lastInToken(s, i)) return { from, to: i };
-  return null;
+  return weak === -1 ? null : { from, to: weak };
 }
 
 /**
