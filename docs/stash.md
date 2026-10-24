@@ -61,7 +61,7 @@ Selected hunks or lines of one file. Same request as the line staging ops (`sele
 - **`--index` and the user's staging.** git resets the index to HEAD before its merge; when the merge then refuses to start ("Index was not unstashed." with no unmerged entry), staged changes — even ones the stash never touches — are left unstaged. When something is staged (`diff-index --cached --quiet HEAD` exits 1), the index is saved first (`write-tree`) and read back (`read-tree <tree>`) in that case only. git prints the same line after a **conflicted** merge, whose index (the unmerged entries and the other staging) it kept: unmerged entries are checked first and returned as `{conflicts}`, and that index is never touched. Index-only state a tree does not hold (stat data, intent-to-add, skip-worktree bits) is not restored.
 - **No confirmation**: git refuses to overwrite a local change (`CHECKOUT_CONFLICT`, nothing written), and a conflict only adds markers to files that were clean. A file with any local change refuses even when the merge would be clean, so a line stash pops only onto a clean file; `stash.applyFile` applies it into an edited one.
 - `pop`: after a clean apply, `dropVerified` (below). With conflicts the stash is kept (`dropped: false`), as git does. A drop refused `STASH_MOVED` is reported, not thrown: `dropped: false, dropError: 'STASH_MOVED'`.
-- `result`: apply `{conflicts, undo}`; pop `{conflicts, dropped, dropError?, undo}`.
+- `result`: apply `{conflicts, message, undo}` (`message`: the stash's reflog subject, as `stash.list` shows it; the undo label's); pop `{conflicts, dropped, dropError?, undo}`.
 
 ### `stash.applyFile`
 
@@ -95,14 +95,14 @@ Selected hunks or lines of one file. Same request as the line staging ops (`sele
 
 ## Undo record
 
-Every op returns `result.undo`: the ref ops' record (`undoRecord`, `src/git/refs/undo.js`; [refs → Undo record](refs.md#undo-record)) — `refs`, `remoteRefs`, `head`, `worktreeSnapshot` — whose stash keys the stash ops fill (empty for every ref op). Every stash op but `stash.apply` is registered for undo: the plans, steps and confirmations are in [undo → Per-op plans](undo.md#per-op-plans); `stash.apply` clears the checkout's undo and redo slots.
+Every op returns `result.undo`: the ref ops' record (`undoRecord`, `src/git/refs/undo.js`; [refs → Undo record](refs.md#undo-record)) — `refs`, `remoteRefs`, `head`, `worktreeSnapshot` — whose stash keys the stash ops fill (empty for every ref op). Every stash op is registered for undo: the plans, steps and confirmations are in [undo → Per-op plans](undo.md#per-op-plans).
 
 | Key | Shape | Set by |
 |---|---|---|
 | `stashes` | `[{oid, old: {message} \| null, new: {message} \| null, restore}]` — `old: null` an entry the op created, `new: null` one it removed; `restore` names what putting it back takes (`'store'`, `'pop'`, `'drop'`) | push, pushLines, drop, rename, pop and branch when dropped |
 | `worktreePatch` | base64 \| null | applyFile: the patch it applied |
 | `removedPatch` | base64 | pushLines: the patch whose `apply -R` took the lines out |
-| `worktreeState` | `{paths, before, mid?, after}`, each `{head, index, files}` | push, pop (clean), branch (clean): [undo → Record keys](undo.md#record-keys) |
+| `worktreeState` | `{paths, before, mid?, after}`, each `{head, index, files}` | push, apply (clean), pop (clean), branch (clean): [undo → Record keys](undo.md#record-keys) |
 
 | Op | `undo` |
 |---|---|
@@ -112,8 +112,9 @@ Every op returns `result.undo`: the ref ops' record (`undoRecord`, `src/git/refs
 | pop (clean) | plus `worktreeState` |
 | rename | `[{oid: <new>, restore: 'drop'}, {oid: <original>, restore: 'store'}]` |
 | applyFile | `worktreePatch` |
+| apply (clean) | `worktreeState`; its undo and redo write the recorded states and never read the stash list |
 | branch | `refs: [{ref, old: null, new: <base>}]`, `head: {old: {branch, oid}, new: {branch: ref, oid: base}}`, plus the dropped entry when dropped and, when clean, `worktreeState` with `mid` |
-| apply; a pop or branch that stopped on conflicts | empty (branch: `refs` and `head` only) |
+| an apply, pop or branch that stopped on conflicts | empty (branch: `refs` and `head` only) |
 
 **Undo in short** (R1, R2): a stash put back lands at `stash@{0}` with a new reflog date (oid, message and contents exact); only the redo of a drop asks first (it drops the listed stash), and the undo of a branch (it deletes the branch).
 

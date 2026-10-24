@@ -135,7 +135,7 @@ test('the ops registered for undo are exactly the decided list', () => {
     'commit.create', 'head.cherryPick', 'head.continue', 'head.reset', 'head.revert', 'head.skip',
     'merge.start', 'rebase.interactive', 'rebase.start', 'remote.add', 'remote.edit', 'remote.remove', 'remote.rename',
     'stage.discardFiles', 'stage.discardLines',
-    'stash.applyFile', 'stash.branch', 'stash.drop', 'stash.pop', 'stash.push', 'stash.pushLines', 'stash.rename', 'tag.create', 'tag.delete',
+    'stash.apply', 'stash.applyFile', 'stash.branch', 'stash.drop', 'stash.pop', 'stash.push', 'stash.pushLines', 'stash.rename', 'tag.create', 'tag.delete',
   ]);
 });
 

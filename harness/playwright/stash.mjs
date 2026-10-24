@@ -1,8 +1,9 @@
 // The stash path, asserted on the seeded `stash` project (seed.mjs): save selected files from the Changes panel (the
 // graph and the refs panel show the new stash), the header's Undo and Redo of that save, the stash's view switch, one
 // file applied from the details, a rename (to the top), lines stashed from the diff, pop, drop (cancelled, then
-// confirmed; undone and redone through its confirmation), a branch from a stash, and the dialogs on a phone. Each step is checked against git itself. Runs in light then dark, each on a fresh seed;
-// screenshots go to out/stash/.
+// confirmed; undone and redone through its confirmation), a whole stash applied (undone, redone, undone again), a branch
+// from a stash, and the dialogs on a phone. Each step is checked against git itself. Runs in light then dark, each on a
+// fresh seed; screenshots go to out/stash/.
 // Run: node harness/playwright/stash.mjs   (needs `npm run prepare` first, for frontend/dist)
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -225,8 +226,31 @@ for (const scheme of ['light', 'dark']) {
       await row(`stash:${lineStash.oid}`).waitFor({ state: 'detached' });
       check(!stashes().some((s) => s.oid === lineStash.oid), `${scheme}: the confirmed redo dropped it again`);
 
-      // 8. Create a branch from "earlier experiment": checked out at its base, the stash applied and dropped.
+      // 7c. Apply "earlier experiment" from its row menu. The header's Undo takes the apply back (README.md as at HEAD,
+      // its untracked file gone, the stash still listed); Redo applies it again; neither asks. A last Undo leaves the
+      // checkout as step 8 expects.
       const earlier = stashes().find((s) => s.subject === 'On main: earlier experiment');
+      const applyLabel = 'Apply “On main: earlier experiment”';
+      const isApplied = () => file('README.md') === '# stash demo\n\nAn earlier experiment.\n' && file('scratch/notes.txt') === 'scratch\n';
+      const unappliedStatus = git('status', '--porcelain');
+      const isUnapplied = () => file('README.md') === '# stash demo\n' && file('scratch/notes.txt') === null && git('status', '--porcelain') === unappliedStatus;
+      check(isUnapplied(), `${scheme}: README.md is HEAD's and scratch/ is absent before the apply`);
+      await toasted(/^Applied stash@\{\d\}$/, () => rowMenu(`stash:${earlier.oid}`, 'Apply'));
+      check(isApplied() && stashes().some((s) => s.oid === earlier.oid), `${scheme}: Apply wrote the stash's files and kept the stash`);
+      await slotReady('Undo', applyLabel);
+      await shot('apply-undo-ready');
+      await toasted(`Undid ${applyLabel}`, () => undoButton.click());
+      check(isUnapplied(), `${scheme}: Undo took the apply back (git status as before, the untracked file removed)`);
+      check(stashes().some((s) => s.oid === earlier.oid), `${scheme}: the stash is still listed after the undo`);
+      await row(`stash:${earlier.oid}`).waitFor();
+      await slotReady('Redo', applyLabel);
+      await toasted(`Redid ${applyLabel}`, () => redoButton.click());
+      check(isApplied(), `${scheme}: Redo applied the stash again`);
+      await slotReady('Undo', applyLabel);
+      await toasted(`Undid ${applyLabel}`, () => undoButton.click());
+      check(isUnapplied(), `${scheme}: a second Undo leaves the checkout as before the apply`);
+
+      // 8. Create a branch from "earlier experiment": checked out at its base, the stash applied and dropped.
       await rowMenu(`stash:${earlier.oid}`, 'Create branch…');
       const branch = page.getByRole('dialog', { name: /^Create branch from stash@\{\d\}$/ });
       await branch.waitFor();

@@ -27,7 +27,7 @@ const FETCH_AUDITED = [
   'rebase.interactive', 'rebase.start',
   'remote.add', 'remote.edit', 'remote.remove', 'remote.rename',
   'stage.discardFiles', 'stage.discardLines',
-  'stash.applyFile', 'stash.branch', 'stash.drop', 'stash.pop', 'stash.push', 'stash.pushLines', 'stash.rename',
+  'stash.apply', 'stash.applyFile', 'stash.branch', 'stash.drop', 'stash.pop', 'stash.push', 'stash.pushLines', 'stash.rename',
   'tag.create', 'tag.delete',
 ];
 

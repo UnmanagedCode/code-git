@@ -115,6 +115,7 @@ The registered ops (D2). Mode = the `head` step's mode; ‹old›/‹new› = `u
 | `stage.discardLines` | `Discard lines in <path>` | `patch` | — |
 | `stash.push` | `Stash “m”` / `Stash changes` | `stash` (created W), `worktree` | — |
 | `stash.pushLines` | `Stash lines in <path>` | `stash` (created W), `patch` (`removedPatch`, which the op applied `-R`) | — |
+| `stash.apply` (clean, something changed) | `Apply “<stash message>”` (`result.message`) | `worktree` | — |
 | `stash.pop` (clean) | `Pop “<stash message>”` (`Pop stash` when the drop met `STASH_MOVED`) | `worktree`, `stash` (removed; absent when not dropped) | — |
 | `stash.drop` | `Drop stash “<stash message>”` | `stash` (removed) | — |
 | `stash.rename` | `Rename stash to “m”` | `stash` (the copy created, the original removed) | — |
@@ -132,6 +133,7 @@ What undo and redo do for the stash plans (redo runs the steps in order, undo in
 |---|---|---|
 | `stash.push` | writes the pre-push state back, then drops W (verified): in effect a pop | stores W, then writes the post-push state |
 | `stash.pushLines` | applies the removal patch forward (the lines back), then drops W | stores W, then `apply -R` |
+| `stash.apply` | writes the pre-apply state; the stash list is untouched | writes the post-apply state (never re-runs `stash apply`); the stash list is untouched |
 | `stash.pop` | stores the entry back (at the top, R1), then writes the pre-pop state | writes the post-pop state, then drops the entry |
 | `stash.drop` | stores the entry back (at the top) | drops it |
 | `stash.rename` | stores the original, drops the copy | stores the copy, drops the original |
@@ -142,7 +144,7 @@ What undo and redo do for the stash plans (redo runs the steps in order, undo in
 | `remote.rename` | `renameRemote(b, a)` | `renameRemote(a, b)` |
 | `remote.remove` | writes the config, the branch keys git cleared and pushDefault back, then re-creates the refs (compare-and-swap create, the symref after) | deletes the refs (compare-and-swap), then the config and the keys it restored |
 
-An outcome that stops on conflicts, a squash merge, `upToDate`, a checkout of the branch HEAD is already on: no plan (the slots stay cleared). Stash ops with no plan: a pop or branch that stopped on conflicts; an unverified or failed push; a push whose stash holds a path outside the saved files (a race: no `worktreeState`); `stash.branch` from an unborn HEAD. `stash.apply` is not registered (it clears the slots).
+An outcome that stops on conflicts, a squash merge, `upToDate`, a checkout of the branch HEAD is already on: no plan (the slots stay cleared). Stash ops with no plan: an apply, pop or branch that stopped on conflicts; an apply that changed nothing (`before` deep-equals `after`: no entry whose undo does nothing); an unverified or failed push; a push whose stash holds a path outside the saved files (a race: no `worktreeState`); `stash.branch` from an unborn HEAD.
 
 ## Record keys
 
@@ -154,7 +156,7 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 | `indexTree` | `head.reset` mixed | the index's `write-tree` before the reset; `null` when unmerged entries make it fail |
 | `discard` | `stage.discardFiles` | `{snapshot, tracked, untracked}`: `snapshot` is a dangling commit of the paths' worktree content, built before anything is removed |
 | `refs[].upstream` | `branch.checkout` creating a tracking branch | the remote branch it tracks (redo sets it again) |
-| `worktreeState` | `stash.push`, `stash.pop` (clean), `stash.branch` (clean) | `{paths, before, mid?, after}`; each state `{head: oid \| null, index: tree, files: tree}` (`checkoutState`, below); `mid` only for `stash.branch` (after the switch, before the apply) |
+| `worktreeState` | `stash.push`, `stash.apply` (clean), `stash.pop` (clean), `stash.branch` (clean) | `{paths, before, mid?, after}`; each state `{head: oid \| null, index: tree, files: tree}` (`checkoutState`, below); `mid` only for `stash.branch` (after the switch, before the apply) |
 | `removedPatch` | `stash.pushLines` | base64 of the patch whose `apply -R` took the lines out of the worktree |
 | `remotes[].old` / `.new` `.extra` | every remote snapshot (`remoteSnapshot`) | `[[var, value]]`: every other `remote.<n>.<var>` (`prune`, `tagopt`, `proxy`, …), raw, in config order — in the journal's plan only; on the wire each value is `null` (below) |
 | `remotes[].old.branchKeys`, `.pushDefault` | `remote.remove` | `branchKeys`: `[[key, value]]`, the repo's own `branch.<b>.remote` / `.merge` / `.pushremote` keys **git cleared** — `localBranchKeys` before minus after `remote remove` (a multiset difference, config order). git picks the branches by their *effective* `branch.<b>.remote` / `.pushRemote` (any scope) and unsets the keys in `.git/config` only, so a branch whose remote lives in the global, an included or the worktree config loses just its local `merge`. `pushDefault`: whether a local `remote.pushDefault` naming it was cleared. `old.upstreams` stays the snapshot's (for the comparison) |
@@ -178,7 +180,7 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 | Op | `paths` | Taken |
 |---|---|---|
 | `stash.push` | the saved files `savedPaths` expands (`files`: changed ∪ untracked or staged, never a named directory); kept only when `stashPaths(stash)` ⊆ `paths` | `before` ahead of `git stash push`, `after` once it succeeded |
-| `stash.pop`, `stash.branch` | `stashPaths(stash)` (`assertCanApply` resolves them) | `before` ahead of the apply (branch: of the switch); branch's `mid` after the switch; `after` after a clean apply and the drop attempt |
+| `stash.apply`, `stash.pop`, `stash.branch` | `stashPaths(stash)` (`assertCanApply` resolves them) | `before` ahead of the apply (branch: of the switch); branch's `mid` after the switch; `after` after a clean apply (pop, branch: and the drop attempt) |
 
 **The discard snapshot** (`discardSnapshot` in `src/git/stage/discard.js`): a temporary index at `rev-parse --git-path code-git-discard-index` (`GIT_INDEX_FILE`, not a protected name) → `read-tree --empty` → `update-index --add --remove -z --stdin` over the tracked and untracked paths (their **worktree** content, modes and symlinks; a deleted file is left out) → `write-tree` → `commit-tree --no-gpg-sign` (identity fallback: `identEnv`, `src/git/stash/ident.js`) → the temporary index emptied (`read-tree --empty`: git cannot delete the file). The real index is never touched. The discard itself is `discardGates` + `discardWrites` (`discardPaths` = both: the redo).
 

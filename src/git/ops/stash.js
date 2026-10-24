@@ -25,7 +25,7 @@ import { assertWorktree } from '../worktree.js';
 
 // Stash: save, apply, drop, rename (docs/protocol.md → Stash ops). Every op is a non-cancellable write: an aborted
 // stash or apply can leave index.lock, a half-applied merge or a half-restored set of untracked files. A stash is named
-// by its full oid (src/git/stash/resolve.js). Every op but apply is registered for undo (docs/undo.md → Per-op plans).
+// by its full oid (src/git/stash/resolve.js). Every op is registered for undo (docs/undo.md → Per-op plans).
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const text = (r) => decoder.decode(r.stdout);
@@ -330,11 +330,17 @@ export const ops = [
     async run(git, p) {
       await assertWorktree(git);
       const s = await resolveStash(git, p.oid);
-      await assertCanApply(git, s);
+      const paths = await assertCanApply(git, s);
+      const before = await checkoutState(git, paths);
       // No confirmation is needed: git refuses (CHECKOUT_CONFLICT) rather than overwrite a local change, and a conflict
-      // only adds markers to files that were clean. The worktree merge has no undo.
-      return { ...await applyStash(git, s.oid, p.index), undo: undoRecord() };
+      // only adds markers to files that were clean.
+      const { conflicts } = await applyStash(git, s.oid, p.index);
+      // `message` names the stash in the undo label: the record holds no stash entry to read it from.
+      if (conflicts.length) return { conflicts, message: s.message, undo: undoRecord() };
+      const worktreeState = { paths, before, after: await checkoutState(git, paths) };
+      return { conflicts, message: s.message, undo: undoRecord({ worktreeState }) };
     },
+    undo: plans.stashApply,
   },
   {
     name: 'stash.pop',

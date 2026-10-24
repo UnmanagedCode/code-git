@@ -16,14 +16,14 @@ const commit = async (w, summary = 'c', at = null) => {
 const EMPTY = { undo: null, redo: null };
 
 // Invariant (D1): a write that is not registered for undo clears both slots, even one that leaves every ref as it was.
-test('an unregistered write — stage.files, stash.apply, remote.pull — clears both slots', async (t) => {
+test('an unregistered write — stage.files, stage.unstageFiles, remote.pull — clears both slots', async (t) => {
   const w = await undoWorld(t);
   const writes = [
     ['stage.files', () => { w.repo.write('s.txt', 's\n'); return { paths: ['s.txt'] }; }],
-    ['stash.apply', () => {
-      w.repo.write('f.txt', 'stashed\n');
-      w.repo.git('stash', 'push', '-q');
-      return { oid: w.oid('refs/stash') };
+    ['stage.unstageFiles', () => {
+      w.repo.write('u.txt', 'u\n');
+      w.repo.git('add', 'u.txt');
+      return { paths: ['u.txt'] };
     }],
     ['remote.pull', () => ({ mode: 'ff' })],
   ];
@@ -65,6 +65,53 @@ test('a stash.pop that stops on conflicts records nothing and clears the slots',
   assert.ok((await w.state()).undo);
   const r = await w.op('stash.pop', { oid });
   assert.deepEqual(r.conflicts, ['f.txt']);
+  assert.deepEqual(await w.state(), EMPTY);
+});
+
+/** A stash of f.txt changed, saved with raw git → its oid. */
+const stashed = (w) => {
+  w.repo.write('f.txt', 'stashed\n');
+  w.repo.git('stash', 'push', '-q');
+  return w.oid('refs/stash');
+};
+
+// Invariant: a clean stash.apply records its own entry in place of the previous one, and empties redo.
+test('a clean stash.apply records its own entry', async (t) => {
+  const w = await undoWorld(t);
+  const oid = stashed(w);
+  await commit(w, 'one');
+  await w.undo();
+  await commit(w, 'two');
+  const s = await w.state();
+  assert.equal(s.undo.op, 'commit.create');
+  await w.op('stash.apply', { oid });
+  const after = await w.state();
+  assert.equal(after.undo.op, 'stash.apply');
+  assert.notEqual(after.undo.id, s.undo.id);
+  assert.equal(after.redo, null);
+});
+
+// Invariant (D1): a stash.apply that stops on conflicts records nothing and clears the slots; its stash stays listed.
+test('a stash.apply that stops on conflicts records nothing and clears the slots', async (t) => {
+  const w = await undoWorld(t);
+  const oid = stashed(w);
+  w.repo.commit({ 'f.txt': 'committed over it\n' }, 'conflicting');
+  await commit(w, 'one');
+  assert.ok((await w.state()).undo);
+  const r = await w.op('stash.apply', { oid });
+  assert.deepEqual(r.conflicts, ['f.txt']);
+  assert.deepEqual(await w.state(), EMPTY);
+  assert.equal(w.oid('refs/stash'), oid);
+});
+
+// Invariant (D1): a stash.apply refused CHECKOUT_CONFLICT is a failed write: it records nothing and clears the slots.
+test('a stash.apply refused CHECKOUT_CONFLICT clears the slots', async (t) => {
+  const w = await undoWorld(t);
+  const oid = stashed(w);
+  await commit(w, 'one');
+  assert.ok((await w.state()).undo);
+  w.repo.write('f.txt', 'local edit\n');
+  await assert.rejects(w.op('stash.apply', { oid }), refused('CHECKOUT_CONFLICT'));
   assert.deepEqual(await w.state(), EMPTY);
 });
 

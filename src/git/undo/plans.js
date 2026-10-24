@@ -185,6 +185,13 @@ function stashPopPlan(params, result) {
   return plan(message === undefined ? 'Pop stash' : `Pop ${quoted(message)}`, [worktreeStep(rec.worktreeState), stashStep(rec)]);
 }
 
+/** A clean apply: the checkout's states only (the stash entry is not the plan's). Conflicts, or nothing changed: none. */
+function stashApplyPlan(params, result) {
+  const st = result.undo.worktreeState;
+  if (result.conflicts.length || !st || isDeepStrictEqual(st.before, st.after)) return null;
+  return plan(`Apply ${quoted(result.message)}`, [worktreeStep(st)]);
+}
+
 function stashDropPlan(params, result) {
   const rec = result.undo;
   return plan(`Drop stash ${quoted(rec.stashes[0].old.message)}`, [stashStep(rec)]);
@@ -253,6 +260,7 @@ export const plans = {
   discardLines: discardLinesPlan,
   stashPush: stashPushPlan,
   stashPushLines: stashPushLinesPlan,
+  stashApply: stashApplyPlan,
   stashPop: stashPopPlan,
   stashDrop: stashDropPlan,
   stashRename: stashRenamePlan,
