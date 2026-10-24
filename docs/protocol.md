@@ -331,6 +331,7 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 - Reads the file with `readNoIndex` (`git diff --no-index /dev/null <path>`). A relative template path resolves against the repo toplevel (`git rev-parse --show-toplevel`); a symlink is followed by hand, each relative target against its link's directory, for up to `STAGE_LIMITS.templateMaxLinks` hops.
 - Comment prefix: `core.commentString`, else `core.commentChar`; `auto` or unset → `#`. Lines starting with it are dropped, then `splitMessage`.
 - `result`: `{path, draft: {summary, description} | null, problem: string | null}`. A missing, binary, non-file, over-`STAGE_LIMITS.templateMaxBytes` template or a link chain past the hop limit is a `problem`, never a refusal.
+- A FIFO template, or a link to one at any hop, refuses the whole op `PROBE_TIMEOUT` (`path` = the path probed).
 
 ### `ignore.add` (write)
 
@@ -345,7 +346,7 @@ Every apply adds `--whitespace=nowarn --no-ignore-whitespace` (overriding `apply
 | `ext` | `*.<ext>` (non-empty, no `/`, no leading `.`, else `BAD_PARAMS`) | such files at any depth |
 
   `\`, `*`, `?`, `[` and each trailing space are escaped with `\`; the `/` or `*.` prefix means a pattern never starts with `#` or `!`. A control character → `BAD_PATH`; `path` / `dir` also pass `assertPath` and refuse an empty or `.` segment (`BAD_PATH`): never `.`, the whole repository.
-- Reads `.gitignore` with `readNoIndex`. A symlink, binary, directory, or a file over `STAGE_LIMITS.gitignoreMaxBytes` → 409 `GITIGNORE_UNSUPPORTED`.
+- Reads `.gitignore` with `readNoIndex`. A symlink, binary, directory, or a file over `STAGE_LIMITS.gitignoreMaxBytes` → 409 `GITIGNORE_UNSUPPORTED`; a FIFO → 504 `PROBE_TIMEOUT`. Nothing is written either way.
 - A line already equal to the pattern (a trailing `\r` ignored) → nothing is written (`added: false`).
 - Else `git apply --whitespace=nowarn --no-ignore-whitespace -` (worktree, unstaged) of one hunk with the **whole file as context**: a concurrent edit makes the apply fail (422 `GIT_FAILED`) instead of being overwritten.
   - Absent → `new file mode 100644`, `--- /dev/null`.
@@ -528,10 +529,10 @@ Behaviour, what writes and the `.gitattributes` parse: [lfs](lfs.md). Every git-
 
 | Op | kind | `params` | Runs | `result` | Refusals |
 |---|---|---|---|---|---|
-| `lfs.status` | read (cancellable) | `{}` | `-c alias.lfs= lfs version` (exit 0 or 1; the gate of every LFS write too); when usable: `config --get filter.lfs.process` (exit 0 or 1), the root `.gitattributes` (`readNoIndex`) | `{available, version: string \| null, supported, filters: bool \| null, attributes: 'ok' \| 'unsupported' \| null, patterns: string[] \| null}` (the last three null when git-lfs is absent or below 3.2.0) | `GIT_FAILED` (an unrecognised version, another `lfs version` failure) |
+| `lfs.status` | read (cancellable) | `{}` | `-c alias.lfs= lfs version` (exit 0 or 1; the gate of every LFS write too); when usable: `config --get filter.lfs.process` (exit 0 or 1), the root `.gitattributes` (`readNoIndex`) | `{available, version: string \| null, supported, filters: bool \| null, attributes: 'ok' \| 'unsupported' \| null, patterns: string[] \| null}` (the last three null when git-lfs is absent or below 3.2.0) | `GIT_FAILED` (an unrecognised version, another `lfs version` failure); `PROBE_TIMEOUT` (a FIFO `.gitattributes`) |
 | `lfs.files` | write, `journal: 'neutral'` | `{}` | `lfs ls-files --json` (`LFS_LIMITS.listMaxOutputBytes`) | `{files: [{path, size, oid, downloaded} /* a missing field null */]}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `OUTPUT_TOO_LARGE`; `GIT_FAILED` (also malformed output) |
-| `lfs.track` | write | `{pattern}` | `lfs track -- <pattern>` | `{pattern}` | `BAD_PARAMS` (`checkPattern`); `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `ATTRIBUTES_UNSUPPORTED`; `GIT_FAILED` |
-| `lfs.untrack` | write | `{pattern}` | `lfs untrack -- <pattern>`, the patterns read before and after | `{pattern, removed}` | as `lfs.track` |
+| `lfs.track` | write | `{pattern}` | `lfs track -- <pattern>` | `{pattern}` | `BAD_PARAMS` (`checkPattern`); `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `ATTRIBUTES_UNSUPPORTED`; `PROBE_TIMEOUT`; `GIT_FAILED` |
+| `lfs.untrack` | write | `{pattern}` | the patterns read before, the `.gitattributes` check, `lfs untrack -- <pattern>`, the patterns read after | `{pattern, removed}` | as `lfs.track` |
 | `lfs.pull` | write | `{}` | `NET_CONFIG lfs pull` (`netRun`, `LFS_LIMITS.netTimeoutMs`) | `{}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `GIT_FAILED` (`stderr`: network and auth failures too) |
 | `lfs.prune` | write | `{}` | `lfs prune` | `{}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `GIT_FAILED` |
 
@@ -673,6 +674,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `REMOTE_UNREACHABLE` | 502 | The remote could not be reached; `reason` (`dns` · `refused` · `timeout` · `not-found` — no repository at the url · `unavailable`), `stderr` |
 | `CONDUCTOR_UNAVAILABLE` | 503 | No `CONDUCTOR_URL`, cc did not answer, or answered without a usable body |
 | `GIT_TIMEOUT` | 504 | The command passed its deadline and was killed; partial `stderr` |
+| `PROBE_TIMEOUT` | 504 | A stat-only probe of a file (`worktreeEntry` / `readNoIndex` in `src/git/diff/noIndex.js`) did not finish within `DIFF_LIMITS.probeTimeoutMs`: a special file such as a FIFO, or an unresponsive System; `path`, `timeoutMs` |
 
 ## UI routes
 
