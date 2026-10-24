@@ -26,11 +26,20 @@ export const maskUrl = (url) => url.replace(PASSWORD_RE, '$1:***@');
 export const isMaskedUrl = (url) => PASSWORD_RE.test(url) && maskUrl(url) === url;
 
 /**
- * `text` with every `scheme://user:password@` inside it masked as maskUrl does, within each whitespace-separated token:
- * from the first `:` after `scheme://` to the token's last `@`. A password may hold quotes, so a quote does not end it: git
- * quotes the url it failed on in its own messages (`fatal: clone of '<url>' into …`, `Submodule 'x' (<url>) registered`).
+ * Every url inside a text: `scheme://user` (group 1; no whitespace), then its password span up to the `@` that ends it —
+ * the last `@` of the token the password starts in; else, for a password holding whitespace, the first `@` on the same
+ * line that is the last `@` of its own token, never across another `scheme://`. Such a span never starts with whitespace
+ * or a port's digits (`https://h:8443/r … git@host` and `'https://h/r/': … me@host` are not passwords).
  */
-export const maskUrls = (text) => text.replace(new RegExp(`(${SCHEME}[^:\\s]*):\\S*@`, 'g'), '$1:***@');
+const TEXT_PASSWORD_RE = new RegExp(`(${SCHEME}[^:\\s]*):(?:\\S*|(?!\\s|\\d+\\b)(?:(?!${SCHEME})[^\\r\\n])*?)@(?=[^\\s@]*(?:\\s|$))`, 'g');
+
+/**
+ * `text` with every `scheme://user:password@` inside it masked as maskUrl does, within one line (TEXT_PASSWORD_RE): a
+ * password may hold whitespace, `@` and quotes, so none of them ends it — git quotes the url it failed on in its own
+ * messages (`fatal: clone of '<url>' into …`, `Submodule 'x' (<url>) registered`) — while a second url or trailing
+ * `user@host` text on the line is left as it is.
+ */
+export const maskUrls = (text) => text.replace(TEXT_PASSWORD_RE, '$1:***@');
 
 /** `v` with maskUrls applied to every string in it, through arrays and plain objects (a refusal's body, a git message). */
 export function maskDeep(v) {

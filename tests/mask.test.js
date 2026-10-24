@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createActivityLog, redactArgv } from '../src/activity/log.js';
+import { capStderr, createActivityLog, redactArgv } from '../src/activity/log.js';
 import { BASE_ARGS } from '../src/git/runner.js';
+import { Refusal } from '../src/refusals.js';
 import { isMaskedUrl, maskDeep, maskUrl, maskUrls } from '../src/mask.js';
 import { refsWorld } from './_refsWorld.js';
 import { startApp } from './_app.js';
@@ -119,15 +120,40 @@ test('end to end: remote.add with a credential url writes it to git config but /
   assert.equal(listed.displayUrl, 'https://me:***@h.example/r.git');
 });
 
-test('maskUrls masks every credentialed url inside a text, stopping at whitespace or a quote, and leaves the rest', () => {
+test('maskUrls masks every credentialed url inside a text and leaves the rest', () => {
   const text = "Cloning into 'x'...\nfatal: clone of 'https://u:p@ss@host/r.git' into submodule path 'x' failed\nsee ssh://git:k3y@h:22/r and http://plain/h@x";
   assert.equal(maskUrls(text), "Cloning into 'x'...\nfatal: clone of 'https://u:***@host/r.git' into submodule path 'x' failed\nsee ssh://git:***@h:22/r and http://plain/h@x");
   assert.equal(maskUrls('no urls here'), 'no urls here');
 });
 
-test("maskUrls: a password holding ' or \" is masked whole (quotes do not end it; whitespace does)", () => {
+test("maskUrls: a password holding ' or \" is masked whole (quotes do not end it)", () => {
   assert.equal(maskUrls("fatal: clone of 'https://u:pa'ss@host/r.git' into submodule path"), "fatal: clone of 'https://u:***@host/r.git' into submodule path");
   assert.equal(maskUrls('Submodule \'c\' (http://u:pa"ss@h/r.git) registered'), "Submodule 'c' (http://u:***@h/r.git) registered");
+});
+
+// Invariant: within a line, a password holding whitespace is masked whole, up to the @ that ends its url's authority;
+// a second url on the line, a password-less url (a port, a quote then a colon) and trailing user@host text are left as
+// they are, and a mask never spans two lines.
+test('maskUrls: a password holding a space is masked within its line; a second url and trailing user@host text are kept', () => {
+  assert.equal(maskUrls("fatal: unable to access 'https://user:S3 CRET@h/r/': 403"), "fatal: unable to access 'https://user:***@h/r/': 403");
+  assert.equal(maskUrls('fetch https://a:p 1@h1/r and https://b:p2@h2/r failed'), 'fetch https://a:***@h1/r and https://b:***@h2/r failed');
+  assert.equal(maskUrls("'https://u:pw x@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com");
+  assert.equal(maskUrls("'https://u:pw@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com");
+  assert.equal(maskUrls('https://h:8443/r and https://b:p2@h2/r'), 'https://h:8443/r and https://b:***@h2/r');
+  for (const kept of [
+    'https://h:8443/r failed for git@host',
+    "fatal: unable to access 'https://h/r/': denied to me@corp.example",
+    'https://u:p\nwrong@h',
+  ]) assert.equal(maskUrls(kept), kept, kept);
+});
+
+// Invariant: the stderr the activity log keeps (capStderr) and a refusal's body (toBody) mask a password holding a space.
+test('a password holding a space never reaches capStderr or a refusal body', () => {
+  const line = "fatal: unable to access 'https://user:S3 CRET@h/r/': The requested URL returned error: 403\n";
+  const masked = "fatal: unable to access 'https://user:***@h/r/': The requested URL returned error: 403\n";
+  assert.equal(capStderr(Buffer.from(line)).stderr, masked);
+  const body = new Refusal('GIT_FAILED', `git failed: ${line}`, { stderr: line }).toBody();
+  assert.deepEqual([body.error, body.stderr], [`git failed: ${masked}`, masked]);
 });
 
 test('a user name holding @: maskUrl, maskUrls and redactArgv take the first : after scheme:// and the last @', () => {
