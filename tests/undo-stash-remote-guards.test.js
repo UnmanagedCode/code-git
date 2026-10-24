@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { startApp } from './_app.js';
+import { sse, startApp } from './_app.js';
 import { refused, refsWorld } from './_refsWorld.js';
 import { undoWorld } from './_undoWorld.js';
 
@@ -372,13 +372,15 @@ test('confirm shapes of the remote plans', async (t) => {
 // activity log carry remote names only (git's argv masked as user:***@), through add, edit and remove both ways. A
 // remote's other config values (`extra`: a proxy with a password) reach no response at all — not even the remote ops' own
 // results, which still carry the urls — while the journal keeps them raw: undoing a remove restores the proxy exactly.
+// The activity log and its event stream never record that value, not even a scheme-less user:password@host proxy.
 test('credentials: a password in a url or a proxy never reaches undo.state, undo/redo results, refusals, op results or /api/activity', async (t) => {
   const w = await refsWorld(t);
   const app = await startApp(t);
   const target = { project: 'repo' };
   const PW = 'S3cretPW';
   const PROXY_PW = 'Pr0xyPW';
-  const proxy = `http://proxyuser:${PROXY_PW}@proxy.invalid:8080`;
+  const proxy = `proxyuser:${PROXY_PW}@proxy.invalid:8080`;
+  const stream = await sse(`${app.url}/api/activity/events`, t);
   const url = (n) => `https://user:${PW}@example.invalid/${n}.git`;
   const seen = [];
   const results = [];
@@ -418,5 +420,15 @@ test('credentials: a password in a url or a proxy never reaches undo.state, undo
   const activity = JSON.stringify((await app.call('GET', '/api/activity')).body);
   for (const secret of [PW, PROXY_PW]) assert.ok(!activity.includes(secret), 'the activity log never holds a password');
   assert.ok(activity.includes('https://user:***@example.invalid/one.git'), 'the undo/redo argv shows the url masked');
-  assert.ok(activity.includes('http://proxyuser:***@proxy.invalid:8080'), 'the restored proxy\'s argv shows it masked');
+  assert.ok(activity.includes('"remote.cred2.proxy","***"'), 'the restored proxy\'s key is shown, its value withheld');
+  // The event stream, up to the end of the last (refused) undo's run: five undo.undo runs in all.
+  const events = [];
+  for (let undos = 0; undos < 5;) {
+    const ev = await stream.next();
+    events.push(ev);
+    if (ev.event === 'run' && ev.data.op === 'undo.undo' && ev.data.status === 'ended') undos++;
+  }
+  const streamed = JSON.stringify(events);
+  for (const secret of [PW, PROXY_PW]) assert.ok(!streamed.includes(secret), 'the event stream never holds a password');
+  assert.ok(streamed.includes('"remote.cred2.proxy","***"'), 'the stream saw the proxy written back, its value withheld');
 });

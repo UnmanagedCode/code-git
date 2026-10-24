@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createActivityLog, redactArgv } from '../src/activity/log.js';
+import { BASE_ARGS } from '../src/git/runner.js';
 import { maskDeep, maskUrl, maskUrls } from '../src/mask.js';
 import { refsWorld } from './_refsWorld.js';
 import { startApp } from './_app.js';
@@ -32,6 +33,34 @@ test('redactArgv masks a url password in any argument; the activity entry, its e
   log.close(entry, { status: 'ok', exitCode: 0 });
   for (const e of [...events, ...log.list()]) assert.equal(e.argv.at(-1), 'https://u:***@h/r');
   assert.ok(!JSON.stringify([events, log.list()]).includes('sec/ret'));
+});
+
+// Invariant: the value of a `git config` write to a remote's key other than url / pushurl / fetch (an `extra` key: a
+// proxy, a pack command) is never recorded — replaced by *** with the key kept, whatever its form (a scheme-less
+// user:password@host proxy included); url and pushurl keep maskUrl, fetch and everything else is recorded as given; the
+// entry's events never hold it either.
+test('redactArgv withholds the value of a config write to a remote extra key; url keys keep maskUrl', () => {
+  const git = (...args) => ['git', ...BASE_ARGS, ...args];
+  const proxy = 'proxyuser:Pr0xyPW@proxy.invalid:8080';
+  assert.deepEqual(redactArgv(git('config', '--add', 'remote.o.proxy', proxy)), git('config', '--add', 'remote.o.proxy', '***'));
+  assert.deepEqual(redactArgv(git('config', '--replace-all', 'remote.a.b.receivepack', 'git-receive-pack --secret')), git('config', '--replace-all', 'remote.a.b.receivepack', '***'));
+  assert.deepEqual(redactArgv(['git', ...BASE_ARGS, '-C', 'sub', '--git-dir=.git', 'config', '--add', 'remote.o.uploadpack', 'x']), ['git', ...BASE_ARGS, '-C', 'sub', '--git-dir=.git', 'config', '--add', 'remote.o.uploadpack', '***']);
+  assert.deepEqual(redactArgv(git('config', '--add', 'remote.o.url', 'https://u:tok@h/r')), git('config', '--add', 'remote.o.url', 'https://u:***@h/r'));
+  assert.deepEqual(redactArgv(git('config', '--add', 'remote.o.pushurl', 'https://u:tok@h/r')), git('config', '--add', 'remote.o.pushurl', 'https://u:***@h/r'));
+  for (const kept of [
+    git('config', '--add', 'remote.o.fetch', '+refs/heads/*:refs/remotes/o/*'),
+    git('config', '--add', 'remote.pushDefault', 'o'),
+    git('config', '--add', 'branch.main.merge', 'refs/heads/main'),
+    git('config', '--unset-all', 'remote.o.proxy'),
+    git('config', '-z', '--get-regexp', '^remote\\.'),
+    ['git', ...BASE_ARGS, '-C', 'config', '--git-dir=.git', 'status', 'remote.o.proxy', 'x'],
+  ]) assert.deepEqual(redactArgv(kept), kept, kept.join(' '));
+  const log = createActivityLog();
+  const events = [];
+  log.events.on('activity', (e) => events.push(e));
+  const { entry } = log.open({ opRunId: 'r', op: 'undo.undo', kind: 'write', target: { project: 'p' }, argv: git('config', '--add', 'remote.o.proxy', proxy), cancellable: false });
+  log.close(entry, { status: 'ok', exitCode: 0 });
+  assert.ok(!JSON.stringify([events, log.list()]).includes('Pr0xyPW'));
 });
 
 test('end to end: remote.add with a credential url writes it to git config but /api/activity shows it masked', async (t) => {

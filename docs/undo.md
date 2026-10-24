@@ -169,7 +169,7 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 | `remotes[].old` / `.new` `.urls`, `.pushUrls` | raw | raw (card 2026-0017) |
 | `undo.state`, `undo.undo` / `undo.redo` results, their refusals | — | `{id, op, label, confirm}` and warnings: remote names, ref names, paths, stash messages, never a config value |
 
-git's argv carries each value as its own argument, so the activity log masks a url's password there (`redactArgv`).
+git's argv carries each value as its own argument, so the activity log masks a url's password there (`redactArgv`), and never records the value an undo or redo writes to an `extra` key: `config --add` / `--replace-all remote.<n>.<var> <value>` with `<var>` other than `url`, `pushurl`, `fetch` is recorded with `***` for the value, the key kept (a scheme-less `user:password@host` proxy or a pack command has no shape a mask could find).
 
 **The checkout state** (`checkoutState` in `src/git/stash/snapshot.js`): `head` = `rev-parse -q --verify HEAD`, `index` = `write-tree` of the real index (the gates already refused unmerged entries), `files` = `worktreeTree(paths)` (the discard snapshot's temporary-index tree, below; no commit). `paths`:
 
@@ -201,7 +201,7 @@ git's argv carries each value as its own argument, so the activity log masks a u
 | `remoteRename` `{from, to}` | the current name is a remote and the other is not, and `refs/remotes/<other>` holds no ref, else `UNDO_STALE`; then remote.rename's own `renameGates` (`assertNotLegacy`, `REMOTE_EXISTS`, the default refspec, `trackingRefsOf`) | `renameRemote`: `remote rename --end-of-options <cur> <other>` |
 | `stash` `{entries: [{oid, message, side: 'created' \| 'removed'}]}` | this direction stores the removed entries (undo) or the created ones (redo) and drops the rest (`stashSides`): each drop on the list (`listStashes`), each store not on it, and its commit present (`cat-file -e --end-of-options <oid>^{commit}`), else `UNDO_STALE` ("no longer on the stash list" / "already back" / "its commits were pruned") | stores first (`stash store --message=<message> <oid>`: at `stash@{0}`, R1; `stash store` takes no `--end-of-options`), then drops (`dropVerified`: `STASH_MOVED` propagates, nothing lost) |
 
-**Writing a remote's config** (`writeRemoteConfig(git, name, from, to)` in `src/git/remote/config.js`). Each value is its own argument after its key — never `key=value`, never `-c` — so the activity log masks a url (`redactArgv`) and a leading `-` is stored as given (git stops parsing options at the key; probe-pinned).
+**Writing a remote's config** (`writeRemoteConfig(git, name, from, to)` in `src/git/remote/config.js`). Each value is its own argument after its key — never `key=value`, never `-c` — so the activity log masks a url and withholds an `extra` value (`redactArgv`), and a leading `-` is stored as given (git stops parsing options at the key; probe-pinned).
 
 | Case | Commands |
 |---|---|
