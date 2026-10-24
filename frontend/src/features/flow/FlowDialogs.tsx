@@ -147,12 +147,12 @@ export function FinishFlowDialog({ d }: { d: Of<'finish'> }) {
     >
       <ol aria-label="Steps" className="grid list-decimal gap-1 pl-5 text-sm">
         {into.map((b) => (
-          <li key={b} className="break-all">
+          <li key={b} className="break-words">
             Merge <code>{d.branch}</code> into <code>{b}</code> (no fast-forward)
             {tagged && b === main && <>, then tag <code>{tag}</code> on <code>{main}</code></>}
           </li>
         ))}
-        <li className="break-all">Delete <code>{d.branch}</code>; HEAD ends on <code>{develop}</code></li>
+        <li className="break-words">Delete <code>{d.branch}</code>; HEAD ends on <code>{develop}</code></li>
       </ol>
       {tagged && (
         <label className={fieldClass}>
