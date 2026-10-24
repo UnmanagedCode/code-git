@@ -177,3 +177,23 @@ test('an unborn submodule HEAD is populated with head null', async (t) => {
   assert.equal(a.head, null);
   assert.equal(a.outOfSync, false);
 });
+
+// Invariant: a submodule's resolved url reaches the browser masked — submodule init resolves a relative .gitmodules url
+// against the default remote's url, userinfo included, so it may carry that remote's password — while the repo's config
+// keeps it raw.
+test('resolvedUrl: a relative url resolved against a credentialed origin is answered masked by submodule.init and submodule.list', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const PW = 'Or1ginPW';
+  w.repo.git('remote', 'add', 'origin', `https://user:${PW}@example.invalid/o/r.git`);
+  w.repo.git('config', '-f', '.gitmodules', 'submodule.rel.path', 'rel');
+  w.repo.git('config', '-f', '.gitmodules', 'submodule.rel.url', '../sub.git');
+  w.repo.git('update-index', '--add', '--cacheinfo', `160000,${w.repo.git('rev-parse', 'HEAD')},rel`);
+  const masked = 'https://user:***@example.invalid/o/sub.git';
+  const init = await w.ok('submodule.init', { paths: ['rel'] });
+  assert.deepEqual(init, { submodules: [{ path: 'rel', resolvedUrl: masked, urlProblem: null }] });
+  const list = await w.ok('submodule.list');
+  assert.equal(byPath(list).rel.resolvedUrl, masked);
+  assert.equal(byPath(list).rel.initialized, true);
+  for (const body of [init, list]) assert.ok(!JSON.stringify(body).includes(PW), JSON.stringify(body));
+  assert.equal(w.repo.git('config', 'submodule.rel.url'), `https://user:${PW}@example.invalid/o/sub.git`);
+});

@@ -49,7 +49,7 @@ test('add with "Fetch after adding" off fetches nothing', async () => {
 });
 
 test('edit sends only what changed: the masked url is never written back; an emptied push url is removed; the field edits run before a rename', async () => {
-  const origin = remote('origin', { urls: ['https://u:secret@h/r.git'], displayUrl: 'https://u:***@h/r.git', pushUrls: ['git@h:p.git'], displayPushUrl: 'git@h:p.git' });
+  const origin = remote('origin', { urls: ['https://u:***@h/r.git'], displayUrl: 'https://u:***@h/r.git', pushUrls: ['git@h:p.git'], displayPushUrl: 'git@h:p.git' });
   const w = remotesWorld({ remotes: [origin] });
   render(<RemotesHost />);
   act(() => openRemoteDialog({ kind: 'edit', tab: T, remote: 'origin' }));
@@ -87,7 +87,7 @@ test('a rename that fails after the field edit: a retry edits the same remote ag
 });
 
 test('a field still holding the mask is never submitted: Save is refused inline until the whole url is retyped', async () => {
-  const origin = remote('origin', { urls: ['https://u:secret@h/r.git'], displayUrl: 'https://u:***@h/r.git', pushUrls: ['https://u:tok@h/p.git'], displayPushUrl: 'https://u:***@h/p.git' });
+  const origin = remote('origin', { urls: ['https://u:***@h/r.git'], displayUrl: 'https://u:***@h/r.git', pushUrls: ['https://u:***@h/p.git'], displayPushUrl: 'https://u:***@h/p.git' });
   const w = remotesWorld({ remotes: [origin] });
   render(<RemotesHost />);
   act(() => openRemoteDialog({ kind: 'edit', tab: T, remote: 'origin' }));

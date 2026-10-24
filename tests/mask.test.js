@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createActivityLog, redactArgv } from '../src/activity/log.js';
+import { capStderr, createActivityLog, redactArgv } from '../src/activity/log.js';
 import { BASE_ARGS } from '../src/git/runner.js';
-import { maskDeep, maskUrl, maskUrls } from '../src/mask.js';
+import { Refusal } from '../src/refusals.js';
+import { isMaskedUrl, maskDeep, maskUrl, maskUrls } from '../src/mask.js';
 import { refsWorld } from './_refsWorld.js';
 import { startApp } from './_app.js';
 
@@ -18,9 +19,83 @@ test('maskUrl hides everything from the userinfo\'s first : to the authority\'s 
   assert.equal(maskUrl('ssh://u:pw@h:22/r'), 'ssh://u:***@h:22/r');
 });
 
+// Invariant: git hands any `<scheme>://` to git-remote-<scheme>, so a scheme starting with a digit is a url too:
+// maskUrl, maskUrls and redactArgv mask its password.
+test('a scheme starting with a digit: maskUrl, maskUrls and redactArgv mask its password', () => {
+  assert.equal(maskUrl('1password://u:pw@h/r'), '1password://u:***@h/r');
+  assert.equal(maskUrl('9z://u:pw@h/r'), '9z://u:***@h/r');
+  assert.equal(maskUrls("fatal: unable to access '1password://u:pw@h/r/' and 9z://u:pw2@h/r"), "fatal: unable to access '1password://u:***@h/r/' and 9z://u:***@h/r");
+  assert.deepEqual(redactArgv(['git', 'config', '--add', 'remote.o.url', '1password://u:pw@h/r']), ['git', 'config', '--add', 'remote.o.url', '1password://u:***@h/r']);
+});
+
+// Invariant: a url embedded in a value (`<transport>::<url>`, a value git stores though remote.add refuses it) is masked
+// as a url alone is, isMaskedUrl agrees with what maskUrl produces for it, and redactArgv masks it as an argument.
+test('a <transport>::<url> value: maskUrl masks the url after ::, isMaskedUrl agrees, redactArgv masks it', () => {
+  assert.equal(maskUrl('foo::https://u:pw@h/r'), 'foo::https://u:***@h/r');
+  assert.equal(maskUrl('ext::https://u:p@ss@h/r'), 'ext::https://u:***@h/r');
+  assert.equal(maskUrl('1foo::9z://u:pw@h/r'), '1foo::9z://u:***@h/r');
+  assert.equal(maskUrl('foo::https://h/r'), 'foo::https://h/r');
+  assert.equal(isMaskedUrl('foo::https://u:***@h/r'), true);
+  assert.equal(isMaskedUrl('foo::https://u:pw@h/r'), false);
+  assert.equal(isMaskedUrl(maskUrl('foo::https://u:pw@h/r')), true);
+  assert.deepEqual(redactArgv(['git', 'config', '--add', 'remote.o.url', 'foo::https://u:pw@h/r']), ['git', 'config', '--add', 'remote.o.url', 'foo::https://u:***@h/r']);
+});
+
+// Invariant: `%3A` (any case) is a userinfo `:` and `%40` a userinfo `@` (git percent-decodes the userinfo): maskUrl masks
+// a password delimited by either, isMaskedUrl agrees with its output, and maskUrls masks one inside a git message.
+test('percent-encoded userinfo delimiters: maskUrl, isMaskedUrl and maskUrls treat %3A as : and %40 as @', () => {
+  for (const [raw, masked] of [
+    ['ssh://ALICE%3ASECRET@H/r', 'ssh://ALICE%3A***@H/r'], ['ssh://ALICE%3aSECRET@H/r', 'ssh://ALICE%3a***@H/r'],
+    ['ssh://ALICE:SECRET%40H/r', 'ssh://ALICE:***%40H/r'], ['git://ALICE%3ASECRET%40H/r', 'git://ALICE%3A***%40H/r'],
+    ['https://u:p@ss%40h/r', 'https://u:***%40h/r'], ['ssh://ALICE%3A%40H/r', 'ssh://ALICE%3A%40H/r'],
+  ]) {
+    assert.equal(maskUrl(raw), masked, raw);
+    assert.equal(isMaskedUrl(masked), masked !== raw, masked);
+    assert.equal(maskUrls(`fatal: unable to access '${raw}/': 403`), `fatal: unable to access '${masked}/': 403`, raw);
+  }
+  assert.equal(maskUrls('see ssh://ALICE:SECRET%40H/r and https://v:pw@h2/r'), 'see ssh://ALICE:***%40H/r and https://v:***@h2/r');
+});
+
+// Invariant: a scheme of digits only is a scheme: its url's password is masked in a value and in a text.
+test('a scheme of digits only (123://) is masked by maskUrl and maskUrls', () => {
+  assert.equal(maskUrl('123://u:pw@h/r'), '123://u:***@h/r');
+  assert.equal(maskUrls("fatal: unable to access '123://u:pw@h/r/'"), "fatal: unable to access '123://u:***@h/r/'");
+  assert.equal(isMaskedUrl('123://u:***@h/r'), true);
+});
+
+// Invariant: in a text, a `://` starts a url only at a url boundary (the text's start, whitespace, a quote, ( [ < , = or a
+// `<transport>::`): one inside a password (`https://u:pw://x@h`) is part of it, so the password is masked whole, as maskUrl
+// masks the same value.
+test('maskUrls: a :// inside a password is not a new url; maskUrl and maskUrls agree on it', () => {
+  const url = 'https://u:pw://x@h.example.invalid/r';
+  assert.equal(maskUrl(url), 'https://u:***@h.example.invalid/r');
+  assert.equal(maskUrls(`fatal: unable to access '${url}/': URL rejected`), "fatal: unable to access 'https://u:***@h.example.invalid/r/': URL rejected");
+  for (const [text, masked] of [
+    ['(https://u:pw@h/r)', '(https://u:***@h/r)'], ['[https://u:pw@h/r]', '[https://u:***@h/r]'], ['<https://u:pw@h/r>', '<https://u:***@h/r>'],
+    ['a,https://u:pw@h/r', 'a,https://u:***@h/r'], ['--url=https://u:pw@h/r', '--url=https://u:***@h/r'], ['"https://u:pw@h/r"', '"https://u:***@h/r"'],
+    ['foo::https://u:pw@h/r', 'foo::https://u:***@h/r'], ["'ext::https://u:pw@h/r'", "'ext::https://u:***@h/r'"],
+  ]) assert.equal(maskUrls(text), masked, text);
+});
+
+// Invariant: a text password span never crosses another scheme://: a credential-less url followed by a credentialed
+// one on the same line keeps its own text, and the second url keeps its scheme and user name.
+test('maskUrls: a password span never crosses into the next url', () => {
+  assert.equal(maskUrls('https://a:p https://b:x@h/r failed'), 'https://a:p https://b:***@h/r failed');
+  assert.equal(maskUrls('https://a:p q 9z://b:x@h/r'), 'https://a:p q 9z://b:***@h/r');
+});
+
 test('maskUrl leaves urls without a password alone', () => {
   for (const u of ['https://host/r.git', 'https://user@host/r', 'ssh://git@host:22/r.git', 'git@host:o/r.git', '/srv/r.git', 'file:///srv/r', 'origin', '--end-of-options']) {
     assert.equal(maskUrl(u), u, u);
+  }
+});
+
+// Invariant: isMaskedUrl holds exactly for a url maskUrl leaves unchanged that has a password span, i.e. one whose
+// password is the mask `***` itself; a raw password, none at all, or a password merely starting with *** is not masked.
+test('isMaskedUrl: true only when the password span is exactly *** (what maskUrl shows)', () => {
+  for (const u of ['https://u:***@h/r', 'https://a@b:***@h/r', 'https://:***@h/r', 'ssh://u:***@h:22/r']) assert.equal(isMaskedUrl(u), true, u);
+  for (const u of ['https://u:pw@h/r', 'https://u@h/r', 'https://h/r', 'git@h:o/r.git', 'u:***@h:r', '/srv/r.git', 'https://u:***x@h/r', 'https://u:x***@h/r']) {
+    assert.equal(isMaskedUrl(u), false, u);
   }
 });
 
@@ -33,6 +108,20 @@ test('redactArgv masks a url password in any argument; the activity entry, its e
   log.close(entry, { status: 'ok', exitCode: 0 });
   for (const e of [...events, ...log.list()]) assert.equal(e.argv.at(-1), 'https://u:***@h/r');
   assert.ok(!JSON.stringify([events, log.list()]).includes('sec/ret'));
+});
+
+// Invariant: an argument of a command whose arguments are names, urls and values (remote, submodule, config, the network
+// commands) is masked as a stored value (maskUrl: even a password starting with a space); every other argument (a commit
+// message) through the text masker: free text keeps its shape, each credentialed url in it masked on its own.
+test('redactArgv: url and config value arguments masked whole; free text keeps its shape', () => {
+  const git = (...args) => ['git', ...BASE_ARGS, ...args];
+  assert.deepEqual(redactArgv(git('remote', 'add', '--end-of-options', 'o', 'https://u: pw@h/r')), git('remote', 'add', '--end-of-options', 'o', 'https://u:***@h/r'));
+  assert.deepEqual(redactArgv(git('remote', 'set-url', '--push', '--end-of-options', 'o', 'https://u: pw@h/r')), git('remote', 'set-url', '--push', '--end-of-options', 'o', 'https://u:***@h/r'));
+  assert.deepEqual(redactArgv(git('config', '--add', 'remote.o.url', 'https://u: pw@h/r')), git('config', '--add', 'remote.o.url', 'https://u:***@h/r'));
+  assert.deepEqual(redactArgv(git('submodule', 'add', '--', 'https://u: pw@h/r', 'x')), git('submodule', 'add', '--', 'https://u:***@h/r', 'x'));
+  const message = '--message=wip for https://github.com/o/r/pull/1: ping @alice';
+  assert.deepEqual(redactArgv(git('commit', message)), git('commit', message));
+  assert.deepEqual(redactArgv(git('commit', '-m', 'see https://u:pw@h/r and https://v:pw2@h2/r')), git('commit', '-m', 'see https://u:***@h/r and https://v:***@h2/r'));
 });
 
 // Invariant: the value of a `git config` write to a remote's key other than url / pushurl / fetch (an `extra` key: a
@@ -88,15 +177,115 @@ test('end to end: remote.add with a credential url writes it to git config but /
   assert.equal(listed.displayUrl, 'https://me:***@h.example/r.git');
 });
 
-test('maskUrls masks every credentialed url inside a text, stopping at whitespace or a quote, and leaves the rest', () => {
+test('maskUrls masks every credentialed url inside a text and leaves the rest', () => {
   const text = "Cloning into 'x'...\nfatal: clone of 'https://u:p@ss@host/r.git' into submodule path 'x' failed\nsee ssh://git:k3y@h:22/r and http://plain/h@x";
   assert.equal(maskUrls(text), "Cloning into 'x'...\nfatal: clone of 'https://u:***@host/r.git' into submodule path 'x' failed\nsee ssh://git:***@h:22/r and http://plain/h@x");
   assert.equal(maskUrls('no urls here'), 'no urls here');
 });
 
-test("maskUrls: a password holding ' or \" is masked whole (quotes do not end it; whitespace does)", () => {
+test("maskUrls: a password holding ' or \" is masked whole (quotes do not end it)", () => {
   assert.equal(maskUrls("fatal: clone of 'https://u:pa'ss@host/r.git' into submodule path"), "fatal: clone of 'https://u:***@host/r.git' into submodule path");
   assert.equal(maskUrls('Submodule \'c\' (http://u:pa"ss@h/r.git) registered'), "Submodule 'c' (http://u:***@h/r.git) registered");
+});
+
+// Invariant: within a line, a password holding whitespace is masked whole, up to the @ that ends its url's authority;
+// a second url on the line, a password-less url (a port, a quote then a colon) and trailing user@host text are left as
+// they are, and a mask never spans two lines.
+test('maskUrls: a password holding a space is masked within its line; a second url and trailing user@host text are kept', () => {
+  assert.equal(maskUrls("fatal: unable to access 'https://user:S3 CRET@h/r/': 403"), "fatal: unable to access 'https://user:***@h/r/': 403");
+  assert.equal(maskUrls('fetch https://a:p 1@h1/r and https://b:p2@h2/r failed'), 'fetch https://a:***@h1/r and https://b:***@h2/r failed');
+  assert.equal(maskUrls("'https://u:pw x@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com");
+  assert.equal(maskUrls("'https://u:pw@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com");
+  assert.equal(maskUrls('https://h:8443/r and https://b:p2@h2/r'), 'https://h:8443/r and https://b:***@h2/r');
+  for (const kept of [
+    'https://h:8443/r failed for git@host',
+    "fatal: unable to access 'https://h/r/': denied to me@corp.example",
+    'https://u:p\nwrong@h',
+  ]) assert.equal(maskUrls(kept), kept, kept);
+});
+
+// Invariant: a whitespace-bearing password ends at the @ that ends the url's authority (a host-like run, then / : ? #
+// a quote or a closing bracket) — not at an @ inside the password, and not cut short by digits a space follows (only
+// digits then / ? # a quote, a closing bracket or the line's end read as a port); the over-mask guards still hold.
+test('maskUrls: a spaced password holding digits first or an @ is masked whole, up to the @ that ends the authority', () => {
+  assert.equal(maskUrls('https://user:1234 5678@h/r/'), 'https://user:***@h/r/');
+  assert.equal(maskUrls("fatal: unable to access 'https://user:1234 5678@h/r/': 403"), "fatal: unable to access 'https://user:***@h/r/': 403");
+  assert.equal(maskUrls('https://user:p@ss word@h/r'), 'https://user:***@h/r');
+  assert.equal(maskUrls("fatal: clone of 'https://user:p@ss word@h/r' into submodule path 'x' failed"), "fatal: clone of 'https://user:***@h/r' into submodule path 'x' failed");
+  assert.equal(maskUrls('https://user:p@ss word@h:8443/r and https://b:p2@h2/r'), 'https://user:***@h:8443/r and https://b:***@h2/r');
+  for (const kept of [
+    'https://h:8443/r failed for git@host',
+    "fatal: unable to access 'https://h:8443': denied to me@corp.example/x",
+    "Submodule 'x' (https://h:8443) registered for git@host/x",
+  ]) assert.equal(maskUrls(kept), kept, kept);
+  assert.equal(maskUrls("'https://u:pw x@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com");
+});
+
+// Invariant: when a password goes on past whitespace, an @ inside it never ends the span: a later @ that ends an
+// authority wins over the token's own — a strong one (host, then / : ? # a quote or a bracket) over any, a weak one (host,
+// then whitespace or the line's end) over a weak one — so the password is masked whole.
+test('maskUrls: an @ inside a spaced password never ends the span; the later authority end wins', () => {
+  for (const [text, masked] of [
+    ['fatal: cannot access https://user:p@ss word@h', 'fatal: cannot access https://user:***@h'],
+    ['From https://user:p@ss w@rd@h', 'From https://user:***@h'],
+    ['fatal: cannot access https://u:p@ss/word tail@h/r', 'fatal: cannot access https://u:***@h/r'],
+    ["Submodule 'x' (https://user:@qwj592xy#qw64bkxy qw312rxy@h:8080/r?x=1) registered", "Submodule 'x' (https://user:***@h:8080/r?x=1) registered"],
+  ]) assert.equal(maskUrls(text), masked, text);
+  assert.equal(maskUrls("'https://u:pw@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com", 'a weak @ after a strong token @ is prose');
+});
+
+// Invariant: a weak @ (host, then whitespace) does not end a password going on past whitespace while a strong @ follows
+// on the line: the span runs on to that strong @.
+test('maskUrls: a weak @ inside a spaced password defers to a later strong @', () => {
+  assert.equal(maskUrls('https://u:pa ss@word x@h/r'), 'https://u:***@h/r');
+  assert.equal(maskUrls('https://u:pa ss@word x@h:22 done'), 'https://u:***@h:22 done');
+});
+
+// Invariant: git's git-protocol look-up line prints the url's authority without its scheme; maskUrls masks its userinfo
+// password (to the last @ before ` (port `: a decoded password may hold a space) as user:***@host, and leaves a look-up
+// without a password, or with an empty one, as it is.
+test('maskUrls masks the password in git\'s "unable to look up <userinfo>@<host> (port <n>)" line', () => {
+  const tail = ' (port 9418) (Name or service not known)';
+  for (const [host, masked] of [
+    ['user:Zq7pw@h.example.invalid', 'user:***@h.example.invalid'], ['user:Zq pw@h.example.invalid', 'user:***@h.example.invalid'],
+    ['user:Zq7pw@127.0.0.1', 'user:***@127.0.0.1'], [':Zq7pw@localhost', ':***@localhost'], ['user:p@ss@h', 'user:***@h'],
+    ['h.example.invalid', 'h.example.invalid'], ['user@h.example.invalid', 'user@h.example.invalid'], ['user:@h', 'user:@h'],
+  ]) assert.equal(maskUrls(`fatal: unable to look up ${host}${tail}`), `fatal: unable to look up ${masked}${tail}`, host);
+  assert.equal(maskUrls('fatal: unable to look up u:pw@h (port 9418)\nfatal: unable to look up v:pw2@h2 (port 9418)'), 'fatal: unable to look up u:***@h (port 9418)\nfatal: unable to look up v:***@h2 (port 9418)');
+});
+
+// Invariant: a look-up's authority runs to the first ` (port ` or next look-up after its first @, so a decoded password
+// holding ` (port ` or the look-up text itself (git 2.55 prints both as below) is masked to the authority's last @; and
+// two look-ups on one line with no port and no line break between them are masked separately.
+test('maskUrls: a look-up authority ends after its first @ — at the next (port or look-up — and masks to its last @', () => {
+  const tail = ' (port 9418) (Name or service not known)';
+  assert.equal(maskUrls(`fatal: unable to look up u:p (port 1@h.example.invalid${tail}`), `fatal: unable to look up u:***@h.example.invalid${tail}`);
+  assert.equal(maskUrls(`fatal: unable to look up u:x unable to look up y@h.example.invalid${tail}`), `fatal: unable to look up u:***@h.example.invalid${tail}`);
+  assert.equal(maskUrls('unable to look up u:p@h unable to look up v:pw@h2'), 'unable to look up u:***@h unable to look up v:***@h2');
+  assert.equal(maskUrls(`unable to look up u:p@ss@h${tail}`), `unable to look up u:***@h${tail}`);
+});
+
+// Invariant: a mask never stands for nothing: an empty password (`https://user:@h/r`) is left as it is, in a text and in
+// a value, never given an inserted `***`.
+test('an empty password is left as it is: no *** is inserted', () => {
+  for (const kept of ['https://user:@h/r', "fatal: unable to access 'https://user:@h/r/': 401"]) assert.equal(maskUrls(kept), kept, kept);
+  assert.equal(maskUrl('https://user:@h/r'), 'https://user:@h/r');
+  assert.equal(isMaskedUrl('https://user:@h/r'), false);
+});
+
+// Invariant: the stderr the activity log keeps (capStderr) and a refusal's body (toBody) mask a password holding a space.
+test('a password holding a space or a ://, or in a git:// look-up, never reaches capStderr or a refusal body', () => {
+  for (const [line, masked] of [
+    ["fatal: unable to access 'https://user:S3 CRET@h/r/': The requested URL returned error: 403\n", "fatal: unable to access 'https://user:***@h/r/': The requested URL returned error: 403\n"],
+    ["fatal: unable to access 'https://u:pw://x@h.example.invalid/r/': URL rejected: Port number was not a decimal number between 0 and 65535\n",
+      "fatal: unable to access 'https://u:***@h.example.invalid/r/': URL rejected: Port number was not a decimal number between 0 and 65535\n"],
+    ['fatal: unable to look up user:Zq7pw@h.example.invalid (port 9418) (Name or service not known)\n',
+      'fatal: unable to look up user:***@h.example.invalid (port 9418) (Name or service not known)\n'],
+  ]) {
+    assert.equal(capStderr(Buffer.from(line)).stderr, masked);
+    const body = new Refusal('GIT_FAILED', `git failed: ${line}`, { stderr: line }).toBody();
+    assert.deepEqual([body.error, body.stderr], [`git failed: ${masked}`, masked]);
+  }
 });
 
 test('a user name holding @: maskUrl, maskUrls and redactArgv take the first : after scheme:// and the last @', () => {
@@ -112,4 +301,52 @@ test('maskDeep masks every string through arrays and plain objects, and leaves o
   const u = 'https://u:pw1@h/r';
   assert.deepEqual(maskDeep({ error: `refs ${u}`, names: [u, 'origin'], n: 3, nested: { stderr: u }, ok: true, none: null }),
     { error: 'refs https://u:***@h/r', names: ['https://u:***@h/r', 'origin'], n: 3, nested: { stderr: 'https://u:***@h/r' }, ok: true, none: null });
+});
+
+/** Hostile inputs of about 200k characters: long alphanumeric runs, many `://`, `@` and `:`, many urls on one line. */
+const HOSTILE = {
+  'a run': 'a'.repeat(200_000),
+  'a run then ://': `${'a'.repeat(200_000)}://`,
+  'a run then ://u:': `${'a'.repeat(200_000)}://u:`,
+  'many ://': 'a://'.repeat(50_000),
+  'many :': 'a:'.repeat(100_000),
+  'many @': '@'.repeat(200_000),
+  'a password of @s': `https://u:${'a@'.repeat(100_000)}`,
+  'a spaced password then @s': `https://u:p ${'x@'.repeat(100_000)}`,
+  'a spaced password then user@host words': `https://u:p ${'x@h '.repeat(50_000)}`,
+  'many credential-less urls': 'a://b:c '.repeat(25_000),
+  'many digit urls': '1://:@'.repeat(33_000),
+  'many spaced passwords': `${'https://u:p '.repeat(16_000)}@h/r`,
+  'a password of :// runs': `https://u:${'pw://x '.repeat(33_000)}@h/r`,
+  'many <transport>:: urls': 'a::a://'.repeat(28_000),
+  'a spaced password of inner @s': `(https://u:p@ss ${'w@x '.repeat(50_000)}@h/r)`,
+  'many empty passwords': 'https://u:@x '.repeat(15_000),
+  'many look-ups': 'unable to look up '.repeat(11_000),
+  'many look-ups of userinfo, no port': 'unable to look up u:p@h '.repeat(8_000),
+  'many look-ups on one line': 'unable to look up u:p@h (port 1) '.repeat(6_000),
+  'look-ups with ports before any @': `${'unable to look up u: (port '.repeat(7_000)}@h`,
+  'look-ups of @ only': 'unable to look up @'.repeat(10_000),
+  'many %3A': '%3A'.repeat(66_000),
+  'many %40': '%40'.repeat(66_000),
+  'a password of %40s': `https://u%3A${'%40'.repeat(66_000)}`,
+  'a spaced password of %40s': `https://u%3Ap ${'x%40'.repeat(50_000)}`,
+  'many encoded urls': 'a://b%3Ac%40 '.repeat(15_000),
+};
+
+// Invariant: masking runs in linear time: each masking function finishes every hostile ~200k-character input (a
+// remote helper's or ssh server's stderr, a url posted to remote.edit) well under 200 ms.
+test('maskUrl, isMaskedUrl, maskUrls, maskDeep and redactArgv stay fast on hostile 200k-character input', () => {
+  const fns = {
+    maskUrl, isMaskedUrl, maskUrls, maskDeep: (x) => maskDeep({ stderr: x }),
+    redactArgv: (x) => redactArgv(['git', 'commit', '-m', x, 'remote', x]),
+    redactArgvUrl: (x) => redactArgv(['git', 'remote', 'add', '--end-of-options', 'o', x]),
+  };
+  for (const [what, input] of Object.entries(HOSTILE)) {
+    for (const [name, fn] of Object.entries(fns)) {
+      const t0 = performance.now();
+      fn(input);
+      const ms = performance.now() - t0;
+      assert.ok(ms < 200, `${name} on ${what}: ${ms.toFixed(1)} ms`);
+    }
+  }
 });

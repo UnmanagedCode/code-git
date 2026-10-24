@@ -27,14 +27,20 @@ function subcommandAt(argv) {
   return -1;
 }
 
+/** Subcommands whose arguments are names, urls, refspecs and config values, never prose. */
+const VALUE_SUBCOMMANDS = new Set(['remote', 'submodule', 'config', 'ls-remote', 'fetch', 'push', 'pull', 'clone']);
+
 /**
- * Argv as recorded; git itself gets the real argv. An argument that is a url with a password is masked (maskUrl). The
- * value of a `git config` write to a remote's other keys (`remote.<name>.<var>`: a proxy, which may be
- * `user:password@host`, a pack command) is replaced by `***`, the key kept: no mask could tell its secret part.
+ * Argv as recorded; git itself gets the real argv. A url's password is masked: in git's own options and every argument
+ * of a VALUE_SUBCOMMANDS command as a stored value (maskUrl: the whole argument is the url or value); in any other
+ * argument (a commit message) as text (maskUrls), so free text keeps its shape. The value of a `git config` write to a
+ * remote's other keys (`remote.<name>.<var>`: a proxy, which may be `user:password@host`, a pack command) is replaced by
+ * `***`, the key kept: no mask could tell its secret part.
  */
 export function redactArgv(argv) {
-  const out = argv.map(maskUrl);
   const sub = subcommandAt(argv);
+  const values = sub === -1 || VALUE_SUBCOMMANDS.has(argv[sub]);
+  const out = argv.map((a, i) => (values || i <= sub ? maskUrl(a) : maskUrls(a)));
   if (sub === -1 || argv[sub] !== 'config') return out;
   let key = -1;
   for (let i = sub + 1; i < argv.length && key === -1; i++) {

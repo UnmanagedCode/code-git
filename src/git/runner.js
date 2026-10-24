@@ -27,7 +27,35 @@ export const BASE_ARGS = [
  */
 export const subArgs = (target) => (target.sub ? ['-C', target.sub.join('/'), '--git-dir=.git'] : []);
 
-/** Every call: no prompt can hang, an editor launch fails loudly, pathspecs are literal, git's messages are stable. */
+/**
+ * git's trace and trace2 output, off over the System's own environment (and over trace2's `trace2.*Target` config, which
+ * the environment beats): it can print a url's userinfo without its scheme, where no mask finds it — GIT_TRACE's
+ * `run_command: ssh … user:password@host`, trace2's `child_start` of the same (trace2 redacts only `scheme://` urls),
+ * a `def_param` of a config url — or request headers. git reads each switch here by value (`0` is off) and each
+ * redaction as a boolean (an empty value is false, so `1`). trace2's lists of config values and env vars to log are
+ * emptied over the System's env; an empty one does not override a list in git config, so they are inert only because
+ * every trace2 target is off.
+ */
+const TRACE_OFF = {
+  ...Object.fromEntries(['GIT_TRACE', 'GIT_TRACE_PACKET', 'GIT_TRACE_CURL', 'GIT_TRACE_PERFORMANCE', 'GIT_TRACE_SETUP', 'GIT_TRACE_SHALLOW',
+    'GIT_TRACE_PACK_ACCESS', 'GIT_TRACE_REFS', 'GIT_TRACE_FSMONITOR', 'GIT_TRACE2', 'GIT_TRACE2_EVENT', 'GIT_TRACE2_PERF'].map((n) => [n, '0'])),
+  GIT_TRACE2_CONFIG_PARAMS: '',
+  GIT_TRACE2_ENV_VARS: '',
+  GIT_TRACE_REDACT: '1',
+  GIT_TRACE2_REDACT: '1',
+};
+/**
+ * Trace names an op's env may not set: TRACE_OFF's, and GIT_CURL_VERBOSE, which git reads for presence — any value, `0`
+ * included, turns curl's verbose output on — so it is never set either. A System env that sets it is its operator's
+ * opt-in (an exec cannot unset an inherited variable); the forced GIT_TRACE_REDACT and maskUrls still keep the
+ * Authorization header and url passwords out.
+ */
+const TRACE_LOCKED = [...Object.keys(TRACE_OFF), 'GIT_CURL_VERBOSE'];
+
+/**
+ * Every call: no prompt can hang, an editor launch fails loudly, pathspecs are literal, git's messages are stable, and
+ * no trace output prints a credential (TRACE_OFF).
+ */
 export const BASE_ENV = {
   GIT_TERMINAL_PROMPT: '0',
   GCM_INTERACTIVE: 'never',
@@ -40,18 +68,20 @@ export const BASE_ENV = {
   GIT_SEQUENCE_EDITOR: 'false',
   GIT_LITERAL_PATHSPECS: '1',
   LC_ALL: 'C',
+  ...TRACE_OFF,
 };
 /** Read ops only: no opportunistic index refresh. */
 export const READ_ENV = { GIT_OPTIONAL_LOCKS: '0' };
 /**
  * Names an op's env may not set: prompts and the programs git runs to ask for credentials (GIT_ASKPASS, SSH_ASKPASS and
  * SSH_ASKPASS_REQUIRE, which BASE_ENV sets —
- * git runs them even with GIT_TERMINAL_PROMPT=0), literal pathspecs, which repo and which git binary run, and the
+ * git runs them even with GIT_TERMINAL_PROMPT=0), literal pathspecs, which repo and which git binary run, the trace
+ * switches (TRACE_LOCKED), and the
  * prefixes PROTECTED_ENV_PREFIXES: every GIT_SSH* (GIT_SSH, GIT_SSH_COMMAND, GIT_SSH_VARIANT, …) and every config
  * injection GIT_CONFIG* (COUNT/KEY_n/VALUE_n, GLOBAL, SYSTEM, NOSYSTEM, PARAMETERS).
  * The editors stay settable: interactive rebase supplies its todo through GIT_SEQUENCE_EDITOR.
  */
-export const PROTECTED_ENV = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_ASKPASS', 'SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH'];
+export const PROTECTED_ENV = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_ASKPASS', 'SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH', ...TRACE_LOCKED];
 export const PROTECTED_ENV_PREFIXES = ['GIT_SSH', 'GIT_CONFIG'];
 export const isProtectedEnv = (name) => PROTECTED_ENV.includes(name) || PROTECTED_ENV_PREFIXES.some((p) => name.startsWith(p));
 

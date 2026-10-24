@@ -1,3 +1,4 @@
+import { isMaskedUrl } from '../../mask.js';
 import { Refusal } from '../../refusals.js';
 import { assertRefName } from '../validate.js';
 import { remoteName } from './push.js';
@@ -14,6 +15,10 @@ export const URL_MAX = 2048;
  */
 const HELPER_RE = /^[A-Za-z0-9][A-Za-z0-9+.-]*::/;
 const SCHEME_RE = /^(?:https?|ssh|git\+ssh|ssh\+git|git|file):\/\/(.+)$/i;
+/** The userinfo (`user[:password]@`) at the start of a url's part after `://`. */
+const USERINFO_RE = /^[^@/]*@/;
+/** Whether a url's part after `://` has userinfo: an `@` in its authority, or a `%40` (git decodes the authority first). */
+const hasUserinfo = (rest) => /@|%40/.test(rest.split('/', 1)[0]);
 /** scp-like `[user@]host:path`: git reads it so when a `:` comes before any `/`. A bracketed host may hold `:`. */
 const SCP_RE = /^(?:([^@/:]+)@)?(\[[^\]/]+\]|[^@/:[\]]+):(.+)$/;
 
@@ -23,7 +28,8 @@ const bad = (why) => new Refusal('BAD_URL', `invalid remote url: ${why}`);
  * A remote url to write into config, else BAD_URL. Accepted: `http(s)://`, `ssh://`, `git+ssh://`, `ssh+git://`,
  * `git://` and `file://` urls, an absolute path, and scp-like `[user@]host:path` (host with no `/`, path not starting
  * `//`). Refused: anything else, any `<transport>::` helper url, a leading `-`, whitespace or a control character, a
- * host starting with `-` (ssh would read it as an option), and more than URL_MAX characters.
+ * host starting with `-` (ssh would read it as an option), a `git://` url carrying userinfo (the git protocol cannot
+ * authenticate, and git prints the userinfo in its errors where no url mask finds it), and more than URL_MAX characters.
  */
 export function remoteUrl(s) {
   if (typeof s !== 'string' || s === '') throw bad('empty');
@@ -33,7 +39,9 @@ export function remoteUrl(s) {
   if (HELPER_RE.test(s)) throw bad('a <transport>:: url runs a remote helper');
   const scheme = SCHEME_RE.exec(s);
   if (scheme) {
-    const host = scheme[1].replace(/^[^@/]*@/, '');
+    // git prints a git:// url's whole authority back in its errors (`unable to look up user:pw@host`).
+    if (/^git:/i.test(s) && hasUserinfo(scheme[1])) throw bad('a git:// url cannot carry a user name or password: the git protocol does not authenticate');
+    const host = scheme[1].replace(USERINFO_RE, '');
     if (host.startsWith('-')) throw bad('the host starts with -');
     return s;
   }
@@ -42,6 +50,23 @@ export function remoteUrl(s) {
   if (scp && !scp[2].startsWith('-') && !scp[3].startsWith('//')) return s;
   throw bad('expected an http(s)/ssh/git/file url, an absolute path or user@host:path');
 }
+
+/**
+ * `url` (a remoteUrl, or null / undefined: not sent), else BAD_URL when its password is the `***` mask code-git shows
+ * (isMaskedUrl): a url copied from the UI and pasted back would store the mask as the password. Never echoes the url.
+ */
+export function assertNotMasked(url) {
+  if (url && isMaskedUrl(url)) throw bad('its password is ***, the mask code-git shows: type the real password');
+  return url;
+}
+
+/**
+ * A url remote.edit was sent: a remoteUrl, or a url holding the mask (isMaskedUrl) passed on unchecked — the op either
+ * finds it equal to the current value's mask (unchanged: nothing written) or refuses it (assertNotMasked), so it never
+ * reaches git. A remote whose stored value remoteUrl refuses (`<transport>::<url>`, set with git) keeps its echoed mask.
+ * Past URL_MAX, remoteUrl refuses it unscanned.
+ */
+export const editedUrl = (s) => (typeof s === 'string' && s.length <= URL_MAX && isMaskedUrl(s) ? s : remoteUrl(s));
 
 /**
  * A name for a new (or renamed) remote, else BAD_REF: remoteName's shape (no leading `-`, whitespace or control

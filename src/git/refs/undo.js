@@ -1,3 +1,5 @@
+import { maskUrl } from '../../mask.js';
+
 // The undo record every ref-changing op returns as `result.undo` (docs/refs.md → Undo record): what it created,
 // moved or deleted, so a later undo can put it back. A registered op's `undo` builder turns it into a plan
 // (src/git/undo/plans.js, docs/undo.md).
@@ -30,15 +32,24 @@ export function undoRecord({
   };
 }
 
-/** A remote snapshot side with its `extra` values withheld (null): a proxy, a header or a command may hold a secret. */
-const withheld = (side) => (side?.extra ? { ...side, extra: side.extra.map(([v]) => [v, null]) } : side);
+/**
+ * A remote snapshot side as the browser may see it: every url and push url's password masked (maskUrl), the `extra`
+ * values withheld (null): a proxy, a header or a command may hold a secret.
+ */
+function wireSide(side) {
+  if (!side) return side;
+  const out = { ...side, urls: side.urls.map(maskUrl), pushUrls: side.pushUrls.map(maskUrl) };
+  if (side.extra) out.extra = side.extra.map(([v]) => [v, null]);
+  return out;
+}
 
 /**
- * An op's result as the ops route answers it: `undo.remotes[].old` / `.new` `extra` values withheld. A copy: the journal
- * built its plan from the raw result first (src/git/undo/record.js), so an undo still writes the values back exactly.
+ * An op's result as the ops route answers it: `undo.remotes[].old` / `.new` urls and push urls masked, `extra` values
+ * withheld. A copy: the journal built its plan from the raw result first (src/git/undo/record.js), so an undo still writes
+ * the values back exactly.
  */
 export function forTheWire(result) {
   const remotes = result?.undo?.remotes;
   if (!remotes?.length) return result;
-  return { ...result, undo: { ...result.undo, remotes: remotes.map((r) => ({ ...r, old: withheld(r.old), new: withheld(r.new) })) } };
+  return { ...result, undo: { ...result.undo, remotes: remotes.map((r) => ({ ...r, old: wireSide(r.old), new: wireSide(r.new) })) } };
 }

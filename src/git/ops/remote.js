@@ -1,4 +1,4 @@
-import { maskDeep } from '../../mask.js';
+import { maskDeep, maskUrl } from '../../mask.js';
 import { Refusal } from '../../refusals.js';
 import { optBool, paramsObject } from '../params.js';
 import { parseRecords } from '../parse/graph.js';
@@ -15,14 +15,15 @@ import { fastForward, merge, rebase } from '../remote/integrate.js';
 import { netRun, remoteFailure } from '../remote/net.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
 import { fetchSpecs, trackingRefsFor, trackingRefsOf } from '../remote/tracking.js';
-import { newRemoteName, remoteUrl } from '../remote/url.js';
+import { assertNotMasked, editedUrl, newRemoteName, remoteUrl } from '../remote/url.js';
 import { assertClean, assertNoOperation } from '../sequence/guard.js';
 import { plans } from '../undo/plans.js';
 import { assertOid } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
 
 // Remote ops (docs/remotes.md, docs/protocol.md → Remote ops): the remotes' config, fetch, pull and branch push. Every
-// name and url is checked before any exec; `--end-of-options` precedes every user-named argument.
+// name and url is checked before any exec (remote.edit's masked url: before any write); `--end-of-options` precedes
+// every user-named argument.
 
 const REMOTES = 'refs/remotes/';
 const HEADS = 'refs/heads/';
@@ -98,6 +99,9 @@ function assertSingle(name, values, what) {
   }
 }
 
+/** Whether `submitted` is the mask of a raw url list's single value (a password-less url is its own mask). */
+const unchanged = (values, submitted) => values.length === 1 && submitted === maskUrl(values[0]);
+
 export const ops = [
   {
     name: 'remote.list',
@@ -110,7 +114,7 @@ export const ops = [
     kind: 'write',
     params(raw) {
       const p = paramsObject(raw, ['name', 'url', 'pushUrl'], 'remote.add');
-      return { name: newRemoteName(p.name), url: remoteUrl(p.url), pushUrl: p.pushUrl === undefined ? null : remoteUrl(p.pushUrl) };
+      return { name: newRemoteName(p.name), url: assertNotMasked(remoteUrl(p.url)), pushUrl: p.pushUrl === undefined ? null : assertNotMasked(remoteUrl(p.pushUrl)) };
     },
     async run(git, { name, url, pushUrl }) {
       await assertNewRemote(git, name);
@@ -128,16 +132,24 @@ export const ops = [
       if (p.url === undefined && p.pushUrl === undefined) throw new Refusal('BAD_PARAMS', 'remote.edit needs url or pushUrl');
       return {
         name: remoteName(p.name),
-        url: p.url === undefined ? undefined : remoteUrl(p.url),
-        pushUrl: p.pushUrl === undefined || p.pushUrl === null ? p.pushUrl : remoteUrl(p.pushUrl),
+        url: p.url === undefined ? undefined : editedUrl(p.url),
+        pushUrl: p.pushUrl === undefined || p.pushUrl === null ? p.pushUrl : editedUrl(p.pushUrl),
       };
     },
-    async run(git, { name, url, pushUrl }) {
+    async run(git, p) {
+      const { name } = p;
+      let { url, pushUrl } = p;
       const old = await remoteSnapshot(git, name);
       await assertNotLegacy(git, name, old);
+      // The browser only ever holds masked urls: a field echoing the mask of the one current value is unchanged, so it is
+      // not sent and the stored password stays. Any other masked value is refused below, never spliced with that password.
+      if (url !== undefined && unchanged(old.urls, url)) url = undefined;
+      if (typeof pushUrl === 'string' && unchanged(old.pushUrls, pushUrl)) pushUrl = undefined;
       // `remote set-url` without an old url replaces the one value; git refuses a list, and so does this op, before anything runs.
       if (url !== undefined) assertSingle(name, old.urls, 'url');
       if (pushUrl !== undefined) assertSingle(name, old.pushUrls, 'pushurl');
+      assertNotMasked(url);
+      assertNotMasked(pushUrl);
       if (url !== undefined) await git(['remote', 'set-url', '--end-of-options', name, url]);
       if (pushUrl) await git(['remote', 'set-url', '--push', '--end-of-options', name, pushUrl]);
       // 5: the key was not set.

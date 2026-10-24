@@ -370,14 +370,15 @@ test('confirm shapes of the remote plans', async (t) => {
 
 // Invariant: a credentialed url never leaves the journal: undo.state, the undo/redo results, a refusal's body and the
 // activity log carry remote names only (git's argv masked as user:***@), through add, edit and remove both ways. A
-// remote's other config values (`extra`: a proxy with a password) reach no response at all — not even the remote ops' own
-// results, which still carry the urls — while the journal keeps them raw: undoing a remove restores the proxy exactly.
+// remote's other config values (`extra`: a proxy with a password) reach no response at all, and the remote ops' own results
+// carry the url and push url masked, while the journal keeps them raw: undoing a remove restores the proxy exactly.
 // The activity log and its event stream never record that value, not even a scheme-less user:password@host proxy.
 test('credentials: a password in a url or a proxy never reaches undo.state, undo/redo results, refusals, op results or /api/activity', async (t) => {
   const w = await refsWorld(t);
   const app = await startApp(t);
   const target = { project: 'repo' };
   const PW = 'S3cretPW';
+  const PUSH_PW = 'Pu5hPW';
   const PROXY_PW = 'Pr0xyPW';
   const proxy = `proxyuser:${PROXY_PW}@proxy.invalid:8080`;
   const stream = await sse(`${app.url}/api/activity/events`, t);
@@ -395,7 +396,7 @@ test('credentials: a password in a url or a proxy never reaches undo.state, undo
   const undo = async () => watched('undo.undo', { id: (await state()).result.undo.id });
   const redo = async () => watched('undo.redo', { id: (await state()).result.redo.id });
   const proxyOf = (name) => w.repo.git('config', '--get', `remote.${name}.proxy`);
-  await remoteOp('remote.add', { name: 'cred', url: url('one') });
+  await remoteOp('remote.add', { name: 'cred', url: url('one'), pushUrl: `https://user:${PUSH_PW}@example.invalid/push.git` });
   await undo();
   await redo();
   w.repo.git('config', 'remote.cred.proxy', proxy);
@@ -415,10 +416,9 @@ test('credentials: a password in a url or a proxy never reaches undo.state, undo
   w.repo.git('config', 'remote.stale.url', url('changed'));
   const refusal = await watched('undo.undo', { id: (await state()).result.undo.id }, 409);
   assert.equal(refusal.code, 'UNDO_STALE');
-  for (const body of seen) for (const secret of [PW, PROXY_PW]) assert.ok(!JSON.stringify(body).includes(secret), JSON.stringify(body));
-  for (const body of results) assert.ok(!JSON.stringify(body).includes(PROXY_PW), JSON.stringify(body));
+  for (const body of [...seen, ...results]) for (const secret of [PW, PUSH_PW, PROXY_PW]) assert.ok(!JSON.stringify(body).includes(secret), JSON.stringify(body));
   const activity = JSON.stringify((await app.call('GET', '/api/activity')).body);
-  for (const secret of [PW, PROXY_PW]) assert.ok(!activity.includes(secret), 'the activity log never holds a password');
+  for (const secret of [PW, PUSH_PW, PROXY_PW]) assert.ok(!activity.includes(secret), 'the activity log never holds a password');
   assert.ok(activity.includes('https://user:***@example.invalid/one.git'), 'the undo/redo argv shows the url masked');
   assert.ok(activity.includes('"remote.cred2.proxy","***"'), 'the restored proxy\'s key is shown, its value withheld');
   // The event stream, up to the end of the last (refused) undo's run: five undo.undo runs in all.
@@ -429,6 +429,6 @@ test('credentials: a password in a url or a proxy never reaches undo.state, undo
     if (ev.event === 'run' && ev.data.op === 'undo.undo' && ev.data.status === 'ended') undos++;
   }
   const streamed = JSON.stringify(events);
-  for (const secret of [PW, PROXY_PW]) assert.ok(!streamed.includes(secret), 'the event stream never holds a password');
+  for (const secret of [PW, PUSH_PW, PROXY_PW]) assert.ok(!streamed.includes(secret), 'the event stream never holds a password');
   assert.ok(streamed.includes('"remote.cred2.proxy","***"'), 'the stream saw the proxy written back, its value withheld');
 });

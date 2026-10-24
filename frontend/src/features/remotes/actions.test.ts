@@ -93,10 +93,14 @@ test('Remove… confirms naming the tracking-ref count and the branches that los
   await waitFor(() => expect(w.posts('remote.remove')).toEqual([{ name: 'origin' }]));
 });
 
-test('Copy URL copies the masked display url, never the stored one', async () => {
+test('Copy URL copies the display url as the server sent it: the masked url, else a push-only remote\'s masked push url', async () => {
   const written: string[] = [];
   Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (s: string) => { written.push(s); } }, configurable: true });
-  remotesWorld({ remotes: [remote('origin', { urls: ['https://u:secret@h/r.git'], displayUrl: 'https://u:***@h/r.git' })] });
+  remotesWorld({ remotes: [
+    remote('origin', { urls: ['https://u:***@h/r.git'], displayUrl: 'https://u:***@h/r.git' }),
+    remote('pushonly', { urls: [], fetch: [], pushUrls: ['https://u:***@h/p.git'], displayUrl: 'https://u:***@h/p.git', displayPushUrl: 'https://u:***@h/p.git' }),
+  ] });
   await run('remote', remoteCtx('origin'), 'Copy URL');
-  expect(written).toEqual(['https://u:***@h/r.git']);
+  await run('remote', remoteCtx('pushonly'), 'Copy URL');
+  expect(written).toEqual(['https://u:***@h/r.git', 'https://u:***@h/p.git']);
 });

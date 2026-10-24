@@ -17,7 +17,7 @@ const legacyRemote = (w) => {
   w.repo.git('config', 'remote.leg.fetch', DEFAULT('leg'));
 };
 
-test('remote.list: every remote in git remote order with urls as git counts them, raw fetch, masked displayUrl, dotted names, legacy', async (t) => {
+test('remote.list: every remote in git remote order with urls as git counts them (masked), raw fetch, masked displayUrl, dotted names, legacy', async (t) => {
   const w = await refsWorld(t);
   fs.mkdirSync(path.join(w.repo.dir, '.git', 'remotes'), { recursive: true });
   w.repo.git('remote', 'add', 'a', 'https://u:secret@h.example/r.git');
@@ -32,14 +32,14 @@ test('remote.list: every remote in git remote order with urls as git counts them
   const byName = Object.fromEntries(r.remotes.map((x) => [x.name, x]));
   assert.deepEqual(r.remotes.map((x) => x.name).sort(), ['a', 'a.b', 'leg', 'origin', 'pushonly']);
   // Raw `url`, '', `url`: one effective url, but a list remote.edit cannot replace (multiUrl).
-  assert.deepEqual(byName.a, { name: 'a', urls: ['https://u:pw@later.example/r'], pushUrls: [], fetch: [DEFAULT('a')], displayUrl: 'https://u:***@later.example/r', displayPushUrl: null, legacy: false, multiUrl: true, multiPushUrl: false });
+  assert.deepEqual(byName.a, { name: 'a', urls: ['https://u:***@later.example/r'], pushUrls: [], fetch: [DEFAULT('a')], displayUrl: 'https://u:***@later.example/r', displayPushUrl: null, legacy: false, multiUrl: true, multiPushUrl: false });
   await assert.rejects(w.op('remote.edit', { name: 'a', url: '/x.git' }), refused('REMOTE_CONFIG_UNSUPPORTED'), 'the flag and the refusal agree');
   w.repo.git('config', '--add', 'remote.a.b.pushurl', '');
   w.repo.git('config', '--add', 'remote.a.b.pushurl', 'ssh://p@h/y');
   const again = (await w.op('remote.list', undefined)).remotes.find((x) => x.name === 'a.b');
   assert.deepEqual([again.pushUrls, again.multiPushUrl, again.multiUrl], [['ssh://p@h/y'], true, false]);
   assert.deepEqual(byName['a.b'], { name: 'a.b', urls: ['git@h:x.git'], pushUrls: ['ssh://p@h/x'], fetch: [DEFAULT('a.b')], displayUrl: 'git@h:x.git', displayPushUrl: 'ssh://p@h/x', legacy: false, multiUrl: false, multiPushUrl: false });
-  assert.deepEqual(byName.origin, { name: 'origin', urls: [w.origin.dir], pushUrls: ['https://me:tok@push.example/r'], fetch: [DEFAULT('origin')], displayUrl: w.origin.dir, displayPushUrl: 'https://me:***@push.example/r', legacy: false, multiUrl: false, multiPushUrl: false });
+  assert.deepEqual(byName.origin, { name: 'origin', urls: [w.origin.dir], pushUrls: ['https://me:***@push.example/r'], fetch: [DEFAULT('origin')], displayUrl: w.origin.dir, displayPushUrl: 'https://me:***@push.example/r', legacy: false, multiUrl: false, multiPushUrl: false });
   assert.deepEqual(byName.pushonly, { name: 'pushonly', urls: [], pushUrls: ['https://h/p'], fetch: [], displayUrl: 'https://h/p', displayPushUrl: 'https://h/p', legacy: false, multiUrl: false, multiPushUrl: false });
   assert.deepEqual(byName.leg, { name: 'leg', urls: [], pushUrls: [], fetch: [DEFAULT('leg')], displayUrl: null, displayPushUrl: null, legacy: true, multiUrl: false, multiPushUrl: false });
   assert.equal(w.writes().length, 0);
