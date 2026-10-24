@@ -47,7 +47,7 @@ test('the base env makes git non-interactive and literal; GIT_OPTIONAL_LOCKS=0 o
 });
 
 /** git's trace switches whose output can print a url's userinfo (GIT_TRACE's `run_command: ssh … user:pw@host`) or headers. */
-const TRACE_VARS = ['GIT_TRACE', 'GIT_TRACE_PACKET', 'GIT_TRACE_CURL', 'GIT_CURL_VERBOSE', 'GIT_TRACE_PERFORMANCE', 'GIT_TRACE_SETUP',
+const TRACE_VARS = ['GIT_TRACE', 'GIT_TRACE_PACKET', 'GIT_TRACE_CURL', 'GIT_TRACE_PERFORMANCE', 'GIT_TRACE_SETUP',
   'GIT_TRACE_SHALLOW', 'GIT_TRACE_PACK_ACCESS', 'GIT_TRACE_REFS', 'GIT_TRACE_FSMONITOR'];
 
 /**
@@ -66,16 +66,18 @@ const TRACE2_ON = {
 
 // Invariant: every exec turns git's trace and trace2 output off (each switch '0', trace2's config-param and env-var lists
 // empty, both redactions '1'), over a System env that turns them on, so no trace line (a scheme-less user:password@host)
-// reaches stderr; an op's env cannot set any of them.
-test('the base env turns git trace and trace2 output off over a System env that turns it on; an op cannot set it', async (t) => {
+// reaches stderr; GIT_CURL_VERBOSE, which git reads for presence (any value turns curl's verbose output on), is never in an
+// exec's env; an op's env cannot set any of them.
+test('the base env turns git trace and trace2 output off over a System env that turns it on; never sets GIT_CURL_VERBOSE; an op cannot set them', async (t) => {
   const { cc } = await world(t);
   cc.state.inheritedEnv = { ...Object.fromEntries(TRACE_VARS.map((n) => [n, '1'])), ...TRACE2_ON };
   const r = await runGit(ctxFor(APP, 'write'), ['status']);
   const { env } = cc.state.execCalls[0];
   for (const name of TRACE_VARS) assert.equal(env[name], '0', name);
   for (const [name, value] of Object.entries(TRACE2_SET)) assert.equal(env[name], value, name);
+  assert.ok(!('GIT_CURL_VERBOSE' in env), 'GIT_CURL_VERBOSE is not set: git reads it for presence');
   assert.equal(r.stderr.toString(), '', 'no trace output');
-  for (const name of [...TRACE_VARS, ...Object.keys(TRACE2_SET)]) {
+  for (const name of [...TRACE_VARS, 'GIT_CURL_VERBOSE', ...Object.keys(TRACE2_SET)]) {
     await assert.rejects(runGit(ctxFor(APP, 'write'), ['status'], { env: { [name]: '1' } }), new RegExp(`may not set ${name}`), name);
   }
 });

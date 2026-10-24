@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { maskUrl } from '../src/mask.js';
 import { startApp } from './_app.js';
 import { refsWorld } from './_refsWorld.js';
+import { authServer, NO_HTTP } from './_remotes.js';
 
 // A password in a remote's url or push url never leaves the backend: remote.list and every remote op's result carry it
 // masked, while git config, undo, redo and the re-add of a removed remote keep the raw value. Ops run over HTTP, so the
@@ -370,4 +371,21 @@ test('remote.fetch of an ssh remote under a System env with trace2 on: no respon
   assert.match(r.stderr, /^fatal: Could not read from remote repository\./, 'git\'s own message, no trace lines');
   lacksSecrets(r);
   lacksSecrets(JSON.stringify(await w.activity()));
+});
+
+// Invariant: an http fetch from code-git writes no curl verbose trace (`== Info`, `Send header`, `Recv header` lines) into
+// stderr, and neither the password nor its base64 (the Authorization header's) reaches the refusal or /api/activity.
+test('remote.fetch over http against a local 401 server: no curl verbose trace, no password or its base64 anywhere', { skip: NO_HTTP }, async (t) => {
+  const w = await world(t);
+  const base = await authServer(t, 401);
+  w.repo.git('remote', 'add', 'web', base.replace('http://', `http://user:${PW}@`) + '/r.git');
+  const r = await w.call('remote.fetch', { remote: 'web' }, 502);
+  assert.equal(r.code, 'REMOTE_AUTH_FAILED', JSON.stringify(r));
+  const b64 = Buffer.from(`user:${PW}`).toString('base64');
+  const activity = JSON.stringify(await w.activity());
+  for (const text of [JSON.stringify(r), activity]) {
+    assert.ok(!/== Info|Send header|Recv header|=> Send|<= Recv/.test(text), text);
+    lacksSecrets(text);
+    assert.ok(!text.includes(b64), 'no Authorization value');
+  }
 });
