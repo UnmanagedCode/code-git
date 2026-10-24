@@ -173,20 +173,21 @@ test('stash.apply: clean, without index', async (t) => {
   assert.deepEqual(await confirms(w), { undo: null, redo: null });
 });
 
-// Invariant: an apply with its index restores the stash's staged part and the user's own staging exactly both ways.
+// Invariant: an apply with its index restores the stash's staged part exactly both ways, and a local change elsewhere is
+// kept throughout. (git refuses an --index apply over any staging of the user's: "Index was not unstashed.")
 test('stash.apply: clean, with index', async (t) => {
   const w = await undoWorld(t);
   w.repo.commit({ 'g.txt': 'g\n', 'h.txt': 'h\n' }, 'gh');
   w.repo.write('g.txt', 'staged in the stash\n');
   w.repo.git('add', 'g.txt');
   const oid = saved(w, { 'f.txt': 'unstaged in the stash\n' });
-  w.repo.write('h.txt', 'the user\'s own staging\n');
-  w.repo.git('add', 'h.txt');
+  w.repo.write('h.txt', 'a local change elsewhere\n');
   const { before, after } = await roundTrip(w, () => w.op('stash.apply', { oid, index: true }));
   const head = new Map(w.repo.git('ls-tree', '-r', 'HEAD').split('\n').map((l) => { const [meta, f] = l.split('\t'); return [f, meta.split(' ')[2]]; }));
   const staged = (s) => s.index.split('\n').map((l) => l.split('\t')).filter(([meta, f]) => head.get(f) !== meta.split(' ')[1]).map(([, f]) => f);
-  assert.deepEqual(staged(before), ['h.txt']);
-  assert.deepEqual(staged(after), ['g.txt', 'h.txt'], 'the stash\'s staged part is restored on top of the user\'s staging');
+  assert.deepEqual(staged(before), []);
+  assert.deepEqual(staged(after), ['g.txt'], 'the stash\'s staged part is restored');
+  assert.equal(after.files['h.txt'].content, 'a local change elsewhere\n');
 });
 
 // Invariant: the index entry git leaves staged for a file the stash added (an apply without index) is taken out by undo

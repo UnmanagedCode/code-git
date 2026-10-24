@@ -9,6 +9,17 @@ import { blob, exists, outsideLink, read, realIndexRuns, runs, stashList, stashW
 
 // stash.apply, stash.pop, stash.applyFile and stash.branch against real git under the hostile config.
 
+/**
+ * The real-index `write-tree`s between an apply's staging check (`diff-index --cached --quiet`) and its `stash apply`: the
+ * index snapshot an --index apply takes, apart from the undo's checkout states taken around it.
+ */
+function indexSnapshots(w, from) {
+  const calls = realIndexRuns(w, from).map((a) => a.slice(a.indexOf('--work-tree=.') + 1));
+  const end = calls.findIndex((a) => a[0] === 'stash' && a[1] === 'apply');
+  const start = calls.findLastIndex((a, i) => i < end && a[0] === 'diff-index' && a.includes('--cached'));
+  return calls.slice(start + 1, end).filter((a) => a[0] === 'write-tree');
+}
+
 async function saved(w, edits, params = {}) {
   for (const [p, c] of Object.entries(edits)) w.repo.write(p, c);
   return (await w.op('stash.push', params)).oid;
@@ -111,7 +122,7 @@ test('apply index:true restores the staged part; without it the staged change la
   assert.deepEqual(w.status(), { 'a.txt': ' M', 'b.txt': 'M ' });
   assert.ok(runs(w, 'stash', 'apply').at(-1).includes('--index'));
   // Nothing was staged: no index snapshot is taken.
-  assert.deepEqual(realIndexRuns(w, from, 'write-tree'), []);
+  assert.deepEqual(indexSnapshots(w, from), []);
   w.repo.git('reset', '-q', '--hard');
   await w.op('stash.apply', { oid });
   assert.deepEqual(w.status(), { 'a.txt': ' M', 'b.txt': ' M' });
@@ -444,7 +455,7 @@ test('a refused apply --index without "Index was not unstashed." (no unmerged en
   const from = w.cc.state.execCalls.length;
   await assert.rejects(w.op('stash.apply', { oid, index: true }), (e) => e.code === 'GIT_FAILED' && e.extra.stderr === 'error: something else went wrong\n');
   // The snapshot was taken (something was staged), and not read back.
-  assert.equal(realIndexRuns(w, from, 'write-tree').length, 1);
+  assert.equal(indexSnapshots(w, from).length, 1);
   assert.deepEqual(realIndexRuns(w, from, 'read-tree'), []);
   assert.equal(w.indexBlob('b.txt').toString(), 'b staged\n');
 });
