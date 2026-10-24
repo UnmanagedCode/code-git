@@ -71,8 +71,9 @@ export const ops = [
     async run(git, { pattern: p }) {
       await assertWorktree(git);
       await assertLfs(git);
-      await assertAttributesWritable(git);
       const before = (await readLfsPatterns(git)).patterns ?? [];
+      // Last before the write: git-lfs opens .gitattributes by path itself, so the check narrows a swap's window, never closes it.
+      await assertAttributesWritable(git);
       await git([...LFS, 'untrack', '--', p]);
       const after = (await readLfsPatterns(git)).patterns ?? [];
       // git-lfs escapes a pattern as it writes it (a space as [[:space:]]): whether a line left, not which text.
