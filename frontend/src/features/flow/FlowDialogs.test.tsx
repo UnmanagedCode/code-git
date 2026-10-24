@@ -126,3 +126,15 @@ test('initialize is prefilled from the defaults and sends the settings', async (
     main: 'main', develop: 'develop', prefixes: { feature: 'feature/', release: 'release/', hotfix: 'hotfix/', versionTag: 'v' },
   }]));
 });
+
+test('finish from a code-conductor/* HEAD: the dialog gives way to the confirmation; only Confirm sends, with ccOwned', async () => {
+  const w = world({ 'flow.finish': FINISHED }, { head: ref('refs/heads/code-conductor/wt', oid(1)) });
+  act(() => openFlowDialog(FINISH));
+  const d = await screen.findByRole('dialog', { name: 'Finish release/1.0?' });
+  await userEvent.click(within(d).getByRole('button', { name: 'Finish' }));
+  await waitFor(() => expect(confirmStore.get()?.opts.confirmLabel).toBe('Switch anyway'));
+  expect(flowDialogStore.get()).toBeNull();
+  expect(w.posts('flow.finish')).toEqual([]);
+  act(() => settleConfirm(true));
+  await waitFor(() => expect(w.posts('flow.finish')).toEqual([{ type: 'release', name: '1.0', expect: oid(3), tagMessage: 'Release 1.0', ccOwned: true }]));
+});

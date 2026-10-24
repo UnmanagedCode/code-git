@@ -7,7 +7,7 @@ import { EMPTY_GRAPH, graphStore } from '@/state/graph';
 import { tabKey } from '@/state/tabs';
 import { oid, ref, refsResult } from '@/test/graphData';
 import type { FlowConfigResult } from './api';
-import { flowStore } from './state';
+import { flowBranchOf, flowStore } from './state';
 
 const T = { project: 'app', worktree: null };
 const MAIN = ref('refs/heads/main', oid(1));
@@ -71,4 +71,28 @@ test('repository menu: Initialize… only until initialized; then the settings a
   ]);
   world(FEATURE, CONFIG);
   expect(menu('repo', { tab: T })).toContain('Git-flow › Finish feature/login…');
+});
+
+test('main and develop are never flow branches, whatever the prefixes (a prefix that prefixes them)', () => {
+  const hostile: FlowConfigResult = { ...CONFIG, prefixes: { ...CONFIG.prefixes, feature: 'ma', hotfix: 'dev' } };
+  expect(flowBranchOf(hostile, 'main')).toBeNull();
+  expect(flowBranchOf(hostile, 'develop')).toBeNull();
+  expect(flowBranchOf(hostile, 'mars')).toEqual({ type: 'feature', name: 'rs' });
+  world(FEATURE, hostile);
+  expect(menu('branch', branch(MAIN)).some((l) => l.startsWith('Finish'))).toBe(false);
+  expect(menu('repo', { tab: T }).some((l) => l.includes('Finish'))).toBe(false);
+});
+
+test('Finish is offered on local refs only: a remote named `feature` (its ref short `feature/login`) gets none', () => {
+  const onRemoteFeature = ref('refs/remotes/feature/login', oid(2));
+  expect(onRemoteFeature.short).toBe('feature/login');
+  world(MAIN, CONFIG);
+  expect(menu('branch', branch(onRemoteFeature)).some((l) => l.startsWith('Finish'))).toBe(false);
+});
+
+test('Finish needs usable settings: prefixes set but initialized false offers none', () => {
+  world(MAIN, { ...CONFIG, initialized: false });
+  expect(menu('branch', branch(FEATURE)).some((l) => l.startsWith('Finish'))).toBe(false);
+  world(FEATURE, { ...CONFIG, initialized: false });
+  expect(menu('repo', { tab: T }).some((l) => l.includes('Finish') || l.includes('Start'))).toBe(false);
 });

@@ -43,9 +43,12 @@ export function useFlowLoader(tab: Tab): void {
 
 export const useFlow = (tab: Tab): FlowConfigResult | null => useStore(flowStore).get(refsKey(tab)) ?? null;
 
-/** A flow branch's type and name from its short name (the longest configured prefix wins); null for any other branch. */
+/**
+ * A flow branch's type and name from its short name (the longest configured prefix wins); null for any other branch, and
+ * always for main and develop (a finish deletes its branch).
+ */
 export function flowBranchOf(config: FlowConfigResult | null, short: string): { type: FlowType; name: string } | null {
-  if (!config?.initialized) return null;
+  if (!config?.initialized || short === config.main || short === config.develop) return null;
   let best: { type: FlowType; name: string; len: number } | null = null;
   for (const type of FLOW_TYPES) {
     const p = config.prefixes[type];
