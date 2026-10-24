@@ -57,9 +57,10 @@ export async function remoteNames(git) {
 
 /**
  * Every remote: [{name, urls, pushUrls, fetch, displayUrl, displayPushUrl, legacy, multiUrl, multiPushUrl}] in `git remote`
- * order, every url's password masked (maskUrl: what reaches the browser). `urls` / `pushUrls` as git counts them (after the last empty value); `fetch` as configured; `displayUrl` the first url (else
- * push url) and `displayPushUrl` the first push url, or null; `legacy` true when git reads the remote from a legacy `.git/remotes` / `.git/branches` file
- * (no url in config and such a file exists); `multiUrl` / `multiPushUrl` when that raw list holds more than one value
+ * order, every url's password masked (maskUrl: this reaches the browser). `urls` / `pushUrls` as git counts them (after
+ * the last empty value); `fetch` as configured; `displayUrl` the first url (else push url) and `displayPushUrl` the first
+ * push url, or null; `legacy` true when git reads the remote from a legacy `.git/remotes` / `.git/branches` file (no url
+ * in config and such a file exists); `multiUrl` / `multiPushUrl` when that raw list holds more than one value
  * (remote.edit refuses to replace it).
  */
 export async function listRemotes(git) {
