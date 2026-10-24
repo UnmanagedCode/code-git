@@ -142,8 +142,8 @@ try {
         }
       }
 
-      // 4b. Ignore whitespace: w.txt's change is whitespace only ('a b' → 'a  b'): on, it has no content change and its
-      // list row loses its counts; off, the change is back.
+      // 4b. Ignore whitespace: w.txt's change is whitespace only ('a b' → 'a  b'), so under git's -w it is no change at
+      // all and leaves the list; off, it is listed (+1 −1) and shows its change again.
       const ignoreWs = diff.getByRole('button', { name: 'Ignore whitespace', exact: true });
       await scope('Hunk').click();
       await layout('Inline').click();
@@ -153,11 +153,14 @@ try {
       check((await option(/w\.txt/).textContent()).includes('+1 −1'), `${scheme}: w.txt's row counts +1 −1`);
       await ignoreWs.click();
       check(await ignoreWs.getAttribute('aria-pressed') === 'true', `${scheme}: Ignore whitespace is pressed`);
-      await diff.getByText('No content changes', { exact: true }).waitFor();
-      await page.waitForFunction(() => !document.querySelector('[data-slot-name=right] [data-path="w.txt"]')?.textContent?.includes('+1 −1'));
-      check(await option(/w\.txt/).count() === 1, `${scheme}: Ignore whitespace: w.txt has no content changes and its row no +1 −1`);
+      await option(/w\.txt/).waitFor({ state: 'detached' });
+      await option(/src\/app\.ts/).click();
+      await body.locator('[data-row=add]').first().waitFor();
+      check(await option(/w\.txt/).count() === 0 && await option(/src\/app\.ts/).count() === 1, `${scheme}: Ignore whitespace drops the whitespace-only w.txt from the list and keeps src/app.ts`);
       await shot('ignore-ws');
       await ignoreWs.click();
+      await option(/w\.txt/).waitFor();
+      await option(/w\.txt/).click();
       await body.locator('[data-row=add]').first().waitFor();
       check(await ignoreWs.getAttribute('aria-pressed') === 'false' && (await option(/w\.txt/).textContent()).includes('+1 −1'), `${scheme}: Ignore whitespace off brings w.txt's change back`);
 
