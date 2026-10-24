@@ -172,3 +172,30 @@ test('remote.edit that ends up writing nothing records no undo entry', async (t)
   await w.call('remote.edit', { name: 'cred', url: masked('one'), pushUrl: '/push.git' });
   assert.equal((await w.call('undo.state')).result.undo.label, 'Edit remote cred');
 });
+
+// Invariant: the journal is built from the raw result, never the wire copy: undo and redo of add, edit and remove (its
+// undo re-adds the remote) write the raw url and push url back into git config, and no response along the way holds a
+// password.
+test('undo and redo of add, edit and remove restore the raw credentials; no response holds them', async (t) => {
+  const w = await world(t);
+  const step = async (name, params) => { const body = await w.call(name, params); lacksSecrets(body); return body; };
+  const undo = async () => step('undo.undo', { id: (await step('undo.state')).result.undo.id });
+  const redo = async () => step('undo.redo', { id: (await step('undo.state')).result.redo.id });
+  const cred = () => [w.config('remote.cred.url'), w.config('remote.cred.pushurl')];
+  await step('remote.add', { name: 'cred', url: url('one'), pushUrl: pushUrl('p') });
+  await undo();
+  assert.deepEqual(cred(), [[], []]);
+  await redo();
+  assert.deepEqual(cred(), [[url('one')], [pushUrl('p')]]);
+  await step('remote.edit', { name: 'cred', url: url('two') });
+  await undo();
+  assert.deepEqual(cred(), [[url('one')], [pushUrl('p')]]);
+  await redo();
+  assert.deepEqual(cred(), [[url('two')], [pushUrl('p')]]);
+  await step('remote.remove', { name: 'cred' });
+  assert.deepEqual(cred(), [[], []]);
+  await undo();
+  assert.deepEqual(cred(), [[url('two')], [pushUrl('p')]], 're-added with the raw credentials');
+  await redo();
+  assert.deepEqual(cred(), [[], []]);
+});
