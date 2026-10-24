@@ -53,19 +53,22 @@ function files(dir) {
 /**
  * The checkout's whole state, exactly: HEAD (symbolic or detached), every ref with its target, the index (mode, oid,
  * stage, path), the worktree's files, the branch config (upstreams, pushRemote), the stash list (oid and reflog subject,
- * in order) and every `remote.*` key (pushDefault included).
+ * in order) and every `remote.*` key (pushDefault included); config by key, each key's values in order.
  */
 export function snapshot(repo, dir) {
   const g = (...args) => { try { return repo.git('-C', dir, ...args); } catch { return null; } };
+  // Config by key, each key's values in their order (a stable sort): where a restored section lands in the file is not
+  // part of the state (docs/undo.md → Residuals).
+  const config = (re) => g('config', '--get-regexp', re)?.split('\n').sort((a, b) => { const [x, y] = [a.split(' ')[0], b.split(' ')[0]]; return x < y ? -1 : x > y ? 1 : 0; }) ?? null;
   return {
     head: g('symbolic-ref', '-q', 'HEAD') ?? `detached ${g('rev-parse', 'HEAD')}`,
     oid: g('rev-parse', '-q', '--verify', 'HEAD'),
     refs: g('for-each-ref', '--format=%(refname) %(objectname) %(symref)'),
     index: g('ls-files', '-s'),
     files: files(dir),
-    branchConfig: g('config', '--get-regexp', '^branch\\.'),
+    branchConfig: config('^branch\\.'),
     stashes: g('stash', 'list', '--format=%H %gs'),
-    remoteConfig: g('config', '--get-regexp', '^remote\\.'),
+    remoteConfig: config('^remote\\.'),
   };
 }
 

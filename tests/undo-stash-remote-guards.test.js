@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { refused } from './_refsWorld.js';
+import { startApp } from './_app.js';
+import { refused, refsWorld } from './_refsWorld.js';
 import { undoWorld } from './_undoWorld.js';
 
 // What refuses the undo or redo of a stash or remote-config op, and that each refusal changed nothing. UNDO_STALE clears
@@ -224,4 +225,101 @@ test('confirm shapes of the stash plans', async (t) => {
     drop: { undo: null, redo: { kind: 'dropsStashes', messages: [`WIP on main: ${w.base.slice(0, 7)} base`] } },
     branch: { undo: { kind: 'deletesRefs', refs: ['refs/heads/nb'] }, redo: null },
   });
+});
+
+// Invariant: an add's undo refuses UNDO_STALE once the remote's url was changed outside code-git (removing it would
+// throw away a config the op did not write).
+test('remote.add undo after an external url change: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.add', { name: 'extra', url: path.join(w.repo.root, 'e.git') });
+  w.repo.git('config', 'remote.extra.url', path.join(w.repo.root, 'other.git'));
+  assert.deepEqual(await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE'), EMPTY);
+});
+
+// Invariant: a remove's undo refuses UNDO_STALE once a remote of that name exists again.
+test('remote.remove undo after a remote of that name was re-added: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.remove', { name: 'origin' });
+  w.repo.git('remote', 'add', 'origin', path.join(w.repo.root, 'elsewhere.git'));
+  await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE');
+});
+
+// Invariant: a remove's undo refuses UNDO_STALE once a branch it would point back at the remote has an upstream again.
+test('remote.remove undo after branch.<b>.remote was set again: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.remove', { name: 'origin' });
+  w.repo.git('config', 'branch.main.remote', '.');
+  await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE');
+});
+
+// Invariant: a rename's undo refuses UNDO_STALE once the old name is a remote again.
+test('remote.rename undo after the old name was re-used: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.rename', { name: 'origin', newName: 'renamed' });
+  w.repo.git('remote', 'add', 'origin', path.join(w.repo.root, 'elsewhere.git'));
+  await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE');
+});
+
+// Invariant (R2): of the remote plans only the remove's redo asks (deletesRemote: the name and the tracking refs it
+// deletes); add, edit and rename run at once both ways, and so does the remove's undo.
+test('confirm shapes of the remote plans', async (t) => {
+  const w = await undoWorld(t);
+  const seen = {};
+  const both = async (name) => {
+    const undo = (await w.state()).undo.confirm;
+    await w.undo();
+    seen[name] = { undo, redo: (await w.state()).redo.confirm };
+    await w.redo();
+  };
+  await w.op('remote.add', { name: 'extra', url: path.join(w.repo.root, 'e.git') });
+  await both('add');
+  await w.op('remote.edit', { name: 'extra', url: path.join(w.repo.root, 'f.git') });
+  await both('edit');
+  await w.op('remote.rename', { name: 'extra', newName: 'other' });
+  await both('rename');
+  await w.op('remote.remove', { name: 'origin' });
+  await both('remove');
+  assert.deepEqual(seen, {
+    add: { undo: null, redo: null },
+    edit: { undo: null, redo: null },
+    rename: { undo: null, redo: null },
+    remove: { undo: null, redo: { kind: 'deletesRemote', name: 'origin', refs: ['refs/remotes/origin/main'] } },
+  });
+});
+
+// Invariant: a credentialed url never leaves the journal: undo.state, the undo/redo results, a refusal's body and the
+// activity log carry remote names only (git's argv masked as user:***@), through add, edit and remove both ways.
+test('credentials: a password in a url never reaches undo.state, undo/redo results, refusals or /api/activity', async (t) => {
+  const w = await refsWorld(t);
+  const app = await startApp(t);
+  const target = { project: 'repo' };
+  const PW = 'S3cretPW';
+  const url = (n) => `https://user:${PW}@example.invalid/${n}.git`;
+  const seen = [];
+  const call = async (op, params, status = 200) => {
+    const r = await app.call('POST', `/api/ops/${op}`, { target, params });
+    assert.equal(r.status, status, `${op}: ${JSON.stringify(r.body)}`);
+    return r.body;
+  };
+  const watched = async (op, params, status) => { const body = await call(op, params, status); seen.push(body); return body; };
+  const state = () => watched('undo.state');
+  const undo = async () => watched('undo.undo', { id: (await state()).result.undo.id });
+  const redo = async () => watched('undo.redo', { id: (await state()).result.redo.id });
+  await call('remote.add', { name: 'cred', url: url('one') });
+  await undo();
+  await redo();
+  await call('remote.edit', { name: 'cred', url: url('two') });
+  await undo();
+  await redo();
+  await call('remote.remove', { name: 'cred' });
+  await undo();
+  await redo();
+  await call('remote.add', { name: 'stale', url: url('three') });
+  w.repo.git('config', 'remote.stale.url', url('changed'));
+  const refusal = await watched('undo.undo', { id: (await state()).result.undo.id }, 409);
+  assert.equal(refusal.code, 'UNDO_STALE');
+  for (const body of seen) assert.ok(!JSON.stringify(body).includes(PW), JSON.stringify(body));
+  const activity = JSON.stringify((await app.call('GET', '/api/activity')).body);
+  assert.ok(!activity.includes(PW), 'the activity log never holds the password');
+  assert.ok(activity.includes('https://user:***@example.invalid/one.git'), 'the undo/redo argv shows the url masked');
 });

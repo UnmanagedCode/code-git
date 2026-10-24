@@ -59,6 +59,9 @@ What the ops route does around every op (`journalAround` in `src/git/undo/record
 | An upstream's name only | `branch.delete`, `branch.checkout` restoring `upstream` | a pruned upstream becomes a `warnings[]` entry; the branch is still restored exactly (a degrade, not a misapply) |
 | `refs/heads/*`, HEAD | `stash.branch` | nothing to catch |
 | The stash list, the index, the worktree | the stash plans | nothing to catch: a fetch never touches them |
+| Tracking refs, by value (`refs` step) | `remote.remove` (its deleted tracking refs, the `<r>/HEAD` symref) | the same compare-and-swap; a symref is compared by target → `UNDO_STALE` |
+| Tracking refs, by existence | `remote.add`'s undo (removes the config) | the `remote` step refuses once any ref exists under the remote's fetch destinations (projected) → `UNDO_STALE` ("fetched since") |
+| Config only, not ref positions | `remote.edit`, `remote.rename` | nothing to catch: they restore config or rename a namespace; tracking refs a fetch moved travel with a rename |
 
 Pinned by `tests/undo-fetch-neutral.test.js`: the slots survive every fetch shape (moving, pruning, tag-creating, every remote, failed), and each row's refusal changes nothing.
 
@@ -70,7 +73,7 @@ UndoPlan { label    /* "Commit “msg”", "Checkout feature/a": rendered as tex
            confirm: {undo: Confirm | null, redo: Confirm | null},
            steps:   Step[] }                          /* redo runs them in order, undo in reverse */
 Confirm  {kind: 'deletesRefs', refs: refname[]} | {kind: 'discards', paths: path[]} | {kind: 'resetHard'}
-       | {kind: 'dropsStashes', messages: string[]}
+       | {kind: 'dropsStashes', messages: string[]} | {kind: 'deletesRemote', name: string, refs: refname[]}
 ```
 
 - Plain JSON, kept in the journal as built. The builders are `plans` in `src/git/undo/plans.js`; each op's definition names its own (`undo: plans.commit`).
@@ -82,6 +85,7 @@ Confirm  {kind: 'deletesRefs', refs: refname[]} | {kind: 'discards', paths: path
 | `resetHard` | undo and redo | any `head` step in `hard` mode, even on a clean tree |
 | `discards` (`paths`) | redo | a `discard` step; a `patch` step without `forward` in a plan with no `stash` step (stash.pushLines' lines are in its stash) |
 | `dropsStashes` (`messages`) | redo (`stash.drop`) | a `stash` step that drops entries and stores none in that direction, in a plan with no `worktree` or `patch` step |
+| `deletesRemote` (`name`, `refs`) | redo (`remote.remove`) | a `remote` step with `new: null`; `refs` = that plan's `refs`-step deletions (the tracking refs, the HEAD symref). Takes precedence over `deletesRefs` |
 | `deletesRefs` (`refs`) | undo | a ref the op created (`old: null`); the branch of a first commit on an unborn branch |
 | `deletesRefs` (`refs`) | redo | a ref the op deleted (`new: null`), a deleted symbolic ref |
 
@@ -117,6 +121,11 @@ The registered ops (D2). Mode = the `head` step's mode; ‹old›/‹new› = `u
 | `stash.applyFile` | `Apply <path> from stash` | `patch` with `forward: true` (`worktreePatch`) | — |
 | `stash.branch` (clean) | `Create branch <name> from stash` | `refs` (create) + `head` switch (`refHeadSteps`), `worktree` (with `mid`), `stash` (removed, when dropped) | — |
 
+| `remote.add` | `Add remote <n>` | `remote` (old null) | — |
+| `remote.edit` | `Edit remote <n>` | `remote` (old → new) | — |
+| `remote.rename` | `Rename remote <a> to <b>` | `remoteRename` | — |
+| `remote.remove` | `Remove remote <n>` | `refs` (the deleted tracking refs and HEAD symref), `remote` (new null) | — |
+
 What undo and redo do for the stash plans (redo runs the steps in order, undo in reverse):
 
 | Op | Undo | Redo |
@@ -128,6 +137,10 @@ What undo and redo do for the stash plans (redo runs the steps in order, undo in
 | `stash.rename` | stores the original, drops the copy | stores the copy, drops the original |
 | `stash.applyFile` | `apply -R` | `apply` |
 | `stash.branch` | stores the stash, writes `mid` (post-switch, pre-apply), switches back, deletes the branch | creates the branch, switches (producing `mid`), writes `after`, drops the stash |
+| `remote.add` | removes the config section (refused once the remote was fetched) | writes the recorded config again |
+| `remote.edit` | sets each list that differs back to `old` | the same, to `new` |
+| `remote.rename` | `renameRemote(b, a)` | `renameRemote(a, b)` |
+| `remote.remove` | writes the config, upstreams, pushRemotes and pushDefault back, then re-creates the refs (compare-and-swap create, the symref after) | deletes the refs (compare-and-swap), then the config and the keys it restored |
 
 An outcome that stops on conflicts, a squash merge, `upToDate`, a checkout of the branch HEAD is already on: no plan (the slots stay cleared). Stash ops with no plan: a pop or branch that stopped on conflicts; an unverified or failed push; a push whose stash holds a path outside the saved files (a race: no `worktreeState`); `stash.branch` from an unborn HEAD. `stash.apply` is not registered (it clears the slots).
 
@@ -143,6 +156,8 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 | `refs[].upstream` | `branch.checkout` creating a tracking branch | the remote branch it tracks (redo sets it again) |
 | `worktreeState` | `stash.push`, `stash.pop` (clean), `stash.branch` (clean) | `{paths, before, mid?, after}`; each state `{head: oid \| null, index: tree, files: tree}` (`checkoutState`, below); `mid` only for `stash.branch` (after the switch, before the apply) |
 | `removedPatch` | `stash.pushLines` | base64 of the patch whose `apply -R` took the lines out of the worktree |
+| `remotes[].old` / `.new` `.extra` | every remote snapshot (`remoteSnapshot`) | `[[var, value]]`: every other `remote.<n>.<var>` (`prune`, `tagopt`, `proxy`, …), raw, in config order |
+| `remotes[].old.pushRemotes`, `.pushDefault` | `remote.remove` | the branches whose `branch.<b>.pushRemote`, and whether `remote.pushDefault`, named it **and that git cleared**: read before and again after `remote remove` (as `deletedRefs`) |
 
 `commit.create` returns `undo` (`refs`, `head`, `created`) for the first time.
 
@@ -172,7 +187,17 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 | `discard` | undo: every tracked path's worktree equals its index (`diff --quiet -- <chunk>`), every untracked path is absent (`ls-files -c -o -z -- <chunk>` empty), else `UNDO_STALE`; `assertNotBlocked` over every path. Redo: the paths' worktree tree (built as the snapshot) equals the snapshot's tree (`UNDO_STALE`), then the discard's own gates | undo: `restore --source=<snapshot> --worktree --pathspec-from-file=- --pathspec-file-nul` (a tracked path the snapshot lacks is deleted again); never `apply --index`. Redo: `discardPaths` |
 | `patch` | `assertWorktree`, `assertNotBlocked([path])`; `apply --whitespace=nowarn --no-ignore-whitespace [-R] --check -` exits 0, else `UNDO_STALE` | lines the op took out with `apply -R` (no `forward`): undo `apply`, redo `apply -R`; `forward: true` (the op applied it forward: `stash.applyFile`): undo `apply -R`, redo `apply`. The worktree only |
 | `worktree` `{paths, before, mid?, after}` | the checkout as this direction starts — undo expects `after`, redo `before`: `assertWorktree`; HEAD's oid = `head` (`UNDO_STALE`); `diff-index --cached --quiet --end-of-options <index> --` (`UNDO_STALE`); `assertNotBlocked(paths)` (`PATH_BLOCKED`); `worktreeTree(paths)` = `files` (`UNDO_STALE`; a `GIT_FAILED` there — a path that is a directory now — too) | `writeCheckoutState` from `after.files` to `mid ?? before` (undo), from `(mid ?? before).files` to `after` (redo). HEAD is never moved: in `stash.branch` the `head` step's switch does, producing `mid` |
+| `remote` `{name, old, new}` (record sides; `from` / `to` follow the direction) | `remoteSnapshot` (null when absent) deep-equals `from` on `urls`, `pushUrls`, `fetch`, `extra`, `upstreams`, else `UNDO_STALE` ("remote <n> changed since": no values); `from.pushRemotes` / `.pushDefault` still name it (`pushRemotesOf`). Creating (`from` null): no `to.upstreams[].branch` has a `branch.<b>.remote`, no `to.pushRemotes` branch a `pushRemote`, `remote.pushDefault` unset when `to.pushDefault`, else `UNDO_STALE`. Removing (`to` null): no ref under `from`'s fetch destinations in `refs/remotes/` (`trackedSnapshot`) but the ones an earlier step deletes (`ctx.refNow(ref) === null`), else `UNDO_STALE` ("fetched since") | `writeRemoteConfig(git, name, from, to)` (below) |
+| `remoteRename` `{from, to}` | the current name is a remote and the other is not, and `refs/remotes/<other>` holds no ref, else `UNDO_STALE`; then remote.rename's own `renameGates` (`assertNotLegacy`, `REMOTE_EXISTS`, the default refspec, `trackingRefsOf`) | `renameRemote`: `remote rename --end-of-options <cur> <other>` |
 | `stash` `{entries: [{oid, message, side: 'created' \| 'removed'}]}` | this direction stores the removed entries (undo) or the created ones (redo) and drops the rest (`stashSides`): each drop on the list (`listStashes`), each store not on it, and its commit present (`cat-file -e --end-of-options <oid>^{commit}`), else `UNDO_STALE` ("no longer on the stash list" / "already back" / "its commits were pruned") | stores first (`stash store --message=<message> <oid>`: at `stash@{0}`, R1; `stash store` takes no `--end-of-options`), then drops (`dropVerified`: `STASH_MOVED` propagates, nothing lost) |
+
+**Writing a remote's config** (`writeRemoteConfig(git, name, from, to)` in `src/git/remote/config.js`). Each value is its own argument after its key — never `key=value`, never `-c` — so the activity log masks a url (`redactArgv`) and a leading `-` is stored as given (git stops parsing options at the key; probe-pinned).
+
+| Case | Commands |
+|---|---|
+| delete (`to` null) | `config --remove-section remote.<n>`, then `config --unset-all` (exit 5 tolerated) of each upstream's `branch.<b>.remote` and `.merge`, each `branch.<b>.pushRemote`, and `remote.pushDefault` that `from` holds |
+| create (`from` null) | `config --add` per value, in order: `remote.<n>.url`, `.fetch`, `.pushurl` (the order `remote add` then `set-url --push` writes), each `extra` key; then each upstream's `branch.<b>.remote` and `.merge`, each `branch.<b>.pushRemote`, `remote.pushDefault` |
+| change (both) | for each list or `extra` variable that differs: `config --replace-all <key> <first>` (in place), `--add` the rest; an emptied one `--unset-all` |
 
 **Writing a checkout state** (`writeCheckoutState(git, fromFiles, to)`): on a temporary index at `rev-parse --git-path code-git-undo-index` (`GIT_INDEX_FILE`):
 
@@ -240,4 +265,5 @@ Wire shapes: [protocol → Undo ops](protocol.md#undo-ops-srcgitopsundojs).
 - **A stash put back lands at `stash@{0}`** (R1): git stores only at the top, so an undone drop of an older entry, a popped or renamed one comes back first in the list with a new reflog date; its oid, message and contents are exact.
 - **The checkout states' trees are unreachable objects**: a `gc` that prunes them (after `gc.pruneExpire`) makes a stash undo fail (`GIT_FAILED`); a pruned stash commit refuses `UNDO_STALE`.
 - **A stash undo replaces the whole index** with the recorded tree (its preflight checked it equals the expected one): stat data is rebuilt on the next refresh; intent-to-add and skip-worktree bits are not kept.
-- **Remote-config ops are not registered**: their `undo.remotes` record is not undoable from the UI yet, and they clear the slots.
+- **A restored remote keeps each key's values in order, not their place in the file**: a section written back (a remove's undo, an add's redo) is appended at the end of `.git/config`, and its keys are written per variable (url, fetch, pushurl, then the extra keys), so their interleaving with other keys may differ. Multi-valued `branch.<b>.merge` keeps only the first value.
+- **A restored remote's upstreams, pushRemotes and pushDefault are only those git cleared** from the repo's own config; keys in another config file are neither cleared nor recorded.

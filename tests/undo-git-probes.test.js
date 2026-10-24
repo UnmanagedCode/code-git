@@ -175,3 +175,30 @@ test('probe: stash store lands at stash@{0} with its message; no --end-of-option
   assert.equal(repo.git('stash', 'list', '-1', '--format=%H %gs'), `${old} On main: one`);
   assert.notEqual(run(['stash', 'store', '--message=x', '--end-of-options', old]).status, 0);
 });
+
+// Invariant: `git config` stops parsing options at the key, so a value with a leading `-` passed as its own argument
+// after the key is stored as given (`--add` and `--replace-all`, the two the remote step writes with).
+test('probe: config --add / --replace-all <key> -x stores "-x"', (t) => {
+  const { repo, run } = world(t);
+  assert.equal(run(['config', '--add', 'remote.x.url', '-x']).status, 0);
+  assert.equal(run(['config', '--add', 'remote.x.url', '--help']).status, 0);
+  assert.equal(repo.git('config', '--get-all', 'remote.x.url'), '-x\n--help');
+  assert.equal(run(['config', '--replace-all', 'remote.x.url', '-y']).status, 0);
+  assert.equal(repo.git('config', '--get-all', 'remote.x.url'), '-y');
+});
+
+// Invariant: `git remote remove` clears the remote's section, branch.<b>.remote and .merge, branch.<b>.pushRemote and
+// remote.pushDefault naming it — what remote.remove re-reads to record — and leaves the keys naming another remote.
+test('probe: what git remote remove clears', (t) => {
+  const { repo, run } = world(t);
+  repo.commit({ 'f.txt': 'f\n' }, 'base');
+  const set = (k, v) => repo.git('config', k, v);
+  repo.git('remote', 'add', 'up', '/nowhere');
+  repo.git('remote', 'add', 'keep', '/elsewhere');
+  repo.git('branch', 'side');
+  set('branch.main.remote', 'up'); set('branch.main.merge', 'refs/heads/main'); set('branch.main.pushRemote', 'up');
+  set('branch.side.remote', 'keep'); set('branch.side.pushRemote', 'up');
+  set('remote.pushDefault', 'up'); set('remote.up.prune', 'true');
+  assert.equal(run(['remote', 'remove', 'up']).status, 0);
+  assert.equal(repo.git('config', '--get-regexp', '^(remote|branch)\\.'), 'remote.keep.url /elsewhere\nremote.keep.fetch +refs/heads/*:refs/remotes/keep/*\nbranch.side.remote keep');
+});

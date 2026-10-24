@@ -304,9 +304,9 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})/;
 
 // Invariant: every undo/redo command puts `--end-of-options` or `--` before an oid, ref or path it names (a same-argument
 // `--opt=value` aside; rev-parse takes only hex-led revisions, `symbolic-ref -q` only a full `refs/` name, `stash store`
-// only its final full oid); never `git apply --index`; `reset --hard` only for a hard reset's plan, `reset --keep
-// --end-of-options` for the commit-making ops' (cherry-pick, revert, merge, rebase); no env beyond the base but
-// GIT_INDEX_FILE, no protected env; exec form A only.
+// only its final full oid, `config` a value after its key); never `git apply --index`; `reset --hard` only for a hard reset's plan, `reset --keep
+// --end-of-options` for the commit-making ops' (cherry-pick, revert, merge, rebase); a url only as an argument of its
+// own; no env beyond the base but GIT_INDEX_FILE, no protected env; exec form A only.
 test('argv scan over every undo and redo exec', async (t) => {
   const w = await undoWorld(t);
   const runs = [];
@@ -386,6 +386,16 @@ test('argv scan over every undo and redo exec', async (t) => {
   await w.op('stash.branch', { oid: w.oid('refs/stash'), name: 'stashed-branch' });
   await both('stash branch');
   names.add('stashed-branch').add('refs/heads/stashed-branch').add('renamed');
+  // The remote plans: remote and remoteRename steps, a credentialed url, the remove's refs step.
+  await w.op('remote.add', { name: 'scanned', url: 'https://user:PW@example.invalid/one.git' });
+  await both('remote add');
+  await w.op('remote.edit', { name: 'scanned', url: 'https://user:PW@example.invalid/two.git' });
+  await both('remote edit');
+  await w.op('remote.rename', { name: 'scanned', newName: 'scanned2' });
+  await both('remote rename');
+  await w.op('remote.remove', { name: 'origin' });
+  await both('remote remove');
+  names.add('scanned').add('scanned2').add('origin');
   const keepLabels = ['cherry-pick', 'revert', 'merge', 'rebase'];
   for (const { label, calls } of runs) {
     assert.ok(calls.length, label);
@@ -402,9 +412,17 @@ test('argv scan over every undo and redo exec', async (t) => {
         if (sub === 'symbolic-ref' && argv[1] === '-q' && a.startsWith('refs/')) return;
         // `stash store` takes no --end-of-options; its one argument is a full oid, which can never read as an option.
         if (sub === 'stash' && argv[1] === 'store' && OID.test(a) && i === argv.length - 1) return;
+        // `git config` stops parsing options at its key: a value after the key is stored as given (probe-pinned).
+        if (sub === 'config' && argv.findIndex((x, k) => k > 0 && !x.startsWith('-')) < i) return;
         assert.ok(stop !== -1 && stop < i, `${label}: ${argv.join(' ')}: ${a} before --end-of-options`);
       });
       assert.ok(!(sub === 'apply' && argv.includes('--index')), `${label}: never apply --index`);
+      // A url only ever as an argument of its own: never `key=url`, never after `-c`.
+      argv.forEach((a, i) => {
+        if (!a.includes('://')) return;
+        assert.match(a, /^[a-z][a-z0-9+.-]*:\/\//, `${label}: ${argv.join(' ')}: a url inside another argument`);
+        assert.notEqual(argv[i - 1], '-c', `${label}: a url in a -c override`);
+      });
       if (sub === 'reset' && argv.includes('--hard')) assert.equal(label, 'hard', `${label}: reset --hard only in a hard plan`);
       const own = Object.entries(body.env ?? {}).filter(([k, v]) => isProtectedEnv(k) && BASE_ENV[k] !== v);
       assert.deepEqual(own, [], `${label}: a protected env name set by the op`);

@@ -5,6 +5,7 @@ import { stashSides } from './steps/stash.js';
 //
 // UndoPlan {label, created: {tip, not} | null, confirm: {undo: Confirm | null, redo: Confirm | null}, steps}
 // Confirm  {kind: 'deletesRefs', refs} | {kind: 'discards', paths} | {kind: 'resetHard'} | {kind: 'dropsStashes', messages}
+//        | {kind: 'deletesRemote', name, refs}
 // Redo runs the steps in order, undo in reverse (src/git/undo/engine.js).
 
 const short = (ref) => ref.replace(/^refs\/(?:heads|tags)\//, '');
@@ -14,7 +15,8 @@ const names = (list) => list.join(', ');
 
 /**
  * The confirmation each direction needs (D4, R2: only a real loss asks): a hard reset, then a discard's redo, then a
- * direction that only drops stashes, then any ref it deletes. Lines taken out with `apply -R` are a discard only when
+ * direction that only drops stashes, then a remote's removal on redo (with the tracking refs it deletes), then any ref
+ * it deletes. Lines taken out with `apply -R` are a discard only when
  * no stash holds them (stash.pushLines' are in its stash); a forward patch's redo (stash.applyFile) loses nothing.
  */
 function confirmsOf(steps) {
@@ -23,6 +25,7 @@ function confirmsOf(steps) {
   const dropped = { undo: [], redo: [] };
   const inStash = steps.some((s) => s.kind === 'stash');
   const writesFiles = steps.some((s) => s.kind === 'worktree' || s.kind === 'patch');
+  const removed = steps.find((s) => s.kind === 'remote' && s.new === null);
   for (const s of steps) {
     if (s.kind === 'head' && s.mode === 'hard') {
       confirm.undo = { kind: 'resetHard' };
@@ -48,6 +51,7 @@ function confirmsOf(steps) {
   }
   for (const dir of ['undo', 'redo']) {
     if (!confirm[dir] && dropped[dir].length) confirm[dir] = { kind: 'dropsStashes', messages: dropped[dir] };
+    if (!confirm[dir] && dir === 'redo' && removed) confirm[dir] = { kind: 'deletesRemote', name: removed.name, refs: deletes.redo };
     if (!confirm[dir] && deletes[dir].length) confirm[dir] = { kind: 'deletesRefs', refs: deletes[dir] };
   }
   return confirm;
@@ -202,6 +206,27 @@ function stashBranchPlan(params, result) {
   return plan(`Create branch ${params.name} from stash`, [...refHead, worktreeStep(rec.worktreeState), stashStep(rec)]);
 }
 
+/** The remote record's one entry (add, edit, remove each record one remote). */
+const remoteStep = (r) => ({ kind: 'remote', name: r.name, old: r.old, new: r.new });
+
+function remoteAddPlan(params, result) {
+  return plan(`Add remote ${params.name}`, [remoteStep(result.undo.remotes[0])]);
+}
+
+function remoteEditPlan(params, result) {
+  return plan(`Edit remote ${params.name}`, [remoteStep(result.undo.remotes[0])]);
+}
+
+function remoteRenamePlan(params) {
+  return plan(`Rename remote ${params.name} to ${params.newName}`, [{ kind: 'remoteRename', from: params.name, to: params.newName }]);
+}
+
+/** Redo deletes the tracking refs first, then the config; undo writes the config back, then re-creates the refs. */
+function remoteRemovePlan(params, result) {
+  const rec = result.undo;
+  return plan(`Remove remote ${params.name}`, [rec.refs.length ? { kind: 'refs', refs: rec.refs } : null, remoteStep(rec.remotes[0])]);
+}
+
 /** The builders, by the op whose definition carries them. */
 export const plans = {
   commit: commitPlan,
@@ -230,4 +255,8 @@ export const plans = {
   stashRename: stashRenamePlan,
   stashApplyFile: stashApplyFilePlan,
   stashBranch: stashBranchPlan,
+  remoteAdd: remoteAddPlan,
+  remoteEdit: remoteEditPlan,
+  remoteRename: remoteRenamePlan,
+  remoteRemove: remoteRemovePlan,
 };

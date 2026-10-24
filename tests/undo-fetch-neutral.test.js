@@ -25,6 +25,7 @@ const FETCH_AUDITED = [
   'head.cherryPick', 'head.continue', 'head.reset', 'head.revert', 'head.skip',
   'merge.start',
   'rebase.interactive', 'rebase.start',
+  'remote.add', 'remote.edit', 'remote.remove', 'remote.rename',
   'stage.discardFiles', 'stage.discardLines',
   'stash.applyFile', 'stash.branch', 'stash.drop', 'stash.pop', 'stash.push', 'stash.pushLines', 'stash.rename',
   'tag.create', 'tag.delete',
@@ -139,6 +140,31 @@ test('tag.create (lightweight), then a +refs/tags/* fetch moves it: undo UNDO_ST
   assert.equal(w.oid('refs/tags/v2'), other, 'the fetch moved v2');
   const before = w.snap();
   await assert.rejects(w.undo(), refused('UNDO_STALE'));
+  assert.deepEqual(w.snap(), before);
+});
+
+// Invariant: a remove's redo refuses UNDO_STALE once a fetch moved a tracking ref its undo re-created (the refs step's
+// compare-and-swap), changing nothing.
+test('remote.remove → undo → a fetch moves origin/main → redo UNDO_STALE, nothing changed', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.remove', { name: 'origin' });
+  await w.undo();
+  pushFromElsewhere(w, 'main', { 'other.txt': 'o\n' });
+  await w.op('remote.fetch', { remote: 'origin' });
+  const before = w.snap();
+  await assert.rejects(w.redo(), refused('UNDO_STALE'));
+  assert.deepEqual(w.snap(), before);
+});
+
+// Invariant: an add's undo refuses UNDO_STALE once the new remote was fetched (removing its config would strand the
+// tracking refs the fetch wrote), changing nothing.
+test('remote.add → fetch → undo UNDO_STALE (fetched since), nothing changed', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.add', { name: 'extra', url: w.origin.dir });
+  await w.op('remote.fetch', { remote: 'extra' });
+  assert.equal(w.oid('refs/remotes/extra/main'), w.base);
+  const before = w.snap();
+  await assert.rejects(w.undo(), (e) => { refused('UNDO_STALE')(e); assert.match(e.message, /fetched since/); return true; });
   assert.deepEqual(w.snap(), before);
 });
 
