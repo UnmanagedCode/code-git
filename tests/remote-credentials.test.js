@@ -56,3 +56,25 @@ test('remote.list masks every url and push url; password-less urls verbatim; git
   assert.deepEqual(w.config('remote.cred.url'), [url('one'), url('two')]);
   assert.deepEqual(w.config('remote.cred.pushurl'), [pushUrl('p')]);
 });
+
+// Invariant: the route answers every remote op's undo record with both sides' urls and push urls masked (add's new, edit's
+// old and new, rename's old and new entries, remove's old), the journal still holding the raw ones.
+test('remote.add / edit / rename / remove answer undo.remotes with every url and push url masked on both sides', async (t) => {
+  const w = await world(t);
+  const side = (s) => s && [s.urls, s.pushUrls];
+  const add = await w.call('remote.add', { name: 'cred', url: url('one'), pushUrl: pushUrl('p') });
+  lacksSecrets(add);
+  assert.deepEqual(add.result.undo.remotes.map((r) => [r.name, side(r.old), side(r.new)]), [['cred', null, [[masked('one')], [masked('p')]]]]);
+  const edit = await w.call('remote.edit', { name: 'cred', url: url('two') });
+  lacksSecrets(edit);
+  assert.deepEqual(edit.result.undo.remotes.map((r) => [r.name, side(r.old), side(r.new)]), [['cred', [[masked('one')], [masked('p')]], [[masked('two')], [masked('p')]]]]);
+  const rename = await w.call('remote.rename', { name: 'cred', newName: 'cred2' });
+  lacksSecrets(rename);
+  assert.deepEqual(rename.result.undo.remotes.map((r) => [r.name, side(r.old), side(r.new)]), [
+    ['cred', [[masked('two')], [masked('p')]], null],
+    ['cred2', null, [[masked('two')], [masked('p')]]],
+  ]);
+  const remove = await w.call('remote.remove', { name: 'cred2' });
+  lacksSecrets(remove);
+  assert.deepEqual(remove.result.undo.remotes.map((r) => [r.name, side(r.old), side(r.new)]), [['cred2', [[masked('two')], [masked('p')]], null]]);
+});
