@@ -206,6 +206,27 @@ test('maskUrls: a spaced password holding digits first or an @ is masked whole, 
   assert.equal(maskUrls("'https://u:pw x@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com");
 });
 
+// Invariant: when a password goes on past whitespace, an @ inside it never ends the span: a later @ that ends an
+// authority wins over the token's own — a strong one (host, then / : ? # a quote or a bracket) over any, a weak one (host,
+// then whitespace or the line's end) over a weak one — so the password is masked whole.
+test('maskUrls: an @ inside a spaced password never ends the span; the later authority end wins', () => {
+  for (const [text, masked] of [
+    ['fatal: cannot access https://user:p@ss word@h', 'fatal: cannot access https://user:***@h'],
+    ['From https://user:p@ss w@rd@h', 'From https://user:***@h'],
+    ['fatal: cannot access https://u:p@ss/word tail@h/r', 'fatal: cannot access https://u:***@h/r'],
+    ["Submodule 'x' (https://user:@qwj592xy#qw64bkxy qw312rxy@h:8080/r?x=1) registered", "Submodule 'x' (https://user:***@h:8080/r?x=1) registered"],
+  ]) assert.equal(maskUrls(text), masked, text);
+  assert.equal(maskUrls("'https://u:pw@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com", 'a weak @ after a strong token @ is prose');
+});
+
+// Invariant: a mask never stands for nothing: an empty password (`https://user:@h/r`) is left as it is, in a text and in
+// a value, never given an inserted `***`.
+test('an empty password is left as it is: no *** is inserted', () => {
+  for (const kept of ['https://user:@h/r', "fatal: unable to access 'https://user:@h/r/': 401"]) assert.equal(maskUrls(kept), kept, kept);
+  assert.equal(maskUrl('https://user:@h/r'), 'https://user:@h/r');
+  assert.equal(isMaskedUrl('https://user:@h/r'), false);
+});
+
 // Invariant: the stderr the activity log keeps (capStderr) and a refusal's body (toBody) mask a password holding a space.
 test('a password holding a space or a :// never reaches capStderr or a refusal body', () => {
   for (const [line, masked] of [

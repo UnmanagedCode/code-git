@@ -50,7 +50,7 @@ function nextUrl(s, from, inText = false) {
 
 /**
  * A stored value's password span: {from, to} — from after the first `:` past its first url's `scheme://` (the url may
- * be anywhere in it: git stores `<transport>::<url>` too) up to the value's last `@` — or null. A user name may hold `@`
+ * be anywhere in it: git stores `<transport>::<url>` too) up to the value's last `@` — or null, an empty one too. A user name may hold `@`
  * (`https://a@b:c@host/r`) and a password `/`, `@` and whitespace, so the first `:` and the last `@` are taken (a path
  * holding a `:` and an `@` is masked too: the safe side).
  */
@@ -59,7 +59,7 @@ function valueSpan(v) {
   if (!url) return null;
   const colon = v.indexOf(':', url.sep + SEP.length);
   const at = v.lastIndexOf('@');
-  return colon !== -1 && at > colon ? { from: colon + 1, to: at } : null;
+  return colon !== -1 && at > colon + 1 ? { from: colon + 1, to: at } : null;
 }
 
 /**
@@ -107,31 +107,34 @@ function portAt(s, from, end) {
 
 /**
  * The password span of the url whose `://` is at `sep` in a text, never reaching `bound` (the next url's scheme):
- * {from, to} or null. `scheme://user` holds no whitespace and ends at the first `:`. The span ends at the last `@` of the
- * token it starts in when that `@` strongly ends the authority (authorityEnd). Else, when the password goes on past
- * whitespace on the same line — not starting with whitespace or a port (portAt) — at the first `@` on the line that
- * strongly ends an authority, else the token's own last `@`, else the first `@` on the line that weakly ends one.
+ * {from, to} or null, never empty. `scheme://user` holds no whitespace and ends at the first `:`. A password that stops at
+ * whitespace (or starts with it, or with a port: portAt) ends at the last `@` of its token. One going on past whitespace
+ * on the same line ends at the `@` that ends its url's authority (authorityEnd), never at one inside it: the first strong
+ * `@` on the line, else the token's own last `@` when strong, else the first weak `@` after the token, else the token's
+ * weak one.
  */
 function textSpan(s, sep, bound) {
   let colon = sep + SEP.length;
   while (colon < bound && s[colon] !== ':' && !WS.test(s[colon])) colon++;
   if (colon >= bound || s[colon] !== ':') return null;
   const from = colon + 1;
+  const span = (to) => (to > from ? { from, to } : null);
   let i = from;
   let tokenAt = -1;
   for (; i < bound && !WS.test(s[i]); i++) if (s[i] === '@') tokenAt = i;
-  if (tokenAt !== -1 && authorityEnd(s, tokenAt, bound) === 'strong') return { from, to: tokenAt };
   const spaced = i > from && i < bound && !isLineEnd(s[i]) && !portAt(s, from, bound);
-  if (!spaced) return tokenAt === -1 ? null : { from, to: tokenAt };
+  if (!spaced) return tokenAt === -1 ? null : span(tokenAt);
+  let strong = -1;
   let weak = -1;
-  for (; i < bound && !isLineEnd(s[i]); i++) {
+  for (; i < bound && !isLineEnd(s[i]) && strong === -1; i++) {
     if (s[i] !== '@') continue;
     const end = authorityEnd(s, i, bound);
-    if (end === 'strong') return { from, to: i };
+    if (end === 'strong') strong = i;
     if (end === 'weak' && weak === -1) weak = i;
   }
-  if (tokenAt !== -1) return { from, to: tokenAt };
-  return weak === -1 ? null : { from, to: weak };
+  if (strong !== -1) return span(strong);
+  if (tokenAt !== -1 && authorityEnd(s, tokenAt, bound) === 'strong') return span(tokenAt);
+  return span(weak !== -1 ? weak : tokenAt);
 }
 
 /**
