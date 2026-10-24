@@ -14,7 +14,7 @@
 | `src/http/static.js` | `serveDist(distDir)`: the `ASSET_RE` allowlist, `inside()` realpath check, 503 while unbuilt |
 | `src/http/route.js` | `route(fn)`: a throw becomes a refusal response; `sendError` |
 | `src/refusals.js` | `Refusal` and `HTTP_STATUS` (the code table) |
-| `src/mask.js` | `maskUrl`: a url's password shown as `***`, the one masking used for display urls and activity argv |
+| `src/mask.js` | `maskUrl`: a url's password shown as `***`, the one masking used for every url the browser gets (remote.list, the remote ops' undo records, `resolvedUrl`) and activity argv; `isMaskedUrl`: a url whose password is that mask (remote.add / remote.edit refuse it); `maskUrls` / `maskDeep` for text and refusal bodies |
 | `src/conductor/fetch.js` | `ccFetch`: `CONDUCTOR_URL`, per-attempt deadline, caller abort → `CANCELLED`, connection-only retry |
 | `src/conductor/cc.js` | `projects()`, `worktrees(project)` |
 | `src/conductor/exec.js` | `exec(target, argv, opts)`: cc exec form A + the refusal map; `CC_EXEC_CAPS` |

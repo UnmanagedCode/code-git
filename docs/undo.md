@@ -161,12 +161,13 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 
 `commit.create` returns `undo` (`refs`, `head`, `created`) for the first time.
 
-**What crosses the wire.** The journal builds its plan from the op's raw result (`journalAround`); the ops route then answers `forTheWire(result)` (`src/git/refs/undo.js`), a copy:
+**What crosses the wire.** The journal builds its plan from the op's raw result (`journalAround`); the ops route then answers `forTheWire(result)` (`src/git/refs/undo.js`), a copy. The plan is never persisted (a restart empties the journal), so undo, redo and the re-add of a removed remote write the raw values back while the browser only ever holds the wire copy:
 
 | Value | In the plan (memory) | In the op's HTTP answer |
 |---|---|---|
 | `remotes[].old` / `.new` `.extra` values (a proxy, a pack command: may hold a secret) | raw | `null`; the variable names are kept |
-| The other record fields: `remotes[].old` / `.new` `.fetch`, `.upstreams[].branch` / `.merge`, a remove's `.branchKeys` and `.pushDefault`; and `.urls`, `.pushUrls` | raw | raw — the urls, password included, pending card 2026-0017 |
+| `remotes[].old` / `.new` `.urls`, `.pushUrls` | raw | each value through `maskUrl` (`https://u:***@host/r`) |
+| The other record fields: `remotes[].old` / `.new` `.fetch`, `.upstreams[].branch` / `.merge`, a remove's `.branchKeys` and `.pushDefault` | raw | raw |
 | `undo.state`, `undo.undo` / `undo.redo` results | — | `{id, op, label, confirm}` (remote names, ref names, paths, stash messages) and `warnings`, which may name a restored branch's upstream ref (`branch.<b>.merge`); never an `extra` value or a url |
 | Refusals of `undo.undo` / `undo.redo` | — | a message naming remotes, refs and paths; `REMOTE_CONFIG_UNSUPPORTED` (a remote rename's gates) carries the fetch refspec (`refspec`); never an `extra` value, and a url's password in any string is masked (`maskDeep`, `Refusal.toBody`) |
 
