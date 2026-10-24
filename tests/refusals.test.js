@@ -11,3 +11,10 @@ test('the git-flow and LFS refusal codes are 409s, and a Refusal of each renders
     assert.deepEqual(r.toBody(), { error: 'why', code, into: 'develop' });
   }
 });
+
+test('PROBE_TIMEOUT is a 504, like GIT_TIMEOUT, and renders {error, code, path, timeoutMs}', () => {
+  assert.equal(HTTP_STATUS.PROBE_TIMEOUT, 504);
+  const r = new Refusal('PROBE_TIMEOUT', 'why', { path: '.gitattributes', timeoutMs: 10_000 });
+  assert.equal(r.status, 504);
+  assert.deepEqual(r.toBody(), { error: 'why', code: 'PROBE_TIMEOUT', path: '.gitattributes', timeoutMs: 10_000 });
+});

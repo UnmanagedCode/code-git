@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DIFF_LIMITS } from '../src/git/diff/limits.js';
 
 const DATE = '2024-01-01T00:00:00Z';
 
@@ -79,4 +80,25 @@ export function bareRemote(repo) {
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', dir], { env: hermeticEnv(repo.home) });
   repo.git('remote', 'add', 'origin', dir);
   return bindRepo(dir, repo.home);
+}
+
+/** A FIFO at `p`. git >= 2.42 opens a FIFO named on its command line, so a probe of it blocks until its bound. */
+export const mkfifo = (p) => execFileSync('mkfifo', [p]);
+
+/** Shortens the stat-only probe's bound (DIFF_LIMITS.probeTimeoutMs) for this test; restored after it. */
+export function shortProbe(t, ms = 300) {
+  const prev = DIFF_LIMITS.probeTimeoutMs;
+  DIFF_LIMITS.probeTimeoutMs = ms;
+  t.after(() => { DIFF_LIMITS.probeTimeoutMs = prev; });
+}
+
+/** `p`'s rejection and how long it took to come (ms); throws if `p` resolves. */
+export async function rejection(p) {
+  const t0 = performance.now();
+  try {
+    await p;
+  } catch (e) {
+    return { e, ms: performance.now() - t0 };
+  }
+  throw new Error('expected a rejection');
 }

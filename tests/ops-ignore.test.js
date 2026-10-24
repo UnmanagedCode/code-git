@@ -4,6 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { escapeGlob, ignorePattern } from '../src/git/ignore/pattern.js';
 import { STAGE_LIMITS } from '../src/git/stage/limits.js';
+import { mkfifo, rejection, shortProbe } from './_git.js';
 import { hostile, noViolations, opWorld, refused } from './_ops.js';
 
 async function world(t, files = { 'keep.txt': 'k\n' }) {
@@ -123,6 +124,18 @@ test('GITIGNORE_UNSUPPORTED: a symlinked, binary or oversized .gitignore, or a d
   fs.rmSync(path.join(w.repo.dir, '.gitignore'));
   fs.mkdirSync(path.join(w.repo.dir, '.gitignore'));
   await assert.rejects(w.op('ignore.add', { kind: 'path', value: 'x' }), refused('GITIGNORE_UNSUPPORTED'));
+});
+
+test('a FIFO .gitignore: ignore.add refuses PROBE_TIMEOUT promptly; nothing is written', { timeout: 10_000 }, async (t) => {
+  shortProbe(t);
+  const w = await world(t);
+  mkfifo(path.join(w.repo.dir, '.gitignore'));
+  const { e, ms } = await rejection(w.op('ignore.add', { kind: 'path', value: 'x' }));
+  assert.equal(e.code, 'PROBE_TIMEOUT', e.message);
+  assert.equal(e.extra.path, '.gitignore');
+  assert.ok(ms < 5000, `refused after ${ms} ms`);
+  assert.ok(fs.lstatSync(path.join(w.repo.dir, '.gitignore')).isFIFO());
+  assert.equal(w.execArgv().some((a) => a.includes('apply')), false, 'no patch applied');
 });
 
 test('a .gitignore edited between the read and the apply makes the apply fail; the edit is kept, nothing overwritten', async (t) => {

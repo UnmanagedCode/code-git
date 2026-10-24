@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { joinMessage, splitMessage, templateDraft } from '../src/git/commit/message.js';
 import { STAGE_LIMITS } from '../src/git/stage/limits.js';
-import { hermeticEnv } from './_git.js';
+import { hermeticEnv, mkfifo, rejection, shortProbe } from './_git.js';
 import { hostile, noViolations, opWorld, refused } from './_ops.js';
 
 async function world(t, { commit = true } = {}) {
@@ -243,6 +243,21 @@ test('commit.template: core.commentString is preferred, and core.commentChar is 
   // Both set: commentString wins.
   w.repo.git('config', 'core.commentString', '#');
   assert.deepEqual((await w.op('commit.template')).draft, { summary: '; semicolon line', description: '' });
+});
+
+test('commit.template: a FIFO template, directly or through a symlink, refuses PROBE_TIMEOUT promptly', { timeout: 10_000 }, async (t) => {
+  shortProbe(t);
+  const w = await world(t);
+  const fifo = path.join(w.repo.root, 'tmpl-pipe');
+  mkfifo(fifo);
+  fs.symlinkSync(fifo, path.join(w.repo.root, 'tmpl-link'));
+  for (const name of ['tmpl-pipe', 'tmpl-link']) {
+    w.repo.git('config', 'commit.template', path.join(w.repo.root, name));
+    const { e, ms } = await rejection(w.op('commit.template'));
+    assert.equal(e.code, 'PROBE_TIMEOUT', `${name}: ${e.message}`);
+    assert.equal(e.extra.path, fifo, name);
+    assert.ok(ms < 5000, `${name} refused after ${ms} ms`);
+  }
 });
 
 test('commit.template problems are reported, never thrown: missing, binary, directory, too large, a link loop', async (t) => {
