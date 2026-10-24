@@ -219,6 +219,13 @@ test('maskUrls: an @ inside a spaced password never ends the span; the later aut
   assert.equal(maskUrls("'https://u:pw@h/r' rejected for git@example.com"), "'https://u:***@h/r' rejected for git@example.com", 'a weak @ after a strong token @ is prose');
 });
 
+// Invariant: a weak @ (host, then whitespace) does not end a password going on past whitespace while a strong @ follows
+// on the line: the span runs on to that strong @.
+test('maskUrls: a weak @ inside a spaced password defers to a later strong @', () => {
+  assert.equal(maskUrls('https://u:pa ss@word x@h/r'), 'https://u:***@h/r');
+  assert.equal(maskUrls('https://u:pa ss@word x@h:22 done'), 'https://u:***@h:22 done');
+});
+
 // Invariant: a mask never stands for nothing: an empty password (`https://user:@h/r`) is left as it is, in a text and in
 // a value, never given an inserted `***`.
 test('an empty password is left as it is: no *** is inserted', () => {
