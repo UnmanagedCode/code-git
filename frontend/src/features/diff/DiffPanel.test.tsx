@@ -297,7 +297,7 @@ test('Context lines is disabled in Full scope; scope and layout are disabled in 
 // and scope chosen for Diff view.
 test.each([
   ['hunk', 'Hunk', 'inline', 'Inline'], ['hunk', 'Hunk', 'split', 'Split'], ['full', 'Full', 'inline', 'Inline'], ['full', 'Full', 'split', 'Split'],
-] as const)('File view renders the file layout, not a diff, from %s scope with %s layout', async (scope, scopeLabel, layout, layoutLabel) => {
+] as const)('File view renders the file layout, not a diff, from $0 scope with $2 layout', async (scope, scopeLabel, layout, layoutLabel) => {
   await openA();
   await pick('Diff scope', scopeLabel);
   await pick('Diff layout', layoutLabel);
