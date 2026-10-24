@@ -31,10 +31,11 @@ export function confirmOptions(dir: UndoDir, slot: UndoSlot, c: UndoConfirm): Co
   const confirmLabel = VERB[dir];
   if (c.kind === 'deletesRefs') return { title, body: `This deletes ${c.refs.length === 1 ? 'this ref' : 'these refs'}:`, items: c.refs.map(short), count: c.refs.length, confirmLabel };
   if (c.kind === 'discards') return { title, body: 'This discards the changes in these files again:', items: c.paths, count: c.paths.length, confirmLabel };
-  if (c.kind === 'dropsStashes') return { title, body: `This drops ${plural(c.messages.length, 'this stash', 'these stashes')}:`, items: c.messages, count: c.messages.length, confirmLabel };
+  // No `count`: the dialog counts files; the body names what the items are.
+  if (c.kind === 'dropsStashes') return { title, body: `This drops ${plural(c.messages.length, 'this stash', 'these stashes')}:`, items: c.messages, confirmLabel };
   if (c.kind === 'deletesRemote') {
     if (!c.refs.length) return { title, body: `This removes the remote ${c.name}.`, confirmLabel };
-    return { title, body: `This removes the remote ${c.name} and deletes ${plural(c.refs.length, 'its tracking ref', 'its tracking refs')}:`, items: c.refs.map(short), count: c.refs.length, confirmLabel };
+    return { title, body: `This removes the remote ${c.name} and deletes ${plural(c.refs.length, 'its tracking ref', 'its tracking refs')}:`, items: c.refs.map(short), confirmLabel };
   }
   return { title, body: 'This runs a hard reset: the index and the tracked files are replaced. Untracked files are kept.', confirmLabel };
 }

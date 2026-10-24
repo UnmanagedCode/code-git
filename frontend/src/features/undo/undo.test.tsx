@@ -152,15 +152,16 @@ test('disabled during an operation in progress', async () => {
 });
 
 // Invariant: the stash-drop confirmation lists the stash messages it drops; the remote-removal one names the remote and
-// lists its tracking refs by short name.
+// lists its tracking refs by short name. Neither passes a count (the dialog would call them files).
 test('confirmOptions: dropsStashes lists the messages, deletesRemote the remote and its tracking refs', () => {
   const drop = slot({ op: 'stash.drop', label: 'Drop stash “On main: wip”' });
-  expect(confirmOptions('redo', drop, { kind: 'dropsStashes', messages: ['On main: wip'] })).toMatchObject({
-    title: 'Redo Drop stash “On main: wip”?', items: ['On main: wip'], count: 1, confirmLabel: 'Redo',
-  });
+  const d = confirmOptions('redo', drop, { kind: 'dropsStashes', messages: ['On main: wip'] });
+  expect(d).toMatchObject({ title: 'Redo Drop stash “On main: wip”?', items: ['On main: wip'], confirmLabel: 'Redo' });
+  expect(d.count).toBe(undefined);
   const remove = slot({ op: 'remote.remove', label: 'Remove remote up' });
   const c = confirmOptions('redo', remove, { kind: 'deletesRemote', name: 'up', refs: ['refs/remotes/up/HEAD', 'refs/remotes/up/main'] });
-  expect(c).toMatchObject({ title: 'Redo Remove remote up?', items: ['up/HEAD', 'up/main'], count: 2, confirmLabel: 'Redo' });
+  expect(c).toMatchObject({ title: 'Redo Remove remote up?', items: ['up/HEAD', 'up/main'], confirmLabel: 'Redo' });
+  expect(c.count).toBe(undefined);
   expect(c.body).toContain('up');
   expect(confirmOptions('redo', remove, { kind: 'deletesRemote', name: 'up', refs: [] }).items ?? []).toEqual([]);
 });

@@ -1,4 +1,5 @@
-// The remotes card's golden path on the `remotes` world (remoteSeed.mjs), every step checked against git, then its
+// The remotes card's golden path on the `remotes` world (remoteSeed.mjs), every step checked against git — Undo of an
+// add surviving Fetch all (journal-neutral), Undo and Redo (confirmed) of a remove included — then its
 // toolbar, Pull menu and dialogs screenshotted in light and dark at desktop and phone width (the phone ones over the
 // Refs dialog) into out/remotes/. Fails on a console error or a ≥400 response other than the two host URLs and the
 // deliberate refusals the path triggers (counted per op).
@@ -51,6 +52,14 @@ try {
     const nameButton = (name) => refRow(name).locator(`button[title="${name}"]`);
     const remoteRow = (name) => refs.getByRole('button', { name, exact: true });
     const commitRow = (oid) => page.locator(`[data-row-id="${oid}"]`);
+    const header = page.getByRole('banner', { name: 'Repository summary', exact: true });
+    const undoButton = header.getByRole('button', { name: 'Undo', exact: true });
+    const redoButton = header.getByRole('button', { name: 'Redo', exact: true });
+    /** The header's `name` button (Undo / Redo)'s title, once it is enabled. */
+    const slotTitle = async (name) => {
+      await page.waitForFunction((n) => { const b = document.querySelector(`header[aria-label="Repository summary"] button[aria-label="${n}"]`); return !!b && !b.disabled; }, name);
+      return (name === 'Undo' ? undoButton : redoButton).getAttribute('title');
+    };
     const shot = async (name) => {
       const file = path.join(outDir, `${name}.png`);
       await page.screenshot({ path: file, animations: 'disabled' });
@@ -94,6 +103,10 @@ try {
     // 2. upstream is listed with no branches
     await remoteRow('upstream').waitFor();
     check(await refs.getByRole('list', { name: 'Branches on upstream', exact: true }).getByRole('listitem').count() === 0, 'upstream is listed with no branch');
+    check((await slotTitle('Undo')).startsWith('Undo Add remote upstream ('), 'the header offers Undo Add remote upstream');
+    // A branch on upstream (pushed outside code-git, by url: no tracking ref yet), for the fetch below to bring in.
+    const upMain = git('rev-parse', 'main');
+    git('push', '-q', world.upstreamDir, 'main:main');
 
     // 3. Fetch all, held: busy button, running toast and Cancel in the activity panel; released → done
     let heldOnce = false;
@@ -106,12 +119,18 @@ try {
     const running = page.getByRole('region', { name: 'Activity', exact: true }).getByRole('listitem', { name: 'remote.fetch running', exact: true });
     await running.getByRole('button', { name: 'Cancel', exact: true }).waitFor();
     await shot('fetch-running-light-desktop');
+    // The read of the slots that follows the fetch run's end (useUndo's onSettledWrite).
+    const undoRead = page.waitForResponse((r) => r.url().endsWith('/api/ops/undo.state'));
     held.release();
     await toast('Fetched').first().waitFor();
     const fetched = await toast('Fetched').first().textContent();
     check(/locked needs credentials/.test(fetched) && /markup/.test(fetched), `the fetch reports the remotes it could not fetch (${fetched})`);
     check(git('rev-parse', 'origin/main') === o.theirs, 'git: origin/main is their commit');
     check(!(await tool('Fetch').isDisabled()), 'Fetch is enabled again');
+    check(git('rev-parse', 'refs/remotes/upstream/main') === upMain, 'git: the fetch brought upstream/main in');
+    // Fetch is journal-neutral (R3): once its run ended and undo.state was read again, Undo still names the add.
+    await undoRead;
+    check((await slotTitle('Undo')).startsWith('Undo Add remote upstream ('), 'after Fetch all the header still offers Undo Add remote upstream');
 
     // 4. Pull: rebase made the default (persisted across a reload); ff-only refused on the diverged main; a merge pull
     await pullMenu('Rebase');
@@ -221,6 +240,37 @@ try {
     await toast('Removed remote upstream').waitFor();
     check(config('remote.upstream.url') === null, 'git: upstream is removed');
     await remoteRow('upstream').waitFor({ state: 'detached' });
+
+    // 10b. Undo the remove at once: upstream is back in the refs panel with its tracking ref in the graph. Redo asks
+    // first (the remote and the tracking ref it deletes); confirmed, upstream is gone again.
+    check((await slotTitle('Undo')).startsWith('Undo Remove remote upstream ('), 'the header offers Undo Remove remote upstream');
+    await undoButton.click();
+    await toast('Undid Remove remote upstream').waitFor();
+    await remoteRow('upstream').waitFor();
+    await refRow('refs/remotes/upstream/main').first().waitFor();
+    check(config('remote.upstream.url') === world.upstreamDir && git('rev-parse', 'refs/remotes/upstream/main') === upMain, 'git: Undo restored upstream and its tracking ref');
+    await shot('remove-undone-light-desktop');
+    check((await slotTitle('Redo')).startsWith('Redo Remove remote upstream ('), 'the header offers Redo Remove remote upstream');
+    await redoButton.click();
+    const redoAsk = page.getByRole('dialog', { name: 'Redo Remove remote upstream?', exact: true });
+    await redoAsk.waitFor();
+    const asked = await redoAsk.getByRole('listitem').allTextContents();
+    check(JSON.stringify([...asked].sort()) === '["upstream/HEAD","upstream/main"]', `the redo confirmation lists the tracking refs it deletes, the fetch's HEAD symref included (${asked.join(', ')})`);
+    check(/removes the remote upstream/.test(await redoAsk.textContent()), 'the redo confirmation names the remote');
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const [vp, size] of Object.entries(VIEWPORTS)) {
+        await page.setViewportSize(size);
+        await shot(`redo-remove-confirm-${scheme}-${vp}`);
+      }
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.setViewportSize(VIEWPORTS.desktop);
+    check(config('remote.upstream.url') === world.upstreamDir, 'nothing removed before confirming');
+    await confirmWith('Redo');
+    await toast('Redid Remove remote upstream').waitFor();
+    await remoteRow('upstream').waitFor({ state: 'detached' });
+    check(config('remote.upstream.url') === null && git('for-each-ref', 'refs/remotes/upstream') === '', 'git: the confirmed redo removed upstream and its tracking ref');
 
     // 11. a commit with Push after commit
     world.repo.write('notes.md', 'notes\npushed after commit\n');
