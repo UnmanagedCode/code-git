@@ -77,6 +77,56 @@ test('stash.pop redo after the stash was dropped externally: UNDO_STALE', async 
   await refusesUnchanged(w, () => w.redo(), 'UNDO_STALE');
 });
 
+/** An apply of a stash changing f.txt and creating untracked u.txt, recorded. */
+async function applied(w) {
+  const oid = saved(w, { 'f.txt': 'stashed\n', 'u.txt': 'untracked\n' }, ['-u']);
+  await w.op('stash.apply', { oid });
+}
+
+// Invariant: an apply's undo refuses UNDO_STALE once an applied file was edited (worktree staleness over its paths).
+test('stash.apply undo after an edit: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await applied(w);
+  w.repo.write('f.txt', 'edited\n');
+  assert.deepEqual(await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE'), EMPTY);
+});
+
+// Invariant: an apply's undo refuses UNDO_STALE after an external `git add` changed the index, its paths' files unchanged.
+test('stash.apply undo after an external git add: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await applied(w);
+  w.repo.write('other.txt', 'added\n');
+  w.repo.git('add', 'other.txt');
+  await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE');
+});
+
+// Invariant: an apply's undo refuses UNDO_STALE after an external commit moved HEAD.
+test('stash.apply undo after an external commit: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await applied(w);
+  w.repo.git('commit', '-q', '--allow-empty', '-m', 'moved');
+  await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE');
+});
+
+// Invariant: an apply's redo checks against the state before the apply: an applied path edited since the undo refuses it.
+test('stash.apply redo after editing an applied path: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await applied(w);
+  await w.undo();
+  w.repo.write('f.txt', 'edited\n');
+  assert.deepEqual(await refusesUnchanged(w, () => w.redo(), 'UNDO_STALE'), EMPTY);
+});
+
+// Invariant: an apply's redo never overwrites an untracked file that appeared where the apply creates one.
+test('stash.apply redo after an untracked file appeared where the apply creates one: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await applied(w);
+  await w.undo();
+  w.repo.write('u.txt', 'mine\n');
+  await refusesUnchanged(w, () => w.redo(), 'UNDO_STALE');
+  assert.equal(fs.readFileSync(path.join(w.repo.dir, 'u.txt'), 'utf8'), 'mine\n');
+});
+
 // Invariant: a drop's undo refuses UNDO_STALE once gc pruned the dropped stash's commits.
 test('stash.drop undo after reflog expire + gc --prune=now: UNDO_STALE (pruned)', async (t) => {
   const w = await undoWorld(t);
@@ -209,6 +259,9 @@ test('confirm shapes of the stash plans', async (t) => {
   await w.op('stash.applyFile', { oid: renamed, path: 'f.txt' });
   await both('applyFile');
   w.repo.git('checkout', '-q', 'f.txt');
+  await w.op('stash.apply', { oid: renamed });
+  await both('apply');
+  w.repo.git('checkout', '-q', 'f.txt');
   await w.op('stash.pop', { oid: renamed });
   await both('pop');
   const again = saved(w, { 'f.txt': 'b\n' });
@@ -221,6 +274,7 @@ test('confirm shapes of the stash plans', async (t) => {
     push: { undo: null, redo: null },
     rename: { undo: null, redo: null },
     applyFile: { undo: null, redo: null },
+    apply: { undo: null, redo: null },
     pop: { undo: null, redo: null },
     drop: { undo: null, redo: { kind: 'dropsStashes', messages: [`WIP on main: ${w.base.slice(0, 7)} base`] } },
     branch: { undo: { kind: 'deletesRefs', refs: ['refs/heads/nb'] }, redo: null },

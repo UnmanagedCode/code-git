@@ -157,6 +157,85 @@ test('stash.pop: the drop raced (STASH_MOVED): the worktree part alone undoes an
   assert.deepEqual(w.snap(), after);
 });
 
+// Invariant: a clean apply undoes into the worktree and index as they were (the untracked file it created removed) and
+// redoes into the applied state; the stash entry is untouched both ways; neither direction asks.
+test('stash.apply: clean, without index', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.commit({ 'g.txt': 'g\n' }, 'g');
+  const oid = saved(w, { 'f.txt': 'stashed\n', 'u.txt': 'untracked\n' }, ['-u', '-m', 'mine']);
+  w.repo.write('g.txt', 'a local change elsewhere\n');
+  const { state, result, before, after } = await roundTrip(w, () => w.op('stash.apply', { oid }));
+  assert.equal(state.undo.label, 'Apply “On main: mine”');
+  assert.equal(result.message, 'On main: mine');
+  assert.equal(after.stashes, before.stashes, 'the stash entry is kept');
+  assert.equal(after.files['u.txt'].content, 'untracked\n');
+  assert.equal(before.files['u.txt'], undefined, 'undo removes the untracked file the apply created');
+  assert.deepEqual(await confirms(w), { undo: null, redo: null });
+});
+
+// Invariant: an apply with its index restores the stash's staged part and the user's own staging exactly both ways.
+test('stash.apply: clean, with index', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.commit({ 'g.txt': 'g\n', 'h.txt': 'h\n' }, 'gh');
+  w.repo.write('g.txt', 'staged in the stash\n');
+  w.repo.git('add', 'g.txt');
+  const oid = saved(w, { 'f.txt': 'unstaged in the stash\n' });
+  w.repo.write('h.txt', 'the user\'s own staging\n');
+  w.repo.git('add', 'h.txt');
+  const { before, after } = await roundTrip(w, () => w.op('stash.apply', { oid, index: true }));
+  const head = new Map(w.repo.git('ls-tree', '-r', 'HEAD').split('\n').map((l) => { const [meta, f] = l.split('\t'); return [f, meta.split(' ')[2]]; }));
+  const staged = (s) => s.index.split('\n').map((l) => l.split('\t')).filter(([meta, f]) => head.get(f) !== meta.split(' ')[1]).map(([, f]) => f);
+  assert.deepEqual(staged(before), ['h.txt']);
+  assert.deepEqual(staged(after), ['g.txt', 'h.txt'], 'the stash\'s staged part is restored on top of the user\'s staging');
+});
+
+// Invariant: the index entry git leaves staged for a file the stash added (an apply without index) is taken out by undo
+// and put back by redo: the index is captured whole, not only the stash's paths' worktree content.
+test('stash.apply without index of a stash holding a new staged file', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.write('n.txt', 'new, staged\n');
+  w.repo.git('add', 'n.txt');
+  const oid = saved(w, { 'f.txt': 'unstaged\n' });
+  const { before, after } = await roundTrip(w, () => w.op('stash.apply', { oid }));
+  assert.ok(!before.index.includes('\tn.txt'));
+  assert.ok(after.index.includes('\tn.txt'), 'git left the added file staged');
+});
+
+// Invariant: an apply that changed nothing records no entry (no entry whose undo does nothing), and the slots are empty.
+test('stash.apply that changed nothing records no plan', async (t) => {
+  const w = await undoWorld(t);
+  const oid = saved(w, { 'f.txt': 'stashed\n' });
+  w.repo.write('f.txt', 'stashed\n');
+  w.repo.git('add', 'f.txt');
+  await w.op('commit.create', { summary: 'the stash\'s change' });
+  assert.ok((await w.state()).undo);
+  const before = w.snap();
+  const r = await w.op('stash.apply', { oid });
+  assert.deepEqual(r.conflicts, []);
+  assert.deepEqual(w.snap(), before, 'the apply changed nothing');
+  assert.deepEqual(await w.state(), { undo: null, redo: null });
+});
+
+// Invariant: an apply's undo and redo never read the stash list: a stash dropped with raw git in between blocks neither,
+// and each writes the recorded worktree and index exactly.
+test('stash.apply: the stash dropped externally does not block undo or redo', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.commit({ 'g.txt': 'g\n' }, 'g');
+  w.repo.write('s.txt', 'staged in the stash\n');
+  w.repo.git('add', 's.txt');
+  const oid = saved(w, { 'f.txt': 'stashed\n', 'u.txt': 'untracked\n' }, ['-u']);
+  const checkout = (s) => ({ head: s.head, oid: s.oid, index: s.index, files: s.files });
+  const before = checkout(w.snap());
+  await w.op('stash.apply', { oid, index: true });
+  const after = checkout(w.snap());
+  w.repo.git('stash', 'drop', '-q');
+  assert.equal(w.snap().stashes, '');
+  await w.undo();
+  assert.deepEqual(checkout(w.snap()), before);
+  await w.redo();
+  assert.deepEqual(checkout(w.snap()), after);
+});
+
 // Invariant: dropping the top entry undoes into exactly the same list; the redo asks first (dropsStashes, the message).
 test('stash.drop: the top entry comes back in place', async (t) => {
   const w = await undoWorld(t);
