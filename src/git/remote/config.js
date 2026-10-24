@@ -57,8 +57,8 @@ export async function remoteNames(git) {
 
 /**
  * Every remote: [{name, urls, pushUrls, fetch, displayUrl, displayPushUrl, legacy, multiUrl, multiPushUrl}] in `git remote`
- * order. `urls` / `pushUrls` as git counts them (after the last empty value); `fetch` as configured; `displayUrl` the first url (else
- * push url) and `displayPushUrl` the first push url, a password masked, or null; `legacy` true when git reads the remote from a legacy `.git/remotes` / `.git/branches` file
+ * order, every url's password masked (maskUrl: what reaches the browser). `urls` / `pushUrls` as git counts them (after the last empty value); `fetch` as configured; `displayUrl` the first url (else
+ * push url) and `displayPushUrl` the first push url, or null; `legacy` true when git reads the remote from a legacy `.git/remotes` / `.git/branches` file
  * (no url in config and such a file exists); `multiUrl` / `multiPushUrl` when that raw list holds more than one value
  * (remote.edit refuses to replace it).
  */
@@ -68,12 +68,11 @@ export async function listRemotes(git) {
   const out = [];
   for (const name of names) {
     const c = raw.get(name);
-    const urls = effective(c.urls);
-    const pushUrls = effective(c.pushUrls);
+    const urls = effective(c.urls).map(maskUrl);
+    const pushUrls = effective(c.pushUrls).map(maskUrl);
     const legacy = !hasUrl(c.urls) && (await legacyRemoteFile(git, name)) !== null;
-    const masked = (u) => (u === undefined ? null : maskUrl(u));
     out.push({
-      name, urls, pushUrls, fetch: c.fetch, displayUrl: masked(urls[0] ?? pushUrls[0]), displayPushUrl: masked(pushUrls[0]), legacy,
+      name, urls, pushUrls, fetch: c.fetch, displayUrl: urls[0] ?? pushUrls[0] ?? null, displayPushUrl: pushUrls[0] ?? null, legacy,
       // What remote.edit's single-value check counts: raw config values, an empty reset included.
       multiUrl: multiValued(c.urls), multiPushUrl: multiValued(c.pushUrls),
     });
