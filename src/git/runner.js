@@ -28,6 +28,14 @@ export const BASE_ARGS = [
 export const subArgs = (target) => (target.sub ? ['-C', target.sub.join('/'), '--git-dir=.git'] : []);
 
 /** Every call: no prompt can hang, an editor launch fails loudly, pathspecs are literal, git's messages are stable. */
+/**
+ * git's trace switches, each `0` (off) over the System's own environment: their output can print a url's userinfo
+ * without its scheme (GIT_TRACE's `run_command: ssh … user:password@host`, which no mask finds) or request headers.
+ * GIT_TRACE2* redacts urls itself.
+ */
+const TRACE_OFF = Object.fromEntries(['GIT_TRACE', 'GIT_TRACE_PACKET', 'GIT_TRACE_CURL', 'GIT_CURL_VERBOSE', 'GIT_TRACE_PERFORMANCE',
+  'GIT_TRACE_SETUP', 'GIT_TRACE_SHALLOW', 'GIT_TRACE_PACK_ACCESS', 'GIT_TRACE_REFS', 'GIT_TRACE_FSMONITOR'].map((n) => [n, '0']));
+
 export const BASE_ENV = {
   GIT_TERMINAL_PROMPT: '0',
   GCM_INTERACTIVE: 'never',
@@ -40,18 +48,20 @@ export const BASE_ENV = {
   GIT_SEQUENCE_EDITOR: 'false',
   GIT_LITERAL_PATHSPECS: '1',
   LC_ALL: 'C',
+  ...TRACE_OFF,
 };
 /** Read ops only: no opportunistic index refresh. */
 export const READ_ENV = { GIT_OPTIONAL_LOCKS: '0' };
 /**
  * Names an op's env may not set: prompts and the programs git runs to ask for credentials (GIT_ASKPASS, SSH_ASKPASS and
  * SSH_ASKPASS_REQUIRE, which BASE_ENV sets —
- * git runs them even with GIT_TERMINAL_PROMPT=0), literal pathspecs, which repo and which git binary run, and the
+ * git runs them even with GIT_TERMINAL_PROMPT=0), literal pathspecs, which repo and which git binary run, the trace
+ * switches (TRACE_OFF), and the
  * prefixes PROTECTED_ENV_PREFIXES: every GIT_SSH* (GIT_SSH, GIT_SSH_COMMAND, GIT_SSH_VARIANT, …) and every config
  * injection GIT_CONFIG* (COUNT/KEY_n/VALUE_n, GLOBAL, SYSTEM, NOSYSTEM, PARAMETERS).
  * The editors stay settable: interactive rebase supplies its todo through GIT_SEQUENCE_EDITOR.
  */
-export const PROTECTED_ENV = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_ASKPASS', 'SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH'];
+export const PROTECTED_ENV = ['GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE', 'GIT_ASKPASS', 'SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'GIT_LITERAL_PATHSPECS', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_EXEC_PATH', ...Object.keys(TRACE_OFF)];
 export const PROTECTED_ENV_PREFIXES = ['GIT_SSH', 'GIT_CONFIG'];
 export const isProtectedEnv = (name) => PROTECTED_ENV.includes(name) || PROTECTED_ENV_PREFIXES.some((p) => name.startsWith(p));
 

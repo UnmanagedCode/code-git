@@ -46,6 +46,24 @@ test('the base env makes git non-interactive and literal; GIT_OPTIONAL_LOCKS=0 o
   assert.equal('GIT_OPTIONAL_LOCKS' in write, false);
 });
 
+/** git's trace switches whose output can print a url's userinfo (GIT_TRACE's `run_command: ssh … user:pw@host`) or headers. */
+const TRACE_VARS = ['GIT_TRACE', 'GIT_TRACE_PACKET', 'GIT_TRACE_CURL', 'GIT_CURL_VERBOSE', 'GIT_TRACE_PERFORMANCE', 'GIT_TRACE_SETUP',
+  'GIT_TRACE_SHALLOW', 'GIT_TRACE_PACK_ACCESS', 'GIT_TRACE_REFS', 'GIT_TRACE_FSMONITOR'];
+
+// Invariant: every exec turns git's trace output off (each switch '0'), over a System env that turns it on, so no trace
+// line (a scheme-less user:password@host) reaches stderr; an op's env cannot turn one back on.
+test('the base env turns git trace output off over a System env that turns it on; an op cannot set it', async (t) => {
+  const { cc } = await world(t);
+  cc.state.inheritedEnv = Object.fromEntries(TRACE_VARS.map((n) => [n, '1']));
+  const r = await runGit(ctxFor(APP, 'write'), ['status']);
+  const { env } = cc.state.execCalls[0];
+  for (const name of TRACE_VARS) assert.equal(env[name], '0', name);
+  assert.ok(!r.stderr.toString().includes('trace'), r.stderr.toString());
+  for (const name of TRACE_VARS) {
+    await assert.rejects(runGit(ctxFor(APP, 'write'), ['status'], { env: { [name]: '1' } }), new RegExp(`may not set ${name}`), name);
+  }
+});
+
 test("an op's env is merged in; GIT_EDITOR and GIT_SEQUENCE_EDITOR stay overridable", async (t) => {
   const { cc } = await world(t);
   await runGit(ctxFor(APP), ['status'], { env: { GIT_EDITOR: 'true', GIT_SEQUENCE_EDITOR: 'cat', MY_VAR: 'x' } });
