@@ -356,3 +356,18 @@ test('remote.add / remote.edit with encoded userinfo in a git:// url → BAD_URL
   assert.deepEqual(w.remoteWrites().slice(before), []);
   assert.deepEqual(w.config('remote.g.url'), []);
 });
+
+// Invariant: end to end, with every trace2 target on in the System's env, a fetch of an ssh remote whose url carries a
+// password (ssh run as `false`: the fetch fails locally) leaves the password in neither the refusal nor /api/activity —
+// trace2's child_start would print ssh's scheme-less user:password@host.
+test('remote.fetch of an ssh remote under a System env with trace2 on: no response holds the password', async (t) => {
+  const w = await world(t);
+  w.cc.state.inheritedEnv = { GIT_TRACE2: '2', GIT_TRACE2_EVENT: '2', GIT_TRACE2_PERF: '2', GIT_TRACE2_CONFIG_PARAMS: 'remote.*.url', GIT_SSH_COMMAND: 'false' };
+  w.repo.git('config', 'remote.sp.url', `ssh://user:${PW}@h.example.invalid/r`);
+  w.repo.git('config', 'remote.sp.fetch', '+refs/heads/*:refs/remotes/sp/*');
+  const r = await w.call('remote.fetch', { remote: 'sp' }, 422);
+  assert.equal(r.code, 'GIT_FAILED', JSON.stringify(r));
+  assert.match(r.stderr, /^fatal: Could not read from remote repository\./, 'git\'s own message, no trace lines');
+  lacksSecrets(r);
+  lacksSecrets(JSON.stringify(await w.activity()));
+});

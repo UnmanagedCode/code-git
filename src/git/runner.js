@@ -27,15 +27,26 @@ export const BASE_ARGS = [
  */
 export const subArgs = (target) => (target.sub ? ['-C', target.sub.join('/'), '--git-dir=.git'] : []);
 
-/** Every call: no prompt can hang, an editor launch fails loudly, pathspecs are literal, git's messages are stable. */
 /**
- * git's trace switches, each `0` (off) over the System's own environment: their output can print a url's userinfo
- * without its scheme (GIT_TRACE's `run_command: ssh … user:password@host`, which no mask finds) or request headers.
- * GIT_TRACE2* redacts urls itself.
+ * git's trace and trace2 output, off over the System's own environment (and over trace2's `trace2.*Target` config, which
+ * the environment beats): it can print a url's userinfo without its scheme, where no mask finds it — GIT_TRACE's
+ * `run_command: ssh … user:password@host`, trace2's `child_start` of the same (trace2 redacts only `scheme://` urls),
+ * a `def_param` of a config url — or request headers. Each switch `0`; trace2's lists of config values and env vars to
+ * log empty; both redactions forced on in case a target is reached anyway.
  */
-const TRACE_OFF = Object.fromEntries(['GIT_TRACE', 'GIT_TRACE_PACKET', 'GIT_TRACE_CURL', 'GIT_CURL_VERBOSE', 'GIT_TRACE_PERFORMANCE',
-  'GIT_TRACE_SETUP', 'GIT_TRACE_SHALLOW', 'GIT_TRACE_PACK_ACCESS', 'GIT_TRACE_REFS', 'GIT_TRACE_FSMONITOR'].map((n) => [n, '0']));
+const TRACE_OFF = {
+  ...Object.fromEntries(['GIT_TRACE', 'GIT_TRACE_PACKET', 'GIT_TRACE_CURL', 'GIT_CURL_VERBOSE', 'GIT_TRACE_PERFORMANCE', 'GIT_TRACE_SETUP',
+    'GIT_TRACE_SHALLOW', 'GIT_TRACE_PACK_ACCESS', 'GIT_TRACE_REFS', 'GIT_TRACE_FSMONITOR', 'GIT_TRACE2', 'GIT_TRACE2_EVENT', 'GIT_TRACE2_PERF'].map((n) => [n, '0'])),
+  GIT_TRACE2_CONFIG_PARAMS: '',
+  GIT_TRACE2_ENV_VARS: '',
+  GIT_TRACE_REDACT: '1',
+  GIT_TRACE2_REDACT: '1',
+};
 
+/**
+ * Every call: no prompt can hang, an editor launch fails loudly, pathspecs are literal, git's messages are stable, and
+ * no trace output prints a credential (TRACE_OFF).
+ */
 export const BASE_ENV = {
   GIT_TERMINAL_PROMPT: '0',
   GCM_INTERACTIVE: 'never',
