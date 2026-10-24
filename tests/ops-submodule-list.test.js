@@ -197,3 +197,16 @@ test('resolvedUrl: a relative url resolved against a credentialed origin is answ
   for (const body of [init, list]) assert.ok(!JSON.stringify(body).includes(PW), JSON.stringify(body));
   assert.equal(w.repo.git('config', 'submodule.rel.url'), `https://user:${PW}@example.invalid/o/sub.git`);
 });
+
+// Invariant: a submodule's declared url reaches the browser masked — a .gitmodules url may carry a password — while
+// .gitmodules itself keeps it raw.
+test('url: a credentialed .gitmodules url is answered masked by submodule.list; .gitmodules keeps it raw', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const PW = 'Gitm0dulesPW';
+  const raw = `https://user:${PW}@example.invalid/libA.git`;
+  w.repo.git('config', '-f', '.gitmodules', 'submodule.libA.url', raw);
+  const list = await w.ok('submodule.list');
+  assert.equal(byPath(list).libA.url, 'https://user:***@example.invalid/libA.git');
+  assert.ok(!JSON.stringify(list).includes(PW), JSON.stringify(list));
+  assert.equal(w.repo.git('config', '-f', '.gitmodules', 'submodule.libA.url'), raw);
+});

@@ -1,10 +1,11 @@
-import { maskUrl } from '../../mask.js';
+import { isMaskedUrl, maskUrl } from '../../mask.js';
 import { Refusal } from '../../refusals.js';
 import { joinMessage, messageParams } from '../commit/message.js';
 import { worktreeEntry } from '../diff/noIndex.js';
 import { commitOid } from '../diff/source.js';
 import { bad, optBool, paramsObject } from '../params.js';
 import { netRun } from '../remote/net.js';
+import { assertNotMasked } from '../remote/url.js';
 import { operationState } from '../sequence/state.js';
 import { submoduleFailure } from '../submodule/failure.js';
 import {
@@ -99,7 +100,11 @@ export const ops = [
     name: 'submodule.list',
     kind: 'read',
     params: noParams('submodule.list'),
-    run: (git) => listSubmodules(git),
+    // Masked here, not in listSubmodules: knownEntries needs the raw .gitmodules url (sync's url check, setUrl's echo).
+    async run(git) {
+      const l = await listSubmodules(git);
+      return { ...l, submodules: l.submodules.map((e) => ({ ...e, url: e.url === null ? null : maskUrl(e.url) })) };
+    },
   },
   {
     name: 'submodule.add',
@@ -107,7 +112,7 @@ export const ops = [
     params(raw) {
       const p = paramsObject(raw, ['url', 'path', 'name', 'branch'], 'submodule.add');
       return {
-        url: submoduleUrl(p.url), path: submodulePath(p.path),
+        url: assertNotMasked(submoduleUrl(p.url)), path: submodulePath(p.path),
         name: p.name === undefined ? null : submoduleName(p.name), branch: p.branch === undefined ? null : assertRefName(p.branch),
       };
     },
@@ -206,9 +211,13 @@ export const ops = [
       await assertWorktree(git);
       await assertGitmodulesWritable(git);
       const [e] = await knownEntries(git, [p.path]);
+      // The browser only holds the masked url (submodule.list): the mask of the current value echoed back changes nothing
+      // (no write, no sync); any other masked url is refused, never spliced with the stored password.
+      if (isMaskedUrl(p.url) && e.url !== null && p.url === maskUrl(e.url)) return { path: p.path, url: p.url };
+      assertNotMasked(p.url);
       await git(['config', '--file', '.gitmodules', `submodule.${e.name}.url`, p.url]);
       if (e.initialized) await run(git, ['submodule', 'sync', '--', p.path]);
-      return { path: p.path, url: p.url };
+      return { path: p.path, url: maskUrl(p.url) };
     },
   },
   {
