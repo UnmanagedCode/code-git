@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { branchRemotes, pushRemotesOf, remoteSnapshot, writeRemoteConfig } from '../../remote/config.js';
+import { branchRemotes, pushDefaultOf, pushRemotesOf, remoteSnapshot, writeRemoteConfig } from '../../remote/config.js';
 import { parseFetchRefspec, trackedSnapshot } from '../../remote/tracking.js';
 import { stale } from './shared.js';
 
@@ -39,7 +39,7 @@ async function preflight(git, step, dir, ctx) {
     const branches = await branchRemotes(git);
     for (const { branch } of to.upstreams) if (branches.get(branch)?.remote) throw stale(`${branch} has an upstream again`);
     for (const branch of to.pushRemotes ?? []) if (branches.get(branch)?.pushRemote) throw stale(`${branch} has a push remote again`);
-    if (to.pushDefault && await hasPushDefault(git)) throw stale('remote.pushDefault is set again');
+    if (to.pushDefault && await pushDefaultOf(git) !== null) throw stale('remote.pushDefault is set again');
   }
   if (to === null) {
     // Removing its config: no tracking ref may be left under its fetch destinations (a fetch since wrote them), but the
@@ -49,11 +49,6 @@ async function preflight(git, step, dir, ctx) {
       if (ref.startsWith('refs/remotes/') && await ctx.refNow(ref) !== null) throw stale(`remote ${name} was fetched since`);
     }
   }
-}
-
-/** Whether `remote.pushDefault` is set at all. */
-async function hasPushDefault(git) {
-  return (await git(['config', '--get', 'remote.pushDefault'], { okExit: [0, 1] })).exitCode === 0;
 }
 
 async function apply(git, step, dir) {

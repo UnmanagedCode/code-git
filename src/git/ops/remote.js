@@ -7,7 +7,7 @@ import { assertCcAck, assertCcHeadAck, assertNotSymbolic, ownHead, readHeads } f
 import { assertNoSymref, refEntries } from '../refs/resolve.js';
 import { undoRecord } from '../refs/undo.js';
 import {
-  assertNewRemote, assertNotLegacy, listRemotes, multiValued, pushRemotesOf, remoteNames, remoteSnapshot, renameGates, renameRemote,
+  assertNewRemote, assertNotLegacy, listRemotes, multiValued, pushRemotesOf, remoteNames, remoteSnapshot, renameGates, renameRemote, upstreamsOf,
 } from '../remote/config.js';
 import { fetchRemote } from '../remote/fetch.js';
 import { fastForward, merge, rebase } from '../remote/integrate.js';
@@ -178,16 +178,18 @@ export const ops = [
       // git deletes the refs/remotes/ refs the refspecs map, except those another remote's refspecs also map: re-read.
       const left = await refEntries(git, [...tracking.keys()]);
       const deleted = [...tracking].filter(([ref]) => !left.has(ref));
-      // The pushRemote / pushDefault keys git cleared (not one it could not: another config file's), re-read as the refs.
-      const still = await pushRemotesOf(git, name);
+      // The upstream / pushRemote / pushDefault keys git cleared (never one it could not), re-read as the refs: only those
+      // are the undo's to write back, and the redo's to expect.
+      const [stillUp, still] = await Promise.all([upstreamsOf(git, name), pushRemotesOf(git, name)]);
       const cleared = {
+        upstreams: old.upstreams.filter((u) => !stillUp.some((x) => x.branch === u.branch)),
         pushRemotes: pushing.pushRemotes.filter((b) => !still.pushRemotes.includes(b)),
         pushDefault: pushing.pushDefault && !still.pushDefault,
       };
       return {
         name,
         deletedRefs: deleted.map(([ref]) => ref),
-        clearedUpstreams: old.upstreams,
+        clearedUpstreams: cleared.upstreams,
         undo: undoRecord({
           refs: deleted.map(([ref, e]) => (e.symref ? { ref, old: null, new: null, symref: e.symref } : { ref, old: e.oid, new: null })),
           remotes: [{ name, old: { ...old, ...cleared }, new: null }],

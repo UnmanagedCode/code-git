@@ -81,9 +81,13 @@ export async function listRemotes(git) {
   return out;
 }
 
-/** Every branch's remote keys from config: Map(branch → {remote, merge (the first), pushRemote}), each null when unset. */
+/**
+ * Every branch's remote keys in the repo's own config (`--local`: the file `git remote remove` and `rename` edit; a key in
+ * the global config is not one they clear, nor one an undo writes back): Map(branch → {remote, merge (the first),
+ * pushRemote}), each null when unset.
+ */
 export async function branchRemotes(git) {
-  const r = await git(['config', '-z', '--get-regexp', '^branch\\.'], { okExit: [0, 1] });
+  const r = await git(['config', '--local', '-z', '--get-regexp', '^branch\\.'], { okExit: [0, 1] });
   const branches = new Map();
   const field = { remote: 'remote', merge: 'merge', pushremote: 'pushRemote' };
   for (const [key, value] of parseConfigZ(decoder.decode(r.stdout))) {
@@ -101,19 +105,19 @@ export async function branchRemotes(git) {
 
 /**
  * Local branches whose upstream remote (`branch.<b>.remote`) is `remote` → [{branch, merge}] (`merge` the first
- * `branch.<b>.merge`, or null), from config: git clears these keys on remove and rewrites them on rename.
+ * `branch.<b>.merge`, or null), from the repo's own config: git clears these keys on remove and rewrites them on rename.
  */
 export async function upstreamsOf(git, remote) {
   return [...await branchRemotes(git)].filter(([, b]) => b.remote === remote).map(([branch, b]) => ({ branch, merge: b.merge }));
 }
 
-/** `remote.pushDefault`, or null. */
-async function pushDefaultOf(git) {
-  const r = await git(['config', '--get', 'remote.pushDefault'], { okExit: [0, 1] });
+/** `remote.pushDefault` in the repo's own config (as branchRemotes), or null. */
+export async function pushDefaultOf(git) {
+  const r = await git(['config', '--local', '--get', 'remote.pushDefault'], { okExit: [0, 1] });
   return r.exitCode === 0 ? decoder.decode(r.stdout).replace(/\n$/, '') : null;
 }
 
-/** What else names `remote` for pushing: {pushRemotes: the branches whose `branch.<b>.pushRemote` it is, pushDefault: whether `remote.pushDefault` is}. */
+/** What else names `remote` for pushing, in the repo's own config: {pushRemotes: the branches whose `branch.<b>.pushRemote` it is, pushDefault: whether `remote.pushDefault` is}. */
 export async function pushRemotesOf(git, remote) {
   const pushRemotes = [...await branchRemotes(git)].filter(([, b]) => b.pushRemote === remote).map(([branch]) => branch);
   return { pushRemotes, pushDefault: await pushDefaultOf(git) === remote };

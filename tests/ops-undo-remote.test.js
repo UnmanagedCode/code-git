@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { roundTrip, undoWorld } from './_undoWorld.js';
@@ -69,4 +70,18 @@ test('remote.remove: config, extra key, upstreams, pushRemote, pushDefault, trac
   await w.undo();
   const redo = (await w.state()).redo.confirm;
   assert.deepEqual({ ...redo, refs: [...redo.refs].sort() }, { kind: 'deletesRemote', name: 'up', refs: ['refs/remotes/up/HEAD', 'refs/remotes/up/main'] });
+});
+
+// Invariant: a remove records only the branch and push keys git cleared from the repo's own config: an upstream, a
+// pushRemote and a pushDefault naming the remote in the global config (which git cannot clear) neither block the undo
+// nor are written back by it — undo and redo restore exactly, and the global file is never touched.
+test('remote.remove with upstream and push keys in the global config: undo and redo exact, the global file untouched', async (t) => {
+  const w = await undoWorld(t);
+  const global = path.join(w.repo.home, '.gitconfig');
+  fs.appendFileSync(global, '[branch "main"]\n\tremote = origin\n\tpushRemote = origin\n[remote]\n\tpushDefault = origin\n');
+  const globalBefore = fs.readFileSync(global, 'utf8');
+  const { result } = await roundTrip(w, () => w.op('remote.remove', { name: 'origin' }));
+  assert.deepEqual(result.undo.remotes[0].old.upstreams, [{ branch: 'main', merge: 'refs/heads/main' }], 'the repo\'s own upstream, cleared by git');
+  assert.deepEqual([result.undo.remotes[0].old.pushRemotes, result.undo.remotes[0].old.pushDefault], [[], false], 'no push key git could not clear');
+  assert.equal(fs.readFileSync(global, 'utf8'), globalBefore);
 });

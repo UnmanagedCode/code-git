@@ -157,7 +157,7 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 | `worktreeState` | `stash.push`, `stash.pop` (clean), `stash.branch` (clean) | `{paths, before, mid?, after}`; each state `{head: oid \| null, index: tree, files: tree}` (`checkoutState`, below); `mid` only for `stash.branch` (after the switch, before the apply) |
 | `removedPatch` | `stash.pushLines` | base64 of the patch whose `apply -R` took the lines out of the worktree |
 | `remotes[].old` / `.new` `.extra` | every remote snapshot (`remoteSnapshot`) | `[[var, value]]`: every other `remote.<n>.<var>` (`prune`, `tagopt`, `proxy`, …), raw, in config order — in the journal's plan only; on the wire each value is `null` (below) |
-| `remotes[].old.pushRemotes`, `.pushDefault` | `remote.remove` | the branches whose `branch.<b>.pushRemote`, and whether `remote.pushDefault`, named it **and that git cleared**: read before and again after `remote remove` (as `deletedRefs`) |
+| `remotes[].old.upstreams`, `.pushRemotes`, `.pushDefault` | `remote.remove` | the branches whose `branch.<b>.remote` / `.merge` and `branch.<b>.pushRemote`, and whether `remote.pushDefault`, named it **and that git cleared**: read before and again after `remote remove` (as `deletedRefs`) |
 
 `commit.create` returns `undo` (`refs`, `head`, `created`) for the first time.
 
@@ -276,4 +276,4 @@ Wire shapes: [protocol → Undo ops](protocol.md#undo-ops-srcgitopsundojs).
 - **The checkout states' trees are unreachable objects**: a `gc` that prunes them (after `gc.pruneExpire`) makes a stash undo fail (`GIT_FAILED`); a pruned stash commit refuses `UNDO_STALE`.
 - **A stash undo replaces the whole index** with the recorded tree (its preflight checked it equals the expected one): stat data is rebuilt on the next refresh; intent-to-add and skip-worktree bits are not kept.
 - **A restored remote keeps each key's values in order, not their place in the file**: a section written back (a remove's undo, an add's redo) is appended at the end of `.git/config`, and its keys are written per variable (url, fetch, pushurl, then the extra keys), so their interleaving with other keys may differ. Multi-valued `branch.<b>.merge` keeps only the first value.
-- **A restored remote's upstreams, pushRemotes and pushDefault are only those git cleared** from the repo's own config; keys in another config file are neither cleared nor recorded.
+- **A restored remote's upstreams, pushRemotes and pushDefault are only those git cleared** from the repo's own config: every branch and push key is read with `config --local` (`branchRemotes`, `pushDefaultOf`), so a key in the global config is neither cleared, recorded, written back nor compared — it never blocks an undo or a redo. A `remote.<n>.*` key in another config file is still read into the snapshot.
