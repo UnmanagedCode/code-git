@@ -170,3 +170,37 @@ test('maskDeep masks every string through arrays and plain objects, and leaves o
   assert.deepEqual(maskDeep({ error: `refs ${u}`, names: [u, 'origin'], n: 3, nested: { stderr: u }, ok: true, none: null }),
     { error: 'refs https://u:***@h/r', names: ['https://u:***@h/r', 'origin'], n: 3, nested: { stderr: 'https://u:***@h/r' }, ok: true, none: null });
 });
+
+/** Hostile inputs of about 200k characters: long alphanumeric runs, many `://`, `@` and `:`, many urls on one line. */
+const HOSTILE = {
+  'a run': 'a'.repeat(200_000),
+  'a run then ://': `${'a'.repeat(200_000)}://`,
+  'a run then ://u:': `${'a'.repeat(200_000)}://u:`,
+  'many ://': 'a://'.repeat(50_000),
+  'many :': 'a:'.repeat(100_000),
+  'many @': '@'.repeat(200_000),
+  'a password of @s': `https://u:${'a@'.repeat(100_000)}`,
+  'a spaced password then @s': `https://u:p ${'x@'.repeat(100_000)}`,
+  'a spaced password then user@host words': `https://u:p ${'x@h '.repeat(50_000)}`,
+  'many credential-less urls': 'a://b:c '.repeat(25_000),
+  'many digit urls': '1://:@'.repeat(33_000),
+  'many spaced passwords': `${'https://u:p '.repeat(16_000)}@h/r`,
+};
+
+// Invariant: masking runs in linear time: each masking function finishes every hostile ~200k-character input (a
+// remote helper's or ssh server's stderr, a url posted to remote.edit) well under 200 ms.
+test('maskUrl, isMaskedUrl, maskUrls, maskDeep and redactArgv stay fast on hostile 200k-character input', () => {
+  const fns = {
+    maskUrl, isMaskedUrl, maskUrls, maskDeep: (x) => maskDeep({ stderr: x }),
+    redactArgv: (x) => redactArgv(['git', 'commit', '-m', x, 'remote', x]),
+    redactArgvUrl: (x) => redactArgv(['git', 'remote', 'add', '--end-of-options', 'o', x]),
+  };
+  for (const [what, input] of Object.entries(HOSTILE)) {
+    for (const [name, fn] of Object.entries(fns)) {
+      const t0 = performance.now();
+      fn(input);
+      const ms = performance.now() - t0;
+      assert.ok(ms < 200, `${name} on ${what}: ${ms.toFixed(1)} ms`);
+    }
+  }
+});

@@ -265,3 +265,18 @@ test('remote.edit of a <transport>::<url> remote: the echoed mask is unchanged, 
   assert.deepEqual(w.remoteWrites(), [['remote', 'set-url', '--push', '--end-of-options', 'odd', '/push.git']]);
   assert.deepEqual([w.config('remote.odd.url'), w.config('remote.odd.pushurl')], [[HELPER_URL], ['/push.git']]);
 });
+
+// Invariant: a huge url posted to remote.edit is refused BAD_URL promptly: nothing scans it in more than linear time (the
+// length cap comes before the mask check), so the backend's event loop is never blocked.
+test('remote.edit with a 500k-character url answers BAD_URL promptly', async (t) => {
+  const w = await world(t);
+  await credRemote(w);
+  for (const huge of ['a'.repeat(500_000), `https://u:***@h/${'a'.repeat(500_000)}`, `${'a'.repeat(500_000)}://u:***@h/r`]) {
+    const t0 = performance.now();
+    const body = await w.call('remote.edit', { name: 'cred', url: huge }, 400);
+    const ms = performance.now() - t0;
+    assert.equal(body.code, 'BAD_URL');
+    assert.ok(ms < 2000, `answered in ${ms.toFixed(0)} ms`);
+  }
+  assert.deepEqual(w.config('remote.cred.url'), [url('one')]);
+});
