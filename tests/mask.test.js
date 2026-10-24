@@ -276,6 +276,10 @@ const HOSTILE = {
   'many credential-less urls': 'a://b:c '.repeat(25_000),
   'many digit urls': '1://:@'.repeat(33_000),
   'many spaced passwords': `${'https://u:p '.repeat(16_000)}@h/r`,
+  'a password of :// runs': `https://u:${'pw://x '.repeat(33_000)}@h/r`,
+  'many <transport>:: urls': 'a::a://'.repeat(28_000),
+  'a spaced password of inner @s': `(https://u:p@ss ${'w@x '.repeat(50_000)}@h/r)`,
+  'many empty passwords': 'https://u:@x '.repeat(15_000),
 };
 
 // Invariant: masking runs in linear time: each masking function finishes every hostile ~200k-character input (a
