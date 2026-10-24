@@ -323,7 +323,7 @@ What an op overwrites or deletes, and whether git can give it back. The branch, 
 | `commit.create` with `amend` | Nothing: HEAD moves to the new commit | Yes: the replaced commit stays in the reflog (`HEAD@{1}`) |
 | `stage.discardLines` | Exactly the lines of the applied patch, from the worktree | Yes, by the op itself: `result.patchB64` applied forward (`git apply`) restores them |
 | `stash.push`, `stash.pushLines` | The saved changes leave the worktree (and the index, unless `keepIndex`); `includeUntracked` removes the untracked files | Yes: the stash holds them; their undo writes back the recorded state (`undo.worktreeState`) or the lines (`undo.removedPatch`) |
-| `stash.apply` | Nothing it does not merge into; git refuses over local changes | The merge into the worktree, no: `undo` is empty |
+| `stash.apply` | Nothing it does not merge into; git refuses over local changes | Clean: yes, by its undo (`undo.worktreeState`; the stash is untouched); with conflicts: no |
 | `stash.pop` | As apply, then the stash entry | Clean: yes, by its undo (`undo.worktreeState` and `restore: 'store'`; the entry back at `stash@{0}`); with conflicts: the entry is kept, the merge no |
 | `stash.applyFile` | Nothing it does not change; atomic | Yes: `undo.worktreePatch` applied with `-R` |
 | `stash.drop` | The stash entry | Until gc: `stash store --message=<old> <oid>` (`restore: 'store'`) |

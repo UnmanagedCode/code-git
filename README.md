@@ -74,7 +74,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 
 ## Known limitations
 
-- **Undo is the last op only, in memory**: one undo and one redo per checkout, forgotten on a backend restart and cleared by any change it does not cover (staging, stash apply, push, pull, …; a fetch keeps it); a stash put back lands at `stash@{0}` ([docs/undo.md → Residuals](docs/undo.md#residuals)).
+- **Undo is the last op only, in memory**: one undo and one redo per checkout, forgotten on a backend restart and cleared by any change it does not cover (staging, push, pull, …; a fetch keeps it); a stash put back lands at `stash@{0}` ([docs/undo.md → Residuals](docs/undo.md#residuals)).
 - **No progress output for long ops.** cc's exec buffers output; a running op shows only an elapsed timer (and Cancel when the op allows it).
 - **Ctrl/⌘+digit works only while focus is inside the plugin frame.** With focus in cc's own UI, cc gets the key.
 - **The activity log is in memory**: capped (`LIMITS.activityRing` in `src/git/limits.js`) and cleared when the backend restarts.
