@@ -527,7 +527,7 @@ Behaviour, what writes and the `.gitattributes` parse: [lfs](lfs.md). Every git-
 
 | Op | kind | `params` | Runs | `result` | Refusals |
 |---|---|---|---|---|---|
-| `lfs.status` | read (cancellable) | `{}` | `lfs version` (exit 0 or 1); when usable: `config --get filter.lfs.process` (exit 0 or 1), the root `.gitattributes` (`readNoIndex`) | `{available, version: string \| null, supported, filters: bool \| null, attributes: 'ok' \| 'unsupported' \| null, patterns: string[] \| null}` (the last three null when git-lfs is absent or below 3.2.0) | `GIT_FAILED` (an unrecognised version, another `lfs version` failure) |
+| `lfs.status` | read (cancellable) | `{}` | `-c alias.lfs= lfs version` (exit 0 or 1; the gate of every LFS write too); when usable: `config --get filter.lfs.process` (exit 0 or 1), the root `.gitattributes` (`readNoIndex`) | `{available, version: string \| null, supported, filters: bool \| null, attributes: 'ok' \| 'unsupported' \| null, patterns: string[] \| null}` (the last three null when git-lfs is absent or below 3.2.0) | `GIT_FAILED` (an unrecognised version, another `lfs version` failure) |
 | `lfs.files` | write, `journal: 'neutral'` | `{}` | `lfs ls-files --json` (`LFS_LIMITS.listMaxOutputBytes`) | `{files: [{path, size, oid, downloaded} /* a missing field null */]}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `OUTPUT_TOO_LARGE`; `GIT_FAILED` (also malformed output) |
 | `lfs.track` | write | `{pattern}` | `lfs track -- <pattern>` | `{pattern}` | `BAD_PARAMS` (`checkPattern`); `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `ATTRIBUTES_UNSUPPORTED`; `GIT_FAILED` |
 | `lfs.untrack` | write | `{pattern}` | `lfs untrack -- <pattern>`, the patterns read before and after | `{pattern, removed}` | as `lfs.track` |

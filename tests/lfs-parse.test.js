@@ -59,6 +59,11 @@ test('parseLfsAttributes lists a pattern only when its line ends up with filter=
   ]);
 });
 
+test('parseLfsAttributes: the last filter token decides, `!filter` (unspecified) included; CR separates a pattern from its attributes, not only at a line end', () => {
+  const text = ['*.x filter=lfs !filter', '*.y filter=lfs -filter', '*.z !filter filter=lfs', '*.bin\rfilter=lfs', '*.tab\t\rfilter=lfs\r'].join('\n');
+  assert.deepEqual(parseLfsAttributes(Buffer.from(text, 'latin1')), ['*.z', '*.bin', '*.tab']);
+});
+
 test("parseLfsAttributes: a quoted pattern is C-unquoted as data (escapes, octal UTF-8 bytes, spaces); a quote git cannot unquote is a literal token, as git's attr parser reads it", () => {
   const lines = [
     '"with space.psd" filter=lfs',

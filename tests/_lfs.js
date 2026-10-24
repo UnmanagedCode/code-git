@@ -50,6 +50,8 @@ function opRunner(cc) {
 
 /** Every exec's argv after `git`, BASE_ARGS and (a network command's) NET_CONFIG. */
 const argvsOf = (cc) => () => cc.state.execCalls.map((b) => stripNet(b.argv.slice(1 + BASE_ARGS.length)));
+/** The availability probe, as the ops run it: a repo's `alias.lfs` emptied. */
+export const LFS_PROBE = ['-c', 'alias.lfs=', 'lfs', 'version'];
 /** A git-lfs command but `version`, as the ops run it. */
 export const LFS_CMD = ['--no-literal-pathspecs', 'lfs'];
 /** Whether `argv` runs git-lfs subcommand `sub`. */

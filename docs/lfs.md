@@ -5,7 +5,7 @@ A thin wrapper over the git-lfs CLI installed on the project's System. Ops: `src
 ## Floor and detection
 
 - **git-lfs ≥ 3.2.0** (`LFS_FLOOR`): the first with `git lfs ls-files --json`. Tested on 3.3.0 and 3.6.1; a fixture captured from each pins the parser (`tests/fixtures/lfs-<version>-ls-files.json`).
-- `git lfs version` (exit 0 or 1): git's `'lfs' is not a git command` (exit 1 under `LC_ALL=C`) is `available: false`; any other failure is `GIT_FAILED`; a first line not matching `^git-lfs/(\d+)\.(\d+)\.(\d+)` is `GIT_FAILED` ("unrecognised git-lfs version").
+- `git -c alias.lfs= lfs version` (exit 0 or 1): without git-lfs, git would expand a repository's `alias.lfs` (a `!` alias runs a shell command, on a read), so the probe empties it; git's `expansion of alias 'lfs' failed` (or `'lfs' is not a git command`; exit 1 under `LC_ALL=C`, git 2.39 and 2.55 alike) is `available: false`. An installed git-lfs runs before any alias; any other failure is `GIT_FAILED`; a first line not matching `^git-lfs/(\d+)\.(\d+)\.(\d+)` is `GIT_FAILED` ("unrecognised git-lfs version").
 - Every LFS write first runs `assertLfs`: absent → `LFS_UNAVAILABLE`; below the floor → `GIT_TOO_OLD {feature: 'git-lfs', need: '3.2.0', have}`.
 - **code-git never runs `git lfs install`.** The LFS filter config is the System's; `lfs.status` reports whether `filter.lfs.process` is set (`filters`).
 
@@ -37,7 +37,7 @@ Every git-lfs command but `version` runs as `git --no-literal-pathspecs lfs …`
 
 | Op | Runs | Notes |
 |---|---|---|
-| `lfs.status` | `lfs version`; when usable: `config --get filter.lfs.process` (exit 0 or 1), the root `.gitattributes` | Nothing after `version` when git-lfs is absent or too old |
+| `lfs.status` | `-c alias.lfs= lfs version`; when usable: `config --get filter.lfs.process` (exit 0 or 1), the root `.gitattributes` | Nothing after `version` when git-lfs is absent or too old |
 | `lfs.files` | `assertWorktree`, `assertLfs`; `lfs ls-files --json` (`LFS_LIMITS.listMaxOutputBytes`, else `OUTPUT_TOO_LARGE`) | Fields read: `name`, `size`, `oid`, `downloaded` (the ones 3.3.0 has); a missing one is `null`; `files: null` is `[]`; malformed output is `GIT_FAILED` |
 | `lfs.track` | gates; `lfs track -- <pattern>` | git-lfs writes the line (`<pattern> filter=lfs diff=lfs merge=lfs -text`; a space as `[[:space:]]`) |
 | `lfs.untrack` | gates; the patterns before; `lfs untrack -- <pattern>`; the patterns after | `removed`: a pattern line left the file |

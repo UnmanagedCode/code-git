@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { getOp, OPS } from '../src/git/ops/index.js';
 import { refused } from './_ops.js';
-import { LFS_CMD, LFS_HOOKS, LFS_SKIP, lfsAvailable, lfsWorld, runsLfs, strippedWorld } from './_lfs.js';
+import { LFS_CMD, LFS_HOOKS, LFS_PROBE, LFS_SKIP, lfsAvailable, lfsWorld, runsLfs, strippedWorld } from './_lfs.js';
 
 const HAVE_LFS = lfsAvailable();
 const WRITES = [['lfs.files', {}], ['lfs.track', { pattern: '*.dat' }], ['lfs.untrack', { pattern: '*.bin' }], ['lfs.pull', {}], ['lfs.prune', {}]];
@@ -16,13 +16,25 @@ test('absence: with no git-lfs on the System PATH, status answers available: fal
   assert.deepEqual(await w.op('lfs.status', {}), {
     available: false, version: null, supported: false, filters: null, attributes: null, patterns: null,
   });
-  assert.deepEqual(w.argvs(), [['lfs', 'version']]);
+  assert.deepEqual(w.argvs(), [LFS_PROBE]);
   for (const [name, params] of WRITES) {
     const before = w.argvs().length;
     await assert.rejects(w.op(name, params), refused('LFS_UNAVAILABLE'), name);
     const ran = w.argvs().slice(before);
-    assert.deepEqual(ran.at(-1), ['lfs', 'version'], `${name}: lfs version is the last command`);
+    assert.deepEqual(ran.at(-1), LFS_PROBE, `${name}: lfs version is the last command`);
   }
+});
+
+test("a repo's `alias.lfs` never runs on a System without git-lfs: the probe empties it, and git's failed expansion reads as available: false", async (t) => {
+  const w = await strippedWorld(t);
+  const marker = path.join(w.repo.root, 'alias-ran');
+  w.repo.git('config', 'alias.lfs', `!echo ALIASED > ${marker}`);
+  assert.deepEqual(await w.op('lfs.status', {}), {
+    available: false, version: null, supported: false, filters: null, attributes: null, patterns: null,
+  });
+  await assert.rejects(w.op('lfs.pull', {}), refused('LFS_UNAVAILABLE'));
+  assert.equal(exists(marker), false, 'the alias did not run');
+  assert.ok(w.argvs().every((a) => !a.includes('lfs') || a.join(' ') === LFS_PROBE.join(' ')), 'only the probe reached git');
 });
 
 test('params: track and untrack take a checked pattern (BAD_PARAMS otherwise); status, files, pull and prune take none', () => {
@@ -72,7 +84,7 @@ test('status lists the root .gitattributes patterns and the filter config, and l
   assert.deepEqual(w.snapshotGitDir(), before, '.git unchanged');
   for (const h of LFS_HOOKS) assert.equal(exists(path.join(w.gitDir, 'hooks', h)), false, h);
   // Only `lfs version` reaches git-lfs: every other read is plain git.
-  assert.deepEqual(w.argvs().filter((a) => a.includes('lfs')), [['lfs', 'version']]);
+  assert.deepEqual(w.argvs().filter((a) => a.includes('lfs')), [LFS_PROBE]);
   w.repo.git('config', '--global', '--unset', 'filter.lfs.process');
   assert.equal((await w.op('lfs.status', {})).filters, false);
 });

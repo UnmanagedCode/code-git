@@ -7,14 +7,16 @@ const decoder = new TextDecoder('utf-8', { fatal: false });
 const NEED = LFS_FLOOR.join('.');
 
 /**
- * {available, version: string | null, supported}. git's "'lfs' is not a git command" (exit 1, LC_ALL=C) is
- * `available: false`; any other failure is GIT_FAILED, and a version line that does not parse too.
+ * {available, version: string | null, supported}. Without git-lfs git would expand a repo's `alias.lfs` (a `!` alias runs a
+ * shell command, on a read): `-c alias.lfs=` empties it, and git's "expansion of alias 'lfs' failed" (exit 1, LC_ALL=C;
+ * git 2.39 and 2.55 alike) is `available: false`, as its "'lfs' is not a git command" would be. git-lfs, when installed,
+ * runs before any alias. Any other failure is GIT_FAILED, and a version line that does not parse too.
  */
 export async function lfsVersion(git) {
-  const r = await git(['lfs', 'version'], { okExit: [0, 1] });
+  const r = await git(['-c', 'alias.lfs=', 'lfs', 'version'], { okExit: [0, 1] });
   if (r.exitCode === 1) {
     const stderr = decoder.decode(r.stderr);
-    if (stderr.includes("'lfs' is not a git command")) return { available: false, version: null, supported: false };
+    if (stderr.includes("expansion of alias 'lfs' failed") || stderr.includes("'lfs' is not a git command")) return { available: false, version: null, supported: false };
     throw new Refusal('GIT_FAILED', 'git lfs version exited with 1', { exitCode: 1, stderr });
   }
   return { available: true, ...parseLfsVersion(decoder.decode(r.stdout)) };
