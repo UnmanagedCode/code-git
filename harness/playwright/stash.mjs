@@ -1,7 +1,7 @@
 // The stash path, asserted on the seeded `stash` project (seed.mjs): save selected files from the Changes panel (the
-// graph and the refs panel show the new stash), the stash's view switch, one file applied from the details, a rename
-// (to the top), lines stashed from the diff, pop, drop (cancelled, then confirmed), a branch from a stash, and the
-// dialogs on a phone. Each step is checked against git itself. Runs in light then dark, each on a fresh seed;
+// graph and the refs panel show the new stash), the header's Undo and Redo of that save, the stash's view switch, one
+// file applied from the details, a rename (to the top), lines stashed from the diff, pop, drop (cancelled, then
+// confirmed; undone and redone through its confirmation), a branch from a stash, and the dialogs on a phone. Each step is checked against git itself. Runs in light then dark, each on a fresh seed;
 // screenshots go to out/stash/.
 // Run: node harness/playwright/stash.mjs   (needs `npm run prepare` first, for frontend/dist)
 import { execFileSync } from 'node:child_process';
@@ -64,6 +64,14 @@ for (const scheme of ['light', 'dark']) {
         await match.nth(n).waitFor();
       };
       const saveDialog = page.getByRole('dialog', { name: 'Stash changes', exact: true });
+      const header = page.getByRole('banner', { name: 'Repository summary', exact: true });
+      const undoButton = header.getByRole('button', { name: 'Undo', exact: true });
+      const redoButton = header.getByRole('button', { name: 'Redo', exact: true });
+      /** Waits until the header's `name` button (Undo / Redo) is enabled and titled after `label` (its slot's label). */
+      const slotReady = (name, label) => page.waitForFunction(([n, l]) => {
+        const b = document.querySelector(`header[aria-label="Repository summary"] button[aria-label="${n}"]`);
+        return !!b && !b.disabled && !!b.getAttribute('title')?.startsWith(`${n} ${l} (`);
+      }, [name, label]);
       const rowMenu = async (id, item) => {
         await row(id).click({ button: 'right' });
         await menu.getByRole('menuitem', { name: item, exact: true }).click();
@@ -98,6 +106,22 @@ for (const scheme of ['light', 'dark']) {
       await refsStashes.getByText('On main: selected files').waitFor();
       check(true, `${scheme}: the refs panel lists the stash`);
       await shot('saved');
+
+      // 1b. The header's Undo takes the save back: the files return to the Changes panel, the stash row goes. Redo
+      // stores the same stash again. Neither asks.
+      await slotReady('Undo', 'Stash “selected files”');
+      await toasted('Undid Stash “selected files”', () => undoButton.click());
+      await row(`stash:${saved.oid}`).waitFor({ state: 'detached' });
+      check(!stashes().some((s) => s.oid === saved.oid) && stashes().length === 2, `${scheme}: Undo dropped the save's stash`);
+      check(file('todo.txt') === 'todo\n' && git('diff', '--cached', '--name-only').split('\n').includes('lib/util.js'), `${scheme}: Undo put todo.txt back and lib/util.js staged again`);
+      await right.getByRole('region', { name: 'Staged Files', exact: true }).getByRole('option', { name: /lib\/util\.js/ }).waitFor();
+      await right.getByRole('region', { name: 'Unstaged Files', exact: true }).getByRole('option', { name: /todo\.txt/ }).waitFor();
+      check(true, `${scheme}: the Changes panel lists both files again`);
+      await shot('save-undone');
+      await slotReady('Redo', 'Stash “selected files”');
+      await toasted('Redid Stash “selected files”', () => redoButton.click());
+      await row(`stash:${saved.oid}`).waitFor();
+      check(stashes()[0].oid === saved.oid && file('todo.txt') === null, `${scheme}: Redo stored the same stash and took the files again`);
 
       // 2. View the stash: the switch's three views list what each part holds.
       await rowMenu(`stash:${saved.oid}`, 'View changes');
@@ -181,6 +205,25 @@ for (const scheme of ['light', 'dark']) {
       await toasted('Dropped stash@{0}', () => confirm.getByRole('button', { name: 'Drop stash', exact: true }).click());
       check(!stashes().some((s) => s.oid === lineStash.oid), `${scheme}: Drop removed the stash`);
       await row(`stash:${lineStash.oid}`).waitFor({ state: 'detached' });
+
+      // 7b. Undo the drop: the stash is back at stash@{0} at once. Redo asks first, listing its message; confirmed, it goes.
+      await slotReady('Undo', 'Drop stash “On main: one line”');
+      await toasted('Undid Drop stash “On main: one line”', () => undoButton.click());
+      await row(`stash:${lineStash.oid}`).waitFor();
+      check(stashes()[0].oid === lineStash.oid && stashes()[0].subject === 'On main: one line', `${scheme}: Undo stored the stash back at stash@{0}`);
+      await slotReady('Redo', 'Drop stash “On main: one line”');
+      await redoButton.click();
+      const redoAsk = page.getByRole('dialog', { name: 'Redo Drop stash “On main: one line”?', exact: true });
+      await redoAsk.waitFor();
+      check(JSON.stringify(await redoAsk.getByRole('listitem').allTextContents()) === '["On main: one line"]', `${scheme}: the redo confirmation lists the stash it drops`);
+      check(stashes()[0].oid === lineStash.oid, `${scheme}: nothing dropped before confirming`);
+      await shot('redo-drop-confirm');
+      await page.setViewportSize(PHONE);
+      await shot('redo-drop-confirm-phone');
+      await page.setViewportSize(DESKTOP);
+      await toasted('Redid Drop stash “On main: one line”', () => redoAsk.getByRole('button', { name: 'Redo', exact: true }).click());
+      await row(`stash:${lineStash.oid}`).waitFor({ state: 'detached' });
+      check(!stashes().some((s) => s.oid === lineStash.oid), `${scheme}: the confirmed redo dropped it again`);
 
       // 8. Create a branch from "earlier experiment": checked out at its base, the stash applied and dropped.
       const earlier = stashes().find((s) => s.subject === 'On main: earlier experiment');

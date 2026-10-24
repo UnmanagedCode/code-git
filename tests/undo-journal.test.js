@@ -16,12 +16,16 @@ const commit = async (w, summary = 'c', at = null) => {
 const EMPTY = { undo: null, redo: null };
 
 // Invariant (D1): a write that is not registered for undo clears both slots, even one that leaves every ref as it was.
-test('an unregistered write — stash.push, stage.files, remote.fetch — clears both slots', async (t) => {
+test('an unregistered write — stage.files, stash.apply, remote.pull — clears both slots', async (t) => {
   const w = await undoWorld(t);
   const writes = [
-    ['stash.push', () => { w.repo.write('f.txt', 'dirty\n'); return {}; }],
     ['stage.files', () => { w.repo.write('s.txt', 's\n'); return { paths: ['s.txt'] }; }],
-    ['remote.fetch', () => ({ remote: null })],
+    ['stash.apply', () => {
+      w.repo.write('f.txt', 'stashed\n');
+      w.repo.git('stash', 'push', '-q');
+      return { oid: w.oid('refs/stash') };
+    }],
+    ['remote.pull', () => ({ mode: 'ff' })],
   ];
   for (const [name, setup] of writes) {
     await commit(w, `before-${name.replace('.', '-')}`);
@@ -47,6 +51,20 @@ test('a failed registered op and a conflicts outcome both clear the slots', asyn
   await commit(w, 'two');
   const r = await w.op('head.cherryPick', { oid: s });
   assert.equal(r.conflicts, true);
+  assert.deepEqual(await w.state(), EMPTY);
+});
+
+// Invariant (D1): a registered stash op whose outcome has no plan — a pop that stopped on conflicts — clears the slots.
+test('a stash.pop that stops on conflicts records nothing and clears the slots', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.write('f.txt', 'stashed\n');
+  w.repo.git('stash', 'push', '-q');
+  const oid = w.oid('refs/stash');
+  w.repo.commit({ 'f.txt': 'committed over it\n' }, 'conflicting');
+  await commit(w, 'one');
+  assert.ok((await w.state()).undo);
+  const r = await w.op('stash.pop', { oid });
+  assert.deepEqual(r.conflicts, ['f.txt']);
   assert.deepEqual(await w.state(), EMPTY);
 });
 
@@ -109,7 +127,7 @@ test('a commit made with raw git after the op: UNDO_STALE, nothing moves, the sl
   assert.deepEqual(await w.state(), EMPTY);
 });
 
-// Invariant: the route wraps every op: over HTTP a commit records, undo.state shows it, stash.push clears it, and a backend
+// Invariant: the route wraps every op: over HTTP a commit records, undo.state shows it, stage.files clears it, and a backend
 // with a fresh journal (a restart) answers NOTHING_TO_UNDO.
 test('over HTTP: a commit records, an unregistered write clears, a fresh backend has nothing to undo', async (t) => {
   const repo = makeRepo(t);
@@ -127,7 +145,7 @@ test('over HTTP: a commit records, an unregistered write clears, a fresh backend
   const none = await fresh.call('POST', '/api/ops/undo.undo', { target, params: { id: s.undo.id } });
   assert.deepEqual([none.status, none.body.code], [409, 'NOTHING_TO_UNDO']);
   repo.write('a.txt', 'dirty\n');
-  assert.equal((await first.call('POST', '/api/ops/stash.push', { target, params: {} })).status, 200);
+  assert.equal((await first.call('POST', '/api/ops/stage.files', { target, params: { paths: ['a.txt'] } })).status, 200);
   assert.deepEqual((await first.call('POST', '/api/ops/undo.state', { target })).body.result, EMPTY);
 });
 

@@ -12,8 +12,39 @@ const decoder = new TextDecoder('utf-8', { fatal: false });
 /** Env values as recorded: a secret-looking name's value is redacted. */
 export const redactEnv = (env) => Object.fromEntries(Object.entries(env).map(([k, v]) => [k, SECRET_NAME.test(k) ? '[redacted]' : v]));
 
-/** Argv as recorded: an argument that is a url with a password is masked (maskUrl); git itself gets the real argv. */
-export const redactArgv = (argv) => argv.map(maskUrl);
+/** A remote's config keys whose values are urls (maskUrl hides their passwords) or refspecs: recorded. */
+const URL_VARS = new Set(['url', 'pushurl', 'fetch']);
+
+/** `git config` options whose value is the next argument (before the key): skipped when looking for the key. */
+const CONFIG_VALUE_OPTS = new Set(['--file', '-f', '--blob', '--type', '-t', '--default', '--comment']);
+
+/** The index of the subcommand in a recorded `git …` argv: past git's own options (`-c` / `-C` take a value), or -1. */
+function subcommandAt(argv) {
+  for (let i = 1; i < argv.length; i++) {
+    if (argv[i] === '-c' || argv[i] === '-C') i++;
+    else if (!argv[i].startsWith('-')) return i;
+  }
+  return -1;
+}
+
+/**
+ * Argv as recorded; git itself gets the real argv. An argument that is a url with a password is masked (maskUrl). The
+ * value of a `git config` write to a remote's other keys (`remote.<name>.<var>`: a proxy, which may be
+ * `user:password@host`, a pack command) is replaced by `***`, the key kept: no mask could tell its secret part.
+ */
+export function redactArgv(argv) {
+  const out = argv.map(maskUrl);
+  const sub = subcommandAt(argv);
+  if (sub === -1 || argv[sub] !== 'config') return out;
+  let key = -1;
+  for (let i = sub + 1; i < argv.length && key === -1; i++) {
+    if (CONFIG_VALUE_OPTS.has(argv[i])) i++;
+    else if (!argv[i].startsWith('-')) key = i;
+  }
+  const v = /^remote\..+\.([^.]+)$/i.exec(argv[key] ?? '')?.[1]?.toLowerCase();
+  if (v === undefined || URL_VARS.has(v)) return out;
+  return out.map((a, i) => (i > key ? '***' : a));
+}
 
 /** A target as an entry records it: `sub` only when the command ran in a submodule. */
 const copyTarget = (t) => ({ project: t.project, worktree: t.worktree ?? null, ...(t.sub ? { sub: [...t.sub] } : {}) });

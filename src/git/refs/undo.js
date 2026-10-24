@@ -15,11 +15,30 @@
  * Optional keys, present only when the op sets them (docs/undo.md → Record keys): `created` {tip, not} — the commits the
  * op made are `tip` minus everything reachable from `not`; `indexTree` — the index's tree before a mixed reset (null when
  * unmerged entries kept `write-tree` from writing it); `discard` {snapshot, tracked, untracked} — a commit of the
- * discarded paths' worktree content.
+ * discarded paths' worktree content; `worktreeState` {paths, before, mid?, after} — a stash op's checkout states, each
+ * {head, index, files} (HEAD's oid, the index's tree, the tree of `paths` in the worktree); `removedPatch` — base64 bytes
+ * whose `apply -R` took stash.pushLines' lines out of the worktree.
  */
-export function undoRecord({ refs = [], remoteRefs = [], head = null, worktreeSnapshot = null, stashes = [], worktreePatch = null, remotes = [], created, indexTree, discard } = {}) {
+export function undoRecord({
+  refs = [], remoteRefs = [], head = null, worktreeSnapshot = null, stashes = [], worktreePatch = null, remotes = [],
+  created, indexTree, discard, worktreeState, removedPatch,
+} = {}) {
+  const optional = { created, indexTree, discard, worktreeState, removedPatch };
   return {
     refs, remoteRefs, head, worktreeSnapshot, stashes, worktreePatch, remotes,
-    ...(created !== undefined ? { created } : {}), ...(indexTree !== undefined ? { indexTree } : {}), ...(discard !== undefined ? { discard } : {}),
+    ...Object.fromEntries(Object.entries(optional).filter(([, v]) => v !== undefined)),
   };
+}
+
+/** A remote snapshot side with its `extra` values withheld (null): a proxy, a header or a command may hold a secret. */
+const withheld = (side) => (side?.extra ? { ...side, extra: side.extra.map(([v]) => [v, null]) } : side);
+
+/**
+ * An op's result as the ops route answers it: `undo.remotes[].old` / `.new` `extra` values withheld. A copy: the journal
+ * built its plan from the raw result first (src/git/undo/record.js), so an undo still writes the values back exactly.
+ */
+export function forTheWire(result) {
+  const remotes = result?.undo?.remotes;
+  if (!remotes?.length) return result;
+  return { ...result, undo: { ...result.undo, remotes: remotes.map((r) => ({ ...r, old: withheld(r.old), new: withheld(r.new) })) } };
 }

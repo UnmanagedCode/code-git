@@ -209,3 +209,11 @@ export function assertNoTrackingSymrefs(snapshot, specs, remote) {
 export function newlyLiveSymrefs(before, after) {
   return [...after].filter(([ref, e]) => e.symref && !before.get(ref)?.symref).map(([ref, e]) => ({ ref, target: e.symref }));
 }
+
+/** The remote-tracking refs (under refs/remotes/) `name`'s fetch refspecs map, with symrefs; SYMBOLIC_REF for one other than its HEAD alias. */
+export async function trackingRefsOf(git, name) {
+  const specs = await fetchSpecs(git, name);
+  const snapshot = new Map([...await trackedSnapshot(git, specs)].filter(([ref]) => ref.startsWith('refs/remotes/')));
+  assertNoTrackingSymrefs(snapshot, specs, name);
+  return snapshot;
+}

@@ -6,14 +6,18 @@ import { shortBranch } from '../refs/check.js';
 import { assertCcAck, assertCcHeadAck, assertNotSymbolic, ownHead, readHeads } from '../refs/heads.js';
 import { assertNoSymref, refEntries } from '../refs/resolve.js';
 import { undoRecord } from '../refs/undo.js';
-import { assertNotLegacy, listRemotes, multiValued, remoteNames, remoteSnapshot } from '../remote/config.js';
+import {
+  assertNewRemote, assertNotLegacy, listRemotes, localBranchKeys, multiValued, pushDefaultOf, remoteNames, remoteSnapshot, renameGates, renameRemote,
+  upstreamsIn,
+} from '../remote/config.js';
 import { fetchRemote } from '../remote/fetch.js';
 import { fastForward, merge, rebase } from '../remote/integrate.js';
 import { netRun, remoteFailure } from '../remote/net.js';
 import { assertSomethingPushed, knownRemote, push, remoteName } from '../remote/push.js';
-import { assertNoTrackingSymrefs, fetchSpecs, trackedSnapshot, trackingRefsFor } from '../remote/tracking.js';
+import { fetchSpecs, trackingRefsFor, trackingRefsOf } from '../remote/tracking.js';
 import { newRemoteName, remoteUrl } from '../remote/url.js';
 import { assertClean, assertNoOperation } from '../sequence/guard.js';
+import { plans } from '../undo/plans.js';
 import { assertOid } from '../validate.js';
 import { assertWorktree } from '../worktree.js';
 
@@ -87,19 +91,6 @@ function noParams(raw, op) {
   return {};
 }
 
-/** REMOTE_EXISTS when `name` is already one of `git remote`'s. */
-async function assertNewRemote(git, name) {
-  if ((await remoteNames(git)).includes(name)) throw new Refusal('REMOTE_EXISTS', `a remote ${name} already exists`);
-}
-
-/** The remote-tracking refs (under refs/remotes/) the remote's fetch refspecs map, with symrefs; SYMBOLIC_REF for one other than its HEAD alias. */
-async function trackingRefsOf(git, name) {
-  const specs = await fetchSpecs(git, name);
-  const snapshot = new Map([...await trackedSnapshot(git, specs)].filter(([ref]) => ref.startsWith(REMOTES)));
-  assertNoTrackingSymrefs(snapshot, specs, name);
-  return snapshot;
-}
-
 /** The single value of a url list an edit replaces; a remote with several (or a legacy file) is not one code-git edits. */
 function assertSingle(name, values, what) {
   if (multiValued(values)) {
@@ -127,6 +118,7 @@ export const ops = [
       if (pushUrl) await git(['remote', 'set-url', '--push', '--end-of-options', name, pushUrl]);
       return { name, undo: undoRecord({ remotes: [{ name, old: null, new: await remoteSnapshot(git, name) }] }) };
     },
+    undo: plans.remoteAdd,
   },
   {
     name: 'remote.edit',
@@ -152,6 +144,7 @@ export const ops = [
       if (pushUrl === null) await git(['config', '--unset-all', `remote.${name}.pushurl`], { okExit: [0, 5] });
       return { name, undo: undoRecord({ remotes: [{ name, old, new: await remoteSnapshot(git, name) }] }) };
     },
+    undo: plans.remoteEdit,
   },
   {
     name: 'remote.rename',
@@ -161,21 +154,14 @@ export const ops = [
       return { name: remoteName(p.name), newName: newRemoteName(p.newName) };
     },
     async run(git, { name, newName }) {
-      const old = await remoteSnapshot(git, name);
-      await assertNotLegacy(git, name, old);
-      await assertNewRemote(git, newName);
-      // git rewrites only this one refspec shape; any other would keep fetching into the old namespace.
-      const standard = `+refs/heads/*:${REMOTES}${name}/*`;
-      if (old.fetch.length !== 1 || old.fetch[0] !== standard) {
-        throw new Refusal('REMOTE_CONFIG_UNSUPPORTED', `${name}'s fetch refspecs are not the default ${standard}: rename it with git`, { remote: name, refspec: old.fetch.join(' ') || null });
-      }
-      await trackingRefsOf(git, name);
-      await git(['remote', 'rename', '--end-of-options', name, newName]);
+      const old = await renameGates(git, name, newName);
+      await renameRemote(git, name, newName);
       return {
         name: newName,
         undo: undoRecord({ remotes: [{ name, old, new: null }, { name: newName, old: null, new: await remoteSnapshot(git, newName) }] }),
       };
     },
+    undo: plans.remoteRename,
   },
   {
     name: 'remote.remove',
@@ -188,24 +174,41 @@ export const ops = [
       const old = await remoteSnapshot(git, name);
       await assertNotLegacy(git, name, old);
       const tracking = await trackingRefsOf(git, name);
+      const [keysBefore, defaultBefore] = [await localBranchKeys(git), await pushDefaultOf(git)];
       await git(['remote', 'remove', '--end-of-options', name]);
       // git deletes the refs/remotes/ refs the refspecs map, except those another remote's refspecs also map: re-read.
       const left = await refEntries(git, [...tracking.keys()]);
       const deleted = [...tracking].filter(([ref]) => !left.has(ref));
+      // What git cleared, re-read as the refs: the repo's own branch keys before minus after (git picks the branches by
+      // their effective remote, in any scope, and unsets the keys in this file only), and pushDefault. Only those are the
+      // undo's to write back, and the redo's to expect.
+      const keysAfter = await localBranchKeys(git);
+      const kept = [...keysAfter];
+      const branchKeys = keysBefore.filter(([k, v]) => {
+        const i = kept.findIndex(([k2, v2]) => k2 === k && v2 === v);
+        if (i === -1) return true;
+        kept.splice(i, 1);
+        return false;
+      });
+      const cleared = { branchKeys, pushDefault: defaultBefore === name && await pushDefaultOf(git) !== name };
       return {
         name,
         deletedRefs: deleted.map(([ref]) => ref),
-        clearedUpstreams: old.upstreams,
+        clearedUpstreams: upstreamsIn(branchKeys),
         undo: undoRecord({
           refs: deleted.map(([ref, e]) => (e.symref ? { ref, old: null, new: null, symref: e.symref } : { ref, old: e.oid, new: null })),
-          remotes: [{ name, old, new: null }],
+          remotes: [{ name, old: { ...old, ...cleared }, new: null }],
         }),
       };
     },
+    undo: plans.remoteRemove,
   },
   {
     name: 'remote.fetch',
     kind: 'write',
+    // Neither recorded nor clearing the undo slots (R3): it writes only tracking refs and tags, which every registered
+    // plan re-checks before it runs (docs/undo.md → Fetch neutrality). The auto-fetch is this op too.
+    journal: 'neutral',
     // Objects are written before refs and each ref update is atomic: an abort leaves a consistent subset of tracking refs
     // updated and at most a temporary pack, never a touched index or worktree. gc and maintenance are off (fetchArgs).
     cancellable: true,

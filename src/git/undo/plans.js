@@ -1,8 +1,11 @@
+import { stashSides } from './steps/stash.js';
+
 // The registered ops' undo builders (docs/undo.md → Per-op plans): each turns an op's params and result (its
 // `result.undo` record) into an UndoPlan, or null when the outcome is not undoable. Pure: they never run git.
 //
 // UndoPlan {label, created: {tip, not} | null, confirm: {undo: Confirm | null, redo: Confirm | null}, steps}
-// Confirm  {kind: 'deletesRefs', refs} | {kind: 'discards', paths} | {kind: 'resetHard'}
+// Confirm  {kind: 'deletesRefs', refs} | {kind: 'discards', paths} | {kind: 'resetHard'} | {kind: 'dropsStashes', messages}
+//        | {kind: 'deletesRemote', name, refs}
 // Redo runs the steps in order, undo in reverse (src/git/undo/engine.js).
 
 const short = (ref) => ref.replace(/^refs\/(?:heads|tags)\//, '');
@@ -10,16 +13,32 @@ const abbrev = (oid) => oid.slice(0, 7);
 const quoted = (s) => `“${s}”`;
 const names = (list) => list.join(', ');
 
-/** The confirmation each direction needs (D4): a hard reset, then a discard's redo, then any ref it deletes. */
+/**
+ * The confirmation each direction needs (D4, R2: only a real loss asks): a hard reset, then a discard's redo, then a
+ * direction that only drops stashes, then a remote's removal on redo (with the tracking refs it deletes), then any ref
+ * it deletes. Lines taken out with `apply -R` are a discard only when
+ * no stash holds them (stash.pushLines' are in its stash); a forward patch's redo (stash.applyFile) loses nothing.
+ */
 function confirmsOf(steps) {
   const confirm = { undo: null, redo: null };
   const deletes = { undo: [], redo: [] };
+  const dropped = { undo: [], redo: [] };
+  const inStash = steps.some((s) => s.kind === 'stash');
+  const writesFiles = steps.some((s) => s.kind === 'worktree' || s.kind === 'patch');
+  const removed = steps.find((s) => s.kind === 'remote' && s.new === null);
   for (const s of steps) {
     if (s.kind === 'head' && s.mode === 'hard') {
       confirm.undo = { kind: 'resetHard' };
       confirm.redo = { kind: 'resetHard' };
     }
-    if (s.kind === 'discard' || s.kind === 'patch') confirm.redo ??= { kind: 'discards', paths: s.kind === 'patch' ? [s.path] : [...s.tracked, ...s.untracked] };
+    if (s.kind === 'discard') confirm.redo ??= { kind: 'discards', paths: [...s.tracked, ...s.untracked] };
+    if (s.kind === 'patch' && !s.forward && !inStash) confirm.redo ??= { kind: 'discards', paths: [s.path] };
+    if (s.kind === 'stash' && !writesFiles) {
+      for (const dir of ['undo', 'redo']) {
+        const { stores, drops } = stashSides(s, dir);
+        if (drops.length && !stores.length) dropped[dir].push(...drops.map((e) => e.message));
+      }
+    }
     if (s.kind === 'refs') {
       for (const r of s.refs) {
         if (r.symref) deletes.redo.push(r.ref);
@@ -30,7 +49,11 @@ function confirmsOf(steps) {
     // The first commit on an unborn branch: its undo deletes the branch ref.
     if (s.kind === 'head' && s.mode === 'soft' && s.old.oid === null && s.old.branch) deletes.undo.push(s.old.branch);
   }
-  for (const dir of ['undo', 'redo']) if (!confirm[dir] && deletes[dir].length) confirm[dir] = { kind: 'deletesRefs', refs: deletes[dir] };
+  for (const dir of ['undo', 'redo']) {
+    if (!confirm[dir] && dropped[dir].length) confirm[dir] = { kind: 'dropsStashes', messages: dropped[dir] };
+    if (!confirm[dir] && dir === 'redo' && removed) confirm[dir] = { kind: 'deletesRemote', name: removed.name, refs: deletes.redo };
+    if (!confirm[dir] && deletes[dir].length) confirm[dir] = { kind: 'deletesRefs', refs: deletes[dir] };
+  }
   return confirm;
 }
 
@@ -131,6 +154,79 @@ function discardLinesPlan(params, result) {
   return plan(`Discard lines in ${result.path}`, [{ kind: 'patch', path: result.path, patchB64: result.patchB64 }]);
 }
 
+/** A record's `stashes` as one `stash` step (each entry the op created or removed, with the message it is stored under). */
+function stashStep(rec) {
+  const entries = rec.stashes.map((e) => (e.old === null
+    ? { oid: e.oid, message: e.new.message, side: 'created' }
+    : { oid: e.oid, message: e.old.message, side: 'removed' }));
+  return entries.length ? { kind: 'stash', entries } : null;
+}
+
+const worktreeStep = (state) => ({ kind: 'worktree', ...state });
+
+/** A save: its stash and the checkout's state before and after. Unverified (no stash claimed) or unrecorded state: none. */
+function stashPushPlan(params, result) {
+  const rec = result.undo;
+  if (!rec.worktreeState || !rec.stashes.length) return null;
+  return plan(params.message ? `Stash ${quoted(params.message)}` : 'Stash changes', [stashStep(rec), worktreeStep(rec.worktreeState)]);
+}
+
+function stashPushLinesPlan(params, result) {
+  const rec = result.undo;
+  return plan(`Stash lines in ${params.path}`, [stashStep(rec), { kind: 'patch', path: params.path, patchB64: rec.removedPatch }]);
+}
+
+/** A clean pop: the checkout's states, then the drop (absent when the drop met STASH_MOVED). Conflicts: none. */
+function stashPopPlan(params, result) {
+  const rec = result.undo;
+  if (result.conflicts.length || !rec.worktreeState) return null;
+  const message = rec.stashes[0]?.old.message;
+  return plan(message === undefined ? 'Pop stash' : `Pop ${quoted(message)}`, [worktreeStep(rec.worktreeState), stashStep(rec)]);
+}
+
+function stashDropPlan(params, result) {
+  const rec = result.undo;
+  return plan(`Drop stash ${quoted(rec.stashes[0].old.message)}`, [stashStep(rec)]);
+}
+
+function stashRenamePlan(params, result) {
+  return plan(`Rename stash to ${quoted(params.message)}`, [stashStep(result.undo)]);
+}
+
+function stashApplyFilePlan(params, result) {
+  return plan(`Apply ${result.path} from stash`, [{ kind: 'patch', path: result.path, patchB64: result.undo.worktreePatch, forward: true }]);
+}
+
+/** A clean stash.branch: create, switch, the apply's states (`mid` between switch and apply), the drop. Unborn HEAD: none. */
+function stashBranchPlan(params, result) {
+  const rec = result.undo;
+  if (result.conflicts.length || !rec.worktreeState) return null;
+  const refHead = refHeadSteps(rec, 'keep');
+  if (!refHead) return null;
+  return plan(`Create branch ${params.name} from stash`, [...refHead, worktreeStep(rec.worktreeState), stashStep(rec)]);
+}
+
+/** The remote record's one entry (add, edit, remove each record one remote). */
+const remoteStep = (r) => ({ kind: 'remote', name: r.name, old: r.old, new: r.new });
+
+function remoteAddPlan(params, result) {
+  return plan(`Add remote ${params.name}`, [remoteStep(result.undo.remotes[0])]);
+}
+
+function remoteEditPlan(params, result) {
+  return plan(`Edit remote ${params.name}`, [remoteStep(result.undo.remotes[0])]);
+}
+
+function remoteRenamePlan(params) {
+  return plan(`Rename remote ${params.name} to ${params.newName}`, [{ kind: 'remoteRename', from: params.name, to: params.newName }]);
+}
+
+/** Redo deletes the tracking refs first, then the config; undo writes the config back, then re-creates the refs. */
+function remoteRemovePlan(params, result) {
+  const rec = result.undo;
+  return plan(`Remove remote ${params.name}`, [rec.refs.length ? { kind: 'refs', refs: rec.refs } : null, remoteStep(rec.remotes[0])]);
+}
+
 /** The builders, by the op whose definition carries them. */
 export const plans = {
   commit: commitPlan,
@@ -152,4 +248,15 @@ export const plans = {
   deleteTags: refsPlan((p, r) => `Delete tag ${names(r.deleted)}`),
   discardFiles: discardFilesPlan,
   discardLines: discardLinesPlan,
+  stashPush: stashPushPlan,
+  stashPushLines: stashPushLinesPlan,
+  stashPop: stashPopPlan,
+  stashDrop: stashDropPlan,
+  stashRename: stashRenamePlan,
+  stashApplyFile: stashApplyFilePlan,
+  stashBranch: stashBranchPlan,
+  remoteAdd: remoteAddPlan,
+  remoteEdit: remoteEditPlan,
+  remoteRename: remoteRenamePlan,
+  remoteRemove: remoteRemovePlan,
 };

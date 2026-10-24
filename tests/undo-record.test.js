@@ -70,6 +70,21 @@ test('a failed write, a null plan and a plan without steps all leave the slots e
   }
 });
 
+// Invariant (R3): a journal-neutral write passes straight through: it neither clears the slots nor bumps the generation,
+// so a write that began before it still records.
+test('a journal-neutral write keeps the slots and the generation', async () => {
+  const j = createJournal();
+  const reg = def({ undo: () => plan() });
+  await journalAround(j, reg, A, {}, reg.run);
+  const kept = j.state(A);
+  const gen = j.beforeWrite(B);
+  const neutral = def({ name: 'remote.fetch', journal: 'neutral' });
+  for (const at of [A, B]) assert.deepEqual(await journalAround(j, neutral, at, {}, async () => ({ fetched: true })), { fetched: true });
+  await assert.rejects(journalAround(j, neutral, A, {}, async () => { throw new Error('unreachable'); }), /unreachable/);
+  assert.deepEqual(j.state(A), kept);
+  assert.ok(j.recorded(B, gen, 'test.write', plan()), 'B\'s generation did not move');
+});
+
 // Invariant: undo.* ops pass through journalAround without clearing (they manage the slots themselves).
 test('an undo.* write does not clear the slots', async () => {
   const j = createJournal();

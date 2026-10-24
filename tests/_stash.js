@@ -35,3 +35,12 @@ export const runs = (w, ...words) => w.execArgv().filter((a) => {
   const i = a.indexOf('--work-tree=.') + 1;
   return words.every((x, k) => a[i + k] === x);
 });
+
+/**
+ * `runs` limited to the real index: the execs from `from` on (an index into the exec log) that set no GIT_INDEX_FILE —
+ * the undo snapshots' temporary-index commands (src/git/stash/snapshot.js) left out.
+ */
+export const realIndexRuns = (w, from, ...words) => w.cc.state.execCalls.slice(from).filter((b) => !b.env?.GIT_INDEX_FILE).map((b) => b.argv).filter((a) => {
+  const i = a.indexOf('--work-tree=.') + 1;
+  return words.every((x, k) => a[i + k] === x);
+});

@@ -110,3 +110,95 @@ test('probe: --end-of-options is accepted where the steps pass it; a missing con
   assert.equal(run(['stash', 'apply', '-q', '--index', '--end-of-options', snap]).status, 0);
   assert.equal(run(['config', '--remove-section', 'branch.none']).status, 128);
 });
+
+// Invariant: on a temporary index read from tree A, `update-index --refresh` exits 1 when a file differs from A (and
+// exits 0 with -q, which is why the worktree step runs it without -q); `read-tree -m -u A B` then writes B's content,
+// exec bit and symlinks, deletes a path B lacks together with its emptied directory, and refuses (exit 128, nothing
+// written) an untracked file standing where B adds one.
+test('probe: the temp-index two-way read-tree -m -u the worktree step writes with', (t) => {
+  const { repo } = world(t);
+  repo.commit({ 'a.txt': 'a\n', 'd/c.txt': 'c\n' }, 'base');
+  const realIndex = repo.git('ls-files', '-s');
+  const index = path.join(repo.dir, '.git', 'probe-undo-index');
+  const env = { ...hermeticEnv(repo.home), GIT_INDEX_FILE: index };
+  const tmp = (args, input) => spawnSync('git', ['-C', repo.dir, ...args], { env, input, encoding: 'utf8' });
+  const treeOf = (paths) => {
+    tmp(['read-tree', '--empty']);
+    tmp(['update-index', '--add', '--remove', '-z', '--stdin'], paths.map((p) => `${p}\0`).join(''));
+    return tmp(['write-tree']).stdout.trim();
+  };
+  const paths = ['a.txt', 'd/c.txt', 'new/x.sh', 'l'];
+  const from = treeOf(paths);
+  repo.write('a.txt', 'a2\n');
+  fs.rmSync(path.join(repo.dir, 'd'), { recursive: true });
+  repo.write('new/x.sh', 'x\n');
+  fs.chmodSync(path.join(repo.dir, 'new/x.sh'), 0o755);
+  fs.symlinkSync('a.txt', path.join(repo.dir, 'l'));
+  const to = treeOf(paths);
+  // Back to `from` in the worktree.
+  repo.git('checkout', '-q', '--', 'a.txt', 'd/c.txt');
+  fs.rmSync(path.join(repo.dir, 'new'), { recursive: true });
+  fs.rmSync(path.join(repo.dir, 'l'));
+  tmp(['read-tree', '--end-of-options', from]);
+  repo.write('a.txt', 'differs\n');
+  assert.equal(tmp(['update-index', '--refresh']).status, 1);
+  assert.equal(tmp(['update-index', '-q', '--refresh']).status, 0, '-q hides it');
+  repo.write('a.txt', 'a\n');
+  tmp(['read-tree', '--end-of-options', from]);
+  assert.equal(tmp(['update-index', '--refresh']).status, 0);
+  const merged = tmp(['read-tree', '-m', '-u', '--end-of-options', from, to]);
+  assert.equal(merged.status, 0, merged.stderr);
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'a.txt'), 'utf8'), 'a2\n');
+  assert.equal(fs.statSync(path.join(repo.dir, 'new/x.sh')).mode & 0o111, 0o111);
+  assert.equal(fs.readlinkSync(path.join(repo.dir, 'l')), 'a.txt');
+  assert.equal(fs.existsSync(path.join(repo.dir, 'd')), false, 'the emptied directory went too');
+  // Back again over an untracked d/c.txt: refused, the file kept.
+  repo.write('d/c.txt', 'mine\n');
+  const blocked = tmp(['read-tree', '-m', '-u', '--end-of-options', to, from]);
+  assert.equal(blocked.status, 128);
+  assert.match(blocked.stderr, /Untracked working tree file 'd\/c\.txt' would be overwritten/);
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'd/c.txt'), 'utf8'), 'mine\n');
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'a.txt'), 'utf8'), 'a2\n');
+  assert.equal(repo.git('ls-files', '-s'), realIndex, 'the real index was never touched');
+});
+
+// Invariant: `stash store` puts an entry at stash@{0} whatever its age (R1: an undone drop comes back at the top), with
+// the message as its reflog subject; it takes no --end-of-options (its one argument is a full oid).
+test('probe: stash store lands at stash@{0} with its message; no --end-of-options', (t) => {
+  const { repo, run } = world(t);
+  repo.commit({ 'f.txt': 'f\n' }, 'base');
+  const stashOf = (content, m) => { repo.write('f.txt', content); repo.git('stash', 'push', '-q', '-m', m); return repo.git('rev-parse', 'refs/stash'); };
+  const old = stashOf('1\n', 'one');
+  stashOf('2\n', 'two');
+  repo.git('stash', 'drop', '-q', 'stash@{1}');
+  assert.equal(run(['stash', 'store', '--message=On main: one', old]).status, 0);
+  assert.equal(repo.git('stash', 'list', '-1', '--format=%H %gs'), `${old} On main: one`);
+  assert.notEqual(run(['stash', 'store', '--message=x', '--end-of-options', old]).status, 0);
+});
+
+// Invariant: `git config` stops parsing options at the key, so a value with a leading `-` passed as its own argument
+// after the key is stored as given (`--add` and `--replace-all`, the two the remote step writes with).
+test('probe: config --add / --replace-all <key> -x stores "-x"', (t) => {
+  const { repo, run } = world(t);
+  assert.equal(run(['config', '--add', 'remote.x.url', '-x']).status, 0);
+  assert.equal(run(['config', '--add', 'remote.x.url', '--help']).status, 0);
+  assert.equal(repo.git('config', '--get-all', 'remote.x.url'), '-x\n--help');
+  assert.equal(run(['config', '--replace-all', 'remote.x.url', '-y']).status, 0);
+  assert.equal(repo.git('config', '--get-all', 'remote.x.url'), '-y');
+});
+
+// Invariant: `git remote remove` clears the remote's section, branch.<b>.remote and .merge, branch.<b>.pushRemote and
+// remote.pushDefault naming it — what remote.remove re-reads to record — and leaves the keys naming another remote.
+test('probe: what git remote remove clears', (t) => {
+  const { repo, run } = world(t);
+  repo.commit({ 'f.txt': 'f\n' }, 'base');
+  const set = (k, v) => repo.git('config', k, v);
+  repo.git('remote', 'add', 'up', '/nowhere');
+  repo.git('remote', 'add', 'keep', '/elsewhere');
+  repo.git('branch', 'side');
+  set('branch.main.remote', 'up'); set('branch.main.merge', 'refs/heads/main'); set('branch.main.pushRemote', 'up');
+  set('branch.side.remote', 'keep'); set('branch.side.pushRemote', 'up');
+  set('remote.pushDefault', 'up'); set('remote.up.prune', 'true');
+  assert.equal(run(['remote', 'remove', 'up']).status, 0);
+  assert.equal(repo.git('config', '--get-regexp', '^(remote|branch)\\.'), 'remote.keep.url /elsewhere\nremote.keep.fetch +refs/heads/*:refs/remotes/keep/*\nbranch.side.remote keep');
+});

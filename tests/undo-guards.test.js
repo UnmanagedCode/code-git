@@ -303,9 +303,10 @@ test('undo of a branch delete whose upstream git refuses to track: the branch ba
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})/;
 
 // Invariant: every undo/redo command puts `--end-of-options` or `--` before an oid, ref or path it names (a same-argument
-// `--opt=value` aside; rev-parse takes only hex-led revisions, `symbolic-ref -q` only a full `refs/` name); never
-// `git apply --index`; `reset --hard` only for a hard reset's plan, `reset --keep --end-of-options` for the commit-making
-// ops' (cherry-pick, revert, merge, rebase); no protected env; exec form A only.
+// `--opt=value` aside; rev-parse takes only hex-led revisions, `symbolic-ref -q` only a full `refs/` name, `stash store`
+// only its final full oid, `config` a value after its key); never `git apply --index`; `reset --hard` only for a hard reset's plan, `reset --keep
+// --end-of-options` for the commit-making ops' (cherry-pick, revert, merge, rebase); a url only as an argument of its
+// own; no env beyond the base but GIT_INDEX_FILE, no protected env; exec form A only.
 test('argv scan over every undo and redo exec', async (t) => {
   const w = await undoWorld(t);
   const runs = [];
@@ -357,6 +358,44 @@ test('argv scan over every undo and redo exec', async (t) => {
   const rb = w.repo.commit({ 'rb.txt': 'rb\n' }, 'rb');
   await w.op('rebase.start', { onto: w.oid('main'), upstream: w.base, expect: rb });
   await both('rebase');
+  // The stash plans: worktree, stash and patch steps.
+  w.repo.git('switch', '-q', 'main');
+  w.repo.git('reset', '-q', '--hard');
+  w.repo.write('f.txt', 'stash me\n');
+  w.repo.write('u.txt', 'untracked\n');
+  await w.op('stash.push', { includeUntracked: true });
+  await both('stash push');
+  const top = w.oid('refs/stash');
+  await w.op('stash.rename', { oid: top, message: 'renamed' });
+  await both('stash rename');
+  const renamed = w.oid('refs/stash');
+  await w.op('stash.applyFile', { oid: renamed, path: 'f.txt' });
+  await both('stash applyFile');
+  w.repo.git('checkout', '-q', 'f.txt');
+  await w.op('stash.pop', { oid: renamed, index: true });
+  await both('stash pop');
+  w.repo.git('stash', 'push', '-q', '-u');
+  await w.op('stash.drop', { oid: w.oid('refs/stash') });
+  await both('stash drop');
+  w.repo.write('f.txt', 'one\ntwo\n');
+  const fd = await w.op('diff.file', { source: { kind: 'unstaged' }, path: 'f.txt', context: 3, whitespace: 'none' });
+  const h = fd.hunks[0];
+  await w.op('stash.pushLines', { path: 'f.txt', context: 3, hunks: [{ header: h.header, lines: h.lines.flatMap((l, i) => (l.kind === 'context' ? [] : [{ index: i, text: l.text }])) }] });
+  await both('stash pushLines');
+  w.repo.git('checkout', '-q', 'f.txt');
+  await w.op('stash.branch', { oid: w.oid('refs/stash'), name: 'stashed-branch' });
+  await both('stash branch');
+  names.add('stashed-branch').add('refs/heads/stashed-branch').add('renamed');
+  // The remote plans: remote and remoteRename steps, a credentialed url, the remove's refs step.
+  await w.op('remote.add', { name: 'scanned', url: 'https://user:PW@example.invalid/one.git' });
+  await both('remote add');
+  await w.op('remote.edit', { name: 'scanned', url: 'https://user:PW@example.invalid/two.git' });
+  await both('remote edit');
+  await w.op('remote.rename', { name: 'scanned', newName: 'scanned2' });
+  await both('remote rename');
+  await w.op('remote.remove', { name: 'origin' });
+  await both('remote remove');
+  names.add('scanned').add('scanned2').add('origin');
   const keepLabels = ['cherry-pick', 'revert', 'merge', 'rebase'];
   for (const { label, calls } of runs) {
     assert.ok(calls.length, label);
@@ -371,12 +410,24 @@ test('argv scan over every undo and redo exec', async (t) => {
         if (sub === 'rev-parse' && OID.test(a)) return;
         // symbolicTarget's `symbolic-ref -q <ref>` names a full refname, which can never read as an option.
         if (sub === 'symbolic-ref' && argv[1] === '-q' && a.startsWith('refs/')) return;
+        // `stash store` takes no --end-of-options; its one argument is a full oid, which can never read as an option.
+        if (sub === 'stash' && argv[1] === 'store' && OID.test(a) && i === argv.length - 1) return;
+        // `git config` stops parsing options at its key: a value after the key is stored as given (probe-pinned).
+        if (sub === 'config' && argv.findIndex((x, k) => k > 0 && !x.startsWith('-')) < i) return;
         assert.ok(stop !== -1 && stop < i, `${label}: ${argv.join(' ')}: ${a} before --end-of-options`);
       });
       assert.ok(!(sub === 'apply' && argv.includes('--index')), `${label}: never apply --index`);
+      // A url only ever as an argument of its own: never `key=url`, never after `-c`.
+      argv.forEach((a, i) => {
+        if (!a.includes('://')) return;
+        assert.match(a, /^[a-z][a-z0-9+.-]*:\/\//, `${label}: ${argv.join(' ')}: a url inside another argument`);
+        assert.notEqual(argv[i - 1], '-c', `${label}: a url in a -c override`);
+      });
       if (sub === 'reset' && argv.includes('--hard')) assert.equal(label, 'hard', `${label}: reset --hard only in a hard plan`);
       const own = Object.entries(body.env ?? {}).filter(([k, v]) => isProtectedEnv(k) && BASE_ENV[k] !== v);
       assert.deepEqual(own, [], `${label}: a protected env name set by the op`);
+      const extra = Object.keys(body.env ?? {}).filter((k) => !(k in BASE_ENV));
+      assert.ok(extra.every((k) => k === 'GIT_INDEX_FILE'), `${label}: ${argv.join(' ')}: env beyond the base: ${extra.join(', ')}`);
     }
   }
   for (const label of keepLabels) {

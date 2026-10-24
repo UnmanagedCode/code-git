@@ -1,5 +1,6 @@
 import { getOp } from '../git/ops/index.js';
 import { runGit } from '../git/runner.js';
+import { forTheWire } from '../git/refs/undo.js';
 import { assertInsideCheckout } from '../git/submodule/target.js';
 import { assertTarget } from '../git/validate.js';
 import { journalAround } from '../git/undo/record.js';
@@ -32,7 +33,8 @@ export function mount(router, { ops, activity, locks, journal }) {
       const git = run ? (args, opts) => run.track(runGit(ctx, args, opts)) : (args, opts) => runGit(ctx, args, opts);
       // Every write clears this checkout's undo journal first and may record its own undo (src/git/undo/record.js).
       const result = await journalAround(journal, op, target, params, () => op.run(git, params, { target, journal }));
-      res.json({ ok: true, result });
+      // The journal kept the raw record; the answer withholds what may be secret.
+      res.json({ ok: true, result: forTheWire(result) });
     } finally {
       run?.end();
     }

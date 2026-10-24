@@ -55,7 +55,7 @@ test('remote.add: --end-of-options before the name, the url and push url written
   const [add, setUrl] = remoteWrites(w);
   assert.deepEqual(add, ['remote', 'add', '--end-of-options', 'up', 'https://h.example/up.git']);
   assert.deepEqual(setUrl, ['remote', 'set-url', '--push', '--end-of-options', 'up', 'git@h.example:up.git']);
-  assert.deepEqual(r.undo.remotes, [{ name: 'up', old: null, new: { urls: ['https://h.example/up.git'], pushUrls: ['git@h.example:up.git'], fetch: [DEFAULT('up')], upstreams: [] } }]);
+  assert.deepEqual(r.undo.remotes, [{ name: 'up', old: null, new: { urls: ['https://h.example/up.git'], pushUrls: ['git@h.example:up.git'], fetch: [DEFAULT('up')], extra: [], upstreams: [] } }]);
   assert.deepEqual([r.undo.refs, r.undo.head], [[], null]);
   await w.op('remote.add', { name: 'plain', url: '/srv/plain.git' });
   assert.deepEqual(config(w, 'remote.plain.pushurl'), []);
@@ -82,8 +82,8 @@ test('remote.edit changes only the fields given: url alone, pushUrl alone, pushU
   assert.deepEqual(remoteWrites(w), [['remote', 'set-url', '--end-of-options', 'origin', '/moved.git']]);
   assert.deepEqual(r1.undo.remotes, [{
     name: 'origin',
-    old: { urls: [w.origin.dir], pushUrls: ['/push.git'], fetch: [DEFAULT('origin')], upstreams: [{ branch: 'main', merge: 'refs/heads/main' }] },
-    new: { urls: ['/moved.git'], pushUrls: ['/push.git'], fetch: [DEFAULT('origin')], upstreams: [{ branch: 'main', merge: 'refs/heads/main' }] },
+    old: { urls: [w.origin.dir], pushUrls: ['/push.git'], fetch: [DEFAULT('origin')], extra: [], upstreams: [{ branch: 'main', merge: 'refs/heads/main' }] },
+    new: { urls: ['/moved.git'], pushUrls: ['/push.git'], fetch: [DEFAULT('origin')], extra: [], upstreams: [{ branch: 'main', merge: 'refs/heads/main' }] },
   }]);
   await w.op('remote.edit', { name: 'origin', pushUrl: 'git@h:p.git' });
   assert.deepEqual([config(w, 'remote.origin.url'), config(w, 'remote.origin.pushurl')], [['/moved.git'], ['git@h:p.git']]);
@@ -172,7 +172,12 @@ test('remote.remove deletes its tracking refs (kept: one another remote maps) an
   ]);
   assert.deepEqual(r.undo.remotes, [{
     name: 'origin', new: null,
-    old: { urls: [w.origin.dir], pushUrls: ['/push.git'], fetch: [DEFAULT('origin')], upstreams: [{ branch: 'main', merge: 'refs/heads/main' }, { branch: 'feat', merge: 'refs/heads/feat' }] },
+    old: {
+      urls: [w.origin.dir], pushUrls: ['/push.git'], fetch: [DEFAULT('origin')], extra: [],
+      upstreams: [{ branch: 'main', merge: 'refs/heads/main' }, { branch: 'feat', merge: 'refs/heads/feat' }],
+      branchKeys: [['branch.main.remote', 'origin'], ['branch.main.merge', 'refs/heads/main'], ['branch.feat.remote', 'origin'], ['branch.feat.merge', 'refs/heads/feat']],
+      pushDefault: false,
+    },
   }]);
 });
 

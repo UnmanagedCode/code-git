@@ -75,7 +75,7 @@ Off by default (`autoFetchMinutes: 0`, per project, `code-git:remotes:<project>`
 
 ### Remote config
 
-- **Passwords in urls** are never shown: `remote.list`'s `displayUrl` / `displayPushUrl` and the activity log's argv (so `/api/activity`, its events and the Activity panel) go through `maskUrl` (`src/mask.js`), which hides everything from the userinfo's first `:` to the authority's last `@` (a password may hold `/` and `@`; a path holding `@` after a `user:` prefix is masked too). Git config keeps the real url.
+- **Passwords in urls** are never shown: `remote.list`'s `displayUrl` / `displayPushUrl` and the activity log's argv (so `/api/activity`, its events and the Activity panel) go through `maskUrl` (`src/mask.js`), which hides everything from the userinfo's first `:` to the authority's last `@` (a password may hold `/` and `@`; a path holding `@` after a `user:` prefix is masked too). Git config keeps the real url. A remote's other config values (a proxy, a pack command) an undo or redo writes back are recorded as `***` (`redactArgv`, `src/activity/log.js`).
 - **Urls** typed in the UI pass `remoteUrl` (`src/git/remote/url.js`) or are refused `BAD_URL`: `http(s)://`, `ssh://`, `git+ssh://`, `ssh+git://`, `git://`, `file://`, an absolute path, scp-like `[user@]host:path`. Never a `<transport>::` url (a remote helper, its name starting with a letter or a digit: `1foo::x` runs `git-remote-1foo`; `ext::` runs a command), a leading `-`, a host starting with `-`, whitespace or control characters, or more than `URL_MAX` characters.
 - **New names** pass `newRemoteName`: git's own rule (a valid `refs/remotes/<name>/…`) and no `=` (git would split a push's `-c remote.<name>.mirror=false` there), else `BAD_REF`.
 - **Edit** writes only the fields sent; the UI sends only what changed, and never a field still holding the mask. A raw url list with several values (an empty reset counts) is refused (`REMOTE_CONFIG_UNSUPPORTED`); `remote.list` reports the same count as `multiUrl` / `multiPushUrl` (`multiValued` in `src/git/remote/config.js`), so the UI disables that field.
@@ -114,15 +114,15 @@ Never `git pull`: a fetch of the upstream's remote (`fetchRemote`, the same chec
 
 ## Undo
 
-Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote-ops-srcgitopsremotejs)). The remote ops are not registered for undo yet ([undo](undo.md)): the table below is what an undo would need, and each of these writes clears the checkout's undo and redo slots.
+Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote-ops-srcgitopsremotejs)). `remote.add`, `remote.edit`, `remote.rename` and `remote.remove` are undoable from the header (plans and steps: [undo → Per-op plans](undo.md#per-op-plans)); `remote.fetch` (the auto-fetch too) is journal-neutral: never undone, and it keeps the slots ([undo → Fetch neutrality](undo.md#fetch-neutrality)); `remote.pull` and `remote.push` clear them.
 
-| Op | Destroys | Recoverable |
+| Op | Destroys | Undo / redo |
 |---|---|---|
-| `remote.add` | nothing | `remote remove` (`undo.remotes[].new` is what was created) |
-| `remote.edit` | the replaced url / push url | write `undo.remotes[].old` back |
-| `remote.rename` | the old name | rename back |
-| `remote.remove` | the remote's config, its tracking refs, the upstream config naming it | locally: re-add from `undo.remotes[].old` (urls, push urls, fetch refspecs, each `branch.<b>.remote`/`.merge`), `update-ref` each `undo.refs[]` (a symbolic one with `symbolic-ref`) |
-| `remote.fetch` | the tracking refs' previous positions, pruned refs | `update-ref` each `undo.refs[]` back to `old` (until the next fetch) |
+| `remote.add` | nothing | undo removes the config (refused `UNDO_STALE` once the remote was fetched); redo writes `undo.remotes[].new` again |
+| `remote.edit` | the replaced url / push url | the lists that differ set back to `old` / again to `new` |
+| `remote.rename` | the old name | renamed back / again (`git remote rename`: refs and branch keys follow) |
+| `remote.remove` | the remote's config (every `remote.<name>.*` key), its tracking refs, the `branch.<b>.remote` / `.merge` / `.pushRemote` and `remote.pushDefault` naming it | undo writes the config and those keys back, then re-creates the refs (a symbolic one with `symbolic-ref`); redo asks first (it deletes the listed tracking refs) |
+| `remote.fetch` | the tracking refs' previous positions, pruned refs | not undoable (journal-neutral); `undo.refs[]` holds each ref's `old` |
 | `remote.pull` | HEAD's position (rebase: the original commits stay in the reflog) | `reset --hard <undo.head.old.oid>` locally; the fetch's refs as `remote.fetch` |
 | `head.abort` `merge` | the conflicted merge's partial result | — |
 
@@ -132,5 +132,5 @@ Every write returns `undo` (`undoRecord`; shape in [protocol](protocol.md#remote
 - **A remote tag cannot be deleted while a fetch refspec maps tags onto themselves** (`+refs/tags/*:refs/tags/*`): git would delete the local tag through that mapping too, so `tag.deleteRemote` refuses `REMOTE_CONFIG_UNSUPPORTED`. Pushing a tag under it works (git writes the tag the value it was pushed from).
 - **Rename needs the default refspec**; anything else is renamed with git.
 - **Edit refuses a url list with several values.**
-- **Remove's undo restores url, push url, fetch refspecs and upstreams only**; other `remote.<name>.*` keys (`prune`, `tagOpt`, `receivepack`, …) and `branch.<b>.pushRemote` are gone.
+- **Remove's undo restores each key's values, not their place in `.git/config`**: the section comes back at the end of the file ([undo → Residuals](undo.md#residuals)).
 - **No progress**: cc's exec is buffered; a long fetch shows an elapsed timer until `NETWORK_LIMITS.timeoutMs`.

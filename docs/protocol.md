@@ -51,7 +51,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | With `sub`: the chain is a cloned submodule whose real path is inside the checkout and whose git dir, at every level, is the one git gives it (`assertInsideCheckout`: reads under the op run) | 409 `SUBMODULE_NOT_POPULATED` `{path}`, 409 `SUBMODULE_UNSAFE` `{reason: 'escapes' \| 'gitdir', path}` |
 | Running it | the op's refusals, plus the exec refusals below |
 
-**The undo journal.** Every write that is not `undo.*` clears the checkout's undo and redo slots before it runs; a registered one that succeeds records its plan ([undo → Journal](undo.md#journal)).
+**The undo journal.** Every write that is not `undo.*` or `remote.fetch` (journal-neutral) clears the checkout's undo and redo slots before it runs; a registered one that succeeds records its plan ([undo → Journal](undo.md#journal)).
 
 **Cancel and disconnect.** An op is `cancellable` when its definition says so; the default is `true` for `kind: 'read'` and `false` for `kind: 'write'`. A cancellable op is aborted by `POST api/activity/:id/cancel` on the entry of its **currently running** command (an entry of one of its already-finished commands answers 409 `NOT_RUNNING`), after which the op's request answers 409 `CANCELLED`; or by its HTTP client going away, in which case nobody receives an answer and the outcome is only in the activity log (the entry ends `cancelled`). A non-cancellable op is aborted by neither: it runs to completion and its outcome lands in the activity log.
 
@@ -386,10 +386,12 @@ UndoRecord      { refs: RefChange[], remoteRefs: RemoteRefChange[],
                   worktreeSnapshot: oid | null,
                   stashes: StashChange[] /* the stash ops' ([stash](stash.md#undo-record)); [] here */,
                   worktreePatch: base64 | null /* stash.applyFile's; null here */,
+                  worktreeState?: {paths, before, mid?, after} /* stash.push, pop, branch: each {head, index, files} */,
+                  removedPatch?: base64 /* stash.pushLines */,
                   created?: {tip: oid, not: oid[]} | null /* the commits the op made: tip minus what not reaches */,
                   indexTree?: oid | null /* head.reset mixed: the index's tree before; null when it had unmerged entries */,
                   discard?: {snapshot: oid, tracked: path[], untracked: path[]} /* stage.discardFiles */ }
-                  /* created / indexTree / discard: present only when set ([undo → Record keys](undo.md#record-keys)) */
+                  /* created / indexTree / discard / worktreeState / removedPatch: present only when set ([undo → Record keys](undo.md#record-keys)) */
 RefChange       { ref /* refs/heads/… | refs/tags/… */, old: oid|null /* null = created */, new: oid|null /* null = deleted */,
                   upstream?: refname|null /* a deleted branch's upstream; a tracking branch branch.checkout created */,
                   symref?: refname /* a deleted symbolic ref's target: restore with symbolic-ref; old and new are null */ }
@@ -441,7 +443,8 @@ Behaviour, the rules and what each op destroys: [remotes](remotes.md). Common ru
 
 - An existing remote's `name` passes `remoteName` (404 `REMOTE_UNKNOWN`, before any exec) and must be one of `git remote`'s. A **new** name (`remote.add`, `remote.rename`'s `newName`) passes `newRemoteName` (`src/git/remote/url.js`): the same shape, plus git's own rule (`refs/remotes/<name>/…` must be a valid ref, `assertRefName`) and no `=` (a push's `-c remote.<name>.mirror=false` would split there); else 400 `BAD_REF`. A **url** passes `remoteUrl`: else 400 `BAD_URL`.
 - A remote git reads from a legacy `.git/remotes` / `.git/branches` file (no url in config, the file exists): 409 `REMOTE_CONFIG_UNSUPPORTED` with `remote`, `refspec: null`, for every op that changes or removes it.
-- `undo.remotes`: `[{name, old: RemoteConfig | null, new: RemoteConfig | null}]` (old null = created, new null = removed); `RemoteConfig = {urls, pushUrls, fetch /* raw config values, in order, empty ones kept */, upstreams: [{branch /* short */, merge: refname | null}] /* branch.<b>.remote = this remote */}`.
+- `undo.remotes`: `[{name, old: RemoteConfig | null, new: RemoteConfig | null}]` (old null = created, new null = removed); `RemoteConfig = {urls, pushUrls, fetch /* raw config values, in order, empty ones kept */, extra: [[var /* lower case */, null]] /* every other remote.<name>.<var>, in config order; the value withheld (forTheWire): the journal keeps it raw */, upstreams: [{branch /* short */, merge: refname | null}] /* branch.<b>.remote = this remote */}`; `upstreams` is read from the repo's own config (`config --local`); `remote.remove`'s `old` also has `branchKeys: [[key, value]]` — the repo's own `branch.<b>.remote` / `.merge` / `.pushremote` keys git cleared (the local keys before minus after `remote remove`) — and `pushDefault: bool` (a local `remote.pushDefault` naming it, cleared). `clearedUpstreams` in the result is `branchKeys`' upstreams: `[{branch, merge}]` per branch whose `remote` or `merge` key was cleared.
+- `remote.add`, `remote.edit`, `remote.rename`, `remote.remove` are registered for undo; `remote.fetch` is journal-neutral (never undone, the slots kept); `remote.pull` and `remote.push` clear the slots ([undo](undo.md)).
 
 | Op | kind | `params` | Runs | `result` | Refusals |
 |---|---|---|---|---|---|
@@ -462,12 +465,16 @@ Behaviour, plans and the slot rules: [undo](undo.md). The journal is the backend
 ```
 UndoSlot { id: number, op: string /* the op name */, label: string, confirm: Confirm | null /* for this slot's direction */ }
 Confirm  {kind: 'deletesRefs', refs: refname[]} | {kind: 'discards', paths: path[]} | {kind: 'resetHard'}
+       | {kind: 'dropsStashes', messages: string[] /* the stash messages it drops: untrusted text */}
+       | {kind: 'deletesRemote', name: string, refs: refname[] /* the tracking refs it deletes */}
 ```
+
+A label and a confirm carry remote names, ref names, paths and stash messages. A result's `warnings` may name a restored branch's upstream ref; a refusal may quote a fetch refspec (`REMOTE_CONFIG_UNSUPPORTED`'s `refspec`), and a url's password in any of its strings is masked. None carries a remote's `extra` value (a proxy, a pack command). The remote ops' own results carry `extra` values as `null`, every other record field raw — `urls` / `pushUrls` included, pending card 2026-0017 ([undo → What crosses the wire](undo.md#record-keys)); the activity log records an `extra` value written by an undo or redo as `***`.
 
 | Op | kind | `params` | Runs | `result` | Refusals |
 |---|---|---|---|---|---|
 | `undo.state` | read (cancellable) | none | nothing | `{undo: UndoSlot \| null, redo: UndoSlot \| null}` | — |
-| `undo.undo` | write, **not** cancellable | `{id /* the slot's UndoSlot.id */, ccOwned?}` | `assertNoOperation`; the pushed rule; every step's preflight, then every apply ([undo → Steps](undo.md#steps)) | `{entry: UndoSlot /* confirm for undo */, warnings: string[] /* an upstream not restored */}` | `NOTHING_TO_UNDO`; `UNDO_STALE`; `UNDO_PUSHED` (`oid`, `refs`); `OPERATION_IN_PROGRESS`; `CONFLICTED`; `BARE_REPO`; `DIRTY_WORKTREE`; `CHECKOUT_CONFLICT`; `BRANCH_CHECKED_OUT`; `CC_OWNED_BRANCH` (`head: true` for this HEAD); `SYMBOLIC_REF`; `PATH_BLOCKED`; a failure after a step wrote carries `appliedSteps` |
+| `undo.undo` | write, **not** cancellable | `{id /* the slot's UndoSlot.id */, ccOwned?}` | `assertNoOperation`; the pushed rule; every step's preflight, then every apply ([undo → Steps](undo.md#steps)) | `{entry: UndoSlot /* confirm for undo */, warnings: string[] /* an upstream not restored */}` | `NOTHING_TO_UNDO`; `UNDO_STALE`; `UNDO_PUSHED` (`oid`, `refs`); `OPERATION_IN_PROGRESS`; `CONFLICTED`; `BARE_REPO`; `DIRTY_WORKTREE`; `CHECKOUT_CONFLICT`; `BRANCH_CHECKED_OUT`; `CC_OWNED_BRANCH` (`head: true` for this HEAD); `SYMBOLIC_REF`; `PATH_BLOCKED`; `REMOTE_CONFIG_UNSUPPORTED` (a remote rename's gates: its refspec or a legacy file changed since); `STASH_MOVED` (a stash drop raced: nothing lost); a failure after a step wrote carries `appliedSteps` |
 | `undo.redo` | write, **not** cancellable | as `undo.undo` | as `undo.undo`, no pushed rule | as `undo.undo` | as `undo.undo` with `NOTHING_TO_REDO`, no `UNDO_PUSHED` |
 
 ### History ops (`src/git/ops/history.js`; all reads, cancellable)
