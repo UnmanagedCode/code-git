@@ -15,6 +15,9 @@ export const redactEnv = (env) => Object.fromEntries(Object.entries(env).map(([k
 /** A remote's config keys whose values are urls (maskUrl hides their passwords) or refspecs: recorded. */
 const URL_VARS = new Set(['url', 'pushurl', 'fetch']);
 
+/** `git config` options whose value is the next argument (before the key): skipped when looking for the key. */
+const CONFIG_VALUE_OPTS = new Set(['--file', '-f', '--blob', '--type', '-t', '--default', '--comment']);
+
 /** The index of the subcommand in a recorded `git …` argv: past git's own options (`-c` / `-C` take a value), or -1. */
 function subcommandAt(argv) {
   for (let i = 1; i < argv.length; i++) {
@@ -33,7 +36,11 @@ export function redactArgv(argv) {
   const out = argv.map(maskUrl);
   const sub = subcommandAt(argv);
   if (sub === -1 || argv[sub] !== 'config') return out;
-  const key = argv.findIndex((a, i) => i > sub && !a.startsWith('-'));
+  let key = -1;
+  for (let i = sub + 1; i < argv.length && key === -1; i++) {
+    if (CONFIG_VALUE_OPTS.has(argv[i])) i++;
+    else if (!argv[i].startsWith('-')) key = i;
+  }
   const v = /^remote\..+\.([^.]+)$/i.exec(argv[key] ?? '')?.[1]?.toLowerCase();
   if (v === undefined || URL_VARS.has(v)) return out;
   return out.map((a, i) => (i > key ? '***' : a));

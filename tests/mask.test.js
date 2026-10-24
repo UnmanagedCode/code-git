@@ -63,6 +63,18 @@ test('redactArgv withholds the value of a config write to a remote extra key; ur
   assert.ok(!JSON.stringify([events, log.list()]).includes('Pr0xyPW'));
 });
 
+// Invariant: the key of a `git config` write is found past the separate values of config's value-taking options
+// (`--file` / `-f <path>`, `--blob`, `--type` / `-t`, `--default`, `--comment`), so a remote extra key's value is withheld
+// there too; the option values themselves are recorded as given.
+test('redactArgv finds the config key past value-taking options', () => {
+  const git = (...args) => ['git', ...BASE_ARGS, ...args];
+  for (const opts of [['--file', 'cfg'], ['-f', 'cfg'], ['--blob', 'HEAD:cfg'], ['--type', 'bool'], ['-t', 'bool'], ['--default', 'x'], ['--comment', 'why'], ['-f', 'cfg', '--type', 'path']]) {
+    assert.deepEqual(redactArgv(git('config', ...opts, 'remote.o.proxy', 'u:pw@h')), git('config', ...opts, 'remote.o.proxy', '***'), opts.join(' '));
+  }
+  const listed = git('config', '-f', '.gitmodules', '-z', '--get-regexp', '^submodule\\.');
+  assert.deepEqual(redactArgv(listed), listed);
+});
+
 test('end to end: remote.add with a credential url writes it to git config but /api/activity shows it masked', async (t) => {
   const w = await refsWorld(t);
   const app = await startApp(t);
