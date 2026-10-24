@@ -291,6 +291,56 @@ test('remote.rename undo after the old name was re-used: UNDO_STALE', async (t) 
   await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE');
 });
 
+// Invariant: a remove's undo refuses UNDO_STALE when a branch.<b>.pushRemote it would write back was set again meanwhile,
+// and changes nothing: no second value is appended to the key.
+test('remote.remove undo after branch.<b>.pushRemote was set again: UNDO_STALE, no duplicate', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('config', 'branch.main.pushRemote', 'origin');
+  await w.op('remote.remove', { name: 'origin' });
+  w.repo.git('config', 'branch.main.pushRemote', 'elsewhere');
+  assert.deepEqual(await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE'), EMPTY);
+  assert.equal(w.repo.git('config', '--get-all', 'branch.main.pushRemote'), 'elsewhere');
+});
+
+// Invariant: a remove's undo refuses UNDO_STALE when remote.pushDefault, which it would write back, was set again
+// meanwhile, and changes nothing: no second value is appended.
+test('remote.remove undo after remote.pushDefault was set again: UNDO_STALE, no duplicate', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('config', 'remote.pushDefault', 'origin');
+  await w.op('remote.remove', { name: 'origin' });
+  w.repo.git('config', 'remote.pushDefault', 'elsewhere');
+  assert.deepEqual(await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE'), EMPTY);
+  assert.equal(w.repo.git('config', '--get-all', 'remote.pushDefault'), 'elsewhere');
+});
+
+// Invariant: a rename's undo whose current remote no longer exists refuses UNDO_STALE — not REMOTE_UNKNOWN — so both
+// slots are cleared instead of keeping an entry that can never run.
+test('remote.rename undo after the renamed remote was removed: UNDO_STALE, the slots cleared', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.rename', { name: 'origin', newName: 'renamed' });
+  w.repo.git('remote', 'remove', 'renamed');
+  assert.deepEqual(await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE'), EMPTY);
+});
+
+// Invariant: the same for a rename's redo whose current (old) name no longer exists: UNDO_STALE, the slots cleared.
+test('remote.rename redo after the remote was removed: UNDO_STALE, the slots cleared', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.rename', { name: 'origin', newName: 'renamed' });
+  await w.undo();
+  w.repo.git('remote', 'remove', 'origin');
+  assert.deepEqual(await refusesUnchanged(w, () => w.redo(), 'UNDO_STALE'), EMPTY);
+});
+
+// Invariant: a rename back refuses UNDO_STALE when refs/remotes/<target>/ already holds a ref while no remote of that
+// name exists (git would mix the namespaces), and nothing moves.
+test('remote.rename undo when refs/remotes/<old name>/ holds refs again: UNDO_STALE, nothing moved', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.rename', { name: 'origin', newName: 'renamed' });
+  w.repo.git('update-ref', 'refs/remotes/origin/stray', w.base);
+  assert.deepEqual(await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE'), EMPTY);
+  assert.equal(w.oid('refs/remotes/renamed/main'), w.base);
+});
+
 // Invariant (R2): of the remote plans only the remove's redo asks (deletesRemote: the name and the tracking refs it
 // deletes); add, edit and rename run at once both ways, and so does the remove's undo.
 test('confirm shapes of the remote plans', async (t) => {
