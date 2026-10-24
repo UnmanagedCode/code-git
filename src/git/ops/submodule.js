@@ -112,7 +112,7 @@ export const ops = [
     params(raw) {
       const p = paramsObject(raw, ['url', 'path', 'name', 'branch'], 'submodule.add');
       return {
-        url: submoduleUrl(p.url), path: submodulePath(p.path),
+        url: assertNotMasked(submoduleUrl(p.url)), path: submodulePath(p.path),
         name: p.name === undefined ? null : submoduleName(p.name), branch: p.branch === undefined ? null : assertRefName(p.branch),
       };
     },
