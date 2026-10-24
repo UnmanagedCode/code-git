@@ -165,11 +165,12 @@ What the registered ops add to `result.undo` (`undoRecord`, optional keys presen
 
 | Value | In the plan (memory) | In the op's HTTP answer |
 |---|---|---|
-| `remotes[].old` / `.new` `.extra` values (a proxy, a header, a command: may hold a secret) | raw | `null`; the variable names are kept |
-| `remotes[].old` / `.new` `.urls`, `.pushUrls` | raw | raw (card 2026-0017) |
-| `undo.state`, `undo.undo` / `undo.redo` results, their refusals | — | `{id, op, label, confirm}` and warnings: remote names, ref names, paths, stash messages, never a config value |
+| `remotes[].old` / `.new` `.extra` values (a proxy, a pack command: may hold a secret) | raw | `null`; the variable names are kept |
+| The other record fields: `remotes[].old` / `.new` `.fetch`, `.upstreams[].branch` / `.merge`, a remove's `.branchKeys` and `.pushDefault`; and `.urls`, `.pushUrls` | raw | raw — the urls, password included, pending card 2026-0017 |
+| `undo.state`, `undo.undo` / `undo.redo` results | — | `{id, op, label, confirm}` (remote names, ref names, paths, stash messages) and `warnings`, which may name a restored branch's upstream ref (`branch.<b>.merge`); never an `extra` value or a url |
+| Refusals of `undo.undo` / `undo.redo` | — | a message naming remotes, refs and paths; `REMOTE_CONFIG_UNSUPPORTED` (a remote rename's gates) carries the fetch refspec (`refspec`); never an `extra` value, and a url's password in any string is masked (`maskDeep`, `Refusal.toBody`) |
 
-git's argv carries each value as its own argument, so the activity log masks a url's password there (`redactArgv`), and never records the value an undo or redo writes to an `extra` key: `config --add` / `--replace-all remote.<n>.<var> <value>` with `<var>` other than `url`, `pushurl`, `fetch` is recorded with `***` for the value, the key kept (a scheme-less `user:password@host` proxy or a pack command has no shape a mask could find).
+**The activity log** (`/api/activity` and its event stream) records git's argv through `redactArgv`: a url's password is masked (`maskUrl`), and the value an undo or redo writes to an `extra` key is never recorded — `config --add` / `--replace-all remote.<n>.<var> <value>` with `<var>` other than `url`, `pushurl`, `fetch` is recorded with `***` for the value, the key kept (a scheme-less `user:password@host` proxy or a pack command has no shape a mask could find). Each value is its own argument, so this holds for every one of them; stderr is masked with `maskUrls`.
 
 **The checkout state** (`checkoutState` in `src/git/stash/snapshot.js`): `head` = `rev-parse -q --verify HEAD`, `index` = `write-tree` of the real index (the gates already refused unmerged entries), `files` = `worktreeTree(paths)` (the discard snapshot's temporary-index tree, below; no commit). `paths`:
 

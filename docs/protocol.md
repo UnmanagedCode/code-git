@@ -469,7 +469,7 @@ Confirm  {kind: 'deletesRefs', refs: refname[]} | {kind: 'discards', paths: path
        | {kind: 'deletesRemote', name: string, refs: refname[] /* the tracking refs it deletes */}
 ```
 
-A label, a confirm and a refusal's message carry remote names, ref names, paths and stash messages, never a config value (a url or a proxy may hold a password). The remote ops' own results carry a remote's `urls` / `pushUrls` raw and its `extra` values as `null` ([undo → What crosses the wire](undo.md#record-keys)).
+A label and a confirm carry remote names, ref names, paths and stash messages. A result's `warnings` may name a restored branch's upstream ref; a refusal may quote a fetch refspec (`REMOTE_CONFIG_UNSUPPORTED`'s `refspec`), and a url's password in any of its strings is masked. None carries a remote's `extra` value (a proxy, a pack command). The remote ops' own results carry `extra` values as `null`, every other record field raw — `urls` / `pushUrls` included, pending card 2026-0017 ([undo → What crosses the wire](undo.md#record-keys)); the activity log records an `extra` value written by an undo or redo as `***`.
 
 | Op | kind | `params` | Runs | `result` | Refusals |
 |---|---|---|---|---|---|
