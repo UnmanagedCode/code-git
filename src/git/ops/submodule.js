@@ -1,3 +1,4 @@
+import { maskUrl } from '../../mask.js';
 import { Refusal } from '../../refusals.js';
 import { joinMessage, messageParams } from '../commit/message.js';
 import { worktreeEntry } from '../diff/noIndex.js';
@@ -151,7 +152,8 @@ export const ops = [
       // Config only: no network.
       await run(git, ['submodule', 'init', '--', ...p.paths]);
       const urls = await resolvedUrls(git, entries);
-      return { submodules: entries.map((e, i) => ({ path: e.path, resolvedUrl: urls[i].url, urlProblem: urlProblem(urls[i].url) })) };
+      // A relative url resolves against the default remote's url, its password too: answered masked.
+      return { submodules: entries.map((e, i) => ({ path: e.path, resolvedUrl: urls[i].url === null ? null : maskUrl(urls[i].url), urlProblem: urlProblem(urls[i].url) })) };
     },
   },
   {

@@ -1,3 +1,4 @@
+import { maskUrl } from '../../mask.js';
 import { commitOid } from '../diff/source.js';
 import { perChunk } from '../stage/paths.js';
 import { OID_RE } from '../validate.js';
@@ -182,7 +183,8 @@ async function mapLimited(items, n, fn) {
 /**
  * The repo's submodules, sorted by path: `{submodules, truncated}`, at most SUBMODULE_LIMITS.maxListed (no probe past it).
  * An entry: {name, path, url, resolvedUrl, branch, initialized, populated, recorded, committed, head, outOfSync,
- * modified, untracked, added, conflicted, typeChanged, blocked, urlProblem} (docs/submodules.md → Status).
+ * modified, untracked, added, conflicted, typeChanged, blocked, urlProblem} (docs/submodules.md → Status). `resolvedUrl`'s
+ * password is masked (maskUrl): one resolved from a relative url carries the default remote's userinfo.
  */
 export async function listSubmodules(git) {
   const top = text(await git(['rev-parse', '--show-toplevel'])).replace(/\n$/, '');
@@ -213,7 +215,7 @@ export async function listSubmodules(git) {
     const recorded = ix.recorded;
     const committedOid = committed.get(e.path) ?? null;
     return {
-      name: e.name, path: e.path, url: e.url, resolvedUrl, branch: e.branch,
+      name: e.name, path: e.path, url: e.url, resolvedUrl: resolvedUrl === null ? null : maskUrl(resolvedUrl), branch: e.branch,
       initialized: resolvedUrl !== null,
       populated: p.populated, recorded, committed: committedOid, head: p.head,
       outOfSync: Boolean(p.populated && p.head && recorded && p.head !== recorded),
