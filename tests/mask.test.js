@@ -226,6 +226,19 @@ test('maskUrls: a weak @ inside a spaced password defers to a later strong @', (
   assert.equal(maskUrls('https://u:pa ss@word x@h:22 done'), 'https://u:***@h:22 done');
 });
 
+// Invariant: git's git-protocol look-up line prints the url's authority without its scheme; maskUrls masks its userinfo
+// password (to the last @ before ` (port `: a decoded password may hold a space) as user:***@host, and leaves a look-up
+// without a password, or with an empty one, as it is.
+test('maskUrls masks the password in git\'s "unable to look up <userinfo>@<host> (port <n>)" line', () => {
+  const tail = ' (port 9418) (Name or service not known)';
+  for (const [host, masked] of [
+    ['user:Zq7pw@h.example.invalid', 'user:***@h.example.invalid'], ['user:Zq pw@h.example.invalid', 'user:***@h.example.invalid'],
+    ['user:Zq7pw@127.0.0.1', 'user:***@127.0.0.1'], [':Zq7pw@localhost', ':***@localhost'], ['user:p@ss@h', 'user:***@h'],
+    ['h.example.invalid', 'h.example.invalid'], ['user@h.example.invalid', 'user@h.example.invalid'], ['user:@h', 'user:@h'],
+  ]) assert.equal(maskUrls(`fatal: unable to look up ${host}${tail}`), `fatal: unable to look up ${masked}${tail}`, host);
+  assert.equal(maskUrls('fatal: unable to look up u:pw@h (port 9418)\nfatal: unable to look up v:pw2@h2 (port 9418)'), 'fatal: unable to look up u:***@h (port 9418)\nfatal: unable to look up v:***@h2 (port 9418)');
+});
+
 // Invariant: a mask never stands for nothing: an empty password (`https://user:@h/r`) is left as it is, in a text and in
 // a value, never given an inserted `***`.
 test('an empty password is left as it is: no *** is inserted', () => {
@@ -235,11 +248,13 @@ test('an empty password is left as it is: no *** is inserted', () => {
 });
 
 // Invariant: the stderr the activity log keeps (capStderr) and a refusal's body (toBody) mask a password holding a space.
-test('a password holding a space or a :// never reaches capStderr or a refusal body', () => {
+test('a password holding a space or a ://, or in a git:// look-up, never reaches capStderr or a refusal body', () => {
   for (const [line, masked] of [
     ["fatal: unable to access 'https://user:S3 CRET@h/r/': The requested URL returned error: 403\n", "fatal: unable to access 'https://user:***@h/r/': The requested URL returned error: 403\n"],
     ["fatal: unable to access 'https://u:pw://x@h.example.invalid/r/': URL rejected: Port number was not a decimal number between 0 and 65535\n",
       "fatal: unable to access 'https://u:***@h.example.invalid/r/': URL rejected: Port number was not a decimal number between 0 and 65535\n"],
+    ['fatal: unable to look up user:Zq7pw@h.example.invalid (port 9418) (Name or service not known)\n',
+      'fatal: unable to look up user:***@h.example.invalid (port 9418) (Name or service not known)\n'],
   ]) {
     assert.equal(capStderr(Buffer.from(line)).stderr, masked);
     const body = new Refusal('GIT_FAILED', `git failed: ${line}`, { stderr: line }).toBody();
@@ -280,6 +295,9 @@ const HOSTILE = {
   'many <transport>:: urls': 'a::a://'.repeat(28_000),
   'a spaced password of inner @s': `(https://u:p@ss ${'w@x '.repeat(50_000)}@h/r)`,
   'many empty passwords': 'https://u:@x '.repeat(15_000),
+  'many look-ups': 'unable to look up '.repeat(11_000),
+  'many look-ups of userinfo, no port': 'unable to look up u:p@h '.repeat(8_000),
+  'many look-ups on one line': 'unable to look up u:p@h (port 1) '.repeat(6_000),
 };
 
 // Invariant: masking runs in linear time: each masking function finishes every hostile ~200k-character input (a

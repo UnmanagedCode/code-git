@@ -142,7 +142,7 @@ function textSpan(s, sep, bound) {
  * quotes and whitespace — git quotes the url it failed on in its own messages (`fatal: clone of '<url>' into …`,
  * `Submodule 'x' (<url>) registered`) — while a second url or trailing `user@host` text on the line is left as it is.
  */
-export function maskUrls(text) {
+function maskTextUrls(text) {
   if (!text.includes(SEP)) return text;
   let out = '';
   let done = 0;
@@ -157,6 +157,52 @@ export function maskUrls(text) {
   }
   return out + text.slice(done);
 }
+
+/** git's git-protocol look-up failure, `unable to look up <host> (port <n>) (…)`: `<host>` is the url's whole authority. */
+const LOOKUP = 'unable to look up ';
+const LOOKUP_PORT = ' (port ';
+
+/** The index of the next `needle` at or after `from`, or `s.length`. */
+const indexOr = (s, needle, from) => { const i = s.indexOf(needle, from); return i === -1 ? s.length : i; };
+
+/**
+ * `text` with the password in each LOOKUP line's host masked as a url's is: from its first `:` to its last `@` before
+ * ` (port ` (a decoded password may hold a space), the line's end or the next LOOKUP — never empty. A git:// url's
+ * userinfo reaches git's message so, with no scheme for a url mask to find (remoteUrl refuses one; git config may hold
+ * it). Each forward search is reused until passed, and hosts never overlap: linear.
+ */
+function maskLookups(text) {
+  if (!text.includes(LOOKUP)) return text;
+  let out = '';
+  let done = 0;
+  const ends = { port: -1, lf: -1, cr: -1 };
+  for (let at = text.indexOf(LOOKUP); at !== -1;) {
+    const from = at + LOOKUP.length;
+    const next = text.indexOf(LOOKUP, from);
+    if (ends.port < from) ends.port = indexOr(text, LOOKUP_PORT, from);
+    if (ends.lf < from) ends.lf = indexOr(text, '\n', from);
+    if (ends.cr < from) ends.cr = indexOr(text, '\r', from);
+    const end = Math.min(ends.port, ends.lf, ends.cr, next === -1 ? text.length : next);
+    let colon = -1;
+    let last = -1;
+    for (let i = from; i < end; i++) {
+      if (text[i] === ':' && colon === -1) colon = i;
+      if (text[i] === '@') last = i;
+    }
+    if (colon !== -1 && last > colon + 1) {
+      out += `${text.slice(done, colon + 1)}***`;
+      done = last;
+    }
+    at = next;
+  }
+  return out + text.slice(done);
+}
+
+/**
+ * `text` with every url's password masked (maskTextUrls), and the userinfo password in git's git-protocol look-up line
+ * (maskLookups).
+ */
+export const maskUrls = (text) => maskLookups(maskTextUrls(text));
 
 /** `v` with maskUrls applied to every string in it, through arrays and plain objects (a refusal's body, a git message). */
 export function maskDeep(v) {

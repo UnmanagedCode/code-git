@@ -298,3 +298,17 @@ test('remote.add / remote.edit with a credentialed git:// url → BAD_URL, nothi
   assert.deepEqual(w.remoteWrites().slice(before), [], 'nothing written');
   assert.deepEqual([w.config('remote.g.url'), w.config('remote.cred.url'), w.config('remote.cred.pushurl')], [[], [url('one')], [pushUrl('p')]]);
 });
+
+// Invariant: end to end, a remote set with git to a credentialed git:// url fails its fetch (git's local look-up of the
+// userinfo-bearing host: no network) and neither the refusal nor /api/activity holds the password.
+test('remote.fetch of a git:// remote set with git: git\'s look-up error reaches no response with its password', async (t) => {
+  const w = await world(t);
+  w.repo.git('config', 'remote.gp.url', `git://user:${PW}@h.example.invalid/r`);
+  w.repo.git('config', 'remote.gp.fetch', '+refs/heads/*:refs/remotes/gp/*');
+  const r = await w.call('remote.fetch', { remote: 'gp' }, 422);
+  lacksSecrets(r);
+  assert.match(r.stderr, /unable to look up user:\*\*\*@h\.example\.invalid \(port 9418\)/);
+  const activity = JSON.stringify(await w.activity());
+  lacksSecrets(activity);
+  assert.ok(activity.includes('user:***@h.example.invalid (port 9418)'), 'the activity log shows the look-up masked');
+});
