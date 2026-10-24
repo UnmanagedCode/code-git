@@ -241,3 +241,87 @@ test('start and finish argv: every user-named argument follows --end-of-options 
   }
   assert.ok(checked >= 7, `checked ${checked}`);
 });
+
+test('settings: a type prefix that prefixes main or develop is refused (BAD_PARAMS), so neither can read as a flow branch', () => {
+  const p = (prefixes) => getOp(OPS, 'flow.init').params({ ...INIT, prefixes: { ...PREFIXES, ...prefixes } });
+  assert.throws(() => p({ feature: 'ma' }), refused('BAD_PARAMS'));
+  assert.throws(() => p({ release: 'main' }), refused('BAD_PARAMS'));
+  assert.throws(() => p({ hotfix: 'dev' }), refused('BAD_PARAMS'));
+  assert.equal(p({ feature: 'f/' }).prefixes.feature, 'f/');
+});
+
+test('finish never deletes main or develop: stored settings whose prefix prefixes main refuse FLOW_NOT_INITIALIZED, main untouched', async (t) => {
+  const w = await flowWorld(t);
+  w.repo.git('config', 'gitflow.prefix.feature', 'ma');
+  w.repo.git('checkout', '-q', 'develop');
+  await assert.rejects(w.op('flow.finish', { type: 'feature', name: 'in', expect: w.base }), refused('FLOW_NOT_INITIALIZED'));
+  await assert.rejects(w.op('flow.start', { type: 'feature', name: 'x' }), refused('FLOW_NOT_INITIALIZED'));
+  assert.equal(w.oid('refs/heads/main'), w.base);
+  assert.equal(w.head(), 'refs/heads/develop');
+});
+
+test('a first switch refused before anything moved rethrows its own refusal (CHECKOUT_CONFLICT), not FLOW_INCOMPLETE; nothing changed', async (t) => {
+  const w = await flowWorld(t);
+  await w.op('flow.start', { type: 'feature', name: 'blocked' });
+  const tip = w.repo.commit({ 'b.txt': 'b\n' }, 'b');
+  w.repo.git('checkout', '-q', 'develop');
+  w.repo.commit({ 'u.txt': 'tracked on develop\n' }, 'u');
+  w.repo.git('checkout', '-q', 'feature/blocked');
+  // Untracked: assertClean ignores it, and switching to develop would overwrite it.
+  w.repo.write('u.txt', 'untracked here\n');
+  const before = w.snapshot();
+  await assert.rejects(w.op('flow.finish', { type: 'feature', name: 'blocked', expect: tip }), refused('CHECKOUT_CONFLICT', { files: ['u.txt'] }));
+  assert.deepEqual(w.snapshot(), before);
+});
+
+test('a hook failing on the first switch after it moved HEAD (post-checkout) is FLOW_INCOMPLETE: judged by what git did, not by the steps done', async (t) => {
+  const w = await flowWorld(t);
+  await w.op('flow.start', { type: 'feature', name: 'moved' });
+  const tip = w.repo.commit({ 'm.txt': 'm\n' }, 'm');
+  w.repo.hook('post-checkout', '#!/bin/sh\necho CHECKOUT-HOOK-NO\nexit 1\n');
+  await assert.rejects(w.op('flow.finish', { type: 'feature', name: 'moved', expect: tip }), (e) => {
+    refused('FLOW_INCOMPLETE', { step: 'switch', into: 'develop', done: [] })(e);
+    assert.match(e.extra.cause.stderr, /CHECKOUT-HOOK-NO/);
+    return true;
+  });
+  assert.equal(w.head(), 'refs/heads/develop', 'HEAD moved before the hook failed');
+  assert.equal(w.exists('refs/heads/feature/moved'), true);
+});
+
+test('finish from a code-conductor/* HEAD needs ccOwned (CC_OWNED_BRANCH {head: true}); acknowledged, it finishes there', async (t) => {
+  const w = await flowWorld(t);
+  await w.op('flow.start', { type: 'feature', name: 'cc' });
+  const tip = w.repo.commit({ 'c.txt': 'c\n' }, 'c');
+  w.repo.git('checkout', '-q', 'main');
+  const wt = w.worktree('wt', 'code-conductor/wt', 'main');
+  await assert.rejects(w.op('flow.finish', { type: 'feature', name: 'cc', expect: tip }, 'wt'), refused('CC_OWNED_BRANCH', { head: true }));
+  assert.equal(w.exists('refs/heads/feature/cc'), true);
+  const r = await w.op('flow.finish', { type: 'feature', name: 'cc', expect: tip, ccOwned: true }, 'wt');
+  assert.equal(r.deleted, true);
+  assert.equal(wt.git('symbolic-ref', 'HEAD'), 'refs/heads/develop');
+});
+
+test('a release whose develop merge is upToDate: main is merged and tagged, develop unchanged, the branch deleted', async (t) => {
+  const w = await flowWorld(t);
+  await w.op('flow.start', { type: 'release', name: '3.0' });
+  const tip = w.repo.commit({ 'v.txt': '3.0\n' }, 'bump');
+  // develop already holds the release tip.
+  w.repo.git('branch', '-f', 'develop', tip);
+  const r = await w.op('flow.finish', { type: 'release', name: '3.0', expect: tip, tagMessage: 'Release 3.0' });
+  assert.deepEqual(r.merges.map((m) => m.outcome), ['merged', 'upToDate']);
+  assert.deepEqual(r.merges[1], { into: 'develop', outcome: 'upToDate', oid: tip });
+  assert.equal(w.oid('refs/heads/develop'), tip);
+  assert.equal(w.oid('v3.0^{commit}'), r.merges[0].oid);
+  assert.equal(r.deleted, true);
+});
+
+test('a flow name may hold a slash: feature/team/login starts, finishes and is deleted', async (t) => {
+  const w = await flowWorld(t);
+  const s = await w.op('flow.start', { type: 'feature', name: 'team/login' });
+  assert.equal(s.branch, 'feature/team/login');
+  const tip = w.repo.commit({ 't.txt': 't\n' }, 't');
+  const r = await w.op('flow.finish', { type: 'feature', name: 'team/login', expect: tip });
+  assert.equal(r.branch, 'feature/team/login');
+  assert.equal(r.deleted, true);
+  assert.deepEqual(w.parents(w.oid('refs/heads/develop')), [w.base, tip]);
+});

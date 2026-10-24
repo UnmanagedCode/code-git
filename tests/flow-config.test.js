@@ -43,3 +43,23 @@ test('flow.config defaults: main is `main` if it exists, else `master`, else HEA
   w.repo.git('checkout', '-q', '--detach');
   assert.equal((await defaults()).main, null);
 });
+
+test('initialized means usable: complete settings the write ops would refuse read as not initialized', async (t) => {
+  const w = await refsWorld(t);
+  const set = (k, v) => w.repo.git('config', k, v);
+  set('gitflow.branch.master', 'main');
+  set('gitflow.branch.develop', 'develop');
+  set('gitflow.prefix.feature', 'feature/');
+  set('gitflow.prefix.release', 'release/');
+  set('gitflow.prefix.hotfix', 'hotfix/');
+  assert.equal((await read(w)).initialized, true);
+  // A type prefix that prefixes main would make main a flow branch.
+  set('gitflow.prefix.feature', 'ma');
+  assert.equal((await read(w)).initialized, false);
+  assert.equal((await w.op('flow.config', {})).initialized, false);
+  set('gitflow.prefix.feature', 'feature/');
+  set('gitflow.branch.develop', 'a..b');
+  assert.equal((await read(w)).initialized, false, 'a branch name git could not have');
+  set('gitflow.branch.develop', 'main');
+  assert.equal((await read(w)).initialized, false, 'main and develop equal');
+});

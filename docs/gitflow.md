@@ -15,9 +15,9 @@ Stored in the repository's local config under nvie's and AVH's key names, so a c
 | Hotfix prefix | `gitflow.prefix.hotfix` | `hotfix/` |
 | Version tag prefix | `gitflow.prefix.versiontag` | empty |
 
-- **Initialized** = both branches and the three type prefixes are set; the version tag prefix may be unset or empty (`readFlowConfig`).
+- **Initialized** = usable: both branches and the three type prefixes are set (the version tag prefix may be unset or empty) and they pass `checkSettings`, the check the write ops run (`readFlowConfig`). Complete settings the ops would refuse read as not initialized, so the UI never offers Start or Finish for them.
 - **Initialize** (`flow.init`) writes all six keys with `git config --local` and creates the development branch at the production branch when it does not exist (an existing one is never moved). Initializing again is how the settings are edited.
-- **Checked on every write** (`checkSettings`): both branch names valid and different; each prefix plus a name a valid branch (or tag) name; the three type prefixes non-empty and different from each other; no branch or prefix under `code-conductor/` (`BAD_REF`: cc owns that namespace). `flow.start` and `flow.finish` re-check the stored settings and refuse `FLOW_NOT_INITIALIZED` when they are unset or unusable.
+- **Checked on every write** (`checkSettings`): both branch names valid and different; each prefix plus a name a valid branch (or tag) name; the three type prefixes non-empty and different from each other; no type prefix that prefixes main's or develop's name (`BAD_PARAMS`: either would read as a flow branch, and a finish deletes its branch); no branch or prefix under `code-conductor/` (`BAD_REF`: cc owns that namespace). A flow branch is never main or develop (`BAD_REF`). `flow.start` and `flow.finish` re-check the stored settings and refuse `FLOW_NOT_INITIALIZED` when they are unset or unusable.
 
 ## What each op runs
 
@@ -40,7 +40,7 @@ In order: a bare repository (`BARE_REPO`); a merge, rebase, cherry-pick or rever
 
 **The merge preflight**: `merge-tree --write-tree -z --name-only --no-messages --end-of-options <into's oid> <branch's oid>` for every merge (exit 0 clean, 1 conflicted; the conflicted paths follow the tree id, NUL-separated). Any conflict → `FLOW_CONFLICT {into, files}`, and nothing has been written: refs, HEAD, the index and the working tree are as they were. Both merges are known up front because the develop merge takes the flow branch (below).
 
-**After the first write**, any failure — a hook (`pre-merge-commit`, `post-checkout`, `commit-msg`, …) exiting non-zero, a merge that stops on conflicts despite the preflight, a race — answers `FLOW_INCOMPLETE {step: 'switch' | 'merge' | 'tag' | 'delete', into?, done: [{step, into?}], cause: {code, message, stderr, files?}}`. `cause.stderr` is git's output, a hook's included. Nothing is rolled back: what `done` lists stands, and a merge a hook stopped is left in progress (`MERGE_HEAD`), shown by the Changes panel's banner (Continue / Abort).
+**A step refused before git changed anything** — the first switch blocked by an untracked file (`CHECKOUT_CONFLICT`; `assertClean` ignores untracked files) — answers that refusal itself: HEAD, the refs and the tag are as before and nothing is in progress (`untouched`, judged by what git left, not by the steps done). **Once git has changed anything** — a hook exiting non-zero after its command moved HEAD or left a merge in progress (`post-checkout`, `pre-merge-commit`, `commit-msg`, …), a merge that stops on conflicts despite the preflight, a later step failing, a race — the answer is `FLOW_INCOMPLETE {step: 'switch' | 'merge' | 'tag' | 'delete', into?, done: [{step, into?}], cause: {code, message, stderr, files?}}`. `cause.stderr` is git's output, a hook's included. Nothing is rolled back: what `done` lists stands, and a merge a hook stopped is left in progress (`MERGE_HEAD`), shown by the Changes panel's banner (Continue / Abort).
 
 ## Departures from nvie's git-flow
 

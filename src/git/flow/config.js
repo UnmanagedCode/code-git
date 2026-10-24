@@ -18,12 +18,8 @@ export const KEYS = {
 };
 export const DEFAULT_PREFIXES = { feature: 'feature/', release: 'release/', hotfix: 'hotfix/', versionTag: '' };
 
-/**
- * The `gitflow.*` settings: {initialized, main, develop, prefixes: {feature, release, hotfix, versionTag}}, each null
- * when unset. `initialized`: both branches and the three type prefixes are set; the version-tag prefix may be unset or
- * empty. A repeated key's last value wins, as git's own reads do.
- */
-export async function readFlowConfig(git) {
+/** The raw `gitflow.*` values: {complete, main, develop, prefixes}, each null when unset; `complete`: all but the version-tag prefix are set. */
+async function readRaw(git) {
   const r = await git(['config', '-z', '--get-regexp', '^gitflow\\.'], { okExit: [0, 1] });
   const values = new Map();
   for (const rec of decoder.decode(r.stdout).split('\0')) {
@@ -37,8 +33,28 @@ export async function readFlowConfig(git) {
     main: get('main'), develop: get('develop'),
     prefixes: { feature: get('feature'), release: get('release'), hotfix: get('hotfix'), versionTag: get('versionTag') },
   };
-  const initialized = c.main !== null && c.develop !== null && TYPES.every((t) => c.prefixes[t] !== null);
-  return { initialized, ...c };
+  return { complete: c.main !== null && c.develop !== null && TYPES.every((t) => c.prefixes[t] !== null), ...c };
+}
+
+/** Why complete settings `c` cannot be used (checkSettings' refusal), else null. */
+function problemOf(c) {
+  try {
+    checkSettings({ ...c, prefixes: { ...c.prefixes, versionTag: c.prefixes.versionTag ?? '' } });
+    return null;
+  } catch (e) {
+    if (!(e instanceof Refusal)) throw e;
+    return e;
+  }
+}
+
+/**
+ * The `gitflow.*` settings: {initialized, main, develop, prefixes: {feature, release, hotfix, versionTag}}, each null
+ * when unset. `initialized`: usable by the write ops — both branches and the three type prefixes set (the version-tag
+ * prefix may be unset or empty) and passing checkSettings. A repeated key's last value wins, as git's own reads do.
+ */
+export async function readFlowConfig(git) {
+  const { complete, ...c } = await readRaw(git);
+  return { initialized: complete && problemOf(c) === null, ...c };
 }
 
 const notCc = (name, what) => {
@@ -65,17 +81,18 @@ export function checkSettings({ main, develop, prefixes }) {
     if (k !== 'versionTag') notCc(v, `the ${k} prefix`);
   }
   if (new Set(TYPES.map((k) => prefixes[k])).size !== TYPES.length) throw bad('the feature, release and hotfix prefixes must differ');
+  // Otherwise main or develop would read as a flow branch, and a finish would merge and delete it.
+  for (const k of TYPES) {
+    for (const b of [main, develop]) if (b.startsWith(prefixes[k])) throw bad(`the ${k} prefix ${prefixes[k]} would make ${b} a ${k} branch`);
+  }
   return { main, develop, prefixes: Object.fromEntries([...TYPES, 'versionTag'].map((k) => [k, prefixes[k]])) };
 }
 
 /** The settings start and finish run with: FLOW_NOT_INITIALIZED when unset, or set to something checkSettings refuses. */
 export async function flowSettings(git) {
-  const c = await readFlowConfig(git);
-  if (!c.initialized) throw new Refusal('FLOW_NOT_INITIALIZED', 'git-flow is not initialized in this repository');
-  try {
-    return checkSettings({ ...c, prefixes: { ...c.prefixes, versionTag: c.prefixes.versionTag ?? '' } });
-  } catch (e) {
-    if (!(e instanceof Refusal)) throw e;
-    throw new Refusal('FLOW_NOT_INITIALIZED', `the git-flow settings are not usable (${e.message}): initialize again`);
-  }
+  const { complete, ...c } = await readRaw(git);
+  if (!complete) throw new Refusal('FLOW_NOT_INITIALIZED', 'git-flow is not initialized in this repository');
+  const problem = problemOf(c);
+  if (problem) throw new Refusal('FLOW_NOT_INITIALIZED', `the git-flow settings are not usable (${problem.message}): initialize again`);
+  return { main: c.main, develop: c.develop, prefixes: { ...c.prefixes, versionTag: c.prefixes.versionTag ?? '' } };
 }

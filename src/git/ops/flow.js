@@ -8,6 +8,7 @@ import { assertNoSymref, tagObjects } from '../refs/resolve.js';
 import { guardOverwrite } from '../refs/write.js';
 import { merge } from '../remote/integrate.js';
 import { assertClean, assertNoOperation } from '../sequence/guard.js';
+import { operationState } from '../sequence/state.js';
 import { SEQUENCE_LIMITS } from '../sequence/limits.js';
 import { assertGitAtLeast } from '../stash/version.js';
 import { assertOid, assertRefName } from '../validate.js';
@@ -43,6 +44,8 @@ function plainHead(heads, short) {
 function flowBranch(settings, type, name) {
   const branch = shortBranch(`${settings.prefixes[type]}${name}`);
   if (isCcOwned(branch)) throw new Refusal('BAD_REF', `${branch} is under code-conductor/: cc owns those branches`);
+  // checkSettings already keeps a prefix off main and develop; a finish deletes its branch, so never either of them.
+  if (branch === settings.main || branch === settings.develop) throw new Refusal('BAD_REF', `${branch} is the ${branch === settings.main ? 'production' : 'development'} branch, not a flow branch`);
   return branch;
 }
 
@@ -58,6 +61,14 @@ async function preflight(git, into, oid) {
   const r = await git(['merge-tree', '--write-tree', '-z', '--name-only', '--no-messages', '--end-of-options', into, oid], { okExit: [0, 1] });
   if (r.exitCode === 0) return [];
   return decoder.decode(r.stdout).split('\0').slice(1).filter(Boolean);
+}
+
+/** Whether HEAD, the flow branch, the merge targets and the tag are as before the first write, with nothing in progress. */
+async function untouched(git, { own, tip, branch, oids, tag }) {
+  const [now, heads, state, tags] = await Promise.all([ownHead(git), readHeads(git), operationState(git), tag ? tagObjects(git, [tag]) : new Map()]);
+  return now.branch === own.branch && now.oid === own.oid && heads.get(local(branch))?.oid === tip
+    && [...oids].every(([b, oid]) => heads.get(local(b))?.oid === oid)
+    && !state.operation && !state.conflicts.length && !(tag && tags.has(tag));
 }
 
 export const ops = [
@@ -203,6 +214,9 @@ export const ops = [
         deleted = !(await readHeads(git)).has(local(branch));
       } catch (e) {
         if (!(e instanceof Refusal)) throw e;
+        // Refused before git changed anything (a switch blocked by an untracked file): the refusal itself, not FLOW_INCOMPLETE.
+        // Judged by what git left, not by the steps done: a post-checkout hook fails after its switch moved HEAD.
+        if (!done.length && await untouched(git, { own, tip, branch, oids, tag })) throw e;
         const cause = { code: e.code, message: e.message, stderr: e.extra?.stderr ?? null, ...(e.extra?.files ? { files: e.extra.files } : {}) };
         throw new Refusal('FLOW_INCOMPLETE', `the finish stopped at its ${current.step} step${current.into ? ` (${current.into})` : ''}: ${e.message}`, {
           step: current.step, ...(current.into ? { into: current.into } : {}), done, cause,
