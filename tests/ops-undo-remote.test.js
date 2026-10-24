@@ -204,3 +204,29 @@ for (const [label, names, pinned] of [['two branches, the second pinned', ['feat
     assert.deepEqual(w.snap(), before, 'the second undo restores the state before too');
   });
 }
+
+// Invariant: git clears remote.pushDefault only when the local key has exactly one value: with the remote FIRST of two
+// values it is left, the record says not cleared, and remove → undo → redo runs, the key exactly as git left it.
+test('remote.remove with a two-valued remote.pushDefault, the remote first: left by git, undo and redo exact', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('config', '--add', 'remote.pushDefault', 'origin');
+  w.repo.git('config', '--add', 'remote.pushDefault', 'elsewhere');
+  const values = 'origin\nelsewhere';
+  const { result } = await roundTrip(w, () => w.op('remote.remove', { name: 'origin' }));
+  assert.equal(result.undo.remotes[0].old.pushDefault, false);
+  assert.equal(w.repo.git('config', '--local', '--get-all', 'remote.pushDefault'), values, 'after the redo, as git left it');
+  await w.undo();
+  assert.equal(w.repo.git('config', '--local', '--get-all', 'remote.pushDefault'), values, 'after the undo too');
+});
+
+// Invariant: the single local value must name the remote: a remote.pushDefault naming another remote is not cleared,
+// recorded or written, and remove → undo → redo runs with it unchanged throughout.
+test('remote.remove with remote.pushDefault naming another remote: untouched, undo and redo exact', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('config', 'remote.pushDefault', 'elsewhere');
+  const { result } = await roundTrip(w, () => w.op('remote.remove', { name: 'origin' }));
+  assert.equal(result.undo.remotes[0].old.pushDefault, false);
+  assert.equal(w.repo.git('config', '--local', '--get-all', 'remote.pushDefault'), 'elsewhere');
+  await w.undo();
+  assert.equal(w.repo.git('config', '--local', '--get-all', 'remote.pushDefault'), 'elsewhere');
+});
