@@ -81,6 +81,20 @@ test('redactArgv masks a url password in any argument; the activity entry, its e
   assert.ok(!JSON.stringify([events, log.list()]).includes('sec/ret'));
 });
 
+// Invariant: an argument of a command whose arguments are names, urls and values (remote, submodule, config, the network
+// commands) is masked as a stored value (maskUrl: even a password starting with a space); every other argument (a commit
+// message) through the text masker: free text keeps its shape, each credentialed url in it masked on its own.
+test('redactArgv: url and config value arguments masked whole; free text keeps its shape', () => {
+  const git = (...args) => ['git', ...BASE_ARGS, ...args];
+  assert.deepEqual(redactArgv(git('remote', 'add', '--end-of-options', 'o', 'https://u: pw@h/r')), git('remote', 'add', '--end-of-options', 'o', 'https://u:***@h/r'));
+  assert.deepEqual(redactArgv(git('remote', 'set-url', '--push', '--end-of-options', 'o', 'https://u: pw@h/r')), git('remote', 'set-url', '--push', '--end-of-options', 'o', 'https://u:***@h/r'));
+  assert.deepEqual(redactArgv(git('config', '--add', 'remote.o.url', 'https://u: pw@h/r')), git('config', '--add', 'remote.o.url', 'https://u:***@h/r'));
+  assert.deepEqual(redactArgv(git('submodule', 'add', '--', 'https://u: pw@h/r', 'x')), git('submodule', 'add', '--', 'https://u:***@h/r', 'x'));
+  const message = '--message=wip for https://github.com/o/r/pull/1: ping @alice';
+  assert.deepEqual(redactArgv(git('commit', message)), git('commit', message));
+  assert.deepEqual(redactArgv(git('commit', '-m', 'see https://u:pw@h/r and https://v:pw2@h2/r')), git('commit', '-m', 'see https://u:***@h/r and https://v:***@h2/r'));
+});
+
 // Invariant: the value of a `git config` write to a remote's key other than url / pushurl / fetch (an `extra` key: a
 // proxy, a pack command) is never recorded — replaced by *** with the key kept, whatever its form (a scheme-less
 // user:password@host proxy included); url and pushurl keep maskUrl, fetch and everything else is recorded as given; the
