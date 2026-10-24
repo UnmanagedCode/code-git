@@ -118,7 +118,8 @@ export async function branchRemotes(git) {
 /**
  * The local keys `git remote remove <remote>` would unset now, as [[key, value]] in config order: it picks the branches
  * by their effective `branch.<b>.remote` / `.pushRemote` (every scope, the last value wins) and unsets `.remote` and
- * `.merge` (resp. `.pushRemote`) in the repo's own file.
+ * `.merge` (resp. `.pushRemote`) in the repo's own file — each key that has exactly one value there: git refuses to
+ * unset a multi-valued key ("has multiple values") and leaves it, per key.
  */
 export async function clearableKeys(git, remote) {
   const effective = new Map();
@@ -127,9 +128,11 @@ export async function clearableKeys(git, remote) {
     if (v !== 'merge') effective.set(`${branch}\0${v}`, value);
   }
   const names = (branch, v) => effective.get(`${branch}\0${v}`) === remote;
-  return (await localBranchKeys(git)).filter(([key]) => {
+  const local = await localBranchKeys(git);
+  const count = local.reduce((m, [key]) => m.set(key, (m.get(key) ?? 0) + 1), new Map());
+  return local.filter(([key]) => {
     const { branch, v } = branchKey(key);
-    return v === 'pushremote' ? names(branch, 'pushremote') : names(branch, 'remote');
+    return count.get(key) === 1 && (v === 'pushremote' ? names(branch, 'pushremote') : names(branch, 'remote'));
   });
 }
 
@@ -154,10 +157,21 @@ export async function upstreamsOf(git, remote) {
   return [...await branchRemotes(git)].filter(([, b]) => b.remote === remote).map(([branch, b]) => ({ branch, merge: b.merge }));
 }
 
-/** `remote.pushDefault` in the repo's own config (as branchRemotes), or null. */
+/** `remote.pushDefault`'s values in the repo's own config (as branchRemotes), in order; [] when unset. */
+async function pushDefaultsOf(git) {
+  const r = await git(['config', '--local', '--get-all', 'remote.pushDefault'], { okExit: [0, 1] });
+  return r.exitCode === 0 ? decoder.decode(r.stdout).replace(/\n$/, '').split('\n') : [];
+}
+
+/** `remote.pushDefault` in the repo's own config (its last value), or null. */
 export async function pushDefaultOf(git) {
-  const r = await git(['config', '--local', '--get', 'remote.pushDefault'], { okExit: [0, 1] });
-  return r.exitCode === 0 ? decoder.decode(r.stdout).replace(/\n$/, '') : null;
+  return (await pushDefaultsOf(git)).at(-1) ?? null;
+}
+
+/** Whether `git remote remove <remote>` would clear `remote.pushDefault` now: one local value, the remote (git leaves a multi-valued key). */
+export async function pushDefaultClearable(git, remote) {
+  const values = await pushDefaultsOf(git);
+  return values.length === 1 && values[0] === remote;
 }
 
 

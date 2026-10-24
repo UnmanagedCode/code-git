@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { clearableKeys, localBranchKeys, pushDefaultOf, remoteSnapshot, writeRemoteConfig } from '../../remote/config.js';
+import { clearableKeys, localBranchKeys, pushDefaultClearable, pushDefaultOf, remoteSnapshot, writeRemoteConfig } from '../../remote/config.js';
 import { parseFetchRefspec, trackedSnapshot } from '../../remote/tracking.js';
 import { stale } from './shared.js';
 
@@ -30,7 +30,7 @@ async function preflight(git, step, dir, ctx) {
     // Removing it again: git would clear exactly the recorded keys (one added since would be left naming a removed
     // remote; one changed since is not the record's to unset).
     const sorted = (keys) => keys.map(([k, v]) => `${k}\0${v}`).sort();
-    if (!isDeepStrictEqual(sorted(await clearableKeys(git, name)), sorted(from.branchKeys)) || (await pushDefaultOf(git) === name) !== from.pushDefault) {
+    if (!isDeepStrictEqual(sorted(await clearableKeys(git, name)), sorted(from.branchKeys)) || await pushDefaultClearable(git, name) !== from.pushDefault) {
       throw stale(`the branch or push config naming ${name} changed since`);
     }
   }

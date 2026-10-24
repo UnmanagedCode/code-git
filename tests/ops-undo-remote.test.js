@@ -126,3 +126,30 @@ for (const scope of ['global', 'include', 'worktree']) {
     assert.equal(fs.readFileSync(file, 'utf8'), fileBefore);
   });
 }
+
+/** Each var with two local values, the remote last: what `remote remove` sees, and the key it must leave in place. */
+const MULTI = {
+  merge: { setup: (g) => g('config', '--add', 'branch.main.merge', 'refs/heads/other'), left: 'branch.main.merge' },
+  pushRemote: { setup: (g) => { g('branch', 'feat'); g('config', '--add', 'branch.feat.pushRemote', 'elsewhere'); g('config', '--add', 'branch.feat.pushRemote', 'origin'); }, left: 'branch.feat.pushRemote' },
+  remote: { setup: (g) => { g('config', '--replace-all', 'branch.main.remote', 'elsewhere'); g('config', '--add', 'branch.main.remote', 'origin'); }, left: 'branch.main.remote' },
+  pushDefault: { setup: (g) => { g('config', '--add', 'remote.pushDefault', 'elsewhere'); g('config', '--add', 'remote.pushDefault', 'origin'); }, left: 'remote.pushDefault' },
+};
+
+// Invariant: git refuses to unset a key with several values ("has multiple values") and leaves it; the record omits it
+// and the redo predicts git the same way (per key: a multi-valued key is never expected to be cleared, a single-valued
+// sibling still is; pushDefault only when it has exactly one local value, the remote), so remove → undo → redo runs and
+// matches what git cleared.
+for (const [v, { setup, left }] of Object.entries(MULTI)) {
+  test(`remote.remove with a multi-valued local ${v} (the remote last): undo and redo exact, the key left in place`, async (t) => {
+    const w = await undoWorld(t);
+    const g = (...args) => w.repo.git(...args);
+    setup(g);
+    const values = g('config', '--local', '--get-all', left);
+    const { result } = await roundTrip(w, () => w.op('remote.remove', { name: 'origin' }));
+    assert.equal(g('config', '--local', '--get-all', left), values, `git left ${left} as it was`);
+    const old = result.undo.remotes[0].old;
+    assert.ok(!old.branchKeys.some(([k]) => k.toLowerCase() === left.toLowerCase()), `${left} is not in the record`);
+    if (v === 'pushDefault') assert.equal(old.pushDefault, false);
+    if (v === 'remote') assert.deepEqual(old.branchKeys, [['branch.main.merge', 'refs/heads/main']], 'the single-valued merge was cleared');
+  });
+}
