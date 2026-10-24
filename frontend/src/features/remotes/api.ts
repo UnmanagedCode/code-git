@@ -3,7 +3,7 @@ import type { UndoRecord, Unrequested } from '@/features/branches/api';
 
 // The remote ops' wire shapes (docs/protocol.md → Remote ops) and thin runOp wrappers.
 
-/** `displayUrl` (the first url, else push url) and `displayPushUrl`, any password shown as ***: the only urls the UI renders. */
+/** Every url arrives with its password masked as ***; `displayUrl` (the first url, else push url) and `displayPushUrl` are the only ones the UI renders. */
 export interface RemoteInfo {
   name: string; urls: string[]; pushUrls: string[]; fetch: string[]; displayUrl: string | null; displayPushUrl: string | null; legacy: boolean;
   /** The raw url / push url list holds several values (an empty reset counts): remote.edit refuses to replace it. */
