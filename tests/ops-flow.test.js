@@ -325,3 +325,58 @@ test('a flow name may hold a slash: feature/team/login starts, finishes and is d
   assert.equal(r.deleted, true);
   assert.deepEqual(w.parents(w.oid('refs/heads/develop')), [w.base, tip]);
 });
+
+/** A release whose tip main already holds, finished from a checkout on main: its main merge is upToDate (no switch first). */
+async function releaseOnMain(t, name) {
+  const w = await flowWorld(t);
+  await w.op('flow.start', { type: 'release', name });
+  const tip = w.repo.commit({ 'r.txt': `${name}\n` }, `release ${name}`);
+  w.repo.git('checkout', '-q', 'main');
+  w.repo.git('merge', '-q', '--ff-only', tip);
+  return { w, tip };
+}
+
+test('the decision is state-based: no-op steps (an upToDate main merge) then a tag refused before it was written rethrow GIT_FAILED, nothing changed', async (t) => {
+  const { w, tip } = await releaseOnMain(t, '5.0');
+  // A signer that cannot sign: git tag fails before creating the tag.
+  w.repo.git('config', 'tag.gpgSign', 'true');
+  w.repo.git('config', 'gpg.program', 'false');
+  const before = w.snapshot();
+  await assert.rejects(w.op('flow.finish', { type: 'release', name: '5.0', expect: tip, tagMessage: 'Release 5.0' }), refused('GIT_FAILED'));
+  assert.deepEqual(w.snapshot(), before);
+  assert.equal(w.exists('refs/tags/v5.0'), false);
+});
+
+test('after an upToDate main merge the tag is written, so a develop switch blocked by an untracked file is FLOW_INCOMPLETE listing the tag', async (t) => {
+  const { w, tip } = await releaseOnMain(t, '6.0');
+  w.repo.git('checkout', '-q', 'develop');
+  w.repo.commit({ 'u.txt': 'tracked on develop\n' }, 'u');
+  w.repo.git('checkout', '-q', 'main');
+  w.repo.write('u.txt', 'untracked here\n');
+  await assert.rejects(w.op('flow.finish', { type: 'release', name: '6.0', expect: tip, tagMessage: 'Release 6.0' }), (e) => {
+    refused('FLOW_INCOMPLETE', { step: 'switch', into: 'develop', done: [{ step: 'merge', into: 'main' }, { step: 'tag' }] })(e);
+    assert.equal(e.extra.cause.code, 'CHECKOUT_CONFLICT');
+    return true;
+  });
+  assert.equal(w.oid('v6.0^{commit}'), tip);
+  assert.equal(w.head(), 'refs/heads/main');
+});
+
+test('an unfinished merge left by the first step is a change: a failing pre-merge-commit on the main merge (no switch) is FLOW_INCOMPLETE with the hook output', async (t) => {
+  const w = await flowWorld(t);
+  await w.op('flow.start', { type: 'release', name: '7.0' });
+  const tip = w.repo.commit({ 'r.txt': '7.0\n' }, 'release 7.0');
+  w.repo.git('checkout', '-q', 'main');
+  w.repo.hook('pre-merge-commit', '#!/bin/sh\necho MAIN-MERGE-NO\nexit 1\n');
+  const refsBefore = w.repo.git('for-each-ref', '--format=%(refname) %(objectname)');
+  await assert.rejects(w.op('flow.finish', { type: 'release', name: '7.0', expect: tip, tagMessage: 'Release 7.0' }), (e) => {
+    refused('FLOW_INCOMPLETE', { step: 'merge', into: 'main', done: [] })(e);
+    assert.equal(e.extra.cause.code, 'GIT_FAILED');
+    assert.match(e.extra.cause.stderr, /MAIN-MERGE-NO/);
+    return true;
+  });
+  // HEAD and every ref unchanged: only the merge left in progress makes it a change.
+  assert.equal(w.repo.git('for-each-ref', '--format=%(refname) %(objectname)'), refsBefore);
+  assert.equal(w.head(), 'refs/heads/main');
+  assert.equal(w.oid('MERGE_HEAD'), tip);
+});

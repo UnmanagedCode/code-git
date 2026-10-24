@@ -214,9 +214,10 @@ export const ops = [
         deleted = !(await readHeads(git)).has(local(branch));
       } catch (e) {
         if (!(e instanceof Refusal)) throw e;
-        // Refused before git changed anything (a switch blocked by an untracked file): the refusal itself, not FLOW_INCOMPLETE.
-        // Judged by what git left, not by the steps done: a post-checkout hook fails after its switch moved HEAD.
-        if (!done.length && await untouched(git, { own, tip, branch, oids, tag })) throw e;
+        // Refused while nothing has changed since the gates (a switch blocked by an untracked file, a tag a signer refused after
+        // an upToDate merge): the refusal itself, not FLOW_INCOMPLETE. Judged by what git left, never by the steps done: a
+        // no-op step changes nothing, and a post-checkout hook fails after its switch moved HEAD.
+        if (await untouched(git, { own, tip, branch, oids, tag })) throw e;
         const cause = { code: e.code, message: e.message, stderr: e.extra?.stderr ?? null, ...(e.extra?.files ? { files: e.extra.files } : {}) };
         throw new Refusal('FLOW_INCOMPLETE', `the finish stopped at its ${current.step} step${current.into ? ` (${current.into})` : ''}: ${e.message}`, {
           step: current.step, ...(current.into ? { into: current.into } : {}), done, cause,
