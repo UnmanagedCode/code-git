@@ -252,6 +252,37 @@ test('remote.remove undo after branch.<b>.remote was set again: UNDO_STALE', asy
   await refusesUnchanged(w, () => w.undo(), 'UNDO_STALE');
 });
 
+// Invariant: a remove's redo refuses UNDO_STALE when a branch.<b>.pushRemote naming the remote was added since the undo
+// (the push keys must equal the recorded ones, not merely include them), and changes nothing — no key left dangling.
+test('remote.remove redo after a new branch.<b>.pushRemote names the remote: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('branch', 'feat');
+  await w.op('remote.remove', { name: 'origin' });
+  await w.undo();
+  w.repo.git('config', 'branch.feat.pushRemote', 'origin');
+  assert.deepEqual(await refusesUnchanged(w, () => w.redo(), 'UNDO_STALE'), EMPTY);
+});
+
+// Invariant: a remove's redo refuses UNDO_STALE when remote.pushDefault names the remote since the undo, and changes nothing.
+test('remote.remove redo after remote.pushDefault names the remote: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  await w.op('remote.remove', { name: 'origin' });
+  await w.undo();
+  w.repo.git('config', 'remote.pushDefault', 'origin');
+  assert.deepEqual(await refusesUnchanged(w, () => w.redo(), 'UNDO_STALE'), EMPTY);
+});
+
+// Invariant: a remove's redo refuses UNDO_STALE when a recorded push key no longer names the remote (pushDefault
+// cleared since the undo), and changes nothing.
+test('remote.remove redo after the recorded remote.pushDefault was unset: UNDO_STALE', async (t) => {
+  const w = await undoWorld(t);
+  w.repo.git('config', 'remote.pushDefault', 'origin');
+  await w.op('remote.remove', { name: 'origin' });
+  await w.undo();
+  w.repo.git('config', '--unset', 'remote.pushDefault');
+  assert.deepEqual(await refusesUnchanged(w, () => w.redo(), 'UNDO_STALE'), EMPTY);
+});
+
 // Invariant: a rename's undo refuses UNDO_STALE once the old name is a remote again.
 test('remote.rename undo after the old name was re-used: UNDO_STALE', async (t) => {
   const w = await undoWorld(t);

@@ -27,8 +27,12 @@ async function preflight(git, step, dir, ctx) {
   const { name } = step;
   if (!isDeepStrictEqual(configOf(await snapshotOrNull(git, name)), configOf(from))) throw stale(`remote ${name} changed since`);
   if (from?.pushRemotes) {
+    // Exactly the recorded push keys, as upstreams: one added since would be left naming a removed remote.
     const now = await pushRemotesOf(git, name);
-    if (!from.pushRemotes.every((b) => now.pushRemotes.includes(b)) || (from.pushDefault && !now.pushDefault)) throw stale(`the push remote config naming ${name} changed since`);
+    const sorted = (list) => [...list].sort();
+    if (!isDeepStrictEqual(sorted(now.pushRemotes), sorted(from.pushRemotes)) || now.pushDefault !== from.pushDefault) {
+      throw stale(`the push remote config naming ${name} changed since`);
+    }
   }
   if (from === null) {
     // Creating it back: the branch keys it restores must not have been set again meanwhile.
