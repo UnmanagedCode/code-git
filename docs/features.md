@@ -147,6 +147,25 @@ Merge (fast-forward when possible, no fast-forward, squash) and rebase from the 
 
 Graph toolbar **Fetch**, **Pull** (split: the default mode, and a menu of the three modes, the default, Fetch all (prune)… and Auto-fetch) and **Push**; remote rows in the refs panel (**Add remote**, Fetch, Fetch (prune)…, Edit…, Remove…, Copy URL); **Push** / **Push to `<remote>`…** on a local branch and on a drop onto a remote branch; force-with-lease after a rejected push; **Push after commit** in the commit box. Full behaviour: [remotes](remotes.md).
 
+## Git-flow
+
+The graph toolbar's **Repository actions** (⋮) → **Git-flow**: **Initialize…** (later **Git-flow settings…**), **Start feature… / release… / hotfix…**, **Finish ‹HEAD's branch›…**; **Finish feature… / release… / hotfix…** on a flow branch's menu; the palette's **Git-flow: …** commands. Finish merges with `--no-ff` (release and hotfix into main, tagged, then develop), deletes the branch and leaves HEAD on develop; it checks every merge first and changes nothing when one would conflict. Settings are the `gitflow.*` keys the git-flow extension uses. Details: [gitflow](gitflow.md).
+
+## LFS
+
+**Repository actions** → **LFS…** (or the palette's **LFS…**): the System's git-lfs version (or why it cannot be used), the root `.gitattributes`' tracked patterns with **Untrack**, **Track** a pattern, **List files** on request (path, size, downloaded), **Pull**, and **Prune…** behind a destructive confirmation step. Opening the dialog only reads. Needs git-lfs ≥ 3.2.0 on the System; code-git never runs `git lfs install`. Details: [lfs](lfs.md).
+
+## Hooks
+
+| Rule | Behaviour |
+|---|---|
+| Honoured | Every hook git runs, where git looks for it (`core.hooksPath` included). Nothing skips hooks but the commit box's **Skip Git hooks** (`commit.create`'s `noVerify`) |
+| A failing hook | Blocks the op: `GIT_FAILED` with git's stderr, which holds the hook's output (git sends a hook's stdout to stderr). Shown in the commit box's alert, the op's toast, a dialog's refusal; a git-flow finish's `FLOW_INCOMPLETE` carries it as its cause |
+| A succeeding hook | Its output is on its command's activity entry (**Show output**) |
+| pre-push | git keeps a pre-push hook's stdout on stdout (the push's porcelain output): only what it prints to **stderr** is shown, failing or not |
+| post-checkout | Runs after the switch: when it fails, HEAD has already moved |
+| pre-merge-commit | When it fails, git leaves the merge in progress (`MERGE_HEAD`): the Changes panel's banner offers Continue and Abort |
+
 ## Toasts
 
 Bottom right (sonner, following the theme). A one-click op shows its progress ("Pushing v1 to origin…") and is replaced in place by its outcome: success, a warning with an action (a conflicted cherry-pick offers **Abort**) or the refusal with git's stderr. Errors stay `ERROR_MS` (`lib/opToast.ts`). An op run from a dialog shows its progress and refusal in the dialog and toasts only its success.

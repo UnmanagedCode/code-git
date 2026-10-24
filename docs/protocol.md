@@ -510,6 +510,30 @@ Behaviour, the stop rule and the state detection: [merge](merge.md). The continu
 
 `submodule.list` (read, cancellable); `submodule.add`, `submodule.init`, `submodule.update`, `submodule.sync`, `submodule.setUrl`, `submodule.remove`, `submodule.commitPointer` (writes, not cancellable). Paths are relative to the target's repo. Params, argv, gates, refusals and results: [submodules → Ops](submodules.md#ops-srcgitopssubmodulejs).
 
+### Git-flow ops (`src/git/ops/flow.js`)
+
+Behaviour, the preflight and the departures from nvie: [gitflow](gitflow.md). Writes are not cancellable and have no undo (they clear the slots). Names are short (`main`, `feature/x`).
+
+| Op | kind | `params` | Runs | `result` | Refusals |
+|---|---|---|---|---|---|
+| `flow.config` | read (cancellable) | `{}` | `config -z --get-regexp ^gitflow\.` (exit 0 or 1); `readHeads`; `ownHead` | `{initialized, main, develop, prefixes: {feature, release, hotfix, versionTag} /* each null when unset */, defaults: {main /* main, master, HEAD's branch or null */, develop, prefixes}}` | — |
+| `flow.init` | write | `{main, develop, prefixes: {feature, release, hotfix, versionTag}}` | `readHeads`, `ownHead`; when develop is missing: `branch --no-track --end-of-options <develop> <main's oid>`; six × `config --local --end-of-options <key> <value>` | `{config /* as flow.config without defaults */, createdDevelop}` | `BAD_REF` (an invalid name or prefix, or one under `code-conductor/`); `BAD_PARAMS` (equal branches, an empty or repeated type prefix); `NO_HEAD`; `REF_UNKNOWN` (main); `SYMBOLIC_REF` |
+| `flow.start` | write | `{type: 'feature' \| 'release' \| 'hotfix', name, ccOwned?}` | the gates of [gitflow → What each op runs](gitflow.md#what-each-op-runs); `switch --no-guess --no-track -c <prefix><name> --end-of-options <base's oid>` | `{branch, base, oid}` | `BARE_REPO`; `FLOW_NOT_INITIALIZED`; `BAD_REF`; `REF_EXISTS` (the branch, or a release's / hotfix's version tag); `FLOW_EXISTS {branch}`; `REF_UNKNOWN`; `SYMBOLIC_REF`; `CC_OWNED_BRANCH` (`head: true`); `CHECKOUT_CONFLICT` |
+| `flow.finish` | write | `{type, name, expect /* the flow branch's oid */, tagMessage? /* release, hotfix: required, non-blank, ≤ REF_LIMITS.tagMessageMaxBytes, no NUL; a feature: absent */, ccOwned?}` | every gate, then `merge-tree --write-tree -z --name-only --no-messages --end-of-options <into> <branch>` per merge (exit 0 or 1); then per merge `switch --no-guess --end-of-options <into>` + `-c merge.autoStash=false merge --no-ff --no-edit -m "Merge branch '<branch>'" --no-stat --end-of-options <oid>`, the tag after the main merge (`tag -a --cleanup=verbatim -F - --end-of-options <tag> <oid>`), `branch -d --end-of-options <branch>` (exit 0 or 1) | `{branch, merges: [{into, outcome: 'merged' \| 'upToDate', oid}], tag: {name, oid /* the tag object */} \| null, deleted, head /* develop */}` | `BAD_PARAMS`; `BAD_REF`; `BARE_REPO`; `OPERATION_IN_PROGRESS`; `CONFLICTED`; `DIRTY_WORKTREE`; `GIT_TOO_OLD` (< 2.38); `FLOW_NOT_INITIALIZED`; `REF_UNKNOWN`; `SYMBOLIC_REF`; `REF_MOVED`; `BRANCH_CHECKED_OUT {worktree}`; `CC_OWNED_BRANCH` (`head: true`); `REF_EXISTS` (the tag); `FLOW_CONFLICT {into, files}` (nothing written); `FLOW_INCOMPLETE {step, into?, done, cause}` (after a write) |
+
+### LFS ops (`src/git/ops/lfs.js`)
+
+Behaviour, what writes and the `.gitattributes` parse: [lfs](lfs.md). Every git-lfs command but `version` runs as `--no-literal-pathspecs lfs …`. None is cancellable; none has an undo.
+
+| Op | kind | `params` | Runs | `result` | Refusals |
+|---|---|---|---|---|---|
+| `lfs.status` | read (cancellable) | `{}` | `lfs version` (exit 0 or 1); when usable: `config --get filter.lfs.process` (exit 0 or 1), the root `.gitattributes` (`readNoIndex`) | `{available, version: string \| null, supported, filters: bool \| null, attributes: 'ok' \| 'unsupported' \| null, patterns: string[] \| null}` (the last three null when git-lfs is absent or below 3.2.0) | `GIT_FAILED` (an unrecognised version, another `lfs version` failure) |
+| `lfs.files` | write, `journal: 'neutral'` | `{}` | `lfs ls-files --json` (`LFS_LIMITS.listMaxOutputBytes`) | `{files: [{path, size, oid, downloaded} /* a missing field null */]}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `OUTPUT_TOO_LARGE`; `GIT_FAILED` (also malformed output) |
+| `lfs.track` | write | `{pattern}` | `lfs track -- <pattern>` | `{pattern}` | `BAD_PARAMS` (`checkPattern`); `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `ATTRIBUTES_UNSUPPORTED`; `GIT_FAILED` |
+| `lfs.untrack` | write | `{pattern}` | `lfs untrack -- <pattern>`, the patterns read before and after | `{pattern, removed}` | as `lfs.track` |
+| `lfs.pull` | write | `{}` | `NET_CONFIG lfs pull` (`netRun`, `LFS_LIMITS.netTimeoutMs`) | `{}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `GIT_FAILED` (`stderr`: network and auth failures too) |
+| `lfs.prune` | write | `{}` | `lfs prune` | `{}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `GIT_FAILED` |
+
 ### Paging convention (for ops that list)
 
 An op that lists pages **by git arguments**, never by slicing output (cc's exec is buffered). One that pages by cursor returns `{items, nextCursor}` (`nextCursor: null` on the last page): `graph.page` pages the log by `--skip` over an explicit tip set sent on stdin — topo order is only stable for a fixed tip set, so the caller freezes one ([graph](graph.md#snapshot-and-refresh)). The diff is paged one file at a time: `diff.files` lists every file with one command (refused past its cap, never clipped), and `diff.file` fetches one file's hunks. Other listings page their own way: blame by `-L a,b` (`history.blame`), the reflog by `--skip` (`history.reflog`), blobs by `cat-file -s` before reading.
@@ -620,7 +644,13 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `UNDO_STALE` (id) | 409 | The slot no longer holds that `id` (the client's `undo.state` is old): the slots are **kept**; refetch |
 | `UNDO_STALE` (state) | 409 | The checkout changed since the op (HEAD, a ref, the index or a file is not what the plan expects, found by a preflight or a transaction's compare-and-swap): the slots are **cleared** ([undo → Ops](undo.md#ops)) |
 | `UNDO_PUSHED` | 409 | A commit the op created is reachable from a remote-tracking ref; `oid`, `refs`; the slots are cleared |
-| `GIT_TOO_OLD` | 409 | The project's System runs a git below the feature's floor (a rebase: 2.26); `{feature, need, have}` |
+| `GIT_TOO_OLD` | 409 | The project's System runs a git below the feature's floor (a rebase: 2.26; `feature: 'git-flow finish'`: 2.38), or a git-lfs below 3.2.0 (`feature: 'git-lfs'`, `have` its version); `{feature, need, have}` |
+| `FLOW_NOT_INITIALIZED` | 409 | `flow.start` / `flow.finish`: the `gitflow.*` settings are unset or not usable ([gitflow](gitflow.md#settings)) |
+| `FLOW_EXISTS` | 409 | `flow.start` of a release or hotfix while another of that type is open; `branch` |
+| `FLOW_CONFLICT` | 409 | `flow.finish`: a merge would conflict (the preflight); nothing written; `into`, `files` |
+| `FLOW_INCOMPLETE` | 409 | `flow.finish` stopped after its first write; `step` (`switch` / `merge` / `tag` / `delete`), `into`, `done` (the steps done), `cause: {code, message, stderr, files?}` |
+| `LFS_UNAVAILABLE` | 409 | An LFS write on a System without git-lfs |
+| `ATTRIBUTES_UNSUPPORTED` | 409 | `lfs.track` / `lfs.untrack`: the root `.gitattributes` is a symlink or not a regular file |
 | `SUBMODULE_UNKNOWN` | 404 | No `.gitmodules` entry declares that path; `path` |
 | `SUBMODULE_UNSAFE` | 409 | Not acted on: `reason` `name` / `path` / `duplicate` (`.gitmodules` declares the name at another path or the path under another name) / `escapes` (the entry, or a chain resolving outside the checkout; `path`), `gitdir` (a chain level's `.git` names another repository's git dir; `path`), `url` (a url git would clone or resolve against is refused; `names`), `config` (the repo's own config sets `protocol.*`; `keys`), `gitmodules` (`.gitmodules` is a symlink) |
 | `SUBMODULE_NOT_POPULATED` | 409 | The submodule is not cloned (or the chain's directory does not exist); `path` |
