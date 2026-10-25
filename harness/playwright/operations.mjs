@@ -51,14 +51,16 @@ try {
     };
     /** Waits for `locator` to be the one visible match (`waitFor` is strict) and checks `what` by it. */
     const appears = async (locator, what) => { await locator.waitFor().catch(() => check(false, what)); check(true, what); };
-    /** Holds every `graph.refs` request until the returned `release()`. The banner's state comes from `commit.state` but
-     *  its "onto origin/main" from the refs (`commitLabel`), a later request: until it lands the title names the oid. */
+    /** Holds every `graph.refs` request until `release()`; `held()`: one arrived. The banner's state comes from
+     *  `commit.state` but its "onto origin/main" from the refs (`commitLabel`), a later request: until it lands the
+     *  title names the oid. A write and a page load both request the refs before the banner exists. */
     const holdRefs = async () => {
       let open;
+      let held = false;
       const gate = new Promise((r) => { open = r; });
-      const hold = async (route) => { await gate; await route.fallback(); };
+      const hold = async (route) => { held = true; await gate; await route.fallback(); };
       await page.route('**/api/ops/graph.refs', hold);
-      return async () => { open(); await page.unroute('**/api/ops/graph.refs', hold); };
+      return { held: () => held, release: async () => { open(); await page.unroute('**/api/ops/graph.refs', hold); } };
     };
 
     await page.setViewportSize(VIEWPORTS.desktop);
@@ -66,26 +68,35 @@ try {
 
     // 1. a rebase pull stops on conflicts: the toast, the rebase in progress in git, the banner with its step. The refs
     // are held until the title's wait has started, so the title is checked across their arrival every run.
-    let releaseRefs = await holdRefs();
-    await toolbar.getByRole('button', { name: 'Pull options', exact: true }).click();
-    await choose('Pull (rebase)');
-    await toast('The pull stopped on conflicts').waitFor();
-    check(rebasing() && git('ls-files', '-u').includes('app.txt'), 'git: the rebase is in progress, app.txt unmerged');
-    await banner.waitFor();
     const title = 'Rebasing main onto origin/main (step 1 of 2)';
-    let shown = appears(banner.getByText(title, { exact: true }), `the banner reads "${title}"`);
-    await releaseRefs();
+    let refs = await holdRefs();
+    let shown;
+    try {
+      await toolbar.getByRole('button', { name: 'Pull options', exact: true }).click();
+      await choose('Pull (rebase)');
+      await toast('The pull stopped on conflicts').waitFor();
+      check(rebasing() && git('ls-files', '-u').includes('app.txt'), 'git: the rebase is in progress, app.txt unmerged');
+      await banner.waitFor();
+      check(refs.held(), 'graph.refs was held until the title wait started');
+      shown = appears(banner.getByText(title, { exact: true }), `the banner reads "${title}"`);
+    } finally {
+      await refs.release();
+    }
     await shown;
     check(await bannerButton('Continue').isDisabled(), 'Continue is disabled while app.txt is conflicted');
     check(await page.getByText(/^Detached HEAD at/).count() === 0, 'no detached-HEAD banner during the rebase');
     await shot('operations-rebase-pull-light-desktop');
 
     // 2. a reload shows the same banner: the state is git's, not the page's (the refs held again)
-    releaseRefs = await holdRefs();
-    await page.reload();
-    await banner.waitFor();
-    shown = appears(banner.getByText(title, { exact: true }), 'the banner is still there after a reload');
-    await releaseRefs();
+    refs = await holdRefs();
+    try {
+      await page.reload();
+      await banner.waitFor();
+      check(refs.held(), 'graph.refs was held until the title wait started (after the reload)');
+      shown = appears(banner.getByText(title, { exact: true }), 'the banner is still there after a reload');
+    } finally {
+      await refs.release();
+    }
     await shown;
 
     // 3. Abort… asks first; Cancel keeps the rebase, Confirm puts main back
