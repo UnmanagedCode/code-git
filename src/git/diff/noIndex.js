@@ -26,6 +26,21 @@ async function probe(git, path) {
   return { fields: decoder.decode(r.stdout).split('\0'), stderr: decoder.decode(r.stderr) };
 }
 
+/**
+ * `git diff --no-index <flags> -- /dev/null <path>`, exit 0 or 1, bounded by DIFF_LIMITS.contentReadTimeoutMs: the one
+ * content read of a worktree file, run after a probe. A file swapped for a FIFO since its probe blocks git; past the
+ * bound it refuses READ_TIMEOUT. A timeout cannot tell that from a file too large to hash in time or a slow System.
+ */
+export async function noIndexDiff(git, flags, path, { maxOutputBytes }) {
+  const timeoutMs = DIFF_LIMITS.contentReadTimeoutMs;
+  try {
+    return await git([...DIFF_CONFIG, 'diff', '--no-index', ...flags, '--', '/dev/null', path], { okExit: [0, 1], maxOutputBytes, timeoutMs });
+  } catch (e) {
+    if (e.code !== 'GIT_TIMEOUT') throw e;
+    throw new Refusal('READ_TIMEOUT', `${path}: reading the file did not finish within ${timeoutMs / 1000} s (a file replaced by a special file such as a FIFO, one too large to hash in time, or an unresponsive System)`, { path, timeoutMs });
+  }
+}
+
 const readsItself = (fields, path) => fields.length === 3 && fields[0].startsWith(':') && fields[1] === path && fields[2] === '';
 
 /**
@@ -60,7 +75,7 @@ export async function worktreeEntry(git, path) {
  * (a directory, or a link to one), `symlink` (`linkTarget` = its target, never followed), `binary`, `large` (over
  * `maxBytes`), or `file` (`bytes` = the content). The diff is decoded as latin1, one character per byte, so CR and
  * non-UTF-8 bytes survive. `path` may be absolute (a commit template outside the repo). A FIFO refuses PROBE_TIMEOUT
- * at the probe; the content read, after a `file` or `symlink` verdict, keeps the kind's timeout.
+ * at the probe, or READ_TIMEOUT when it replaced the file between the probe and the content read (noIndexDiff).
  */
 export async function readNoIndex(git, path, { maxBytes }) {
   const none = { mode: null, bytes: null, linkTarget: null };
@@ -70,9 +85,7 @@ export async function readNoIndex(git, path, { maxBytes }) {
   let r;
   try {
     // Each content byte costs at most two output bytes ('+' and '\n' for an empty line); the header is bounded by the path.
-    r = await git([...DIFF_CONFIG, 'diff', '--no-index', ...DIFF_FLAGS, contextArg('full'), '--', '/dev/null', path], {
-      okExit: [0, 1], maxOutputBytes: 2 * maxBytes + 64 * 1024,
-    });
+    r = await noIndexDiff(git, [...DIFF_FLAGS, contextArg('full')], path, { maxOutputBytes: 2 * maxBytes + 64 * 1024 });
   } catch (e) {
     if (e.code === 'OUTPUT_TOO_LARGE') return { ...none, mode, kind: 'large' };
     throw e;

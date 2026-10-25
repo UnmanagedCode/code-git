@@ -1,6 +1,6 @@
 import { Refusal } from '../../refusals.js';
 import { DIFF_LIMITS } from '../diff/limits.js';
-import { assertNoIndexReadsItself } from '../diff/noIndex.js';
+import { assertNoIndexReadsItself, noIndexDiff } from '../diff/noIndex.js';
 import {
   contextArg, DIFF_CONFIG, DIFF_FLAGS, emptyTree, FORMAT_PATCH_FLAGS, pairArgs, parseContext, parseSource, resolveSource, WHITESPACE_FLAGS,
 } from '../diff/source.js';
@@ -85,7 +85,7 @@ export const ops = [
         const listed = await git(['ls-files', '--others', '--exclude-standard', '-z', '--', p.path]);
         if (decoder.decode(listed.stdout) !== `${p.path}\0`) throw new Refusal('BAD_PATH', `${p.path} is not an untracked file`);
         await assertNoIndexReadsItself(git, p.path);
-        r = await git([...DIFF_CONFIG, 'diff', '--no-index', ...flags, '--', '/dev/null', p.path], { okExit: [0, 1], maxOutputBytes: DIFF_LIMITS.fileMaxOutputBytes });
+        r = await noIndexDiff(git, flags, p.path, { maxOutputBytes: DIFF_LIMITS.fileMaxOutputBytes });
       } else {
         const { opts, revs } = pairArgs(pair);
         const paths = p.oldPath ? [p.oldPath, p.path] : [p.path];
