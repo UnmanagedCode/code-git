@@ -303,50 +303,60 @@ test('maskDeep masks every string through arrays and plain objects, and leaves o
     { error: 'refs https://u:***@h/r', names: ['https://u:***@h/r', 'origin'], n: 3, nested: { stderr: 'https://u:***@h/r' }, ok: true, none: null });
 });
 
-/** Hostile inputs of about 200k characters: long alphanumeric runs, many `://`, `@` and `:`, many urls on one line. */
+/** Hostile inputs of about 500k characters: long alphanumeric runs, many `://`, `@` and `:`, many urls on one line. */
 const HOSTILE = {
-  'a run': 'a'.repeat(200_000),
-  'a run then ://': `${'a'.repeat(200_000)}://`,
-  'a run then ://u:': `${'a'.repeat(200_000)}://u:`,
-  'many ://': 'a://'.repeat(50_000),
-  'many :': 'a:'.repeat(100_000),
-  'many @': '@'.repeat(200_000),
-  'a password of @s': `https://u:${'a@'.repeat(100_000)}`,
-  'a spaced password then @s': `https://u:p ${'x@'.repeat(100_000)}`,
-  'a spaced password then user@host words': `https://u:p ${'x@h '.repeat(50_000)}`,
-  'many credential-less urls': 'a://b:c '.repeat(25_000),
-  'many digit urls': '1://:@'.repeat(33_000),
-  'many spaced passwords': `${'https://u:p '.repeat(16_000)}@h/r`,
-  'a password of :// runs': `https://u:${'pw://x '.repeat(33_000)}@h/r`,
-  'many <transport>:: urls': 'a::a://'.repeat(28_000),
-  'a spaced password of inner @s': `(https://u:p@ss ${'w@x '.repeat(50_000)}@h/r)`,
-  'many empty passwords': 'https://u:@x '.repeat(15_000),
-  'many look-ups': 'unable to look up '.repeat(11_000),
-  'many look-ups of userinfo, no port': 'unable to look up u:p@h '.repeat(8_000),
-  'many look-ups on one line': 'unable to look up u:p@h (port 1) '.repeat(6_000),
-  'look-ups with ports before any @': `${'unable to look up u: (port '.repeat(7_000)}@h`,
-  'look-ups of @ only': 'unable to look up @'.repeat(10_000),
-  'many %3A': '%3A'.repeat(66_000),
-  'many %40': '%40'.repeat(66_000),
-  'a password of %40s': `https://u%3A${'%40'.repeat(66_000)}`,
-  'a spaced password of %40s': `https://u%3Ap ${'x%40'.repeat(50_000)}`,
-  'many encoded urls': 'a://b%3Ac%40 '.repeat(15_000),
+  'a run': 'a'.repeat(500_000),
+  'a run then ://': `${'a'.repeat(500_000)}://`,
+  'a run then ://u:': `${'a'.repeat(500_000)}://u:`,
+  'many ://': 'a://'.repeat(125_000),
+  'many :': 'a:'.repeat(250_000),
+  'many @': '@'.repeat(500_000),
+  'a password of @s': `https://u:${'a@'.repeat(250_000)}`,
+  'a spaced password then @s': `https://u:p ${'x@'.repeat(250_000)}`,
+  'a spaced password then user@host words': `https://u:p ${'x@h '.repeat(125_000)}`,
+  'many credential-less urls': 'a://b:c '.repeat(62_500),
+  'many digit urls': '1://:@'.repeat(82_500),
+  'many spaced passwords': `${'https://u:p '.repeat(40_000)}@h/r`,
+  'a password of :// runs': `https://u:${'pw://x '.repeat(82_500)}@h/r`,
+  'many <transport>:: urls': 'a::a://'.repeat(70_000),
+  'a spaced password of inner @s': `(https://u:p@ss ${'w@x '.repeat(125_000)}@h/r)`,
+  'many empty passwords': 'https://u:@x '.repeat(37_500),
+  'many look-ups': 'unable to look up '.repeat(27_500),
+  'many look-ups of userinfo, no port': 'unable to look up u:p@h '.repeat(20_000),
+  'many look-ups on one line': 'unable to look up u:p@h (port 1) '.repeat(15_000),
+  'look-ups with ports before any @': `${'unable to look up u: (port '.repeat(17_500)}@h`,
+  'look-ups of @ only': 'unable to look up @'.repeat(25_000),
+  'many %3A': '%3A'.repeat(165_000),
+  'many %40': '%40'.repeat(165_000),
+  'a password of %40s': `https://u%3A${'%40'.repeat(165_000)}`,
+  'a spaced password of %40s': `https://u%3Ap ${'x%40'.repeat(125_000)}`,
+  'many encoded urls': 'a://b%3Ac%40 '.repeat(37_500),
 };
 
-// Invariant: masking runs in linear time: each masking function finishes every hostile ~200k-character input (a
-// remote helper's or ssh server's stderr, a url posted to remote.edit) well under 200 ms.
-test('maskUrl, isMaskedUrl, maskUrls, maskDeep and redactArgv stay fast on hostile 200k-character input', () => {
+/** This thread's CPU time in ms: a loaded host deschedules the thread without charging it, unlike wall time. */
+const cpuMs = () => { const { user, system } = process.threadCpuUsage(); return (user + system) / 1000; };
+
+// Invariant: masking runs in linear time: each masking function uses well under 500 ms of this thread's CPU on every
+// hostile ~500k-character input (a remote helper's or ssh server's stderr, a url posted to remote.edit). CPU time, so a
+// loaded host's descheduling is not charged; the bound is set by a quadratic scan's cost at this size (seconds), not
+// by the linear one's.
+test('maskUrl, isMaskedUrl, maskUrls, maskDeep and redactArgv stay linear on hostile 500k-character input', (t) => {
   const fns = {
     maskUrl, isMaskedUrl, maskUrls, maskDeep: (x) => maskDeep({ stderr: x }),
     redactArgv: (x) => redactArgv(['git', 'commit', '-m', x, 'remote', x]),
     redactArgvUrl: (x) => redactArgv(['git', 'remote', 'add', '--end-of-options', 'o', x]),
   };
+  let slowest = { cpu: -1 };
   for (const [what, input] of Object.entries(HOSTILE)) {
     for (const [name, fn] of Object.entries(fns)) {
+      const c0 = cpuMs();
       const t0 = performance.now();
       fn(input);
-      const ms = performance.now() - t0;
-      assert.ok(ms < 200, `${name} on ${what}: ${ms.toFixed(1)} ms`);
+      const wall = performance.now() - t0;
+      const cpu = cpuMs() - c0;
+      assert.ok(cpu < 500, `${name} on ${what}: ${cpu.toFixed(1)} ms CPU (${wall.toFixed(1)} ms wall)`);
+      if (cpu > slowest.cpu) slowest = { cpu, wall, call: `${name} on ${what}` };
     }
   }
+  t.diagnostic(`slowest: ${slowest.call}: ${slowest.cpu.toFixed(1)} ms CPU (${slowest.wall.toFixed(1)} ms wall)`);
 });
