@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { DIFF_LIMITS } from '../src/git/diff/limits.js';
+import { mkfifo, rejection, shortRead } from './_git.js';
 import { endOfOptionsBefore, refsWorld, refused } from './_refsWorld.js';
 
 // remote.list / add / edit / rename / remove against a real repo: what git's config and refs hold afterwards.
@@ -222,4 +224,17 @@ test('the residual: an existing remote named with `=` and mirror=true defeats th
   assert.ok((await w.op('remote.list', undefined)).remotes.some((r) => r.name === 'a=b' && r.urls[0] === w.origin.dir), 'listed through positional config keys');
   await assert.rejects(w.op('remote.push', { branch: 'side', remote: 'a=b' }), (e) => e.code === 'GIT_FAILED' && /--mirror can't be combined with refspecs/.test(e.extra.stderr));
   assert.equal(w.origin.git('for-each-ref', 'refs/heads/side'), '', 'nothing was pushed');
+});
+
+test('a FIFO at .git/remotes/<name> of a url-less remote: remote.list refuses READ_TIMEOUT {path, timeoutMs} promptly', { timeout: 10_000 }, async (t) => {
+  shortRead(t);
+  const w = await refsWorld(t);
+  fs.mkdirSync(path.join(w.repo.dir, '.git', 'remotes'), { recursive: true });
+  mkfifo(path.join(w.repo.dir, '.git', 'remotes', 'leg'));
+  w.repo.git('config', 'remote.leg.fetch', DEFAULT('leg'));
+  const { e, ms } = await rejection(w.op('remote.list', undefined));
+  assert.equal(e.code, 'READ_TIMEOUT', e.message);
+  assert.deepEqual(e.extra, { path: '.git/remotes/leg', timeoutMs: DIFF_LIMITS.contentReadTimeoutMs });
+  assert.ok(ms < 5000, `refused after ${ms} ms`);
+  await w.cc.idle();
 });

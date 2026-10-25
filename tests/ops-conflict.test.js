@@ -3,9 +3,11 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { DIFF_LIMITS } from '../src/git/diff/limits.js';
+import { createLocks } from '../src/git/locks.js';
 import { getOp, OPS } from '../src/git/ops/index.js';
 import { CONFLICT_LIMITS } from '../src/git/sequence/limits.js';
-import { hermeticEnv } from './_git.js';
+import { fifoBeforeRead, hashRead, hermeticEnv, lockFree, rejection, shortRead } from './_git.js';
 import { refsWorld, refused } from './_refsWorld.js';
 
 // conflict.read / save / take against real merge conflicts of every kind.
@@ -279,4 +281,29 @@ test('take the side that deleted a gitlink (deletedByThem; sub/ a directory) res
   assert.deepEqual(res, { resolved: [], deleted: ['sub'] });
   assert.equal(r.git('ls-files', '-s', '--', 'sub'), '', 'no stage of sub is left');
   assert.equal(fs.existsSync(path.join(r.dir, 'sub', 'inner.txt')), fs.existsSync(path.join(twin, 'sub', 'inner.txt')), 'the directory is left as git rm leaves it');
+});
+
+test('a conflicted file swapped for a FIFO between its probe and its hash: read and save refuse READ_TIMEOUT promptly, and the project lock is free again', { timeout: 10_000 }, async (t) => {
+  shortRead(t);
+  const w = await world(t);
+  const c = await w.read('text.txt');
+  const readTimeout = (e, ms, what) => {
+    assert.equal(e.code, 'READ_TIMEOUT', `${what}: ${e.message}`);
+    assert.deepEqual(e.extra, { path: 'text.txt', timeoutMs: DIFF_LIMITS.contentReadTimeoutMs }, what);
+    assert.ok(ms < 5000, `${what} refused after ${ms} ms`);
+  };
+  let swap = fifoBeforeRead(w.cc, w.repo.dir, 'text.txt', hashRead);
+  const r = await rejection(w.read('text.txt'));
+  assert.equal(swap.done, true, 'read: the probe saw a file; the hash met a FIFO');
+  readTimeout(r.e, r.ms, 'read');
+  fs.rmSync(path.join(w.repo.dir, 'text.txt'));
+  w.repo.write('text.txt', 'a\nours\nz\n');
+  swap = fifoBeforeRead(w.cc, w.repo.dir, 'text.txt', hashRead);
+  const locks = createLocks();
+  const s = await rejection(w.op('conflict.save', { path: 'text.txt', contentB64: b64('a\nresolved\nz\n'), expect: c.worktree.oid }, null, { locks }));
+  assert.equal(swap.done, true, 'save: the hash met a FIFO');
+  readTimeout(s.e, s.ms, 'save');
+  assert.equal(w.argvs().some((a) => a[0] === 'restore'), false, 'nothing written');
+  assert.equal(await lockFree(locks, 'repo'), true, 'the project lock is released');
+  await w.cc.idle();
 });

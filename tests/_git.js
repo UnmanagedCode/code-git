@@ -97,15 +97,20 @@ export const shortProbe = (t, ms = 300) => shorten(t, 'probeTimeoutMs', ms);
 /** Shortens the `--no-index` content read's bound (DIFF_LIMITS.contentReadTimeoutMs) for this test; restored after it. */
 export const shortRead = (t, ms = 500) => shorten(t, 'contentReadTimeoutMs', ms);
 
+/** An exec argv that is a `--no-index` content diff of `rel` (not its `--raw` probe). */
+export const noIndexRead = (a, rel) => a.includes('--no-index') && !a.includes('--raw') && a.at(-1) === rel;
+/** An exec argv that hashes `rel` from disk (`hash-object … -- rel`). */
+export const hashRead = (a, rel) => a.includes('hash-object') && a.at(-1) === rel;
+
 /**
- * Replaces `rel` (under `dir`) with a FIFO between its `--no-index` probe and its content read: when the first
- * `--no-index` exec of `rel` without `--raw` reaches the fake cc, before it runs. `swap.done` says whether it happened.
+ * Replaces `rel` (under `dir`) with a FIFO between its probe and its content read: when the first exec matching
+ * `isRead(argv, rel)` reaches the fake cc, before it runs. `swap.done` says whether it happened.
  */
-export function fifoBeforeRead(cc, dir, rel) {
+export function fifoBeforeRead(cc, dir, rel, isRead = noIndexRead) {
   const swap = { done: false };
   cc.state.execHook = (body) => {
     const a = body.argv;
-    if (!swap.done && a.includes('--no-index') && !a.includes('--raw') && a.at(-1) === rel) {
+    if (!swap.done && isRead(a, rel)) {
       fs.rmSync(path.join(dir, rel));
       mkfifo(path.join(dir, rel));
       swap.done = true;

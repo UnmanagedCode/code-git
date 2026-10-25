@@ -8,7 +8,8 @@ import { fakeCc } from './_fakeCc.js';
 import { bareRemote, makeRepo } from './_git.js';
 
 // The world the branch / tag / HEAD op tests share: a repo with one commit on `main`, a bare `origin` holding it,
-// the fake cc serving the repo as project `repo`, and `op(name, params, worktree?)` running an op as routes/ops.js does.
+// the fake cc serving the repo as project `repo`, and `op(name, params, worktree?, over?)` running an op as routes/ops.js
+// does (`over` merges into its ctx: a shared `locks`).
 
 export async function refsWorld(t) {
   const repo = makeRepo(t);
@@ -23,10 +24,10 @@ export async function refsWorld(t) {
     assert.deepEqual(v, [], 'exec form A only, never a shell');
   });
   /** Runs op `name` in the main checkout or cc worktree `worktree`; params pass the op's own check first. */
-  const op = async (name, params, worktree = null) => {
+  const op = async (name, params, worktree = null, over = {}) => {
     const def = getOp(OPS, name);
     const target = { project: 'repo', worktree };
-    const ctx = ctxFor(target, def.kind, { op: name, cancellable: def.cancellable });
+    const ctx = ctxFor(target, def.kind, { op: name, cancellable: def.cancellable, ...over });
     return def.run(gitFor(ctx), def.params(params), { target });
   };
   /** A git worktree beside the repo on a new branch `branch`, registered with the fake cc as worktree `name`. */
