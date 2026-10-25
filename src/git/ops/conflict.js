@@ -1,5 +1,5 @@
 import { Refusal } from '../../refusals.js';
-import { readNoIndex, worktreeEntry } from '../diff/noIndex.js';
+import { boundedRead, readNoIndex, worktreeEntry } from '../diff/noIndex.js';
 import { chunkPaths, filePath, paramsObject, pathList } from '../params.js';
 import { parseUnmerged } from '../parse/unmerged.js';
 import { CONFLICT_LIMITS } from '../sequence/limits.js';
@@ -82,11 +82,14 @@ function contentOf(c, { bytes, large }) {
   return 'text';
 }
 
-/** The worktree file's object id as git would hash it with no filters, or null when nothing (or no file) is there. */
+/**
+ * The worktree file's object id as git would hash it with no filters, or null when nothing (or no file) is there. The
+ * hash is a second git process after the probe: boundedRead (READ_TIMEOUT) covers a FIFO swapped in between.
+ */
 async function worktreeOid(git, path) {
   const entry = await worktreeEntry(git, path);
   if (entry.kind !== 'file') return { entry, oid: null };
-  const r = await git(['hash-object', '--no-filters', '--', path]);
+  const r = await boundedRead(git, ['hash-object', '--no-filters', '--', path], path);
   return { entry, oid: decoder.decode(r.stdout).trim() };
 }
 

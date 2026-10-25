@@ -1,4 +1,5 @@
 import { Refusal } from '../../refusals.js';
+import { boundedRead } from '../diff/noIndex.js';
 import { LIMITS } from '../limits.js';
 import { parseRecords } from '../parse/graph.js';
 
@@ -94,14 +95,14 @@ const validNick = (name) => name !== '' && name !== '.' && name !== '..' && !nam
  * Whether git would read `remote`'s config from a legacy `.git/remotes/<name>` or `.git/branches/<name>` file (it does so
  * when the remote has no url). Through git alone: `rev-parse --git-path` names the file (in the common dir, from any
  * worktree), and `hash-object --no-filters` (no -w: nothing is written) succeeds only for a readable file — the same
- * files git's own reader can open.
+ * files git's own reader can open. It opens a FIFO there and blocks: boundedRead refuses READ_TIMEOUT past its bound.
  */
 export async function legacyRemoteFile(git, remote) {
   if (!validNick(remote)) return null;
   for (const dir of ['remotes', 'branches']) {
     const where = decoder.decode((await git(['rev-parse', '--git-path', `${dir}/${remote}`])).stdout).trim();
     if (!where) continue;
-    const r = await git(['hash-object', '--no-filters', '--', where], { okExit: [0, 128] });
+    const r = await boundedRead(git, ['hash-object', '--no-filters', '--', where], where, { okExit: [0, 128] });
     if (r.exitCode === 0) return `${dir}/${remote}`;
   }
   return null;

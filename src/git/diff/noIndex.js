@@ -4,7 +4,8 @@ import { DIFF_LIMITS } from './limits.js';
 import { contextArg, DIFF_CONFIG, DIFF_FLAGS } from './source.js';
 
 // Reading one file through `git diff --no-index /dev/null <path>`: the only way code-git reads a file's bytes, since
-// git runs only through cc's exec (wiki: gotchas/diff-parsing → untracked files).
+// git runs only through cc's exec (wiki: gotchas/diff-parsing → untracked files). Every git command that reads one
+// file's content (this diff, `hash-object` of a file) runs through boundedRead.
 
 const decoder = new TextDecoder('utf-8', { fatal: false });
 const SYMLINK = '120000';
@@ -27,19 +28,23 @@ async function probe(git, path) {
 }
 
 /**
- * `git diff --no-index <flags> -- /dev/null <path>`, exit 0 or 1, bounded by DIFF_LIMITS.contentReadTimeoutMs: the one
- * content read of a worktree file, run after a probe. A file swapped for a FIFO since its probe blocks git; past the
- * bound it refuses READ_TIMEOUT. A timeout cannot tell that from a file too large to hash in time or a slow System.
+ * Runs `args`, a git command that reads the content of one file, `path`, bounded by DIFF_LIMITS.contentReadTimeoutMs
+ * (read at call time): past it, READ_TIMEOUT {path, timeoutMs}. A FIFO at `path` (one swapped in since a probe, or
+ * one no probe looked at) blocks git; a timeout cannot tell that from a file too large to hash in time or a slow System.
  */
-export async function noIndexDiff(git, flags, path, { maxOutputBytes }) {
+export async function boundedRead(git, args, path, opts = {}) {
   const timeoutMs = DIFF_LIMITS.contentReadTimeoutMs;
   try {
-    return await git([...DIFF_CONFIG, 'diff', '--no-index', ...flags, '--', '/dev/null', path], { okExit: [0, 1], maxOutputBytes, timeoutMs });
+    return await git(args, { ...opts, timeoutMs });
   } catch (e) {
     if (e.code !== 'GIT_TIMEOUT') throw e;
-    throw new Refusal('READ_TIMEOUT', `${path}: reading the file did not finish within ${timeoutMs / 1000} s (a file replaced by a special file such as a FIFO, one too large to hash in time, or an unresponsive System)`, { path, timeoutMs });
+    throw new Refusal('READ_TIMEOUT', `${path}: reading the file did not finish within ${timeoutMs / 1000} s (a special file such as a FIFO, a file too large to hash in time, or an unresponsive System)`, { path, timeoutMs });
   }
 }
+
+/** `git diff --no-index <flags> -- /dev/null <path>`, exit 0 or 1, through boundedRead: the content read of one file, run after a probe. */
+export const noIndexDiff = (git, flags, path, { maxOutputBytes }) =>
+  boundedRead(git, [...DIFF_CONFIG, 'diff', '--no-index', ...flags, '--', '/dev/null', path], path, { okExit: [0, 1], maxOutputBytes });
 
 const readsItself = (fields, path) => fields.length === 3 && fields[0].startsWith(':') && fields[1] === path && fields[2] === '';
 
