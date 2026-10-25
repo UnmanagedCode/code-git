@@ -231,7 +231,25 @@ test('a step of a timed-out test throws and changes nothing', async () => {
   expect(() => s.act(() => openStashSave(APP, { mode: 'all' }))).toThrow('timed out');
   expect(stashDialogStore.get()).toBeNull();
   const clicked = vi.fn();
-  render(<button type="button" onClick={clicked}>Stash</button>);
+  render(<>
+    <button type="button" onClick={clicked}>Stash</button>
+    <input aria-label="Typed" defaultValue="" />
+    <input aria-label="Cleared" defaultValue="keep" />
+  </>);
   await expect(s.click(screen.getByRole('button', { name: 'Stash' }))).rejects.toThrow('timed out');
   expect(clicked).not.toHaveBeenCalled();
+  const typed = screen.getByRole('textbox', { name: 'Typed' }) as HTMLInputElement;
+  await expect(s.type(typed, 'wip')).rejects.toThrow('timed out');
+  expect(typed.value).toBe('');
+  const cleared = screen.getByRole('textbox', { name: 'Cleared' }) as HTMLInputElement;
+  await expect(s.clear(cleared)).rejects.toThrow('timed out');
+  expect(cleared.value).toBe('keep');
+  // No dialog is shown: only the check before the look-up can fail it with the signal's reason.
+  await expect(s.dialog('Stash changes')).rejects.toThrow('timed out');
+  // A dialog found after the test timed out is not handed back either.
+  const late = new AbortController();
+  const found = steps(late.signal).dialog('Late');
+  late.abort(new Error('timed out'));
+  render(<div role="dialog" aria-label="Late" />);
+  await expect(found).rejects.toThrow('timed out');
 });
