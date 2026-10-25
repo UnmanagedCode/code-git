@@ -21,10 +21,12 @@ export const DIFF_LIMITS = {
    */
   probeTimeoutMs: 10_000,
   /**
-   * The bound on a `--no-index` content diff of one worktree file (readNoIndex's read, diff.file's untracked diff): a
-   * file swapped for a FIFO after its probe is refused READ_TIMEOUT within it. Text is cut off by the output caps (an
-   * 8 MiB file: ~130 ms); a binary file is hashed whole for the `index` line (~1.4 s per GiB), so this covers a binary
-   * file of roughly 20 GiB on a warm cache. Measurement and conditions: wiki gotchas/diff-parsing. Read at call time.
+   * The bound on a git command that reads the content of one file (noIndex.js's boundedRead: readNoIndex's read,
+   * diff.file's untracked diff, `hash-object` of a conflicted worktree file or a legacy remote file): a FIFO there is
+   * refused READ_TIMEOUT within it. Text is cut off by the output caps (an 8 MiB file: ~130 ms); a binary file is hashed
+   * whole (~1.4 s per GiB idle, ~1.7–1.9 s per GiB on a loaded host), so this covers a binary file of roughly 15–20 GiB
+   * on a warm cache; CPU load (hashing is CPU-bound) and a slow disk lower that. Measurement and conditions: wiki
+   * gotchas/diff-parsing. Read at call time.
    */
   contentReadTimeoutMs: 30_000,
 };
