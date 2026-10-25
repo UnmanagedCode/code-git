@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hermeticEnv } from '../../tests/_git.js';
 import { BROWSER } from './resolve.mjs';
+import { toasted as waitForToast } from './toasts.mjs';
 import { seed } from './seed.mjs';
 import { recordAlerts, recordReadsDuringWrites } from './settled.mjs';
 
@@ -71,13 +72,7 @@ for (const scheme of ['light', 'dark']) {
         await panel.getByRole('button', { name: `Actions for ${p}`, exact: true }).click();
         await menu.getByRole('menuitem', { name: item, exact: true }).click();
       };
-      /** Runs `action` and waits for a new toast matching `text` (an earlier identical one may still be shown). */
-      const toasted = async (text, action) => {
-        const match = typeof text === 'string' ? toasts.getByText(text, { exact: true }) : toasts.getByText(text);
-        const n = await match.count();
-        await action();
-        await match.nth(n).waitFor({ timeout: 30_000 });
-      };
+      const toasted = (text, action) => waitForToast(page, text, action);
 
       /** After a submodule write: no alert ever showed in the header or a panel, no watcher read overlapped a write, and the header shows its counts. */
       const recovered = async (what, { counts = true } = {}) => {

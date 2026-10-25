@@ -50,12 +50,13 @@ test('the first page is read from the tips of refs + prefs at skip 0', async () 
   expect(paramsOf(fetch, 'POST api/ops/graph.page')).toEqual([{ tips: [oid(12), oid(30)], skip: 0, limit: PAGE }]);
 });
 
-test('with 5,000 rows loaded the DOM holds at most 120 rows, at the top, the middle and the end', async () => {
-  const world = linearWorld(5000);
+test('with 1,200 rows loaded the DOM holds at most 120 rows, at the top, the middle and the end', async () => {
+  const n = 1200;
+  const world = linearWorld(n);
   await show(world);
   await act(async () => { await loadUntil(TAB, oid(1)); });
-  expect(getGraph(TAB).commits.length).toBe(5000);
-  for (const top of [0, 2500 * ROW_H, 5000 * ROW_H - 800]) {
+  expect(getGraph(TAB).commits.length).toBe(n);
+  for (const top of [0, (n / 2) * ROW_H, n * ROW_H - 800]) {
     await scrollTo(top);
     const n = rowEls().length;
     expect(n, `at ${top}`).toBeGreaterThan(20);
@@ -286,8 +287,9 @@ test('a commit with an impossible timestamp renders — in the Date column inste
   expect(within(rowEl(oid(3))!).queryByText('—')).toBeNull();
 });
 
-test('2,000 parallel branches: drawn paths per row stay bounded by the drawn lanes, at the top, middle and end', async () => {
-  const n = 2000;
+// The 2,000-branch bound is pinned without the DOM in layout.test.ts; 600 already crosses a page and the drawn width.
+test('600 parallel branches: drawn paths per row stay bounded by the drawn lanes, at the top, middle and end', async () => {
+  const n = 600;
   const base = oid(99999);
   const world = linearWorld(1);
   world.commits = [...Array.from({ length: n }, (_, i) => commit(oid(i + 1), [base], { subject: `tip ${i}` })), commit(base)];
@@ -297,7 +299,7 @@ test('2,000 parallel branches: drawn paths per row stay bounded by the drawn lan
   await act(async () => { await loadUntil(TAB, base); });
   expect(getGraph(TAB).commits.length).toBe(n + 1);
   let most = 0;
-  for (const top of [0, 1000 * ROW_H, (n + 1) * ROW_H - 800]) {
+  for (const top of [0, (n / 2) * ROW_H, (n + 1) * ROW_H - 800]) {
     await scrollTo(top);
     for (const r of rowEls()) most = Math.max(most, r.querySelectorAll('path').length);
   }

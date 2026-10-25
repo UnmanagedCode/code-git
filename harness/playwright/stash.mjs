@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hermeticEnv } from '../../tests/_git.js';
 import { BROWSER } from './resolve.mjs';
+import { toasted as waitForToast } from './toasts.mjs';
 import { seed, STAGE_BASE, STAGE_EDITED } from './seed.mjs';
 
 const { withPage } = await import(BROWSER);
@@ -56,14 +57,7 @@ for (const scheme of ['light', 'dark']) {
       const refsStashes = page.getByRole('navigation', { name: 'Refs', exact: true }).getByRole('list', { name: 'Stashes', exact: true });
       const diff = page.getByRole('region', { name: 'Diff', exact: true });
       const menu = page.getByRole('menu');
-      const toasts = page.getByRole('region', { name: /Notifications/ });
-      /** Runs `action` and waits for a new toast reading `text` (an earlier identical one may still be shown). */
-      const toasted = async (text, action) => {
-        const match = typeof text === 'string' ? toasts.getByText(text, { exact: true }) : toasts.getByText(text);
-        const n = await match.count();
-        await action();
-        await match.nth(n).waitFor();
-      };
+      const toasted = (text, action) => waitForToast(page, text, action);
       const saveDialog = page.getByRole('dialog', { name: 'Stash changes', exact: true });
       const header = page.getByRole('banner', { name: 'Repository summary', exact: true });
       const undoButton = header.getByRole('button', { name: 'Undo', exact: true });
