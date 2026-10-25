@@ -210,6 +210,10 @@ export async function fakeCc({ projects = {}, home } = {}) {
       const h = state.held.shift();
       return h ? Promise.resolve(h) : new Promise((r) => state.heldWaiters.push(r));
     },
+    /** Resolves once every command the fake spawned has exited. */
+    async idle() {
+      await Promise.all([...state.children].map((c) => new Promise((r) => c.once('close', r))));
+    },
     async close() {
       if (prev === undefined) delete process.env.CONDUCTOR_URL; else process.env.CONDUCTOR_URL = prev;
       for (const c of state.children) { try { process.kill(-c.pid, 'SIGKILL'); } catch { /* gone */ } }

@@ -30,7 +30,7 @@ const HEADS = 'refs/heads/';
 const decoder = new TextDecoder('utf-8', { fatal: false });
 
 /** Refusals about one remote that a fetch of every remote reports per remote instead of stopping at. */
-const PER_REMOTE = new Set(['REMOTE_AUTH_FAILED', 'REMOTE_UNREACHABLE', 'REMOTE_CONFIG_UNSUPPORTED', 'SYMBOLIC_REF', 'GIT_FAILED', 'GIT_TIMEOUT', 'OUTPUT_TOO_LARGE']);
+const PER_REMOTE = new Set(['REMOTE_AUTH_FAILED', 'REMOTE_UNREACHABLE', 'REMOTE_CONFIG_UNSUPPORTED', 'SYMBOLIC_REF', 'GIT_FAILED', 'GIT_TIMEOUT', 'READ_TIMEOUT', 'OUTPUT_TOO_LARGE']);
 const PULL_MODES = ['ff', 'ffOnly', 'rebase'];
 
 /** Exit 0 of `merge-base --is-ancestor` → true, 1 → false. */

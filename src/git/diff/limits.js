@@ -13,4 +13,20 @@ export const DIFF_LIMITS = {
   maxCommits: 1000,
   /** Paths in one diff.patch selection. */
   maxPaths: 1000,
+  /**
+   * The bound on noIndex.js's stat-only `--raw` probe. A regular file is only stat-ed, never opened or hashed, so this
+   * covers process spawn and cc's exec round trip, not file size; a FIFO, which git opens, is refused PROBE_TIMEOUT
+   * within it. The measurement and its conditions: wiki gotchas/diff-parsing → "The `--no-index` probe is bounded".
+   * Read at call time.
+   */
+  probeTimeoutMs: 10_000,
+  /**
+   * The bound on a git command that reads the content of one file (noIndex.js's boundedRead: readNoIndex's read,
+   * diff.file's untracked diff, `hash-object` of a conflicted worktree file or a legacy remote file): a FIFO there is
+   * refused READ_TIMEOUT within it. Text is cut off by the output caps (an 8 MiB file: ~130 ms); a binary file is hashed
+   * whole (~1.4 s per GiB idle, ~1.7–1.9 s per GiB on a loaded host), so this covers a binary file of roughly 15–20 GiB
+   * on a warm cache; CPU load (hashing is CPU-bound) and a slow disk lower that. Measurement and conditions: wiki
+   * gotchas/diff-parsing. Read at call time.
+   */
+  contentReadTimeoutMs: 30_000,
 };

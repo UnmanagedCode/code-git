@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { createLocks } from '../src/git/locks.js';
 import { getOp, OPS } from '../src/git/ops/index.js';
+import { fifoBeforeRead, lockFree, mkfifo, rejection, shortProbe, shortRead } from './_git.js';
 import { refused } from './_ops.js';
 import { LFS_CMD, LFS_HOOKS, LFS_PROBE, LFS_SKIP, lfsAvailable, lfsWorld, runsLfs, strippedWorld } from './_lfs.js';
 
@@ -102,6 +104,62 @@ test('status never reads through a symlinked .gitattributes: attributes unsuppor
   await assert.rejects(w.op('lfs.untrack', { pattern: '*.secret' }), refused('ATTRIBUTES_UNSUPPORTED'));
   assert.equal(fs.readFileSync(outside, 'utf8'), `${ATTR_LINE('*.secret')}\n`);
   assert.equal(w.argvs().some((a) => runsLfs(a, 'track') || runsLfs(a, 'untrack')), false);
+});
+
+/** Well under the read (60 s) and write (300 s) timeouts a blocked probe would otherwise wait out. */
+const PROMPT_MS = 5000;
+
+test('a FIFO .gitattributes, or a symlink to one: status, track and untrack refuse PROBE_TIMEOUT promptly, and the project lock is free again', { skip: !HAVE_LFS && LFS_SKIP, timeout: 10_000 }, async (t) => {
+  shortProbe(t);
+  const w = await lfsWorld(t);
+  const attrs = path.join(w.repo.dir, '.gitattributes');
+  const outside = path.join(w.repo.root, 'outside-pipe');
+  mkfifo(outside);
+  const layouts = {
+    fifo() { fs.rmSync(attrs); mkfifo(attrs); },
+    'link to a fifo'() { fs.rmSync(attrs); fs.symlinkSync(outside, attrs); },
+  };
+  const locks = createLocks();
+  for (const [layout, make] of Object.entries(layouts)) {
+    make();
+    for (const [name, params] of [['lfs.status', {}], ['lfs.track', { pattern: '*.dat' }], ['lfs.untrack', { pattern: '*.bin' }]]) {
+      const { e, ms } = await rejection(w.op(name, params, { locks }));
+      assert.equal(e.code, 'PROBE_TIMEOUT', `${layout} ${name}: ${e.message}`);
+      assert.equal(e.extra.path, '.gitattributes', `${layout} ${name}`);
+      assert.ok(ms < PROMPT_MS, `${layout} ${name} refused after ${ms} ms`);
+    }
+  }
+  assert.ok(fs.lstatSync(outside).isFIFO(), 'nothing wrote through the link');
+  assert.equal(w.argvs().some((a) => runsLfs(a, 'track') || runsLfs(a, 'untrack')), false, 'git-lfs never wrote');
+  assert.equal(await lockFree(locks, 'repo'), true, 'the project lock is released');
+  await w.cc.idle();
+  assert.equal(w.cc.state.children.size, 0, 'no blocked git left');
+});
+
+test('a .gitattributes swapped for a FIFO after its probe: untrack refuses READ_TIMEOUT promptly, git-lfs never runs, and the project lock is free again', { skip: !HAVE_LFS && LFS_SKIP, timeout: 10_000 }, async (t) => {
+  shortRead(t);
+  const w = await lfsWorld(t);
+  const swap = fifoBeforeRead(w.cc, w.repo.dir, '.gitattributes');
+  const locks = createLocks();
+  const { e, ms } = await rejection(w.op('lfs.untrack', { pattern: '*.bin' }, { locks }));
+  assert.equal(swap.done, true);
+  assert.equal(e.code, 'READ_TIMEOUT', e.message);
+  assert.equal(e.extra.path, '.gitattributes');
+  assert.ok(ms < PROMPT_MS, `refused after ${ms} ms`);
+  assert.equal(w.argvs().some((a) => runsLfs(a, 'untrack')), false, 'git-lfs never ran');
+  assert.equal(await lockFree(locks, 'repo'), true, 'the project lock is released');
+  await w.cc.idle();
+  assert.equal(w.cc.state.children.size, 0, 'no blocked git left');
+});
+
+test('untrack checks .gitattributes last: the writability probe is the command just before `lfs untrack`, after the read of the patterns', { skip: !HAVE_LFS && LFS_SKIP }, async (t) => {
+  const w = await lfsWorld(t);
+  await w.op('lfs.untrack', { pattern: '*.bin' });
+  const argvs = w.argvs();
+  const i = argvs.findIndex((a) => runsLfs(a, 'untrack'));
+  const ofAttributes = (a) => a.includes('--no-index') && a.at(-1) === '.gitattributes';
+  assert.ok(ofAttributes(argvs[i - 1]) && argvs[i - 1].includes('--raw'), 'the probe of .gitattributes comes just before');
+  assert.ok(ofAttributes(argvs[i - 2]) && !argvs[i - 2].includes('--raw'), "the patterns' content read comes before it");
 });
 
 test('files lists every LFS file with size, oid and whether its object is downloaded', { skip: !HAVE_LFS && LFS_SKIP }, async (t) => {

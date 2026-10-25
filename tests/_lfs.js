@@ -38,12 +38,12 @@ export const LFS_HOOKS = ['pre-push', 'post-checkout', 'post-commit', 'post-merg
 
 export const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
-/** Runs an op as routes/ops.js does, in project `repo` of the fake cc. */
+/** Runs an op as routes/ops.js does, in project `repo` of the fake cc; `over` overrides its ctx (shared `locks`). */
 function opRunner(cc) {
-  return async (name, params) => {
+  return async (name, params, over = {}) => {
     const def = getOp(OPS, name);
     const target = { project: 'repo', worktree: null };
-    const ctx = ctxFor(target, def.kind, { op: name, cancellable: def.cancellable });
+    const ctx = ctxFor(target, def.kind, { op: name, cancellable: def.cancellable, ...over });
     return def.run(gitFor(ctx), def.params(params), { target });
   };
 }

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { startApp } from './_app.js';
+import { fifoBeforeRead, hashRead, shortRead } from './_git.js';
 import { refsWorld, refused } from './_refsWorld.js';
 import { pushFromElsewhere } from './_remotes.js';
 
@@ -52,6 +54,27 @@ test('fetch every remote: each is fetched in turn; one failing is reported besid
   await assert.rejects(w.op('remote.fetch', { remote: 'nope' }), refused('REMOTE_UNKNOWN'));
   await assert.rejects(w.op('remote.fetch', {}), refused('BAD_PARAMS'));
   await assert.rejects(w.op('remote.fetch', { remote: 'origin', prune: 'yes' }), refused('BAD_PARAMS'));
+});
+
+test("fetch every remote: a legacy remote file swapped for a FIFO after the listing is that remote's READ_TIMEOUT; the remotes after it still fetch", { timeout: 10_000 }, async (t) => {
+  shortRead(t);
+  const w = await refsWorld(t);
+  const main2 = pushFromElsewhere(w, 'main', { 'm.txt': 'm\n' });
+  fs.mkdirSync(path.join(w.repo.dir, '.git', 'remotes'));
+  fs.writeFileSync(path.join(w.repo.dir, '.git', 'remotes', 'leg'), `URL: ${w.origin.dir}\n`);
+  w.repo.git('config', 'remote.leg.fetch', '+refs/heads/*:refs/remotes/leg/*');
+  w.repo.git('remote', 'add', 'zz', w.origin.dir);
+  // The listing hashes the file first; fetchRemote's own fetchSpecs hashes it again: the swap comes before that.
+  let hashes = 0;
+  const swap = fifoBeforeRead(w.cc, w.repo.dir, '.git/remotes/leg', (a, rel) => hashRead(a, rel) && ++hashes === 2);
+  const r = await w.op('remote.fetch', { remote: null });
+  assert.equal(swap.done, true);
+  const by = Object.fromEntries(r.remotes.map((x) => [x.remote, x]));
+  assert.deepEqual(Object.keys(by).sort(), ['leg', 'origin', 'zz']);
+  assert.equal(by.leg.error.code, 'READ_TIMEOUT', by.leg.error.message);
+  assert.deepEqual(by.origin.changes, [{ ref: 'refs/remotes/origin/main', old: w.base, new: main2 }]);
+  assert.equal(w.oid('refs/remotes/zz/main'), main2, 'the remote after the failing one was fetched too');
+  await w.cc.idle();
 });
 
 test('pruning only when asked: fetch.prune / remote.prune config prune nothing; prune deletes gone branches; tags are never pruned, fetch.pruneTags included', async (t) => {

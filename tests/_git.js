@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DIFF_LIMITS } from '../src/git/diff/limits.js';
 
 const DATE = '2024-01-01T00:00:00Z';
 
@@ -79,4 +80,64 @@ export function bareRemote(repo) {
   execFileSync('git', ['init', '-q', '--bare', '-b', 'main', dir], { env: hermeticEnv(repo.home) });
   repo.git('remote', 'add', 'origin', dir);
   return bindRepo(dir, repo.home);
+}
+
+/** A FIFO at `p`. git >= 2.42 opens a FIFO named on its command line, so a probe of it blocks until its bound. */
+export const mkfifo = (p) => execFileSync('mkfifo', [p]);
+
+function shorten(t, key, ms) {
+  const prev = DIFF_LIMITS[key];
+  DIFF_LIMITS[key] = ms;
+  t.after(() => { DIFF_LIMITS[key] = prev; });
+}
+
+/** Shortens the stat-only probe's bound (DIFF_LIMITS.probeTimeoutMs) for this test; restored after it. */
+export const shortProbe = (t, ms = 300) => shorten(t, 'probeTimeoutMs', ms);
+
+/** Shortens the `--no-index` content read's bound (DIFF_LIMITS.contentReadTimeoutMs) for this test; restored after it. */
+export const shortRead = (t, ms = 500) => shorten(t, 'contentReadTimeoutMs', ms);
+
+/** An exec argv that is a `--no-index` content diff of `rel` (not its `--raw` probe). */
+export const noIndexRead = (a, rel) => a.includes('--no-index') && !a.includes('--raw') && a.at(-1) === rel;
+/** An exec argv that hashes `rel` from disk (`hash-object … -- rel`). */
+export const hashRead = (a, rel) => a.includes('hash-object') && a.at(-1) === rel;
+
+/**
+ * Replaces `rel` (under `dir`) with a FIFO between its probe and its content read: when the first exec matching
+ * `isRead(argv, rel)` reaches the fake cc, before it runs. `swap.done` says whether it happened.
+ */
+export function fifoBeforeRead(cc, dir, rel, isRead = noIndexRead) {
+  const swap = { done: false };
+  cc.state.execHook = (body) => {
+    const a = body.argv;
+    if (!swap.done && isRead(a, rel)) {
+      fs.rmSync(path.join(dir, rel));
+      mkfifo(path.join(dir, rel));
+      swap.done = true;
+    }
+    return undefined;
+  };
+  return swap;
+}
+
+/** Whether `locks.run(key, …)` gets the lock within `ms`. */
+export async function lockFree(locks, key, ms = 1000) {
+  let timer;
+  const r = await Promise.race([
+    locks.run(key, async () => true),
+    new Promise((res) => { timer = setTimeout(() => res(false), ms); }),
+  ]);
+  clearTimeout(timer);
+  return r;
+}
+
+/** `p`'s rejection and how long it took to come (ms); throws if `p` resolves. */
+export async function rejection(p) {
+  const t0 = performance.now();
+  try {
+    await p;
+  } catch (e) {
+    return { e, ms: performance.now() - t0 };
+  }
+  throw new Error('expected a rejection');
 }
