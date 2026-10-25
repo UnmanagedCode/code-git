@@ -85,11 +85,45 @@ export function bareRemote(repo) {
 /** A FIFO at `p`. git >= 2.42 opens a FIFO named on its command line, so a probe of it blocks until its bound. */
 export const mkfifo = (p) => execFileSync('mkfifo', [p]);
 
+function shorten(t, key, ms) {
+  const prev = DIFF_LIMITS[key];
+  DIFF_LIMITS[key] = ms;
+  t.after(() => { DIFF_LIMITS[key] = prev; });
+}
+
 /** Shortens the stat-only probe's bound (DIFF_LIMITS.probeTimeoutMs) for this test; restored after it. */
-export function shortProbe(t, ms = 300) {
-  const prev = DIFF_LIMITS.probeTimeoutMs;
-  DIFF_LIMITS.probeTimeoutMs = ms;
-  t.after(() => { DIFF_LIMITS.probeTimeoutMs = prev; });
+export const shortProbe = (t, ms = 300) => shorten(t, 'probeTimeoutMs', ms);
+
+/** Shortens the `--no-index` content read's bound (DIFF_LIMITS.contentReadTimeoutMs) for this test; restored after it. */
+export const shortRead = (t, ms = 500) => shorten(t, 'contentReadTimeoutMs', ms);
+
+/**
+ * Replaces `rel` (under `dir`) with a FIFO between its `--no-index` probe and its content read: when the first
+ * `--no-index` exec of `rel` without `--raw` reaches the fake cc, before it runs. `swap.done` says whether it happened.
+ */
+export function fifoBeforeRead(cc, dir, rel) {
+  const swap = { done: false };
+  cc.state.execHook = (body) => {
+    const a = body.argv;
+    if (!swap.done && a.includes('--no-index') && !a.includes('--raw') && a.at(-1) === rel) {
+      fs.rmSync(path.join(dir, rel));
+      mkfifo(path.join(dir, rel));
+      swap.done = true;
+    }
+    return undefined;
+  };
+  return swap;
+}
+
+/** Whether `locks.run(key, …)` gets the lock within `ms`. */
+export async function lockFree(locks, key, ms = 1000) {
+  let timer;
+  const r = await Promise.race([
+    locks.run(key, async () => true),
+    new Promise((res) => { timer = setTimeout(() => res(false), ms); }),
+  ]);
+  clearTimeout(timer);
+  return r;
 }
 
 /** `p`'s rejection and how long it took to come (ms); throws if `p` resolves. */

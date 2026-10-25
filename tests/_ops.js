@@ -39,9 +39,10 @@ export async function opWorld(t, { name = 'repo' } = {}) {
   const cc = await fakeCc({ projects: { [name]: { dir: repo.dir } }, home: repo.home });
   t.after(() => cc.close());
   const target = { project: name, worktree: null };
-  const op = async (opName, params) => {
+  /** `over` overrides the op's ctx (a shared `locks`). */
+  const op = async (opName, params, over = {}) => {
     const def = getOp(OPS, opName);
-    const ctx = ctxFor(target, def.kind, { op: opName, cancellable: def.cancellable });
+    const ctx = ctxFor(target, def.kind, { op: opName, cancellable: def.cancellable, ...over });
     return def.run(gitFor(ctx), def.params(params), { target });
   };
   /** A command's raw stdout (blob bytes stay bytes). */

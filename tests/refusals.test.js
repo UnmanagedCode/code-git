@@ -18,3 +18,10 @@ test('PROBE_TIMEOUT is a 504, like GIT_TIMEOUT, and renders {error, code, path, 
   assert.equal(r.status, 504);
   assert.deepEqual(r.toBody(), { error: 'why', code: 'PROBE_TIMEOUT', path: '.gitattributes', timeoutMs: 10_000 });
 });
+
+test('READ_TIMEOUT is a 504, like GIT_TIMEOUT, and renders {error, code, path, timeoutMs}', () => {
+  assert.equal(HTTP_STATUS.READ_TIMEOUT, 504);
+  const r = new Refusal('READ_TIMEOUT', 'why', { path: '.gitignore', timeoutMs: 30_000 });
+  assert.equal(r.status, 504);
+  assert.deepEqual(r.toBody(), { error: 'why', code: 'READ_TIMEOUT', path: '.gitignore', timeoutMs: 30_000 });
+});

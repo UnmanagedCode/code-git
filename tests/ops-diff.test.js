@@ -9,7 +9,7 @@ import { startApp } from './_app.js';
 import { ctxFor, gitFor } from './_ctx.js';
 import { APP_NEW, diffRepo, GITLINK, HUGE_LINES, LFS, NULL_MARKER, SECRET_MARKER } from './_diffRepo.js';
 import { fakeCc } from './_fakeCc.js';
-import { hermeticEnv, makeRepo } from './_git.js';
+import { fifoBeforeRead, hermeticEnv, makeRepo, shortRead } from './_git.js';
 
 const T = { project: 'diffs' };
 
@@ -467,4 +467,21 @@ test('patch filenames: staged / worktree name the project (sanitised, capped), a
   assert.equal((await op('diff.patch', { source: { kind: 'unstaged' } }, { project: long })).filename, `${'p'.repeat(80)}-unstaged.patch`);
   const cmp = await op('diff.patch', { source: { kind: 'compare', from: 'main', to: 'side', mode: '..' } });
   assert.equal(cmp.filename, `${oids.tail.slice(0, 7)}..${oids.s2.slice(0, 7)}.patch`);
+});
+
+test("an untracked file swapped for a FIFO after diff.file's gate: the content diff refuses READ_TIMEOUT {path, timeoutMs} promptly", { timeout: 10_000 }, async (t) => {
+  shortRead(t);
+  const { repo, cc } = await world(t);
+  const swap = fifoBeforeRead(cc, repo.dir, 'notes.txt');
+  const t0 = performance.now();
+  await assert.rejects(file({ kind: 'unstaged' }, 'notes.txt', { untracked: true }), (e) => {
+    assert.equal(e.code, 'READ_TIMEOUT', e.message);
+    assert.deepEqual(e.extra, { path: 'notes.txt', timeoutMs: DIFF_LIMITS.contentReadTimeoutMs });
+    return true;
+  });
+  assert.ok(performance.now() - t0 < 5000);
+  assert.equal(swap.done, true, 'the gate saw a regular file');
+  const content = cc.state.execCalls.find((b) => b.argv.includes('--no-index') && !b.argv.includes('--raw'));
+  assert.equal(content.timeoutMs, DIFF_LIMITS.contentReadTimeoutMs);
+  await cc.idle();
 });

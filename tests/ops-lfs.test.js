@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { createLocks } from '../src/git/locks.js';
 import { getOp, OPS } from '../src/git/ops/index.js';
-import { mkfifo, rejection, shortProbe } from './_git.js';
+import { fifoBeforeRead, lockFree, mkfifo, rejection, shortProbe, shortRead } from './_git.js';
 import { refused } from './_ops.js';
 import { LFS_CMD, LFS_HOOKS, LFS_PROBE, LFS_SKIP, lfsAvailable, lfsWorld, runsLfs, strippedWorld } from './_lfs.js';
 
@@ -109,26 +109,45 @@ test('status never reads through a symlinked .gitattributes: attributes unsuppor
 /** Well under the read (60 s) and write (300 s) timeouts a blocked probe would otherwise wait out. */
 const PROMPT_MS = 5000;
 
-test('a FIFO .gitattributes: status, track and untrack refuse PROBE_TIMEOUT promptly, and the project lock is free again', { skip: !HAVE_LFS && LFS_SKIP, timeout: 10_000 }, async (t) => {
+test('a FIFO .gitattributes, or a symlink to one: status, track and untrack refuse PROBE_TIMEOUT promptly, and the project lock is free again', { skip: !HAVE_LFS && LFS_SKIP, timeout: 10_000 }, async (t) => {
   shortProbe(t);
   const w = await lfsWorld(t);
-  fs.rmSync(path.join(w.repo.dir, '.gitattributes'));
-  mkfifo(path.join(w.repo.dir, '.gitattributes'));
+  const attrs = path.join(w.repo.dir, '.gitattributes');
+  const outside = path.join(w.repo.root, 'outside-pipe');
+  mkfifo(outside);
+  const layouts = {
+    fifo() { fs.rmSync(attrs); mkfifo(attrs); },
+    'link to a fifo'() { fs.rmSync(attrs); fs.symlinkSync(outside, attrs); },
+  };
   const locks = createLocks();
-  for (const [name, params] of [['lfs.status', {}], ['lfs.track', { pattern: '*.dat' }], ['lfs.untrack', { pattern: '*.bin' }]]) {
-    const { e, ms } = await rejection(w.op(name, params, { locks }));
-    assert.equal(e.code, 'PROBE_TIMEOUT', `${name}: ${e.message}`);
-    assert.equal(e.extra.path, '.gitattributes', name);
-    assert.ok(ms < PROMPT_MS, `${name} refused after ${ms} ms`);
+  for (const [layout, make] of Object.entries(layouts)) {
+    make();
+    for (const [name, params] of [['lfs.status', {}], ['lfs.track', { pattern: '*.dat' }], ['lfs.untrack', { pattern: '*.bin' }]]) {
+      const { e, ms } = await rejection(w.op(name, params, { locks }));
+      assert.equal(e.code, 'PROBE_TIMEOUT', `${layout} ${name}: ${e.message}`);
+      assert.equal(e.extra.path, '.gitattributes', `${layout} ${name}`);
+      assert.ok(ms < PROMPT_MS, `${layout} ${name} refused after ${ms} ms`);
+    }
   }
+  assert.ok(fs.lstatSync(outside).isFIFO(), 'nothing wrote through the link');
   assert.equal(w.argvs().some((a) => runsLfs(a, 'track') || runsLfs(a, 'untrack')), false, 'git-lfs never wrote');
-  let timer;
-  const free = await Promise.race([
-    locks.run('repo', async () => 'free'),
-    new Promise((r) => { timer = setTimeout(() => r('held'), 1000); }),
-  ]);
-  clearTimeout(timer);
-  assert.equal(free, 'free', 'the project lock is released');
+  assert.equal(await lockFree(locks, 'repo'), true, 'the project lock is released');
+  await w.cc.idle();
+  assert.equal(w.cc.state.children.size, 0, 'no blocked git left');
+});
+
+test('a .gitattributes swapped for a FIFO after its probe: untrack refuses READ_TIMEOUT promptly, git-lfs never runs, and the project lock is free again', { skip: !HAVE_LFS && LFS_SKIP, timeout: 10_000 }, async (t) => {
+  shortRead(t);
+  const w = await lfsWorld(t);
+  const swap = fifoBeforeRead(w.cc, w.repo.dir, '.gitattributes');
+  const locks = createLocks();
+  const { e, ms } = await rejection(w.op('lfs.untrack', { pattern: '*.bin' }, { locks }));
+  assert.equal(swap.done, true);
+  assert.equal(e.code, 'READ_TIMEOUT', e.message);
+  assert.equal(e.extra.path, '.gitattributes');
+  assert.ok(ms < PROMPT_MS, `refused after ${ms} ms`);
+  assert.equal(w.argvs().some((a) => runsLfs(a, 'untrack')), false, 'git-lfs never ran');
+  assert.equal(await lockFree(locks, 'repo'), true, 'the project lock is released');
   await w.cc.idle();
   assert.equal(w.cc.state.children.size, 0, 'no blocked git left');
 });
