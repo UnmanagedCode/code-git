@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { PROBE_ARGS } from '../src/git/attributes.js';
 import { DIFF_LIMITS } from '../src/git/diff/limits.js';
 import { createLocks } from '../src/git/locks.js';
 import { getOp, OPS } from '../src/git/ops/index.js';
@@ -19,7 +20,8 @@ test('absence: with no git-lfs on the System PATH, status answers available: fal
   assert.deepEqual(await w.op('lfs.status', {}), {
     available: false, version: null, supported: false, filters: null, attributes: null, patterns: null,
   });
-  assert.deepEqual(w.argvs(), [LFS_PROBE]);
+  // `lfs` is not on the attribute allow-list: the attribute probe runs first.
+  assert.deepEqual(w.argvs(), [PROBE_ARGS, LFS_PROBE]);
   for (const [name, params] of WRITES) {
     const before = w.argvs().length;
     await assert.rejects(w.op(name, params), refused('LFS_UNAVAILABLE'), name);

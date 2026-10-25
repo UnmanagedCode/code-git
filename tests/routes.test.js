@@ -25,12 +25,12 @@ const TEST_OPS = buildRegistry([repoOps, [
   commitOp({ name: 'test.cancellableWrite', cancellable: true }),
   {
     name: 'test.twoWrites', kind: 'write', params: () => ({}),
-    async run(git) { await git(['rev-parse', 'HEAD']); await git(['status']); return { done: true }; },
+    async run(git) { await git(['rev-parse', 'HEAD']); await git(['ls-files', '-z']); return { done: true }; },
   },
   {
     // Between its commands no entry is running: the gap a watcher must not refresh in.
     name: 'test.gapWrite', kind: 'write', params: () => ({}),
-    async run(git) { await git(['rev-parse', 'HEAD']); await gate; await git(['status']); return { done: true }; },
+    async run(git) { await git(['rev-parse', 'HEAD']); await gate; await git(['ls-files', '-z']); return { done: true }; },
   },
   {
     name: 'test.writeFails', kind: 'write', params: () => ({}),
@@ -39,12 +39,12 @@ const TEST_OPS = buildRegistry([repoOps, [
   {
     // The first command fails while the second waits for the project lock (as readHeads/ownHead do in branch ops).
     name: 'test.writeParallel', kind: 'write', params: () => ({}),
-    async run(git) { await Promise.all([git(['rev-parse', '--verify', '--end-of-options', 'nope']), git(['status'])]); return { done: true }; },
+    async run(git) { await Promise.all([git(['rev-parse', '--verify', '--end-of-options', 'nope']), git(['ls-files', '-z'])]); return { done: true }; },
   },
   {
     // Two commands: the first finishes, the second is the one a test holds.
     name: 'test.twoStep', kind: 'read', params: () => ({}),
-    async run(git) { await git(['rev-parse', 'HEAD']); await git(['status']); return { done: true }; },
+    async run(git) { await git(['rev-parse', 'HEAD']); await git(['ls-files', '-z']); return { done: true }; },
   },
   { name: 'test.target', kind: 'read', params: () => ({}), run: async (_git, _params, { target, journal }) => ({ target, journal: typeof journal?.state }) },
   {
@@ -202,16 +202,20 @@ test('activity: GET lists entries newest last and SSE pushes running then closed
   assert.deepEqual([second.data.id, second.data.status], [first.data.id, 'ok']);
   await call('POST', '/api/ops/repo.summary', { target: { project: 'app', worktree: 'feat' } });
   const { body } = await call('GET', '/api/activity');
-  // Each summary is the bare check (`rev-parse --git-dir`, src/git/worktree.js) then `git status`: four entries, newest last.
-  assert.equal(body.entries.length, 4);
+  // Each summary is the bare check (`rev-parse --git-dir`, src/git/worktree.js), the attribute probe, then `git status`:
+  // six entries, newest last.
+  assert.equal(body.entries.length, 6);
   assert.ok(body.entries.every((e, i) => i === 0 || body.entries[i - 1].id < e.id));
   const statuses = body.entries.filter((e) => e.argv.includes('--porcelain=v2'));
   assert.equal(statuses.length, 2);
   assert.deepEqual(statuses[1].target, { project: 'app', worktree: 'feat' });
 });
 
+/** Holds every exec but runGit's attribute probe, so the op's own first command is the one held. */
+const holdOwn = (b) => (b.argv.includes('check-attr') ? undefined : 'hold');
+
 async function startHeld(t, w, name) {
-  w.cc.state.execHook = () => 'hold';
+  w.cc.state.execHook = holdOwn;
   const controller = new AbortController();
   const response = w.call('POST', `/api/ops/${name}`, { target: APP }, { signal: controller.signal }).catch((e) => ({ aborted: e.name }));
   const held = await w.cc.nextHeld();
@@ -290,7 +294,7 @@ test('a browser that goes away aborts a cancellable op; its entry ends cancelled
 
 test('a multi-command op is cancelled only through its running entry; a finished entry of it answers NOT_RUNNING', async (t) => {
   const w = await world(t);
-  w.cc.state.execHook = (body) => (body.argv.includes('status') ? 'hold' : undefined);
+  w.cc.state.execHook = (body) => (body.argv.includes('ls-files') ? 'hold' : undefined);
   const response = w.call('POST', '/api/ops/test.twoStep', { target: APP });
   const held = await w.cc.nextHeld();
   w.cc.state.execHook = null;
@@ -428,7 +432,7 @@ test('a write that fails after its first command, one refused before any command
 // already failed.
 test('a write whose Promise.all rejects fast stays running until its sibling, queued on the lock then held, settles', async (t) => {
   const w = await world(t);
-  w.cc.state.execHook = (b) => (b.argv.includes('status') ? 'hold' : undefined);
+  w.cc.state.execHook = (b) => (b.argv.includes('ls-files') ? 'hold' : undefined);
   const r = await w.call('POST', '/api/ops/test.writeParallel', { target: APP });
   assert.equal(r.body.code, 'GIT_FAILED');
   assert.deepEqual((await runOf(w, 'test.writeParallel')).map((x) => x.status), ['running'], 'the op answered, its sibling has not settled');
@@ -449,7 +453,7 @@ test('reads open no run; two concurrent writes on one project each end independe
   await w.call('POST', '/api/ops/test.twoStep', { target: APP });
   assert.deepEqual((await w.call('GET', '/api/activity')).body.runs, []);
 
-  w.cc.state.execHook = () => 'hold';
+  w.cc.state.execHook = holdOwn;
   const r1 = w.call('POST', '/api/ops/test.write', { target: APP });
   const h1 = await w.cc.nextHeld();
   const secondOpen = nextEvent(w.activity, 'run', (x) => x.status === 'running');

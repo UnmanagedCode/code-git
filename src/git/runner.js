@@ -1,9 +1,11 @@
 import { capStderr } from '../activity/log.js';
 import { exec } from '../conductor/exec.js';
 import { Refusal } from '../refusals.js';
+import { assertAttributesReadable, consultsAttributes } from './attributes.js';
 import { LIMITS } from './limits.js';
 
-// THE choke point: every git command code-git runs goes through runGit.
+// THE choke point: every git command code-git runs goes through runGit. Before a command that may open git's attribute
+// files, runGit probes them once per op run and target (src/git/attributes.js).
 
 /**
  * Before every subcommand. `--work-tree=.` pins the working tree to the checkout cc runs the command in, so a repo's
@@ -91,27 +93,52 @@ const STATUS_OF = { CANCELLED: 'cancelled', GIT_TIMEOUT: 'timeout' };
  * The subcommand of an op's `args`, past any leading `-c <key=value>` pairs (netRun's, a pull's config overrides) and
  * the LFS ops' `--no-literal-pathspecs` (src/git/ops/lfs.js).
  */
-export function subcommandOf(args) {
+export const subcommandOf = (args) => args[subcommandAt(args)];
+
+function subcommandAt(args) {
   let i = 0;
   for (;;) {
     if (args[i] === '-c') i += 2;
     else if (args[i] === '--no-literal-pathspecs') i += 1;
-    else return args[i];
+    else return i;
   }
 }
 
 /**
- * Runs one git command for an op, in `ctx.target` (subArgs for a submodule). `ctx` = {target, op, kind: 'read'|'write', cancellable, signal, opRunId, activity, locks}.
+ * Runs one git command for an op, in `ctx.target` (subArgs for a submodule). `ctx` = {target, op, kind: 'read'|'write', cancellable, signal, opRunId, activity, locks, attributeChecks}.
  * Resolves {exitCode, stdout: Buffer, stderr: Buffer, durationMs}; an exit code outside `okExit` throws GIT_FAILED.
  * A write holds its project's lock for the whole command (a submodule's too: its pointer is the project's state). An op env naming a protected variable (isProtectedEnv) throws.
+ * A command that may open git's attribute files (consultsAttributes) first awaits their probe (attributesChecked).
  */
-export async function runGit(ctx, args, { stdin, env: opEnv = {}, timeoutMs, maxOutputBytes, okExit = [0] } = {}) {
+export async function runGit(ctx, args, opts = {}) {
+  if (!LIMITS[ctx.kind]) throw new Error(`runGit: unknown kind ${ctx.kind}`);
+  // An op setting a protected name is a code-git bug: refuse before anything runs.
+  const forbidden = Object.keys(opts.env ?? {}).filter(isProtectedEnv);
+  if (forbidden.length) throw new Error(`runGit: ${ctx.op} may not set ${forbidden.join(', ')}`);
+  if (consultsAttributes(args.slice(subcommandAt(args)))) await attributesChecked(ctx);
+  return execOne(ctx, args, opts);
+}
+
+/**
+ * The attribute probe of `ctx.target`, once per op run: memoised in the run's `ctx.attributeChecks` (a Map its spreads
+ * share) by target, so a submodule level is probed in its own repository. A rejection stays memoised: every later
+ * consulting command of the run refuses the same way. A ctx without the Map probes every time. The probe is a read: no
+ * lock, the read env, retried on connection failures only.
+ */
+function attributesChecked(ctx) {
+  const probe = () => assertAttributesReadable((args, opts) => execOne({ ...ctx, kind: 'read' }, args, opts));
+  const memo = ctx.attributeChecks;
+  if (!memo) return probe();
+  const { project, worktree = null, sub = [] } = ctx.target;
+  const key = JSON.stringify([project, worktree, sub]);
+  if (!memo.has(key)) memo.set(key, probe());
+  return memo.get(key);
+}
+
+/** One exec of `args`: its activity entry, and the project lock for a write. */
+async function execOne(ctx, args, { stdin, env: opEnv = {}, timeoutMs, maxOutputBytes, okExit = [0] } = {}) {
   const { target, kind, activity } = ctx;
   const limits = LIMITS[kind];
-  if (!limits) throw new Error(`runGit: unknown kind ${kind}`);
-  // An op setting a protected name is a code-git bug: refuse before anything runs.
-  const forbidden = Object.keys(opEnv).filter(isProtectedEnv);
-  if (forbidden.length) throw new Error(`runGit: ${ctx.op} may not set ${forbidden.join(', ')}`);
   const argv = ['git', ...BASE_ARGS, ...subArgs(target), ...args];
   const env = { ...BASE_ENV, ...(kind === 'read' ? READ_ENV : {}), ...opEnv };
   const stdinBytes = stdin === undefined ? 0 : Buffer.byteLength(stdin);

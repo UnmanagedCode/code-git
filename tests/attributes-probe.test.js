@@ -211,7 +211,7 @@ test('allow-listed runs never probe, and run past a FIFO root .gitattributes: gr
   await w.op('graph.page', { tips, skip: 0, limit: 10 });
   await w.op('graph.search', { mode: 'commits', query: 'base', tips });
   await w.op('graph.search', { mode: 'path', query: 'a.txt', tips });
-  await w.op('history.file', { rev: 'HEAD', path: 'a.txt', skip: 0, limit: 10 });
+  await w.op('history.file', { rev: tips[0], path: 'a.txt', skip: 0, limit: 10 });
   await w.op('branch.rename', { name: 'main', newName: 'trunk' });
   assert.deepEqual(w.argvs().filter(isProbe), []);
   await noneLeft(w.cc);

@@ -31,8 +31,8 @@ test('argv is git + BASE_ARGS + the op args; stdout comes back as bytes', async 
 
 test('the base env makes git non-interactive and literal; GIT_OPTIONAL_LOCKS=0 on reads only', async (t) => {
   const { cc } = await world(t);
-  await runGit(ctxFor(APP, 'read'), ['status']);
-  await runGit(ctxFor(APP, 'write'), ['status']);
+  await runGit(ctxFor(APP, 'read'), ['rev-parse', 'HEAD']);
+  await runGit(ctxFor(APP, 'write'), ['rev-parse', 'HEAD']);
   const [read, write] = cc.state.execCalls.map((c) => c.env);
   for (const env of [read, write]) {
     assert.equal(env.GIT_TERMINAL_PROMPT, '0');
@@ -71,20 +71,20 @@ const TRACE2_ON = {
 test('the base env turns git trace and trace2 output off over a System env that turns it on; never sets GIT_CURL_VERBOSE; an op cannot set them', async (t) => {
   const { cc } = await world(t);
   cc.state.inheritedEnv = { ...Object.fromEntries(TRACE_VARS.map((n) => [n, '1'])), ...TRACE2_ON };
-  const r = await runGit(ctxFor(APP, 'write'), ['status']);
+  const r = await runGit(ctxFor(APP, 'write'), ['rev-parse', 'HEAD']);
   const { env } = cc.state.execCalls[0];
   for (const name of TRACE_VARS) assert.equal(env[name], '0', name);
   for (const [name, value] of Object.entries(TRACE2_SET)) assert.equal(env[name], value, name);
   assert.ok(!('GIT_CURL_VERBOSE' in env), 'GIT_CURL_VERBOSE is not set: git reads it for presence');
   assert.equal(r.stderr.toString(), '', 'no trace output');
   for (const name of [...TRACE_VARS, 'GIT_CURL_VERBOSE', ...Object.keys(TRACE2_SET)]) {
-    await assert.rejects(runGit(ctxFor(APP, 'write'), ['status'], { env: { [name]: '1' } }), new RegExp(`may not set ${name}`), name);
+    await assert.rejects(runGit(ctxFor(APP, 'write'), ['rev-parse', 'HEAD'], { env: { [name]: '1' } }), new RegExp(`may not set ${name}`), name);
   }
 });
 
 test("an op's env is merged in; GIT_EDITOR and GIT_SEQUENCE_EDITOR stay overridable", async (t) => {
   const { cc } = await world(t);
-  await runGit(ctxFor(APP), ['status'], { env: { GIT_EDITOR: 'true', GIT_SEQUENCE_EDITOR: 'cat', MY_VAR: 'x' } });
+  await runGit(ctxFor(APP), ['rev-parse', 'HEAD'], { env: { GIT_EDITOR: 'true', GIT_SEQUENCE_EDITOR: 'cat', MY_VAR: 'x' } });
   const { env } = cc.state.execCalls[0];
   assert.deepEqual([env.GIT_EDITOR, env.GIT_SEQUENCE_EDITOR, env.MY_VAR], ['true', 'cat', 'x']);
   assert.equal(env.GIT_TERMINAL_PROMPT, '0');
@@ -97,12 +97,12 @@ test("an op's env cannot set a protected name: prompts, askpass programs, pathsp
     'GIT_SSH_COMMAND', 'GIT_SSH', 'GIT_SSH_VARIANT', 'GIT_SSH_ANYTHING_NEW', 'GIT_ASKPASS', 'SSH_ASKPASS', 'SSH_ASKPASS_REQUIRE', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
     'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG'];
   for (const name of names) {
-    await assert.rejects(runGit(ctx, ['status'], { env: { OK: '1', [name]: 'x' } }), new RegExp(`may not set ${name}`), name);
+    await assert.rejects(runGit(ctx, ['rev-parse', 'HEAD'], { env: { OK: '1', [name]: 'x' } }), new RegExp(`may not set ${name}`), name);
   }
   assert.equal(cc.state.execCalls.length, 0);
   assert.equal(ctx.activity.list().length, 0, 'no activity entry is opened for a refused env');
   // Look-alikes outside the protected names and prefixes stay settable.
-  await runGit(ctx, ['status'], { env: { MY_GIT_SSH: '1', SSH_AUTH_SOCK_X: '1', GIT_ASKPASS_HINT: '1', XGIT_CONFIG: '1' } });
+  await runGit(ctx, ['rev-parse', 'HEAD'], { env: { MY_GIT_SSH: '1', SSH_AUTH_SOCK_X: '1', GIT_ASKPASS_HINT: '1', XGIT_CONFIG: '1' } });
   assert.equal(cc.state.execCalls.length, 1);
 });
 
@@ -143,7 +143,7 @@ test('writes on one project are serialized; reads and other projects are not hel
   const activity = createActivityLog();
   const locks = createLocks();
   const ctx = (target, kind) => ctxFor(target, kind, { activity, locks });
-  const tagged = (target, kind, tag) => runGit(ctx(target, kind), ['status'], { env: { CG_TAG: tag } });
+  const tagged = (target, kind, tag) => runGit(ctx(target, kind), ['rev-parse', 'HEAD'], { env: { CG_TAG: tag } });
   const tagOf = (h) => h.body.env.CG_TAG;
 
   const a = tagged(APP, 'write', 'A');
@@ -168,19 +168,19 @@ test('a read is retried after a dropped connection; a write never is', async (t)
   const { cc } = await world(t);
   let resets = 1;
   cc.state.execHook = () => (resets-- > 0 ? 'reset' : undefined);
-  const r = await runGit(ctxFor(APP, 'read'), ['status']);
+  const r = await runGit(ctxFor(APP, 'read'), ['rev-parse', 'HEAD']);
   assert.equal(r.exitCode, 0);
   assert.equal(cc.state.execCalls.length, 2);
   resets = 1;
-  await assert.rejects(runGit(ctxFor(APP, 'write'), ['status']), (e) => e.code === 'CONDUCTOR_UNAVAILABLE');
+  await assert.rejects(runGit(ctxFor(APP, 'write'), ['rev-parse', 'HEAD']), (e) => e.code === 'CONDUCTOR_UNAVAILABLE');
   assert.equal(cc.state.execCalls.length, 3);
 });
 
 test('per-kind limits are sent unless the op overrides them', async (t) => {
   const { cc } = await world(t);
-  await runGit(ctxFor(APP, 'read'), ['status']);
-  await runGit(ctxFor(APP, 'write'), ['status']);
-  await runGit(ctxFor(APP, 'read'), ['status'], { timeoutMs: 1234, maxOutputBytes: 5678 });
+  await runGit(ctxFor(APP, 'read'), ['rev-parse', 'HEAD']);
+  await runGit(ctxFor(APP, 'write'), ['rev-parse', 'HEAD']);
+  await runGit(ctxFor(APP, 'read'), ['rev-parse', 'HEAD'], { timeoutMs: 1234, maxOutputBytes: 5678 });
   const [read, write, custom] = cc.state.execCalls;
   assert.deepEqual([read.timeoutMs, read.maxOutputBytes], [LIMITS.read.timeoutMs, LIMITS.read.maxOutputBytes]);
   assert.deepEqual([write.timeoutMs, write.maxOutputBytes], [LIMITS.write.timeoutMs, LIMITS.write.maxOutputBytes]);

@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { createActivityLog } from '../src/activity/log.js';
 import { createLocks } from '../src/git/locks.js';
 import { buildRegistry, OPS } from '../src/git/ops/index.js';
+import { PROBE_ARGS } from '../src/git/attributes.js';
 import { BASE_ARGS, runGit } from '../src/git/runner.js';
 import { assertTarget } from '../src/git/validate.js';
 import { ctxFor } from './_ctx.js';
@@ -66,11 +67,11 @@ test('the preflight: checkout and submodule top levels, then per chain level its
     ['rev-parse', '--show-toplevel'], [...C('libA/libB'), 'rev-parse', '--show-toplevel'], ['rev-parse', '--absolute-git-dir'],
     [...C('libA'), 'rev-parse', '--absolute-git-dir'], GM,
     [...C('libA/libB'), 'rev-parse', '--absolute-git-dir'], [...C('libA'), ...GM],
-    [...C('libA/libB'), 'add', '-A'],
+    [...C('libA/libB'), ...PROBE_ARGS], [...C('libA/libB'), 'add', '-A'],
   ]);
   const entries = await w.activity();
   assert.equal(new Set(entries.map((e) => e.opRunId)).size, 1);
-  assert.deepEqual(entries.map((e) => e.kind), [...Array(7).fill('read'), 'write']);
+  assert.deepEqual(entries.map((e) => e.kind), [...Array(8).fill('read'), 'write']);
   for (const i of [0, 2, 4]) assert.equal('sub' in entries[i].target, false, 'the checkout reads run at the root');
 });
 
@@ -140,7 +141,7 @@ test('a write in a sub tab holds the project lock', async (t) => {
   w.cc.state.execHook = () => 'hold';
   const activity = createActivityLog();
   const locks = createLocks();
-  const tagged = (target, kind, tag) => runGit(ctxFor(target, kind, { activity, locks }), ['status'], { env: { CG_TAG: tag } });
+  const tagged = (target, kind, tag) => runGit(ctxFor(target, kind, { activity, locks }), ['rev-parse', 'HEAD'], { env: { CG_TAG: tag } });
   const a = tagged({ project: PROJECT, sub: ['libA'] }, 'write', 'sub');
   const heldA = await w.cc.nextHeld();
   const b = tagged({ project: PROJECT }, 'write', 'root');
