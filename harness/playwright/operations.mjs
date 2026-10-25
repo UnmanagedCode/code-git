@@ -49,26 +49,44 @@ try {
     const choose = async (...items) => {
       for (const item of items) await menu.last().getByRole('menuitem', { name: item, exact: true }).click();
     };
+    /** Waits for `locator` to be the one visible match (`waitFor` is strict) and checks `what` by it. */
+    const appears = async (locator, what) => { await locator.waitFor().catch(() => check(false, what)); check(true, what); };
+    /** Holds every `graph.refs` request until the returned `release()`. The banner's state comes from `commit.state` but
+     *  its "onto origin/main" from the refs (`commitLabel`), a later request: until it lands the title names the oid. */
+    const holdRefs = async () => {
+      let open;
+      const gate = new Promise((r) => { open = r; });
+      const hold = async (route) => { await gate; await route.fallback(); };
+      await page.route('**/api/ops/graph.refs', hold);
+      return async () => { open(); await page.unroute('**/api/ops/graph.refs', hold); };
+    };
 
     await page.setViewportSize(VIEWPORTS.desktop);
     await open();
 
-    // 1. a rebase pull stops on conflicts: the toast, the rebase in progress in git, the banner with its step
+    // 1. a rebase pull stops on conflicts: the toast, the rebase in progress in git, the banner with its step. The refs
+    // are held until the title's wait has started, so the title is checked across their arrival every run.
+    let releaseRefs = await holdRefs();
     await toolbar.getByRole('button', { name: 'Pull options', exact: true }).click();
     await choose('Pull (rebase)');
     await toast('The pull stopped on conflicts').waitFor();
     check(rebasing() && git('ls-files', '-u').includes('app.txt'), 'git: the rebase is in progress, app.txt unmerged');
     await banner.waitFor();
     const title = 'Rebasing main onto origin/main (step 1 of 2)';
-    check(await banner.getByText(title, { exact: true }).count() === 1, `the banner reads "${title}"`);
+    let shown = appears(banner.getByText(title, { exact: true }), `the banner reads "${title}"`);
+    await releaseRefs();
+    await shown;
     check(await bannerButton('Continue').isDisabled(), 'Continue is disabled while app.txt is conflicted');
     check(await page.getByText(/^Detached HEAD at/).count() === 0, 'no detached-HEAD banner during the rebase');
     await shot('operations-rebase-pull-light-desktop');
 
-    // 2. a reload shows the same banner: the state is git's, not the page's
+    // 2. a reload shows the same banner: the state is git's, not the page's (the refs held again)
+    releaseRefs = await holdRefs();
     await page.reload();
     await banner.waitFor();
-    check(await banner.getByText(title, { exact: true }).count() === 1, 'the banner is still there after a reload');
+    shown = appears(banner.getByText(title, { exact: true }), 'the banner is still there after a reload');
+    await releaseRefs();
+    await shown;
 
     // 3. Abort… asks first; Cancel keeps the rebase, Confirm puts main back
     await bannerButton('Abort…').click();
@@ -89,7 +107,7 @@ try {
     // The right-click selected the commit (its details take the right slot): Esc clears it, Changes is back.
     await page.keyboard.press('Escape');
     await banner.waitFor();
-    check(await banner.getByText(`Cherry-picking ${o.conflict.slice(0, 7)} conflicting change`, { exact: true }).count() === 1, 'the banner names the cherry-pick');
+    await appears(banner.getByText(`Cherry-picking ${o.conflict.slice(0, 7)} conflicting change`, { exact: true }), 'the banner names the cherry-pick');
     check(exists('CHERRY_PICK_HEAD'), 'git: the cherry-pick is in progress');
 
     // ---- the banner in every scheme and viewport (the phone one in the Changes dialog) ----
