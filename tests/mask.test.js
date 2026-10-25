@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { capStderr, createActivityLog, redactArgv } from '../src/activity/log.js';
+import { LIMITS } from '../src/git/limits.js';
 import { BASE_ARGS } from '../src/git/runner.js';
 import { Refusal } from '../src/refusals.js';
 import { isMaskedUrl, maskDeep, maskUrl, maskUrls } from '../src/mask.js';
@@ -301,6 +302,21 @@ test('maskDeep masks every string through arrays and plain objects, and leaves o
   const u = 'https://u:pw1@h/r';
   assert.deepEqual(maskDeep({ error: `refs ${u}`, names: [u, 'origin'], n: 3, nested: { stderr: u }, ok: true, none: null }),
     { error: 'refs https://u:***@h/r', names: ['https://u:***@h/r', 'origin'], n: 3, nested: { stderr: 'https://u:***@h/r' }, ok: true, none: null });
+});
+
+// Invariant: masking reaches the end of a long text: a url with a password after ~100k characters of other output is
+// masked by maskUrls, and by capStderr inside the tail it keeps of a stderr longer than LIMITS.stderrCap.
+test('a password at the end of a long text is masked: maskUrls, and capStderr in the kept tail of a capped stderr', () => {
+  const filler = 'remote: Counting objects: 100% (1/1), done.\n'.repeat(2_500);
+  const line = "fatal: unable to access 'https://user:Zq7-at-the-end@h.example.invalid/r/': The requested URL returned error: 403\n";
+  const masked = "fatal: unable to access 'https://user:***@h.example.invalid/r/': The requested URL returned error: 403\n";
+  const text = filler + line;
+  assert.ok(text.length > 100_000 && Buffer.byteLength(text) > LIMITS.stderrCap);
+  assert.equal(maskUrls(text), filler + masked);
+  const kept = capStderr(Buffer.from(text));
+  assert.equal(kept.stderrTruncated, true);
+  assert.ok(!kept.stderr.includes('Zq7-at-the-end'));
+  assert.ok(kept.stderr.endsWith(masked));
 });
 
 /** Hostile inputs of about 500k characters: long alphanumeric runs, many `://`, `@` and `:`, many urls on one line. */
