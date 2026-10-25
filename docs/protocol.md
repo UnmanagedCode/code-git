@@ -532,9 +532,9 @@ Behaviour, what writes and the `.gitattributes` parse: [lfs](lfs.md). Every git-
 
 | Op | kind | `params` | Runs | `result` | Refusals |
 |---|---|---|---|---|---|
-| `lfs.status` | read (cancellable) | `{}` | `-c alias.lfs= lfs version` (exit 0 or 1; the gate of every LFS write too); when usable: `config --get filter.lfs.process` (exit 0 or 1), the root `.gitattributes` (`readNoIndex`) | `{available, version: string \| null, supported, filters: bool \| null, attributes: 'ok' \| 'unsupported' \| null, patterns: string[] \| null}` (the last three null when git-lfs is absent or below 3.2.0) | `GIT_FAILED` (an unrecognised version, another `lfs version` failure); `PROBE_TIMEOUT` (a FIFO `.gitattributes`, or a symlink to one); `READ_TIMEOUT` (swapped for a FIFO after its probe) |
+| `lfs.status` | read (cancellable) | `{}` | `-c alias.lfs= lfs version` (exit 0 or 1; the gate of every LFS write too); when usable: `config --get filter.lfs.process` (exit 0 or 1), the root `.gitattributes` (`readNoIndex`) | `{available, version: string \| null, supported, filters: bool \| null, attributes: 'ok' \| 'unsupported' \| null, patterns: string[] \| null}` (the last three null when git-lfs is absent or below 3.2.0) | `GIT_FAILED` (an unrecognised version, another `lfs version` failure); `ATTRIBUTES_TIMEOUT` (a FIFO `.gitattributes`); `PROBE_TIMEOUT` (a symlink to a FIFO `.gitattributes`); `READ_TIMEOUT` (swapped for a FIFO after its probe) |
 | `lfs.files` | write, `journal: 'neutral'` | `{}` | `lfs ls-files --json` (`LFS_LIMITS.listMaxOutputBytes`) | `{files: [{path, size, oid, downloaded} /* a missing field null */]}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `OUTPUT_TOO_LARGE`; `GIT_FAILED` (also malformed output) |
-| `lfs.track` | write | `{pattern}` | `lfs track -- <pattern>` | `{pattern}` | `BAD_PARAMS` (`checkPattern`); `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `ATTRIBUTES_UNSUPPORTED`; `PROBE_TIMEOUT`; `GIT_FAILED` |
+| `lfs.track` | write | `{pattern}` | `lfs track -- <pattern>` | `{pattern}` | `BAD_PARAMS` (`checkPattern`); `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `ATTRIBUTES_UNSUPPORTED`; `ATTRIBUTES_TIMEOUT`; `PROBE_TIMEOUT`; `GIT_FAILED` |
 | `lfs.untrack` | write | `{pattern}` | the patterns read before, the `.gitattributes` check, `lfs untrack -- <pattern>`, the patterns read after | `{pattern, removed}` | as `lfs.track`; `READ_TIMEOUT` |
 | `lfs.pull` | write | `{}` | `NET_CONFIG lfs pull` (`netRun`, `LFS_LIMITS.netTimeoutMs`) | `{}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `GIT_FAILED` (`stderr`: network and auth failures too) |
 | `lfs.prune` | write | `{}` | `lfs prune` | `{}` | `BARE_REPO`; `LFS_UNAVAILABLE`; `GIT_TOO_OLD`; `GIT_FAILED` |
@@ -564,7 +564,7 @@ An op that lists pages **by git arguments**, never by slicing output (cc's exec 
 | `startedAt` | ISO time |
 | `durationMs`, `exitCode` | cc's; `null` while running or when the command never ran to an exit |
 | `stderr`, `stderrTruncated` | Decoded as UTF-8 (invalid bytes replaced), the **tail** up to `LIMITS.stderrCap` bytes; a url's password inside it is masked (`maskUrls` in `src/mask.js`: git quotes the url a submodule clone failed on) |
-| `status` | `running` → `ok` \| `failed` (exit outside the op's accepted codes, `code: GIT_FAILED`) \| `refused` (a cc refusal) \| `timeout` (`GIT_TIMEOUT`) \| `cancelled` (`CANCELLED`) |
+| `status` | `running` → `ok` \| `failed` (exit outside the op's accepted codes, `code: GIT_FAILED`) \| `refused` (a cc refusal) \| `timeout` (`GIT_TIMEOUT`; the attribute probe's own entry too, when its op then refuses `ATTRIBUTES_TIMEOUT`) \| `cancelled` (`CANCELLED`) |
 | `code` | The refusal code, or `null` |
 
 **`OpRun`** (one call of a **write** op; `openRun` in `src/activity/log.js`, opened by `POST api/ops/:name`). Reads open none.
@@ -678,6 +678,7 @@ Source: `HTTP_STATUS` in `src/refusals.js`.
 | `CONDUCTOR_UNAVAILABLE` | 503 | No `CONDUCTOR_URL`, cc did not answer, or answered without a usable body |
 | `GIT_TIMEOUT` | 504 | The command passed its deadline and was killed; partial `stderr` |
 | `PROBE_TIMEOUT` | 504 | A stat-only probe of a file (`worktreeEntry` / `readNoIndex` / `assertNoIndexReadsItself` — `diff.file`'s untracked gate — in `src/git/diff/noIndex.js`) did not finish within `DIFF_LIMITS.probeTimeoutMs`: a special file such as a FIFO, or an unresponsive System; `path`, `timeoutMs` |
+| `ATTRIBUTES_TIMEOUT` | 504 | git's attribute files (the root `.gitattributes`, `.git/info/attributes`, `core.attributesFile` or its XDG default, the system file) could not be read within `DIFF_LIMITS.probeTimeoutMs`: a special file such as a FIFO, or an unresponsive System; `timeoutMs`. Any op whose run reaches a command off the allow-list `ATTRIBUTE_FREE` (`src/git/attributes.js`) may refuse it: `runGit` probes once per op run and target before that command ([lfs → Known limitations](lfs.md#known-limitations)) |
 | `READ_TIMEOUT` | 504 | A git command reading the content of one file (`boundedRead` in `src/git/diff/noIndex.js`: `readNoIndex`'s read, `diff.file`'s untracked diff, `hash-object` of a conflicted worktree file or of a legacy remote file) did not finish within `DIFF_LIMITS.contentReadTimeoutMs`: a special file such as a FIFO (swapped in after a probe, or never probed), a binary file too large to hash in time, or an unresponsive System; `path`, `timeoutMs` |
 
 ## UI routes
