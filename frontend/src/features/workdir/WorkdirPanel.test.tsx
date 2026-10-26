@@ -480,7 +480,8 @@ function expectContained(root: HTMLElement) {
   expect(follows(sections[1], box)).toBe(true);
   for (const sec of sections) expect(sec.contains(box)).toBe(false);
   const fields = box.querySelector('[data-commit-fields]')!;
-  expect(fields.contains(within(box).getByRole('textbox', { name: 'Summary' }))).toBe(true);
+  expect(fields.contains(within(box).getByRole('textbox', { name: 'Summary' }))).toBe(false);
+  expect(fields.contains(within(box).getByRole('textbox', { name: 'Description' }))).toBe(true);
   expect(fields.contains(within(box).getByRole('button', { name: /^Commit/ }))).toBe(false);
   return box;
 }
@@ -508,10 +509,11 @@ test('the pane runs header → Unstaged → Staged → Commit message, with the 
   expect(box).toBe(commitBox());
 });
 
-test('the commit button sits outside the commit fields\' scroller; Summary inside it; the amend pair too', async () => {
+test('Summary and the commit button sit outside the commit fields\' scroller; Description inside it; the amend pair too', async () => {
   await show();
   const fields = () => commitBox().querySelector('[data-commit-fields]')!;
-  expect(fields().contains(summaryBox())).toBe(true);
+  expect(fields().contains(summaryBox())).toBe(false);
+  expect(fields().contains(descBox())).toBe(true);
   expect(fields().contains(within(commitBox()).getByRole('button', { name: /^Commit/ }))).toBe(false);
   await userEvent.click(within(commitBox()).getByRole('checkbox', { name: 'Amend previous commit' }));
   for (const name of ['Amend commit', 'Update message only']) expect(fields().contains(within(commitBox()).getByRole('button', { name }))).toBe(false);

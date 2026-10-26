@@ -3,7 +3,8 @@
 // is fit-then-equal, and the Summary field and commit button stay in view. Steps: A desktop with both lists long; B the
 // Activity panel open (the pane about 354 px tall); C the Changes (n) dialog at 390×844; D one section empty; E both
 // short, the commit box pinned at the bottom; F below the floors, where the pane scrolls as a last resort but each list
-// keeps two rows and the commit box keeps Summary and its button. Runs in light then dark, each on a fresh seed;
+// keeps two rows and the commit box keeps Summary and its button; G the longest button label (detached HEAD, 12 staged
+// files, wrapped) at that floor. Runs in light then dark, each on a fresh seed;
 // screenshots go to out/sidepane/*-{light,dark}.png.
 // Run: node harness/playwright/sidepane.mjs   (needs `npm run prepare` first, for frontend/dist)
 import { execFileSync } from 'node:child_process';
@@ -99,7 +100,6 @@ for (const scheme of ['light', 'dark']) {
         if ((await activity.getAttribute('aria-expanded')) !== String(open)) await activity.click();
         await page.waitForFunction(([sel, want]) => document.querySelector(sel)?.getAttribute('aria-expanded') === String(want), ['[aria-label=Activity] button[aria-expanded]', open]);
       };
-      const paneHeight = () => page.evaluate((sel) => document.querySelector(sel).clientHeight, SLOT);
       // The wheel over a list's middle scrolls that list only.
       const wheelOver = async (region, deltaY) => {
         const b = await region.locator('[data-section-list]').boundingBox();
@@ -141,7 +141,7 @@ for (const scheme of ['light', 'dark']) {
       check(m.pane.scrollHeight <= m.pane.clientHeight, `${scheme}: B: the pane does not scroll at ${m.pane.clientHeight}px`);
       check(m.unstaged.visibleRows >= 2 && m.staged.visibleRows >= 2, `${scheme}: B: each list shows two rows (${m.unstaged.visibleRows} / ${m.staged.visibleRows})`);
       check(near(m.unstaged.rect.height, m.staged.rect.height), `${scheme}: B: the sections stay equal`);
-      check(inside(m.summary, m.commit.fields.rect) && inside(m.summary, m.pane.rect), `${scheme}: B: Summary is fully visible in the fields and the pane`);
+      check(inside(m.summary, m.commit.rect) && inside(m.summary, m.pane.rect), `${scheme}: B: Summary is fully visible in the commit box and the pane`);
       check(inside(m.button, m.pane.rect) && inside(m.button, m.commit.rect), `${scheme}: B: the commit button is fully visible`);
       check(m.commit.fields.scrollHeight > m.commit.fields.clientHeight, `${scheme}: B: the commit fields overflow and scroll inside the box`);
       {
@@ -152,6 +152,7 @@ for (const scheme of ['light', 'dark']) {
         await page.waitForTimeout(150);
         m = await measure(page, SLOT);
         check(m.commit.fields.scrollTop > 0 && m.pane.scrollTop === 0, `${scheme}: B: a wheel over the commit fields scrolls them, not the pane`);
+        check(inside(m.summary, m.commit.rect) && inside(m.summary, m.pane.rect), `${scheme}: B: Summary is still fully visible after the fields scrolled`);
       }
       await shot('long-activity');
       await setActivity(false);
@@ -178,6 +179,9 @@ for (const scheme of ['light', 'dark']) {
       await wheelOver(dStaged, 300);
       m = await measure(page, dialogSel);
       check(m.staged.scrollTop > 0 && m.unstaged.scrollTop === 0 && m.pane.scrollTop === 0, `${scheme}: C: a wheel over the staged list scrolls only it`);
+      await dlg.getByRole('checkbox', { name: 'Skip Git hooks', exact: true }).focus();
+      m = await measure(page, dialogSel);
+      check(inside(m.summary, m.commit.rect) && inside(m.summary, m.pane.rect) && inside(m.button, m.pane.rect), `${scheme}: C: Summary and the button stay visible with a lower checkbox focused`);
       await shot('phone');
       await page.keyboard.press('Escape');
       await dlg.waitFor({ state: 'detached' });
@@ -228,8 +232,21 @@ for (const scheme of ['light', 'dark']) {
       check(m.unstaged.visibleRows >= 2 && m.staged.visibleRows >= 2, `${scheme}: F: each list keeps two full rows`);
       check(inside(m.summary, m.commit.rect) && inside(m.button, m.commit.rect), `${scheme}: F: Summary and the commit button are inside the commit box`);
       check(near(m.unstaged.rect.height + m.staged.rect.height, 176), `${scheme}: F: the lists sit at their floor (${m.unstaged.rect.height + m.staged.rect.height} = 176)`);
-      check(near(m.commit.rect.height, 100), `${scheme}: F: the commit box sits at its floor (${m.commit.rect.height} = 100)`);
+      check(near(m.commit.rect.height, 120), `${scheme}: F: the commit box sits at its floor (${m.commit.rect.height} = 120)`);
       await shot('last-resort');
+
+      // G. The longest button label at the commit floor: detached HEAD with 12 staged files wraps in the 320 px slot.
+      const dgit = (...args) => execFileSync('git', ['-C', world.detached.dir, ...args], { env: hermeticEnv(world.detached.home) }).toString();
+      for (let i = 1; i <= 12; i++) writeFileSync(path.join(world.detached.dir, `d-${num(i)}.txt`), `d ${i}\n`);
+      dgit('add', 'd-*.txt');
+      await page.goto(`${world.url}/?project=detached`);
+      await slot.getByRole('region', { name: 'Commit message', exact: true }).waitFor();
+      await slot.getByRole('button', { name: 'Commit changes to 12 files (detached HEAD)', exact: true }).waitFor();
+      m = await measure(page, SLOT);
+      check(m.button.height > 40, `${scheme}: G: the longest label wraps (${m.button.height}px)`);
+      check(near(m.commit.rect.height, 120), `${scheme}: G: the commit box sits at its floor (${m.commit.rect.height} = 120)`);
+      check(inside(m.summary, m.commit.rect) && inside(m.button, m.commit.rect), `${scheme}: G: Summary and the wrapped button are fully inside the commit box at the floor`);
+      await shot('detached-floor');
       check(errors.length === 0, `${scheme}: no console errors or ≥400 responses${errors.length ? `:\n${errors.join('\n')}` : ''}`);
     });
   } finally {

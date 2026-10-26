@@ -63,17 +63,20 @@ export function CommitBox({ tab, state, summary, instance }: { tab: Tab; state: 
   };
 
   return (
-    // min-h-25 is the floor: the button row (52px) plus the fields' 12px padding and the 32px Summary, so both always show.
-    <section aria-label="Commit message" className="flex min-h-25 shrink flex-col" onKeyDown={onKeyDown}>
-      <div data-commit-fields="" className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 pb-0">
+    // min-h-30 is the floor: the pinned Summary block (12px + 32px), the fields scroller's 8px top padding, and a button row sized for its longest label, which
+    // wraps to two lines in the 320px slot (8px + 48px + 12px), 120px in all, so Summary and the button always show in full.
+    <section aria-label="Commit message" className="flex min-h-30 shrink flex-col" onKeyDown={onKeyDown}>
+      <div className="shrink-0 px-3 pt-3">
         <Input
           ref={summaryRef}
           aria-label="Summary"
           placeholder="Summary"
-          className="h-8 shrink-0"
+          className="h-8"
           value={state.draft.summary}
           onChange={(e) => setDraft(tab, { summary: e.target.value.replace(/[\r\n]/g, ' ') })}
         />
+      </div>
+      <div data-commit-fields="" className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pt-2">
         <textarea
           aria-label="Description"
           placeholder="Description"
