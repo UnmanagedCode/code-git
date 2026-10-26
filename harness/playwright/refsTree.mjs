@@ -46,7 +46,9 @@ try {
       console.log(`screenshot: ${file}`);
     };
     const opacity = (loc) => loc.evaluate((e) => getComputedStyle(e).opacity);
-    const inside = (inner, outer) => inner.x >= outer.x - 1 && inner.y >= outer.y - 1 && inner.x + inner.width <= outer.x + outer.width + 1 && inner.y + inner.height <= outer.y + outer.height + 1;
+    /** `inner` spans `across` horizontally and `within` vertically (a 24px toggle is taller than the 20px name, inside the row's padding). */
+    const inside = (inner, across, within) => inner.x >= across.x - 1 && inner.x + inner.width <= across.x + across.width + 1
+      && inner.y >= within.y - 1 && inner.y + inner.height <= within.y + within.height + 1;
 
     const scenario = async (scheme, vp, full) => {
       const tag = `${scheme} ${vp}`;
@@ -109,7 +111,7 @@ try {
       const overlay = pre.locator('[data-row-overlay]');
       check(await opacity(overlay) === '1', `${tag}: hovering the row shows the overlay`);
       const wrapBox = await wrapper(pre).boundingBox();
-      for (const b of await overlay.getByRole('button').all()) check(inside(await b.boundingBox(), wrapBox), `${tag}: a hover toggle lies over the name wrapper`);
+      for (const b of await overlay.getByRole('button').all()) check(inside(await b.boundingBox(), wrapBox, rowBox), `${tag}: a hover toggle lies over the name wrapper`);
       check((await overlay.evaluate((e) => getComputedStyle(e).backgroundImage)).includes('gradient'), `${tag}: the overlay fades in with a gradient`);
       await shot(`hover-${scheme}-${vp}`);
 
@@ -149,11 +151,11 @@ try {
       await row(o.G).waitFor({ state: 'detached' });
       await (await inFlow(cc1, `Unsolo ${SHORT}`)).click();
       await row(o.G).waitFor();
-      const tagsHead = panel.locator('div.group\\/row', { has: panel.getByRole('button', { name: /^Tags/ }) }).first();
+      const tagsHead = panel.locator('div.group\\/row', { has: page.getByRole('button', { name: /^Tags/ }) }).first();
       await toggle(tagsHead, 'Hide Tags');
       await (await inFlow(tagsHead, 'Show Tags')).click();
       check(await row(o.B).getByText('v1.0').count() === 1, `${tag}: the section's Show undoes its hide`);
-      const originHead = panel.locator('div.group\\/row', { has: panel.getByRole('button', { name: 'origin', exact: true }) }).first();
+      const originHead = panel.locator('div.group\\/row', { has: page.getByRole('button', { name: 'origin', exact: true }) }).first();
       await toggle(originHead, 'Hide remote origin');
       await (await inFlow(originHead, 'Show remote origin')).click();
       const ccFolder = folder(CC);
