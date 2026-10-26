@@ -16,9 +16,11 @@ import { UNDO_SHELL_KEYS } from '@/features/undo/flows';
 import { hidePanel, useShownPanel } from '@/state/shownPanel';
 import { activeTab, dispatchTabs, tabKey, useTabs, type Tab } from '@/state/tabs';
 import { CommandPalette } from './CommandPalette';
+import { PaneHandle } from './PaneHandle';
 import { PanelBoundary } from './PanelBoundary';
 import { panelsFor, type PanelSlot } from './panels';
 import { ShortcutSheet } from './ShortcutSheet';
+import { usePaneLayout } from './usePaneLayout';
 import { useShellKeys } from './useShellKeys';
 
 function Slot({ slot, tab, className }: { slot: PanelSlot; tab: Tab | null; className?: string }) {
@@ -43,6 +45,9 @@ export function Shell() {
   const tabs = useTabs();
   const tab = activeTab(tabs);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // A state ref: the layout hook re-observes when <main> mounts with the first tab.
+  const [main, setMain] = useState<HTMLElement | null>(null);
+  const panes = usePaneLayout(main);
   useTabShortcuts();
   useShellKeys(UNDO_SHELL_KEYS);
   return (
@@ -51,10 +56,12 @@ export function Shell() {
       {tab ? (
         <>
           <RepoHeader key={tabKey(tab)} tab={tab} />
-          <main className="flex min-h-0 flex-1">
-            <Slot slot="left" tab={tab} className="hidden w-64 shrink-0 overflow-y-auto border-r lg:block" />
+          <main ref={setMain} className="flex min-h-0 flex-1">
+            <Slot slot="left" tab={tab} className="hidden w-(--pane-left) shrink-0 overflow-y-auto border-r lg:block" />
+            <PaneHandle side="left" main={main} layout={panes} />
             <Slot slot="center" tab={tab} className="min-w-0 flex-1 overflow-auto" />
-            <Slot slot="right" tab={tab} className="hidden w-80 shrink-0 overflow-y-auto border-l lg:block" />
+            <PaneHandle side="right" main={main} layout={panes} />
+            <Slot slot="right" tab={tab} className="hidden w-(--pane-right) shrink-0 overflow-y-auto border-l lg:block" />
           </main>
         </>
       ) : (

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { resetDiff } from '@/state/diff';
 import { resetFileView } from '@/state/fileView';
 import { resetDetailsHeader } from '@/state/detailsHeader';
+import { resetPaneWidths } from '@/state/paneWidths';
 import { resetShownPanels } from '@/state/shownPanel';
 import { resetDrag } from '@/features/graph/drag';
 import { resetJump } from '@/features/graph/jump';
@@ -58,6 +59,7 @@ afterEach(() => {
   resetDiff();
   resetFileView();
   resetDetailsHeader();
+  resetPaneWidths();
   resetShownPanels();
   // The graph's triggers first: they read the prefs.
   resetGraph();
