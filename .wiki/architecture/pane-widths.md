@@ -10,6 +10,3 @@ User-facing behaviour: `docs/features.md` → Shell. Bounds: `PANE` in `frontend
 - **A pane's live maximum** (`paneMax`) is its ceiling or the room the other rendered pane leaves, whichever is less; it bounds the drag, End and `aria-valuemax`. A key stores only a width it moves to, so a fitted pane's End or arrow leaves the choice alone.
 - **The centre minimum needs no last-resort branch.** The panes show only from `lg` (1024 px), and `<main>` is the viewport's width there (`panes.mjs` asserts it): both floors plus handles plus the centre minimum, and the defaults, fit in 1024. `panes.mjs` and a `fitPanes` property test cover the whole range.
 - **Widths reach the slots as `--pane-left` / `--pane-right` on `<main>`** (`setCssPx`; a drag previews through the same property and stores once on release).
-
-## Gotchas
-

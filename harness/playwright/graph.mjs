@@ -183,7 +183,7 @@ try {
     await page.getByRole('menu').waitFor();
     await page.keyboard.press('Escape');
     await page.getByRole('menu').waitFor({ state: 'detached' });
-    check(true, 'the header cell still opens its menu with Enter and Shift+F10');
+    check(await page.getByRole('menu').count() === 0, 'the header cell opens its menu with Enter and Shift+F10, and Escape closes it');
     await open();
     const order = await orderNow();
     check(JSON.stringify(order) === JSON.stringify(['refs', 'graph', 'message', 'author', 'sha', 'date', 'changes']), `the column order persists (${order.join(', ')})`);
