@@ -4,6 +4,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setActivity } from './activity.mjs';
 import { BROWSER } from './resolve.mjs';
 import { seed } from './seed.mjs';
 
@@ -61,6 +62,7 @@ try {
         expected409 = true;
         await page.goto(`${world.url}/?project=notes`);
         await page.getByText('Not a git repository', { exact: true }).waitFor();
+        await setActivity(page, true);
         await page.getByRole('button', { name: 'Show output' }).first().click();
         await shot('activity-failed');
         // Leave no persisted tab behind that would re-request the not-a-repo summary on the next pass.

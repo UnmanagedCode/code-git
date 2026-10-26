@@ -8,7 +8,7 @@ import { ActivityEntry } from './ActivityEntry';
 /** Every git command code-git ran, newest first; collapsible, filterable to the active tab. */
 export function ActivityPanel({ tab }: { tab: Tab | null }) {
   const { entries, error } = useActivity();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [scope, setScope] = useState<'tab' | 'all'>('all');
   const shown = (scope === 'tab' && tab ? entries.filter((e) => tabKey(e.target) === tabKey(tab)) : entries).slice().reverse();
   const running = entries.filter((e) => e.status === 'running').length;

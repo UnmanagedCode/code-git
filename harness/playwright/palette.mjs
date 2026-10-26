@@ -149,7 +149,7 @@ for (const scheme of ['light', 'dark']) {
       await page.locator(`[data-row-id="${o.side}"]`).click({ button: 'right' });
       await page.getByRole('menu').getByRole('menuitem', { name: 'Cherry-pick commit', exact: true }).click();
       await toast('Cherry-pick stopped on conflicts').waitFor();
-      await page.waitForFunction(() => document.querySelector('button[aria-label="Undo"]')?.hasAttribute('disabled'));
+      await page.waitForFunction(() => /cherry-pick is in progress/.test(document.querySelector('button[aria-label="Undo"]')?.getAttribute('title') ?? ''));
       check(/cherry-pick is in progress/.test(await undoButton.getAttribute('title')), `Undo is disabled with the reason (${await undoButton.getAttribute('title')})`);
       await shot('undo-disabled-desktop');
       await page.setViewportSize(VIEWPORTS.phone);

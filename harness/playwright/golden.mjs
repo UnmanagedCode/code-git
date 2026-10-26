@@ -4,6 +4,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setActivity } from './activity.mjs';
 import { BROWSER } from './resolve.mjs';
 import { seed } from './seed.mjs';
 
@@ -51,6 +52,7 @@ try {
     await page.getByRole('heading', { name: 'app/feat' }).waitFor();
     check(await selectedTab() === 'app/feat', 'Ctrl+2 activates the second tab');
 
+    await setActivity(page, true);
     const activity = page.getByRole('region', { name: 'Activity' });
     const argv = activity.locator('code').filter({ hasText: 'status --porcelain=v2 --branch -z' });
     check(await argv.count() >= 2, 'the activity panel shows the git status command of both tabs');

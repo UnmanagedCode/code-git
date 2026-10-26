@@ -7,6 +7,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setActivity } from './activity.mjs';
 import { BROWSER } from './resolve.mjs';
 import { seedRemotes, XSS_BRANCH } from './remoteSeed.mjs';
 import { recordAlerts, recordReadsDuringWrites } from './settled.mjs';
@@ -111,6 +112,7 @@ try {
     // 3. Fetch all, held: busy button, running toast and Cancel in the activity panel; released → done
     let heldOnce = false;
     world.cc.state.execHook = (body) => (!heldOnce && body.argv.includes('fetch') ? ((heldOnce = true), 'hold') : undefined);
+    await setActivity(page, true);
     await tool('Fetch').click();
     const held = await world.cc.nextHeld();
     world.cc.state.execHook = null;
@@ -137,6 +139,7 @@ try {
     await page.reload();
     await page.waitForFunction(() => document.querySelector('[aria-label="Pull"]')?.getAttribute('title') === 'Pull (rebase)');
     check(await tool('Pull').getAttribute('title') === 'Pull (rebase)', 'the rebase default survives a reload');
+    await setActivity(page, true);
     await pullMenu('Pull (fast-forward only)');
     await toast('Diverged: pick Pull (fast-forward if possible) or Pull (rebase)').waitFor();
     check(git('rev-parse', 'HEAD') === o.mine, 'ff-only changed nothing');

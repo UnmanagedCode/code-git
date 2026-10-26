@@ -175,7 +175,7 @@ Bottom right (sonner, following the theme). A one-click op shows its progress ("
 
 ## Activity panel
 
-Bottom slot, collapsible (the **Activity** toggle). Newest entry first.
+Bottom slot, **collapsed on load**: the **Activity** toggle expands and collapses it. The choice lasts until the page reloads and is not stored. Collapsed, the toggle row still shows the running count. Newest entry first.
 
 | Element | Behaviour |
 |---|---|
