@@ -42,11 +42,13 @@ export interface GraphData {
   /** The project's cc checkouts (main + worktrees) with their HEAD and change counts. */
   checkouts: Checkout[];
   stats: ReadonlyMap<string, Stat | null>;
+  /** The clock when the last refresh succeeded, ms: "now" for the age markers. */
+  loadedAt: number;
 }
 
 export const EMPTY_GRAPH: GraphData = {
   status: 'idle', error: null, refs: null, tips: [], tipsKey: '', generation: 0,
-  commits: [], nextSkip: null, pageLoading: false, pageError: null, checkouts: [], stats: new Map(),
+  commits: [], nextSkip: null, pageLoading: false, pageError: null, checkouts: [], stats: new Map(), loadedAt: 0,
 };
 
 export const graphStore = createStore<ReadonlyMap<string, GraphData>>(new Map());
@@ -60,7 +62,7 @@ const watchers = new Map<string, () => void>();
 /** Tabs whose graph missed a focus refresh while in the background: refreshed when shown again. */
 const stale = new Set<string>();
 let clock: () => number = Date.now;
-/** Test seam: the clock the focus throttle reads. */
+/** Test seam: the graph's clock (the focus throttle and `loadedAt`). */
 export const setGraphClock = (f: () => number): void => { clock = f; };
 
 /**
@@ -164,7 +166,7 @@ async function refreshOnce(tab: Tab, reason: RefreshReason, at: number): Promise
   const tipsKey = tips.join(',');
   const cur = getGraph(tab);
   if (cur.status === 'ready' && tipsKey === cur.tipsKey) {
-    return put(tab, (g) => ({ ...g, refs, checkouts, error: null }), at);
+    return put(tab, (g) => ({ ...g, refs, checkouts, error: null, loadedAt: clock() }), at);
   }
   try {
     const target = Math.max(PAGE, cur.commits.length);
@@ -179,7 +181,7 @@ async function refreshOnce(tab: Tab, reason: RefreshReason, at: number): Promise
     if (!tips.length) skip = null;
     put(tab, (g) => ({
       ...g, status: 'ready', error: null, pageError: null, refs, tips, tipsKey, generation: g.generation + 1,
-      commits, nextSkip: skip, pageLoading: false, checkouts,
+      commits, nextSkip: skip, pageLoading: false, checkouts, loadedAt: clock(),
     }), at);
   } catch (e) {
     if (cancelled(e)) return put(tab, (g) => ({ ...g, status: g.status === 'ready' ? 'ready' : prev.status }), at);

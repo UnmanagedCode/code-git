@@ -85,6 +85,8 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 
 The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree, with line counts; the list that drives the commit's diff while it is open: [File lists](#file-lists)). Full behaviour: [graph](graph.md).
 
+Age dividers: a hairline and a pill (`1 hour ago` … `N years ago`) mark where the rows below turn older ([docs/graph.md → Age markers](graph.md)).
+
 ## Changes panel
 
 Right slot, while the graph has nothing or a single WIP row selected, and while an unstaged or staged diff is open whatever the selection (below `lg`: the **Changes (n)** dialog from the graph's toolbar; also on a wide screen when Ctrl/⌘+Shift+M is pressed while another diff holds the right slot). Stage, unstage, discard and commit. Opened from the graph by clicking a WIP row (or Enter on it, or its menu's **Show changes**) and by **Edit HEAD message…** on the HEAD commit's menu, which ticks Amend with HEAD's message. Ops: [protocol → Staging ops](protocol.md#staging-ops-shared-rules).

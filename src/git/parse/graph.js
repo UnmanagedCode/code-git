@@ -121,9 +121,9 @@ export function parseWorktrees(out) {
   return list;
 }
 
-/** `log --format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%s` → CommitItem[]. */
-export const parseCommits = (out) => parseRecords(out, 6).map(([oid, parents, name, email, time, subject]) => ({
-  oid, parents: splitParents(parents), author: { name, email }, time: Number(time), subject,
+/** `log` with `COMMIT_FORMAT` (src/git/ops/graph.js) → CommitItem[]: `time` is the author's, `committerTime` the committer's. */
+export const parseCommits = (out) => parseRecords(out, 7).map(([oid, parents, name, email, time, ctime, subject]) => ({
+  oid, parents: splitParents(parents), author: { name, email }, time: Number(time), committerTime: Number(ctime), subject,
 }));
 
 /** One oid per line. */

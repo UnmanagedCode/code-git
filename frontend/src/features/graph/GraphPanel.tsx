@@ -24,6 +24,7 @@ import { CONTEXT, type CommitCtx, type CommitsCtx, type RefCtx, type StashCtx, t
 import { CommitDetails } from './details/CommitDetails';
 import { DragGhost, startBranchDrag, toDragRef } from './drag';
 import { ColumnToggles, GraphHeader, shownColumns } from './GraphHeader';
+import { ageMarkers } from './ages';
 import { GraphRowView } from './GraphRowView';
 import { ChangesButton } from '@/features/workdir/ChangesButton';
 import { SubmodulesButton } from '@/features/submodules/SubmodulesPanel';
@@ -79,6 +80,7 @@ function GraphView({ tab }: { tab: Tab }) {
     [prefs.pinned, vis, data.refs],
   );
   const layout = useGraphLayout(inputs, pinnedTips);
+  const ages = useMemo(() => ageMarkers(rows, data.loadedAt), [rows, data.loadedAt]);
   const index = useMemo(() => new Map(rows.map((r, i) => [r.id, i])), [rows]);
   const parents = useMemo(() => new Map(data.commits.map((c) => [c.oid, c.parents])), [data.commits]);
   const sel = useGraphSelection(tab);
@@ -483,6 +485,7 @@ function GraphView({ tab }: { tab: Tab }) {
                     <GraphRowView
                       key={row.id}
                       row={row}
+                      ageMarker={ages.get(row.id)}
                       layout={lay}
                       through={through[k] ?? NO_THROUGH}
                       labels={labels.get(row.kind === 'commit' ? row.id : row.kind === 'stash' ? row.stash.oid : '') ?? NO_LABELS}

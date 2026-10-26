@@ -17,6 +17,8 @@ export const CHIPS_SHOWN = 2;
 
 export interface RowViewProps {
   row: GraphRow;
+  /** The age label of the rows from here down; drawn on this row's top edge. */
+  ageMarker?: string;
   layout: LayoutRow;
   /** Lines passing through this row (passThroughs). */
   through: Through[];
@@ -138,7 +140,7 @@ export const GraphRowView = memo(function GraphRowView(p: RowViewProps) {
       data-dimmed={p.dimmed ? '' : undefined}
       data-focused={p.focused ? '' : undefined}
       className={cn(
-        'flex h-7 cursor-default items-center text-sm select-none',
+        'relative flex h-7 cursor-default items-center text-sm select-none',
         p.selected ? 'bg-accent text-accent-foreground' : p.matched ? 'bg-primary/10' : 'hover:bg-muted/60',
         p.focused && 'outline outline-1 -outline-offset-1 outline-ring',
         p.dimmed && 'opacity-40',
@@ -151,6 +153,11 @@ export const GraphRowView = memo(function GraphRowView(p: RowViewProps) {
           {cell(id)}
         </div>
       ))}
+      {p.ageMarker && (
+        <span aria-hidden data-age-marker={p.ageMarker} className="pointer-events-none absolute inset-x-0 top-0 flex h-px items-center justify-end bg-border">
+          <span className="sticky right-2 mr-2 flex h-3.5 shrink-0 items-center rounded-full border bg-background px-1.5 text-xs leading-none whitespace-nowrap text-muted-foreground">{p.ageMarker}</span>
+        </span>
+      )}
     </div>
   );
 });

@@ -394,3 +394,21 @@ test("sub tab checkouts = [tab], no listWorktrees call; the project's hides do n
   await refreshGraph(SUB, 'prefs');
   expect(paramsOf(fetch, 'POST api/ops/graph.page').at(-1)).toMatchObject({ tips: [oid(5)] });
 });
+
+// Invariant: `loadedAt` is the clock at the last successful refresh (open or unchanged-tips refresh) and loading a page leaves it.
+test('loadedAt follows the clock of each successful refresh and not a page load', async () => {
+  const world = linearWorld(PAGE + 10);
+  stubGraph(world);
+  dispatchTabs({ type: 'open', tab: TAB });
+  let now = 5_000_000;
+  setGraphClock(() => now);
+  await openGraph(TAB);
+  expect(getGraph(TAB).loadedAt).toBe(5_000_000);
+  now = 6_000_000;
+  await act(async () => { await loadNextPage(TAB); });
+  expect(getGraph(TAB).commits.length).toBe(PAGE + 10);
+  expect(getGraph(TAB).loadedAt).toBe(5_000_000);
+  now = 7_000_000;
+  await act(async () => { await refreshGraph(TAB, 'manual'); });
+  expect(getGraph(TAB).loadedAt).toBe(7_000_000);
+});
