@@ -84,7 +84,10 @@ function RowControls({ name, toggles, after }: { name: ReactNode; toggles: Toggl
   useLayoutEffect(() => {
     const key = activated.current;
     activated.current = null;
-    if (key) wrap.current?.parentElement?.querySelector<HTMLElement>(`[data-toggle="${key}"]`)?.focus();
+    if (!key) return;
+    const toggle = wrap.current?.parentElement?.querySelector<HTMLButtonElement>(`[data-toggle="${key}"]`);
+    // A disabled toggle cannot take focus (Show on the checked-out branch flips to a disabled Hide): the name does.
+    (toggle && !toggle.disabled ? toggle : wrap.current?.querySelector<HTMLElement>('button:not([data-toggle])'))?.focus();
   });
   const activate = (t: Toggle) => () => { activated.current = t.key; };
   return (
@@ -188,7 +191,7 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
       <li key={row.prefix} data-folder={row.prefix} className={cn('group/row flex items-center gap-1 py-0.5 pr-2', ROW_BG, indentFor(base + row.depth), !row.refs.some((r) => vis.visible.has(r.name)) && 'opacity-50')}>
         <RowControls
           name={(
-            <button type="button" className="flex min-w-0 flex-1 items-center gap-1 text-left" aria-expanded={row.expanded} disabled={!!f}
+            <button type="button" className="flex min-w-0 flex-1 items-center gap-1 text-left" aria-label={folderName(row)} aria-expanded={row.expanded} disabled={!!f}
               onClick={() => toggleFolder('collapsedFolders', !row.expanded)}>
               {row.expanded ? <ChevronDownIcon className="size-3.5 shrink-0" /> : <ChevronRightIcon className="size-3.5 shrink-0" />}
               {row.expanded ? <FolderOpenIcon className="size-3.5 shrink-0 text-muted-foreground" /> : <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />}

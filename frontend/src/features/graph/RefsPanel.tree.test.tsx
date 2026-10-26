@@ -275,3 +275,22 @@ test('keyboard activation keeps focus on the toggle as it flips, on ref, folder,
   const tags = screen.getByRole('button', { name: /^Tags/ }).parentElement!.parentElement!;
   await flip(tags, 'Solo Tags', 'Unsolo Tags');
 });
+
+// Invariant: a folder's collapse button has a name unique across namespaces, like its toggles.
+test('equal folder paths in Local, Tags and a remote have distinct collapse-button names', async () => {
+  await show([ref('refs/heads/release/x', oid(11)), ref('refs/remotes/origin/release/y', oid(11), { remote: 'origin' })]);
+  const names = [...document.querySelectorAll('[data-folder$="release/"] button[aria-expanded]')].map((b) => b.getAttribute('aria-label'));
+  expect(names.sort()).toEqual(['folder release', 'remote origin folder release', 'tag folder release']);
+  fireEvent.click(screen.getByRole('button', { name: 'tag folder release' }));
+  expect(getPrefs('app').collapsedFolders).toEqual(['refs/tags/release/']);
+});
+
+// Invariant: when the flipped toggle is disabled (Show on the checked-out branch becomes a disabled Hide), keyboard focus lands on the row's name, not <body>.
+test('keyboard-activating Show on a hidden checked-out branch moves focus to its name button', async () => {
+  updatePrefs('app', (p) => ({ ...p, hidden: ['refs/heads/main'] }));
+  await show();
+  screen.getByRole('button', { name: 'Show main' }).focus();
+  await userEvent.keyboard('{Enter}');
+  expect((screen.getByRole('button', { name: 'Hide main' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((document.activeElement as HTMLElement).getAttribute('title')).toBe('refs/heads/main');
+});

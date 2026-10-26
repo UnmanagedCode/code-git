@@ -87,3 +87,13 @@ test('folderName qualifies tag and remote folders so equal paths never share a n
   expect(new Set(names).size).toBe(names.length);
   expect(names[0]).toBe('folder release');
 });
+
+// Invariant: a folder's `refs` lists each member exactly once: tree members and pinned members, never twice.
+test('a folder\'s refs hold each member once, pinned members included, at every nesting level', () => {
+  const rows = refTreeRows([local('team/a'), local('team/b'), local('team/sub/c'), local('team/sub/d')], { pinned: ['refs/heads/team/b', 'refs/heads/team/sub/c'], collapsed: () => false });
+  const byPrefix = Object.fromEntries(rows.flatMap((r) => (r.kind === 'folder' ? [[r.prefix, r.refs.map((x) => x.name).sort()]] : [])));
+  expect(byPrefix).toEqual({
+    'refs/heads/team/': ['refs/heads/team/a', 'refs/heads/team/b', 'refs/heads/team/sub/c', 'refs/heads/team/sub/d'],
+    'refs/heads/team/sub/': ['refs/heads/team/sub/c', 'refs/heads/team/sub/d'],
+  });
+});

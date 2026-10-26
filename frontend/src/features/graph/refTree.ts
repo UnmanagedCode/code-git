@@ -23,6 +23,7 @@ export function refTreeRows(refs: readonly Ref[], opts: { pinned: readonly strin
     if (r) rows.push({ kind: 'ref', ref: r, name: r.name.slice(refBase(r).length), depth: 0 });
   }
   const pinned = new Set(opts.pinned);
+  const pinnedRefs = refs.filter((r) => pinned.has(r.name));
   const tree = buildFileTree(refs.filter((r) => !pinned.has(r.name)).map((ref): Leaf => ({ path: ref.name.slice(refBase(ref).length), ref })));
   const walk = (nodes: TreeNode<Leaf>[], depth: number) => {
     for (const n of nodes) {
@@ -30,10 +31,11 @@ export function refTreeRows(refs: readonly Ref[], opts: { pinned: readonly strin
         rows.push({ kind: 'ref', ref: n.file.ref, name: n.name, depth });
         continue;
       }
-      const first = leaves(n.children)[0];
+      const beneath = leaves(n.children);
+      const first = beneath[0];
       const prefix = `${refBase(first)}${n.path}/`;
       // Every ref beneath, pinned ones included: they are not rendered here but still belong to the folder.
-      const under = refs.filter((r) => inFolder(r, prefix));
+      const under = [...beneath, ...pinnedRefs.filter((r) => inFolder(r, prefix))];
       const expanded = !opts.collapsed(prefix);
       rows.push({ kind: 'folder', prefix, name: n.name, label: prefix.slice(SECTION_BASE[sectionOf(first)].length, -1), depth, expanded, refs: under });
       if (expanded) walk(n.children, depth + 1);
