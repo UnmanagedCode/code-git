@@ -12,6 +12,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hermeticEnv } from '../../tests/_git.js';
+import { setActivity } from './activity.mjs';
 import { BROWSER } from './resolve.mjs';
 import { seed } from './seed.mjs';
 
@@ -95,11 +96,6 @@ for (const scheme of ['light', 'dark']) {
       const staged = slot.getByRole('region', { name: 'Staged Files', exact: true });
       await unstaged.getByRole('option').first().waitFor();
       await staged.getByRole('option').first().waitFor();
-      const activity = page.getByRole('region', { name: 'Activity', exact: true }).getByRole('button', { name: 'Activity', exact: true });
-      const setActivity = async (open) => {
-        if ((await activity.getAttribute('aria-expanded')) !== String(open)) await activity.click();
-        await page.waitForFunction(([sel, want]) => document.querySelector(sel)?.getAttribute('aria-expanded') === String(want), ['[aria-label=Activity] button[aria-expanded]', open]);
-      };
       // The wheel over a list's middle scrolls that list only.
       const wheelOver = async (region, deltaY) => {
         const b = await region.locator('[data-section-list]').boundingBox();
@@ -114,7 +110,7 @@ for (const scheme of ['light', 'dark']) {
       }, file);
 
       // A. Desktop, both lists long, Activity collapsed.
-      await setActivity(false);
+      await setActivity(page, false);
       let m = await measure(page, SLOT);
       check(m.pane.scrollHeight <= m.pane.clientHeight, `${scheme}: A: the pane does not scroll (${m.pane.scrollHeight} ≤ ${m.pane.clientHeight})`);
       check(m.unstaged.scrollHeight > m.unstaged.clientHeight && m.staged.scrollHeight > m.staged.clientHeight, `${scheme}: A: both lists overflow and scroll on their own`);
@@ -131,7 +127,7 @@ for (const scheme of ['light', 'dark']) {
       await shot('long-desktop');
 
       // B. Activity open: the pane is about 354 px tall.
-      await setActivity(true);
+      await setActivity(page, true);
       await page.waitForFunction(([sel, before]) => document.querySelector(sel).clientHeight < before, [SLOT, m.pane.clientHeight]);
       // A scrolled list cuts a row at its top: count the rows from the top.
       await page.evaluate(() => document.querySelectorAll('[data-slot-name=right] [data-section-list]').forEach((el) => { el.scrollTop = 0; }));
@@ -155,7 +151,7 @@ for (const scheme of ['light', 'dark']) {
         check(inside(m.summary, m.commit.rect) && inside(m.summary, m.pane.rect), `${scheme}: B: Summary is still fully visible after the fields scrolled`);
       }
       await shot('long-activity');
-      await setActivity(false);
+      await setActivity(page, false);
 
       // C. Phone: the Changes (n) dialog.
       await page.setViewportSize(PHONE);
@@ -196,7 +192,7 @@ for (const scheme of ['light', 'dark']) {
       await page.setViewportSize(DESKTOP);
       await page.goto(`${world.url}/?project=stage`);
       await unstaged.getByRole('option').first().waitFor();
-      await setActivity(false);
+      await setActivity(page, false);
 
       // D. One section empty: the long one takes the rest.
       const oneEmpty = async (emptyKey, what) => {
@@ -220,7 +216,7 @@ for (const scheme of ['light', 'dark']) {
       await page.goto(`${world.url}/?project=detached`);
       await slot.getByRole('region', { name: 'Commit message', exact: true }).waitFor();
       await unstaged.getByRole('option').first().waitFor();
-      await setActivity(false);
+      await setActivity(page, false);
       m = await measure(page, SLOT);
       check(m.unstaged.scrollHeight <= m.unstaged.clientHeight && m.staged.scrollHeight <= m.staged.clientHeight, `${scheme}: E: neither list overflows`);
       check(near(m.commit.rect.bottom, m.pane.rect.bottom), `${scheme}: E: the commit box is pinned to the pane's bottom (${m.commit.rect.bottom} / ${m.pane.rect.bottom})`);
@@ -233,7 +229,7 @@ for (const scheme of ['light', 'dark']) {
       await unstaged.getByRole('option').first().waitFor();
       await staged.getByRole('option').first().waitFor();
       await page.setViewportSize({ width: 1280, height: 560 });
-      await setActivity(true);
+      await setActivity(page, true);
       m = await measure(page, SLOT);
       console.log(`F: pane height ${m.pane.clientHeight}`);
       check(m.pane.scrollHeight > m.pane.clientHeight, `${scheme}: F: the pane scrolls as a last resort (${m.pane.scrollHeight} > ${m.pane.clientHeight})`);
@@ -248,6 +244,7 @@ for (const scheme of ['light', 'dark']) {
       for (let i = 1; i <= 12; i++) writeFileSync(path.join(world.detached.dir, `d-${num(i)}.txt`), `d ${i}\n`);
       dgit('add', 'd-*.txt');
       await page.goto(`${world.url}/?project=detached`);
+      await setActivity(page, true);
       await slot.getByRole('region', { name: 'Commit message', exact: true }).waitFor();
       await slot.getByRole('button', { name: 'Commit changes to 12 files (detached HEAD)', exact: true }).waitFor();
       m = await measure(page, SLOT);

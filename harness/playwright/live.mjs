@@ -11,6 +11,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setActivity } from './activity.mjs';
 import { BROWSER } from './resolve.mjs';
 import { OPS } from '../../src/git/ops/index.js';
 import { NETWORK_LIMITS } from '../../src/git/remote/limits.js';
@@ -244,6 +245,7 @@ try {
       await lfsDialog.waitFor({ state: 'detached' });
     }
 
+    await setActivity(page, true);
     const activity = page.getByRole('region', { name: 'Activity' });
     for (const c of opened) {
       const row = activity.getByRole('listitem').filter({ has: page.getByText(label(c), { exact: true }) })

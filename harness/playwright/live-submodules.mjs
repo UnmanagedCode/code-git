@@ -11,6 +11,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { OPS } from '../../src/git/ops/index.js';
+import { setActivity } from './activity.mjs';
 import { BROWSER } from './resolve.mjs';
 
 const cc = process.env.CONDUCTOR_URL;
@@ -89,6 +90,7 @@ try {
     const listed = lists.at(-1)?.submodules ?? [];
     check(lists.length > 0, `${label}: submodule.list answered (${listed.length} submodule(s))`);
     if (!listed.length) check(await panel.getByText('No submodules', { exact: true }).isVisible(), `${label}: an empty list reads "No submodules"`);
+    await setActivity(page, true);
     const gm = activity.getByRole('listitem').filter({ hasText: 'config -f .gitmodules' }).filter({ hasText: /exit [01](?!\d)/ });
     await present(gm, 'the config -f .gitmodules entry');
     check(true, `${label}: the activity panel shows config -f .gitmodules with an allowed exit`);
@@ -100,6 +102,7 @@ try {
     const alert = header.getByRole('alert');
     await alert.waitFor({ timeout: 60_000 });
     check(/no-such-sub is not a cloned submodule/.test(await alert.innerText()), `${label} › no-such-sub: the header shows SUBMODULE_NOT_POPULATED`);
+    await setActivity(page, true);
     const probe = activity.getByRole('listitem').filter({ has: page.getByText(`${label} › no-such-sub`, { exact: true }) })
       .filter({ hasText: '-C no-such-sub --git-dir=.git rev-parse --show-toplevel' }).filter({ hasText: 'exit 128' });
     await present(probe, 'the no-such-sub preflight entry');

@@ -10,6 +10,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setActivity } from './activity.mjs';
 import { BROWSER } from './resolve.mjs';
 import { seedFlow } from './flowSeed.mjs';
 
@@ -170,6 +171,7 @@ for (const scheme of ['light', 'dark']) {
       await hooked.getByRole('button', { name: 'Cancel', exact: true }).click();
       await dialog.waitFor({ state: 'detached' });
       // The merge exits 1, which git's merge contract allows (integrate.merge reads it): its entry is `ok`, its output kept.
+      await setActivity(page, true);
       const entry = page.getByRole('region', { name: 'Activity', exact: true }).getByRole('listitem', { name: 'flow.finish ok', exact: true })
         .filter({ hasText: "--no-ff --no-edit -m Merge branch 'feature/hooked'" }).first();
       await entry.getByRole('button', { name: 'Show output', exact: true }).click();

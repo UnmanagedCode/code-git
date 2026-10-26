@@ -134,6 +134,8 @@ for (const scheme of ['light', 'dark']) {
       await confirm.getByRole('button', { name: 'Discard lines', exact: true }).click();
       await confirm.waitFor({ state: 'detached' });
       await page.waitForFunction(() => ![...document.querySelectorAll('[data-slot-name=right] [role=region][aria-label="Unstaged Files"] [role=option]')].some((e) => e.getAttribute('data-path') === 'src/app.js'));
+      // The list can drop the row before the discard's write reaches the disk: poll the file, not the list.
+      for (let i = 0; i < 50 && readFileSync(path.join(stage.dir, 'src/app.js'), 'utf8') !== lines(afterLines); i++) await new Promise((r) => setTimeout(r, 100));
       check(readFileSync(path.join(stage.dir, 'src/app.js'), 'utf8') === lines(afterLines), `${scheme}: the worktree lost exactly the discarded line`);
 
       // 6. Discard all names the untracked file and the count; Cancel leaves everything.
