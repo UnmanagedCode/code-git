@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { DEFAULT_PREFS, type GraphPrefs } from '@/state/graphPrefs';
 import { refsResult, ref, oid, worktree } from '@/test/graphData';
-import { resolveVisibility, TIPS_MAX } from './visibility';
+import { inFolder, refBase, resolveVisibility, TIPS_MAX } from './visibility';
 
 const M = oid(1);
 const F = oid(2);
@@ -76,4 +76,65 @@ test('tips are clamped to TIPS_MAX, keeping HEAD, detached worktree HEADs and br
   for (const keep of [M, F, O, W]) expect(v.tips).toContain(keep);
   expect(v.tips).toEqual([...v.tips].sort());
   expect(resolveVisibility(refs, DEFAULT_PREFS).tipsDropped).toBe(0);
+});
+
+const T1 = oid(11);
+const T2 = oid(12);
+const T3 = oid(13);
+const folderRefs = refsResult({
+  head: { oid: M, branch: 'refs/heads/main', detached: false, unborn: false },
+  refs: [
+    ref('refs/heads/main', M, { isHead: true }), ref('refs/heads/team/a', T1), ref('refs/heads/team/sub/b', T2), ref('refs/heads/team-x', T3),
+    ref('refs/remotes/origin/team/c', O), ref('refs/tags/team/t', T),
+  ],
+  worktrees: [],
+});
+const shown = (p: Partial<GraphPrefs>) => [...resolveVisibility(folderRefs, prefs(p)).visible].sort();
+
+// Invariant: a folder is bound to its own namespace and to a whole path segment.
+test('inFolder: whole-segment prefix inside the ref\'s own namespace only; the bare base matches nothing', () => {
+  const local = ref('refs/heads/code-conductor/a', M);
+  expect(inFolder(local, 'refs/heads/code-conductor/')).toBe(true);
+  expect(inFolder(ref('refs/heads/code-conductorx', M), 'refs/heads/code-conductor/')).toBe(false);
+  expect(inFolder(local, 'refs/tags/code-conductor/')).toBe(false);
+  expect(inFolder(local, 'refs/remotes/origin/code-conductor/')).toBe(false);
+  expect(inFolder(local, 'refs/heads/')).toBe(false);
+  expect(inFolder(ref('refs/remotes/origin/a', M, { remote: 'origin' }), 'refs/remotes/')).toBe(false);
+  expect(inFolder(ref('refs/tags/v/1', M), 'refs/tags/')).toBe(false);
+});
+
+test('inFolder: remote `origin` + folder `feature/` is not a remote named `origin/feature`', () => {
+  const inOrigin = ref('refs/remotes/origin/feature/b', M, { remote: 'origin' });
+  const inSlashRemote = ref('refs/remotes/origin/feature/b', M, { remote: 'origin/feature' });
+  expect(refBase(inOrigin)).toBe('refs/remotes/origin/');
+  expect(refBase(inSlashRemote)).toBe('refs/remotes/origin/feature/');
+  expect(inFolder(inOrigin, 'refs/remotes/origin/feature/')).toBe(true);
+  expect(inFolder(inSlashRemote, 'refs/remotes/origin/feature/')).toBe(false);
+});
+
+// Invariant: hiding a folder hides everything under it (nested too) and nothing outside it, later refs included.
+test('a hidden folder hides its refs at any depth, in its namespace only; the checked-out branch stays', () => {
+  expect(shown({ hiddenFolders: ['refs/heads/team/'] })).toEqual(['refs/heads/main', 'refs/heads/team-x', 'refs/remotes/origin/team/c', 'refs/tags/team/t']);
+  expect(shown({ hiddenFolders: ['refs/heads/team/sub/'] })).toEqual(['refs/heads/main', 'refs/heads/team-x', 'refs/heads/team/a', 'refs/remotes/origin/team/c', 'refs/tags/team/t']);
+  expect(shown({ hiddenFolders: ['refs/heads/'] })).toHaveLength(6);
+  const head = refsResult({ head: { oid: M, branch: 'refs/heads/team/a', detached: false, unborn: false }, refs: [ref('refs/heads/team/a', M, { isHead: true }), ref('refs/heads/team/b', T1)], worktrees: [] });
+  expect([...resolveVisibility(head, prefs({ hiddenFolders: ['refs/heads/team/'] })).visible]).toEqual(['refs/heads/team/a']);
+});
+
+test('a soloed folder shows exactly its refs; an empty one has no effect; solo folder + solo remote is the union', () => {
+  expect(shown({ soloedFolders: ['refs/heads/team/'] })).toEqual(['refs/heads/team/a', 'refs/heads/team/sub/b']);
+  expect(resolveVisibility(folderRefs, prefs({ soloedFolders: ['refs/heads/none/'] })).soloActive).toBe(false);
+  expect(shown({ soloedFolders: ['refs/heads/none/'] })).toHaveLength(6);
+  expect(shown({ soloedFolders: ['refs/heads/team/'], soloedRemotes: ['origin'] })).toEqual(['refs/heads/team/a', 'refs/heads/team/sub/b', 'refs/remotes/origin/team/c']);
+  const v = resolveVisibility(folderRefs, prefs({ soloedFolders: ['refs/heads/team/'] }));
+  expect(v.soloActive).toBe(true);
+  expect(v.tips).toEqual([T1, T2].sort());
+});
+
+// Invariant: any solo match ignores every hide, whichever selector hides.
+test('solo ignores every hide: a soloed ref inside a hidden folder, a hidden ref or sub-folder inside a soloed folder', () => {
+  expect(shown({ hiddenFolders: ['refs/heads/team/'], soloed: ['refs/heads/team/a'] })).toEqual(['refs/heads/team/a']);
+  expect(shown({ soloedFolders: ['refs/heads/team/'], hidden: ['refs/heads/team/a'] })).toEqual(['refs/heads/team/a', 'refs/heads/team/sub/b']);
+  expect(shown({ soloedFolders: ['refs/heads/team/'], hiddenFolders: ['refs/heads/team/sub/'] })).toEqual(['refs/heads/team/a', 'refs/heads/team/sub/b']);
+  expect(shown({ soloedFolders: ['refs/heads/team/'], hiddenRemotes: ['origin'], hiddenSections: ['local'] })).toEqual(['refs/heads/team/a', 'refs/heads/team/sub/b']);
 });

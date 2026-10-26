@@ -255,6 +255,29 @@ test('triggers: window focus refreshes the active tab at most once per throttle 
   expect(fetch.count('POST api/ops/graph.refs')).toBe(3);
 });
 
+// Invariant: every visibility pref is in watchGraph's visKey (folder hide/solo move the snapshot); collapsing a folder is panel-only.
+test('triggers: a folder hide or solo refreshes the snapshot with the moved tips; a folder collapse issues no graph request', async () => {
+  const world = linearWorld(5);
+  world.refs.refs.push(ref('refs/heads/team/x', oid(2)), ref('refs/heads/team/y', oid(3)));
+  const fetch = stubGraph(world);
+  dispatchTabs({ type: 'open', tab: TAB });
+  await openGraph(TAB);
+  const pages = () => fetch.count('POST api/ops/graph.page');
+  const before = pages();
+  updatePrefs('app', (p) => ({ ...p, hiddenFolders: ['refs/heads/team/'] }));
+  await flush();
+  expect(pages()).toBe(before + 1);
+  expect(paramsOf(fetch, 'POST api/ops/graph.page').at(-1)).toEqual({ tips: [oid(5)], skip: 0, limit: PAGE });
+  updatePrefs('app', (p) => ({ ...p, soloedFolders: ['refs/heads/team/'] }));
+  await flush();
+  expect(pages()).toBe(before + 2);
+  expect(paramsOf(fetch, 'POST api/ops/graph.page').at(-1)).toEqual({ tips: [oid(2), oid(3)], skip: 0, limit: PAGE });
+  const reqs = fetch.calls.length;
+  updatePrefs('app', (p) => ({ ...p, collapsedFolders: ['refs/heads/team/'] }));
+  await flush();
+  expect(fetch.calls.length).toBe(reqs);
+});
+
 test('triggers: a background tab misses no focus refresh: it is marked and refreshed when shown again', async () => {
   const OTHER = { project: 'app', worktree: 'wt' };
   const world = linearWorld(3);

@@ -49,3 +49,28 @@ test("sub prefs key: a submodule's prefs persist under code-git:graph:<project>\
   expect(getPrefs(prefsKey({ project: 'a', worktree: null })).hidden).toEqual([]);
   expect(getPrefs(prefsKey({ ...SUB, worktree: 'wt' })).hidden).toEqual(['refs/heads/s']);
 });
+
+// Invariant: a record stored before folders existed loads with empty folder lists and every other field intact (no version bump).
+test('a record stored without folder keys loads with empty folder lists and everything else intact', () => {
+  localStorage.setItem('code-git:graph:old', JSON.stringify({
+    hidden: ['refs/heads/a'], hiddenRemotes: ['up'], hiddenSections: ['tags'], soloed: ['refs/heads/b'], soloedRemotes: [], soloedSections: ['local'],
+    pinned: ['refs/heads/c'], columns: { order: [...COLUMN_IDS], visible: ['sha'], widths: {} },
+  }));
+  const p = loadPrefs('old');
+  expect([p.hiddenFolders, p.soloedFolders, p.collapsedFolders]).toEqual([[], [], []]);
+  expect(p).toMatchObject({ hidden: ['refs/heads/a'], hiddenRemotes: ['up'], hiddenSections: ['tags'], soloed: ['refs/heads/b'], soloedSections: ['local'], pinned: ['refs/heads/c'] });
+  expect(p.columns.visible).toEqual(['sha']);
+});
+
+// Invariant: a folder entry is a full refname prefix inside a known namespace, ending in `/`, below the bare namespace.
+test('folder entries that are not a namespaced prefix ending in a slash are dropped; duplicates collapse', () => {
+  const good = 'refs/heads/team/';
+  const bad = ['refs/heads/team', 'refs/other/x/', 'refs/heads/', 'refs/remotes/', 'team/', 3, null, ''];
+  const p = validatePrefs({
+    hiddenFolders: [good, ...bad, good, 'refs/remotes/origin/feature/', 'refs/tags/release/'],
+    soloedFolders: [...bad, good], collapsedFolders: 'refs/heads/team/',
+  });
+  expect(p.hiddenFolders).toEqual([good, 'refs/remotes/origin/feature/', 'refs/tags/release/']);
+  expect(p.soloedFolders).toEqual([good]);
+  expect(p.collapsedFolders).toEqual([]);
+});

@@ -5,6 +5,7 @@ import { getRefSelection } from '@/state/refSelection';
 import { loadSummary } from '@/state/useRepoSummary';
 import { trackingStore } from '@/state/branchTracking';
 import { oid, ref } from '@/test/graphData';
+import type { Ref } from './types';
 import { linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
 import { jumpStore } from './jump';
 import { RefsPanel } from './RefsPanel';
@@ -12,16 +13,16 @@ import { openGraph } from '@/state/graph';
 
 const TAB = { project: 'app', worktree: null };
 
-function world() {
+function world(extra: Ref[] = []) {
   const w = linearWorld(10);
   w.refs.refs.push(
     ref('refs/heads/a', oid(9)), ref('refs/heads/b', oid(8)), ref('refs/heads/c', oid(7)),
-    ref('refs/remotes/origin/a', oid(9)), ref('refs/tags/v1', oid(6)),
+    ref('refs/remotes/origin/a', oid(9)), ref('refs/tags/v1', oid(6)), ...extra,
   );
   return w;
 }
-async function show() {
-  const fetch = stubGraph(world(), {
+async function show(extra: Ref[] = []) {
+  const fetch = stubGraph(world(extra), {
     'POST api/ops/branch.checkout': { ok: true, result: { branch: 'refs/heads/b', created: false, localExisted: true, fastForwarded: false, ffBlocked: null, undo: {} } },
     'POST api/ops/branch.tracking': { ok: true, result: { remotes: ['origin'], branches: { 'refs/heads/a': { upstream: 'refs/remotes/origin/a', ahead: 2, behind: 1, gone: false } } } },
   });
@@ -33,6 +34,8 @@ async function show() {
 }
 const row = (name: string) => document.querySelector(`[data-ref="${name}"]`) as HTMLElement;
 const nameButton = (name: string) => within(row(name)).getAllByRole('button').find((b) => b.title === name)!;
+const DIR = [ref('refs/heads/dir/x', oid(5)), ref('refs/heads/dir/y', oid(4))];
+const UP = [ref('refs/remotes/up/m/x', oid(5), { remote: 'up' }), ref('refs/remotes/up/m/y', oid(4), { remote: 'up' }), ref('refs/remotes/up/z', oid(3), { remote: 'up' })];
 const selected = () => [...document.querySelectorAll('[data-selected]')].map((e) => e.getAttribute('data-ref'));
 
 test('a plain click still jumps and clears the selection; Ctrl/⌘-click toggles a row without jumping', async () => {
@@ -53,7 +56,7 @@ test('Shift-click selects the displayed branch range across local and remote row
   await show();
   fireEvent.click(nameButton('refs/heads/b'), { ctrlKey: true });
   fireEvent.click(nameButton('refs/remotes/origin/a'), { shiftKey: true });
-  expect(selected()).toEqual(['refs/heads/b', 'refs/heads/c', 'refs/remotes/origin/a']);
+  expect(selected()).toEqual(['refs/heads/b', 'refs/heads/c', 'refs/heads/main', 'refs/remotes/origin/a']);
   fireEvent.click(nameButton('refs/tags/v1'), { ctrlKey: true });
   expect(selected()).toEqual([]);
   expect(jumpStore.get()?.oid).toBe(oid(6));
@@ -81,4 +84,41 @@ test('double-click on a branch row runs Checkout; local rows show their ahead/be
   await waitFor(() => expect(paramsOf(fetch, 'POST api/ops/branch.checkout')).toEqual([{ ref: 'refs/heads/b' }]));
   await waitFor(() => expect(within(row('refs/heads/a')).getByLabelText('2 ahead, 1 behind').textContent).toBe('↑2 ↓1'));
   expect(trackingStore.get().get('app')?.data?.remotes).toEqual(['origin']);
+});
+
+// Invariant: a leaf inside a folder takes part in Ctrl/⌘ selection and in the Shift range, in rendered (folders-first) order.
+test('Ctrl/⌘-click toggles a leaf inside a folder; a Shift range spans the folder\'s rows', async () => {
+  await show(DIR);
+  fireEvent.click(nameButton('refs/heads/dir/y'), { ctrlKey: true });
+  expect(selected()).toEqual(['refs/heads/dir/y']);
+  fireEvent.click(nameButton('refs/heads/b'), { shiftKey: true });
+  expect(selected()).toEqual(['refs/heads/dir/y', 'refs/heads/a', 'refs/heads/b']);
+  fireEvent.click(nameButton('refs/heads/dir/y'), { ctrlKey: true });
+  expect(selected()).toEqual(['refs/heads/a', 'refs/heads/b']);
+});
+
+// Invariant: the Shift range follows the rows as rendered: a collapsed folder's refs are not in it.
+test('with a folder collapsed, a Shift range across it skips its refs', async () => {
+  await show(UP);
+  fireEvent.click(nameButton('refs/remotes/origin/a'), { ctrlKey: true });
+  fireEvent.click(nameButton('refs/remotes/up/z'), { shiftKey: true });
+  expect(selected()).toEqual(['refs/remotes/origin/a', 'refs/remotes/up/m/x', 'refs/remotes/up/m/y', 'refs/remotes/up/z']);
+  fireEvent.click(nameButton('refs/remotes/origin/a'));
+  expect(selected()).toEqual([]);
+  fireEvent.click(document.querySelector('[data-folder="refs/remotes/up/m/"] button[aria-expanded]')!);
+  expect(row('refs/remotes/up/m/x')).toBeNull();
+  fireEvent.click(nameButton('refs/remotes/origin/a'), { ctrlKey: true });
+  fireEvent.click(nameButton('refs/remotes/up/z'), { shiftKey: true });
+  expect(selected()).toEqual(['refs/remotes/origin/a', 'refs/remotes/up/z']);
+});
+
+// Invariant: an anchor that left `order` (collapsed away) starts a new selection at the clicked row, and selection is not pruned.
+test('an anchor inside a collapsed folder starts a new selection at the clicked row', async () => {
+  await show(DIR);
+  fireEvent.click(nameButton('refs/heads/dir/x'), { ctrlKey: true });
+  fireEvent.click(document.querySelector('[data-folder="refs/heads/dir/"] button[aria-expanded]')!);
+  expect(selected()).toEqual([]);
+  expect(getRefSelection(TAB).names).toEqual(['refs/heads/dir/x']);
+  fireEvent.click(nameButton('refs/heads/b'), { shiftKey: true });
+  expect(selected()).toEqual(['refs/heads/b']);
 });

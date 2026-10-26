@@ -32,6 +32,11 @@ try {
     // exact: the refs panel's tracking badge reads "2 ahead, 1 behind".
     await page.getByLabel('2 ahead', { exact: true }).waitFor();
     check(await page.getByLabel('1 behind', { exact: true }).isVisible(), 'app header shows ahead 2 / behind 1');
+    // The badge is in flow: visible without hovering, right of the branch name.
+    const tracked = page.locator('[data-ref]:has([data-tracking])').first();
+    const badgeBox = await tracked.locator('[data-tracking]').boundingBox();
+    const nameBox = await tracked.locator('button[title]').boundingBox();
+    check(badgeBox !== null && nameBox !== null && badgeBox.x >= nameBox.x + nameBox.width - 1, 'the refs panel\'s tracking badge is visible without hover, right of the name');
     // Scoped to the header: the graph's WIP row shows the same counts.
     const changes = page.getByRole('list', { name: 'Changes' });
     for (const t of ['1 staged', '1 unstaged', '1 untracked', '0 conflicted']) check(await changes.getByText(t, { exact: true }).isVisible(), `app header shows ${t}`);

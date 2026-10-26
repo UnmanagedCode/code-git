@@ -18,16 +18,27 @@ export interface GraphPrefs {
   soloedSections: Exclude<Section, 'stashes'>[];
   /** Full refnames, in pin order. */
   pinned: string[];
+  /** Folder prefixes (`refs/heads/code-conductor/`) hidden: a ref created later under one inherits it. */
+  hiddenFolders: string[];
+  /** Folder prefixes soloed: a ref created later under one inherits it. */
+  soloedFolders: string[];
+  /** Folder prefixes the refs panel shows collapsed; the default is expanded. */
+  collapsedFolders: string[];
   columns: { order: ColumnId[]; visible: OptionalColumnId[]; widths: Partial<Record<ColumnId, number>> };
 }
 
 export const DEFAULT_PREFS: GraphPrefs = {
   hidden: [], hiddenRemotes: [], hiddenSections: [], soloed: [], soloedRemotes: [], soloedSections: [], pinned: [],
+  hiddenFolders: [], soloedFolders: [], collapsedFolders: [],
   columns: { order: [...COLUMN_IDS], visible: [], widths: {} },
 };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string' && x !== ''))] : []);
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T[] => strings(v).filter((x): x is T => (allowed as readonly string[]).includes(x));
+
+/** A folder prefix: a full refname prefix inside a refs namespace, ending in `/`. */
+export const isFolderPrefix = (s: string): boolean => /^refs\/(heads|remotes|tags)\/.+\/$/.test(s);
+const folderPrefixes = (v: unknown): string[] => strings(v).filter(isFolderPrefix);
 
 /** A stored record made safe: unknown or ill-typed entries dropped, column order repaired, widths clamped. */
 export function validatePrefs(raw: unknown): GraphPrefs {
@@ -44,6 +55,7 @@ export function validatePrefs(raw: unknown): GraphPrefs {
     hidden: strings(r.hidden), hiddenRemotes: strings(r.hiddenRemotes), hiddenSections: oneOf(r.hiddenSections, SECTIONS),
     soloed: strings(r.soloed), soloedRemotes: strings(r.soloedRemotes), soloedSections: oneOf(r.soloedSections, ['local', 'remote', 'tags'] as const),
     pinned: strings(r.pinned),
+    hiddenFolders: folderPrefixes(r.hiddenFolders), soloedFolders: folderPrefixes(r.soloedFolders), collapsedFolders: folderPrefixes(r.collapsedFolders),
     columns: { order, visible: oneOf(cols.visible, COLUMN_IDS.filter((id) => COLUMNS[id].optional) as OptionalColumnId[]), widths },
   };
 }
