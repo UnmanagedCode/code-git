@@ -19,7 +19,8 @@ export const XSS_SUBJECT = 'tweak <img src=x onerror=alert(1)>';
 export const AUTHORS = { ann: ['Ann Author', 'ann@example.com'], bob: ['Bob Builder', 'bob@example.com'], cy: ['Cy Coder', 'cy@example.com'] };
 export const BIG_LINES = 1500;
 
-export async function seedHistory() {
+/** `plugins`: the rows the fake cc's `GET /api/plugins` answers (absent: a 404, as an older cc). */
+export async function seedHistory({ plugins } = {}) {
   const cleanups = [];
   const t = { after: (fn) => cleanups.push(fn) };
   const cleanup = async () => { for (const fn of cleanups.reverse()) await fn(); };
@@ -53,7 +54,7 @@ export async function seedHistory() {
     repo.git('reset', '-q', '--hard', 'HEAD~1');
     repo.git('reset', '-q', '--hard', o.local);
 
-    const cc = await fakeCc({ home: repo.home, projects: { hist: { dir: repo.dir, workspace: 'History', isGitRepo: true } } });
+    const cc = await fakeCc({ home: repo.home, plugins, projects: { hist: { dir: repo.dir, workspace: 'History', isGitRepo: true } } });
     cleanups.push(() => cc.close());
     srv = await bootServer({ cwd: projectRoot, entry: 'server.js', silent: true, env: { CONDUCTOR_URL: cc.url } });
     cleanups.push(() => srv.close());

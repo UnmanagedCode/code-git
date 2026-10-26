@@ -16,3 +16,11 @@ export const projects = () => getArray('/api/projects');
 
 /** cc's `GET /api/projects/:name/worktrees`. */
 export const worktrees = (project) => getArray(`/api/projects/${encodeURIComponent(project)}/worktrees`);
+
+/** cc's `GET /api/plugins`: its plugin rows (`id`, `enabled`, `hasFrontend`, …). A cc without the route is unavailable, not "no plugins". */
+export async function plugins() {
+  const { res, text } = await ccFetch('/api/plugins', {}, { timeoutMs: LIMITS.ccReadTimeoutMs, retry: true });
+  const body = parseJson(text);
+  if (res.status === 200 && Array.isArray(body?.rows)) return body.rows;
+  throw new Refusal('CONDUCTOR_UNAVAILABLE', `code-conductor GET /api/plugins: HTTP ${res.status}${body?.code ? ` ${body.code}` : ''}`);
+}

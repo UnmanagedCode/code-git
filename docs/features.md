@@ -89,6 +89,15 @@ The active checkout's history: a lane graph with ref labels, a WIP row per dirty
 
 Age dividers: a hairline and a pill (`1 hour ago` … `N years ago`) mark where the rows below turn older ([docs/graph.md → Age markers](graph.md)).
 
+**Links with code-review** (inside cc only):
+
+| Direction | Behaviour |
+|---|---|
+| From code-review | A link opens the checkout's tab and selects the linked commit in the graph with its details (once the graph has loaded; a History, Reflog or diff panel in its place closes), or opens a file's history from that commit. A commit outside the loaded pages offers **Load more**; an invalid link opens the tab and does nothing. Back, Forward and a reload never re-apply a link |
+| To code-review | A commit's menu: **Review in code-review**. A multi-selection's menu: **Review range in code-review**, only when the rows are one first-parent chain whose newest commit is HEAD. Both switch cc to code-review's new-review view, and are hidden on a submodule tab, outside cc, and when cc does not have code-review enabled |
+
+URLs and rules: [protocol → UI routes](protocol.md#ui-routes) and [→ Links to code-review](protocol.md#links-to-code-review).
+
 ## Changes panel
 
 Right slot, while the graph has nothing or a single WIP row selected, and while an unstaged or staged diff is open whatever the selection (below `lg`: the **Changes (n)** dialog from the graph's toolbar; also on a wide screen when Ctrl/⌘+Shift+M is pressed while another diff holds the right slot). Stage, unstage, discard and commit. Opened from the graph by clicking a WIP row (or Enter on it, or its menu's **Show changes**) and by **Edit HEAD message…** on the HEAD commit's menu, which ticks Amend with HEAD's message. Ops: [protocol → Staging ops](protocol.md#staging-ops-shared-rules).

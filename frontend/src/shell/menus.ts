@@ -12,6 +12,7 @@ import { SUBMODULE_ACTIONS } from '@/features/submodules/actions';
 import { HISTORY_ACTIONS } from '@/features/history/actions';
 import { FLOW_ACTIONS } from '@/features/flow/actions';
 import { LFS_ACTIONS } from '@/features/lfs/actions';
+import { LINK_ACTIONS } from '@/features/links/actions';
 
 // The context-menu action registry. A feature adds its actions in its own folder and one entry in ACTIONS;
 // <ActionMenuItems context="…" ctx={…}> renders the ones for a context (docs/architecture.md → Extension points).
@@ -41,7 +42,7 @@ export interface MenuAction<C = unknown> {
   primary?: boolean;
 }
 
-export const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS, ...GRAPH_ACTIONS, ...WORKDIR_FILE_ACTIONS, RESTORE_ACTION, ...WORKDIR_GRAPH_ACTIONS, ...BRANCH_ACTIONS, ...STASH_ACTIONS, ...REMOTE_ACTIONS, ...SEQUENCE_ACTIONS, ...CONFLICT_FILE_ACTIONS, ...SUBMODULE_ACTIONS as MenuAction<never>[], ...HISTORY_ACTIONS, ...FLOW_ACTIONS, ...LFS_ACTIONS];
+export const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS, ...GRAPH_ACTIONS, ...WORKDIR_FILE_ACTIONS, RESTORE_ACTION, ...WORKDIR_GRAPH_ACTIONS, ...BRANCH_ACTIONS, ...STASH_ACTIONS, ...REMOTE_ACTIONS, ...SEQUENCE_ACTIONS, ...CONFLICT_FILE_ACTIONS, ...SUBMODULE_ACTIONS as MenuAction<never>[], ...HISTORY_ACTIONS, ...FLOW_ACTIONS, ...LFS_ACTIONS, ...LINK_ACTIONS];
 
 /** An action as a menu shows it: its submenu, if any, built and resolved. */
 export type ResolvedAction<C> = Omit<MenuAction<C>, 'children'> & { children?: ResolvedAction<C>[] };

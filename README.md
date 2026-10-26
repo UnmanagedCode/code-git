@@ -23,6 +23,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | History | A file's history across renames with each commit's change, blame with author colours, and the reflog of HEAD or a branch. [docs/history.md](docs/history.md) |
 | Git-flow | Initialize (the `gitflow.*` settings), start and finish feature, release and hotfix branches from the toolbar's **Repository actions** menu, a flow branch's menu or the palette; finish merges `--no-ff`, tags a release or hotfix, deletes the branch, and changes nothing when a merge would conflict. Native: no git-flow extension needed. [docs/gitflow.md](docs/gitflow.md) |
 | LFS | The System's git-lfs: tracked patterns of the root `.gitattributes`, track and untrack, the LFS files (on request), pull, prune behind a confirmation. [docs/lfs.md](docs/lfs.md) |
+| code-review links | Inside cc: a link from code-review selects a commit in the graph or opens a file's history; a commit's menu offers **Review in code-review**, a selection that is a first-parent chain ending at HEAD **Review range in code-review**. [docs/protocol.md → Links to code-review](docs/protocol.md#links-to-code-review) |
 | Command palette | Ctrl/⌘+P: every command by name, with a second step to pick a branch, a tab or a file; Ctrl/⌘+/ lists every shortcut |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it. Hooks always run (only a commit can skip them); a failing one blocks with its output ([docs/features.md → Hooks](docs/features.md#hooks)) |
 
@@ -69,7 +70,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 | `npm test` | typecheck, then backend, then UI tests |
 | `npm run test:server` | `node --test "tests/*.test.js"` |
 | `npm run test:ui` | `vitest run --config frontend/vitest.config.ts` |
-| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `sidepane.mjs` / `stash.mjs` / `remotes.mjs` / `operations.mjs` / `merge.mjs` / `rebase.mjs` / `conflicts.mjs` / `submodules.mjs` / `history.mjs` / `palette.mjs` / `flow.mjs` / `lfs.mjs` | screenshots / golden path / the diff path / the staging path / the side-pane layout / the stash path / the remotes path / the merge-and-rebase in-progress path / the merge and rebase starts / the interactive editor / the merge tool / the submodule path / file history, blame and the reflog / the palette, the shortcut sheet and undo/redo / the git-flow path / the LFS path on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
+| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `sidepane.mjs` / `stash.mjs` / `remotes.mjs` / `operations.mjs` / `merge.mjs` / `rebase.mjs` / `conflicts.mjs` / `submodules.mjs` / `history.mjs` / `palette.mjs` / `flow.mjs` / `lfs.mjs` / `links.mjs` | screenshots / golden path / the diff path / the staging path / the side-pane layout / the stash path / the remotes path / the merge-and-rebase in-progress path / the merge and rebase starts / the interactive editor / the merge tool / the submodule path / file history, blame and the reflog / the palette, the shortcut sheet and undo/redo / the git-flow path / the LFS path / the code-review links on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
 | `node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" baseline` | mutation trust gates ([harness/mutation/README.md](harness/mutation/README.md)) |
 
 ## Known limitations
@@ -77,6 +78,9 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 - **Undo is the last op only, in memory**: one undo and one redo per checkout, forgotten on a backend restart and cleared by any change it does not cover (staging, push, pull, …; a fetch keeps it); a stash put back lands at `stash@{0}` ([docs/undo.md → Residuals](docs/undo.md#residuals)).
 - **No progress output for long ops.** cc's exec buffers output; a running op shows only an elapsed timer (and Cancel when the op allows it).
 - **Ctrl/⌘+digit works only while focus is inside the plugin frame.** With focus in cc's own UI, cc gets the key.
+- **Closing code-review's view after "Review in code-review" goes to cc's session, not back to code-git**: cc's close steps back only over history entries cc pushed itself. The browser's Back returns to code-git.
+- **"Review range in code-review" only for a first-parent chain ending at HEAD**: any other selection is not one `base...HEAD` range.
+- **The code-review links are hidden outside cc** (standalone there is no cc page to navigate).
 - **The activity log is in memory**: capped (`LIMITS.activityRing` in `src/git/limits.js`) and cleared when the backend restarts.
 - **Git prompts are disabled.** Credentials must come from the target System's credential helper or ssh-agent; an op that would prompt fails instead.
 - **Output over an op's cap is refused (`OUTPUT_TOO_LARGE`), never clipped.**

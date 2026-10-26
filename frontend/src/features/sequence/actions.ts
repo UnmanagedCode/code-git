@@ -38,7 +38,7 @@ const isHeadBranch = (tab: Tab, r: { name: string }) => headOf(tab).branch === r
  * The selected commits as one first-parent chain, newest first, when they are one: every row a commit with exactly one
  * parent (no merge, no root), each the parent of the one above it. null otherwise.
  */
-function chainOf(c: CommitsCtx): CommitItem[] | null {
+export function chainOf(c: CommitsCtx): CommitItem[] | null {
   const items = c.rows.map((r) => (r.kind === 'commit' ? r.item : null));
   if (items.length < 2 || items.some((i) => i === null || i.parents.length !== 1)) return null;
   const chain = items as CommitItem[];

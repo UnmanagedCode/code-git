@@ -74,5 +74,7 @@ export const runOp = <T>(name: string, target: Target, params?: unknown, opts?: 
   api<{ ok: true; result: T }>(`api/ops/${encodeURIComponent(name)}`, {
     method: 'POST', body: { target: targetBody(target), ...(params === undefined ? {} : { params }) }, signal: opts?.signal,
   }).then((r) => r.result);
+/** Which sibling cc plugins the UI may link to (cc's enabled plugins). */
+export const getIntegrations = () => api<{ codeReview: { id: string } | null }>('api/integrations');
 export const listActivity = () => api<{ entries: ActivityEntry[]; runs: OpRun[] }>('api/activity');
 export const cancelActivity = (id: number) => api<{ ok: true }>(`api/activity/${id}/cancel`, { method: 'POST' });
