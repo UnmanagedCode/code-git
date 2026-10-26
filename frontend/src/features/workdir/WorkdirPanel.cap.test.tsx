@@ -34,6 +34,12 @@ test('a list longer than FILE_RENDER_CAP mounts only that many rows until "Show 
   expect(within(section()).getAllByRole('option')).toHaveLength(FILE_RENDER_CAP + 3);
 });
 
+test('"Show all N" sits inside the section\'s own scroller', async () => {
+  await show(FILE_RENDER_CAP + 3);
+  const showAll = await within(section()).findByRole('button', { name: `Show all ${FILE_RENDER_CAP + 3}` });
+  expect(section().querySelector('[data-section-list]')!.contains(showAll)).toBe(true);
+});
+
 test('Discard all lists at most FILE_RENDER_CAP untracked names, then how many more; all of them are still sent', async () => {
   const w = await show(FILE_RENDER_CAP + 3);
   await waitFor(() => expect(within(section()).getAllByRole('option').length).toBeGreaterThan(0));

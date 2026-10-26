@@ -26,8 +26,8 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
   if (!ready) return null;
   const changed = !!state.unstaged?.files.length || !!state.staged?.files.length;
   return (
-    <div className="flex flex-col text-sm" aria-busy={state.busy || state.loading}>
-      <div className="flex items-center gap-1 border-b px-3 py-1.5">
+    <div className="flex h-full min-h-0 flex-col text-sm" aria-busy={state.busy || state.loading}>
+      <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
         <h2 className="flex-1 text-sm font-semibold">Changes</h2>
         <FileViewToggle />
         <Button variant="ghost" size="icon-sm" className="size-7" aria-label="Stash changes…" disabled={!changed || state.busy} onClick={() => openStashSave(tab, { mode: 'all' })}>
@@ -50,11 +50,11 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
         )}
       </div>
       {/* A rebase detaches HEAD for its whole run: the operation banner says what is going on instead. */}
-      {state.operation?.kind !== 'rebase' && <DetachedBanner summary={summary} />}
-      <OperationBanner tab={tab} state={state} />
-      {state.error && <p role="alert" className="px-3 py-2 text-xs break-words text-destructive">{state.error}</p>}
+      {state.operation?.kind !== 'rebase' && <div className="shrink-0"><DetachedBanner summary={summary} /></div>}
+      <div className="shrink-0"><OperationBanner tab={tab} state={state} /></div>
+      {state.error && <p role="alert" className="shrink-0 px-3 py-2 text-xs break-words text-destructive">{state.error}</p>}
       {state.opError && (
-        <div role="alert" className="flex items-start gap-1 border-b px-3 py-2 text-xs">
+        <div role="alert" className="flex shrink-0 items-start gap-1 border-b px-3 py-2 text-xs">
           <div className="min-w-0 flex-1">
             <p className="break-words text-destructive">{state.opError.message}</p>
             {state.opError.stderr && <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 font-mono whitespace-pre-wrap">{state.opError.stderr}</pre>}
@@ -62,14 +62,19 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
           <Button variant="ghost" size="icon-sm" className="size-5" aria-label="Dismiss error" onClick={() => clearOpError(tab)}><XIcon className="size-3.5" /></Button>
         </div>
       )}
-      {!state.unstaged || !state.staged ? (
-        !state.error && <p className="px-3 py-2 text-xs text-muted-foreground">Loading changes…</p>
-      ) : (
-        <>
-          <FileSection tab={tab} section="unstaged" files={state.unstaged.files} busy={state.busy} />
-          <FileSection tab={tab} section="staged" files={state.staged.files} busy={state.busy} />
-        </>
-      )}
+      {/* Two tracks sized minmax(0, auto): grid's maximize-tracks step shares the free space equally and freezes a track
+          at its content height, so a short section fits and two long ones split evenly; content-start leaves the spare
+          room above the commit box. min-h-44 is the floor: two sections x (header + two rows). */}
+      <div className="grid min-h-44 flex-1 grid-rows-[minmax(0,auto)_minmax(0,auto)] content-start">
+        {!state.unstaged || !state.staged ? (
+          !state.error && <p className="px-3 py-2 text-xs text-muted-foreground">Loading changes…</p>
+        ) : (
+          <>
+            <FileSection tab={tab} section="unstaged" files={state.unstaged.files} busy={state.busy} />
+            <FileSection tab={tab} section="staged" files={state.staged.files} busy={state.busy} />
+          </>
+        )}
+      </div>
       <CommitBox tab={tab} state={state} summary={summary} instance={instance} />
       <ApplyPatchDialog tab={tab} open={applyOpen} onOpenChange={setApplyOpen} />
     </div>
