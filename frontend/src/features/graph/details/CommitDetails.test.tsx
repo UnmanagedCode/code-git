@@ -302,6 +302,8 @@ test('the header\'s resize handle: a horizontal separator with its value and bou
   expect(h.getAttribute('aria-orientation')).toBe('horizontal');
   expect([valueNow(), Number(h.getAttribute('aria-valuemin')), Number(h.getAttribute('aria-valuemax'))]).toEqual([DETAILS_HEADER.default, MIN, MAX_600]);
   expect(headerPx()).toBe(`${DETAILS_HEADER.default}px`);
+  // touch-action none is the drag's contract on touch and pen: the browser must not turn the drag into a scroll.
+  expect(h.className.split(' ')).toContain('touch-none');
 });
 
 test('arrow keys step the height, Home and End go to the bounds; the height is stored and survives another selection and a remount', async () => {
@@ -328,25 +330,61 @@ test('arrow keys step the height, Home and End go to the bounds; the height is s
   expect(parseHeaderHeight(getItem('graph:detailsHeader'))).toBe(MIN + STEP);
 });
 
-test('a drag resizes the header, stores the height once on release, and clamps at both ends', async () => {
+// The handle captures the pointer, so every move and the release reach the handle itself.
+const drag = (from: number, to: number, end: 'pointerUp' | 'pointerCancel' | 'lostPointerCapture' | null = 'pointerUp') => {
+  fireEvent.pointerDown(handle(), { clientY: from, button: 0, pointerId: 1 });
+  fireEvent.pointerMove(handle(), { clientY: to, pointerId: 1 });
+  if (end) fireEvent[end](handle(), { clientY: to, pointerId: 1 });
+};
+
+test('a drag captures the pointer, resizes the header with aria-valuenow in step, stores the height once on release, and clamps at both ends', async () => {
   const resize = fakeResize();
   await show({ files });
   await screen.findByText('4 files');
   resize(600);
-  fireEvent.pointerDown(handle(), { clientY: 300, button: 0 });
-  fireEvent.pointerMove(window, { clientY: 360 });
-  expect(headerPx()).toBe(`${DETAILS_HEADER.default + 60}px`);
+  const capture = vi.spyOn(handle(), 'setPointerCapture');
+  drag(300, 360, null);
+  expect(capture).toHaveBeenCalledWith(1);
+  expect([headerPx(), valueNow()]).toEqual([`${DETAILS_HEADER.default + 60}px`, DETAILS_HEADER.default + 60]);
   expect(getItem('graph:detailsHeader')).toBeNull();
-  fireEvent.pointerUp(window, { clientY: 360 });
+  fireEvent.pointerUp(handle(), { clientY: 360, pointerId: 1 });
   expect([valueNow(), getItem('graph:detailsHeader')]).toEqual([DETAILS_HEADER.default + 60, String(DETAILS_HEADER.default + 60)]);
-  fireEvent.pointerDown(handle(), { clientY: 300, button: 0 });
-  fireEvent.pointerMove(window, { clientY: -700 });
-  fireEvent.pointerUp(window, { clientY: -700 });
+  // The capture's release after pointerup ends nothing more.
+  fireEvent.lostPointerCapture(handle(), { pointerId: 1 });
+  expect(valueNow()).toBe(DETAILS_HEADER.default + 60);
+  drag(300, -700);
   expect(valueNow()).toBe(MIN);
-  fireEvent.pointerDown(handle(), { clientY: 300, button: 0 });
-  fireEvent.pointerMove(window, { clientY: 1300 });
-  fireEvent.pointerUp(window, { clientY: 1300 });
+  drag(300, 1300);
   expect([valueNow(), headerPx()]).toEqual([MAX_600, `${MAX_600}px`]);
+});
+
+test.each(['pointerCancel', 'lostPointerCapture'] as const)('a drag ended by %s is abandoned: the height goes back, nothing is stored, and later moves resize nothing', async (end) => {
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  drag(300, 360, end);
+  expect([valueNow(), headerPx(), getItem('graph:detailsHeader')]).toEqual([DETAILS_HEADER.default, `${DETAILS_HEADER.default}px`, null]);
+  fireEvent.pointerMove(handle(), { clientY: 420, pointerId: 1 });
+  fireEvent.pointerUp(handle(), { clientY: 420, pointerId: 1 });
+  expect([valueNow(), headerPx(), getItem('graph:detailsHeader')]).toEqual([DETAILS_HEADER.default, `${DETAILS_HEADER.default}px`, null]);
+});
+
+test('unmounting mid-drag abandons it: the pointer\'s later moves and release resize and store nothing', async () => {
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  const h = handle();
+  drag(300, 360, null);
+  act(() => dispatchSelection(TAB, { type: 'click', id: P, rows: rowsOf(A, P) }));
+  await screen.findByText('4 files');
+  for (const target of [h, window]) {
+    fireEvent.pointerMove(target, { clientY: 420, pointerId: 1 });
+    fireEvent.pointerUp(target, { clientY: 420, pointerId: 1 });
+  }
+  expect(getItem('graph:detailsHeader')).toBeNull();
+  expect(valueNow()).toBe(DETAILS_HEADER.default);
 });
 
 test('a shrinking panel re-clamps the rendered height so the files keep their minimum, and keeps the stored choice', async () => {
@@ -361,6 +399,24 @@ test('a shrinking panel re-clamps the rendered height so the files keep their mi
   expect(getItem('graph:detailsHeader')).toBe('400');
   resize(600);
   expect(valueNow()).toBe(400);
+});
+
+test('a key that cannot move a clamped header leaves the stored choice alone; one that moves it stores the new height', async () => {
+  setDetailsHeader(400);
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(354);
+  const max = 354 - HANDLE - FILES_MIN;
+  for (const key of ['ArrowDown', 'End']) fireEvent.keyDown(handle(), { key });
+  expect([valueNow(), getItem('graph:detailsHeader')]).toEqual([max, '400']);
+  // A panel whose maximum is the minimum: no key moves the header, none collapses the choice.
+  resize(MIN + HANDLE + FILES_MIN - 40);
+  for (const key of ['ArrowUp', 'ArrowDown', 'Home', 'End']) fireEvent.keyDown(handle(), { key });
+  expect([valueNow(), getItem('graph:detailsHeader')]).toEqual([MIN, '400']);
+  resize(354);
+  fireEvent.keyDown(handle(), { key: 'ArrowUp' });
+  expect([valueNow(), getItem('graph:detailsHeader')]).toEqual([max - STEP, String(max - STEP)]);
 });
 
 test('in the narrow dialog the header keeps the default height, with no resize handle', async () => {

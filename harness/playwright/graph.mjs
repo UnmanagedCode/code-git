@@ -181,7 +181,8 @@ try {
     await shot('details-light-desktop');
     // The header's height is the user's (224 px by default); the files fill the rest of the panel, which fills the slot.
     const shortHeight = await headerHeight();
-    check(Math.abs(shortHeight - 224) <= 0.5 && await ariaNum('aria-valuenow') === 224, `the header starts at its default height (${shortHeight})`);
+    const storedHeight = () => page.evaluate(() => localStorage.getItem('code-git:graph:detailsHeader'));
+    check(await storedHeight() === null && Math.abs(shortHeight - await ariaNum('aria-valuenow')) <= 1, `the header starts at its default height, the separator's value (${shortHeight})`);
     const headerBox = await header.boundingBox();
     const asideBox = await details.boundingBox();
     const slotBox = await page.locator('[data-slot-name=right]').boundingBox();
@@ -220,62 +221,84 @@ try {
     await shot('details-long-light-desktop');
 
     // ---- resizing the commit information ----
-    const MIN = 96;
-    const FILES_ROOM = 8 + 112; // the headerHandle and the files' minimum (DETAILS_HEADER in frontend/src/state/detailsHeader.ts)
+    // Every bound comes from the separator itself (aria-valuemin / aria-valuemax), never re-derived here. Box heights
+    // (getBoundingClientRect) and the app's clientHeight can differ by a fraction: ±1.
+    const near = (a, b) => Math.abs(a - b) <= 1;
+    const bounds = async () => [await ariaNum('aria-valuemin'), await ariaNum('aria-valuemax')];
+    const frames = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    // The file rows wholly inside the list's scroller, scrolled to its end (only file rows there, no directory rows).
+    const rowsShown = () => scroller((s) => {
+      s.scrollTop = s.scrollHeight;
+      const r = s.getBoundingClientRect();
+      return [...s.querySelectorAll('li[role="option"]')].filter((li) => { const b = li.getBoundingClientRect(); return b.top >= r.top - 0.5 && b.bottom <= r.bottom + 0.5; }).length;
+    });
     const drag = async (dy) => {
       const b = await headerHandle.boundingBox();
       await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
       await page.mouse.down();
-      await page.mouse.move(b.x + b.width / 2, Math.max(0, Math.min(VIEWPORTS.desktop.height - 1, b.y + b.height / 2 + dy)), { steps: 5 });
+      await page.mouse.move(b.x + b.width / 2, Math.max(0, Math.min(page.viewportSize().height - 1, b.y + b.height / 2 + dy)), { steps: 5 });
       await page.mouse.up();
     };
-    // The slot is short with the activity panel open (the default sits near the maximum): drag up first, then down.
-    await drag(-40);
-    check(Math.abs(await headerHeight() - 184) <= 1 && await ariaNum('aria-valuenow') === 184, `a drag of 40px up shortens the header (${await headerHeight()})`);
-    await drag(20);
-    check(Math.abs(await headerHeight() - 204) <= 1 && await ariaNum('aria-valuenow') === 204, `a drag of 20px down lengthens it (${await headerHeight()})`);
+    const [min, max] = await bounds();
+    check(min < max, `the separator has a range to resize in (${min}–${max})`);
+    const clampTo = (px) => Math.max(min, Math.min(max, px));
+    for (const dy of [-40, 20]) {
+      const want = clampTo(await ariaNum('aria-valuenow') + dy);
+      await drag(dy);
+      const now = await ariaNum('aria-valuenow');
+      check(near(now, want) && near(await headerHeight(), now), `a drag of ${dy}px resizes the header to ${now}px (wanted ${want})`);
+    }
     check(await scroller((s) => s.getBoundingClientRect().top) >= (await header.boundingBox()).y + await headerHeight() - 0.5, 'the files stay below the resized header');
     await drag(-1000);
-    check(Math.abs(await headerHeight() - MIN) <= 0.5 && await ariaNum('aria-valuenow') === MIN, `a drag far up stops at the minimum (${await headerHeight()})`);
+    check(await ariaNum('aria-valuenow') === min && near(await headerHeight(), min), `a drag far up stops at aria-valuemin (${await headerHeight()})`);
     await drag(1000);
-    const aside = await details.boundingBox();
-    const max = await ariaNum('aria-valuemax');
-    check(max === Math.round(aside.height - FILES_ROOM) && Math.abs(await headerHeight() - max) <= 0.5, `a drag far down stops at the maximum (${await headerHeight()}, max ${max}, panel ${aside.height})`);
-    const filesSection = await scroller((s) => s.parentElement.getBoundingClientRect().height);
-    check(filesSection >= 112 - 0.5, `the file section keeps its minimum at the maximum (${filesSection}px)`);
+    check(await ariaNum('aria-valuenow') === max && near(await headerHeight(), max), `a drag far down stops at aria-valuemax (${await headerHeight()})`);
+    check(await rowsShown() >= 3, `at the maximum the files still show at least three whole rows (${await rowsShown()})`);
     await headerHandle.focus();
     await page.keyboard.press('ArrowUp');
-    check(await ariaNum('aria-valuenow') === max - 16 && Math.abs(await headerHeight() - (max - 16)) <= 0.5, '↑ steps the header 16px shorter');
+    const stepped = await ariaNum('aria-valuenow');
+    check(stepped < max && near(await headerHeight(), stepped), `↑ steps the header shorter (${max} → ${stepped})`);
+    await page.keyboard.press('ArrowDown');
+    check(await ariaNum('aria-valuenow') === max, '↓ steps it back');
     await page.keyboard.press('Home');
-    check(Math.abs(await headerHeight() - MIN) <= 0.5, 'Home goes to the minimum');
+    check(near(await headerHeight(), min), 'Home goes to aria-valuemin');
     await page.keyboard.press('End');
-    check(Math.abs(await headerHeight() - max) <= 0.5, 'End goes to the maximum');
+    check(near(await headerHeight(), max), 'End goes to aria-valuemax');
     await page.keyboard.press('Home');
     for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
-    check(await ariaNum('aria-valuenow') === 160, '↓ steps the header 16px taller');
+    const chosen = await ariaNum('aria-valuenow');
+    check(chosen > min && chosen < max && await storedHeight() === String(chosen), `↓ steps the header taller, and the height is stored (${chosen})`);
     await open();
     await row(o.C).click();
     await details.getByText('Write the guide').waitFor();
-    check(Math.abs(await headerHeight() - 160) <= 0.5, `the chosen height survives a reload (${await headerHeight()})`);
+    check(near(await headerHeight(), chosen), `the chosen height survives a reload (${await headerHeight()})`);
     await row(o.G).click();
     await longBody.waitFor();
-    check(Math.abs(await headerHeight() - 160) <= 0.5, 'and another selection');
+    check(near(await headerHeight(), chosen), 'and another selection');
     await shot('details-resized-light-desktop');
-    // A shorter panel re-clamps the header instead of crushing the files; the choice comes back when it grows.
-    await page.setViewportSize({ width: 1280, height: 600 });
-    await page.waitForFunction((want) => Math.round(document.querySelector('[aria-label="Commit details"]').getBoundingClientRect().height) !== want, Math.round(aside.height));
-    const small = (await details.boundingBox()).height;
-    const expected = Math.max(MIN, Math.min(160, Math.round(small - FILES_ROOM)));
-    check(expected < 160, `the shorter panel is too short for the chosen height (panel ${small})`);
-    await page.waitForFunction((want) => Math.abs(document.querySelector('[aria-label="Commit information"]').getBoundingClientRect().height - want) <= 0.5, expected);
-    check(await scroller((s) => s.parentElement.getBoundingClientRect().height) >= Math.min(112, small - 8 - MIN) - 0.5, `the shorter panel re-clamps the header to ${expected}px and the files keep their room`);
+    // A panel too short for the chosen height re-clamps the header instead of crushing the files, and keeps the choice.
+    // How short the window must be depends on what else takes the height (the activity panel): step it down until the
+    // separator's maximum falls between its minimum and the chosen height.
+    let clampedAt = null;
+    for (let h = VIEWPORTS.desktop.height - 40; h >= 400; h -= 40) {
+      await page.setViewportSize({ width: VIEWPORTS.desktop.width, height: h });
+      await frames();
+      const [lo, hi] = await bounds();
+      if (hi < chosen && hi > lo) { clampedAt = h; break; }
+    }
+    check(clampedAt !== null, `a window between 400 and ${VIEWPORTS.desktop.height - 40}px tall makes the panel too short for the chosen ${chosen}px header with room to clamp (last panel ${(await details.boundingBox()).height}px, max ${await ariaNum('aria-valuemax')})`);
+    const shortMax = await ariaNum('aria-valuemax');
+    check(await ariaNum('aria-valuenow') === shortMax && near(await headerHeight(), shortMax) && await storedHeight() === String(chosen), `at 1280×${clampedAt} the header re-clamps to aria-valuemax (${shortMax}) and the stored ${chosen} stays`);
+    check(await rowsShown() >= 3, `the re-clamped files still show at least three whole rows (${await rowsShown()})`);
     await page.setViewportSize(VIEWPORTS.desktop);
-    await page.waitForFunction(() => Math.abs(document.querySelector('[aria-label="Commit information"]').getBoundingClientRect().height - 160) <= 0.5);
-    check(true, 'the chosen height comes back when the panel grows');
-    await headerHandle.focus();
-    await page.keyboard.press('Home');
-    for (let i = 0; i < 8; i++) await page.keyboard.press('ArrowDown');
-    check(Math.abs(await headerHeight() - 224) <= 0.5, 'back to the default height');
+    await frames();
+    check(near(await headerHeight(), chosen), 'the chosen height comes back when the panel grows');
+    // Back to the default: no stored height.
+    await page.evaluate(() => localStorage.removeItem('code-git:graph:detailsHeader'));
+    await open();
+    await row(o.G).click();
+    await longBody.waitFor();
+    check(near(await headerHeight(), shortHeight), 'back to the default height');
     await row(o.C).click();
     await details.getByText('Write the guide').waitFor();
     // The left slot: the refs panel first, the diff's Compare panel below it, both reachable.
