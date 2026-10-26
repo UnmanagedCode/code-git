@@ -174,6 +174,21 @@ test('page: every parent comes after its children (topo order) across merges', a
   assert.equal(m.time, Date.parse('2024-01-01T00:00:00Z') / 1000);
 });
 
+// Invariant: `time` is the author's unix seconds and `committerTime` the committer's, read from distinct format fields.
+test('page: a commit with different author and committer dates reports each in its own field', async (t) => {
+  const { repo } = await world(t);
+  repo.write('f', 'x');
+  repo.git('add', '-A');
+  execFileSync('git', ['-C', repo.dir, 'commit', '-q', '-m', 'dated'], {
+    env: { ...hermeticEnv(repo.home), GIT_AUTHOR_DATE: '@1600000000 +0000', GIT_COMMITTER_DATE: '@1700000000 +0000' },
+  });
+  const tip = repo.git('rev-parse', 'HEAD');
+  const { result } = await run('graph.page', { tips: [tip], skip: 0, limit: 10 });
+  assert.equal(result.items[0].time, 1600000000);
+  assert.equal(result.items[0].committerTime, 1700000000);
+  assert.equal(result.items[0].subject, 'dated');
+});
+
 test('page: pages of 2 concatenate to the single large page; nextCursor is null exactly on the last page', async (t) => {
   const { repo } = await world(t);
   history(repo);

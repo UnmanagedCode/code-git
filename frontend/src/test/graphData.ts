@@ -4,7 +4,7 @@ import type { Checkout, CommitItem, GitWorktree, Ref, RefsResult, Stash } from '
 
 export const oid = (n: number | string): string => String(n).padStart(40, '0').slice(-40);
 export const commit = (id: string, parents: string[] = [], over: Partial<CommitItem> = {}): CommitItem => ({
-  oid: id, parents, author: { name: 'Ann Example', email: 'ann@x.org' }, time: 1_700_000_000, subject: `subject ${id.slice(-4)}`, ...over,
+  oid: id, parents, author: { name: 'Ann Example', email: 'ann@x.org' }, time: 1_700_000_000, committerTime: 1_700_000_000, subject: `subject ${id.slice(-4)}`, ...over,
 });
 export const ref = (name: string, at: string | null, over: Partial<Ref> = {}): Ref => {
   const kind = name.startsWith('refs/heads/') ? 'local' : name.startsWith('refs/remotes/') ? 'remote' : 'tag';

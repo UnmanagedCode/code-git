@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { opRun, summary } from '@/test/fixtures';
 import { commit, oid, ref } from '@/test/graphData';
 import { linearWorld, paramsOf, stubGraph, type GraphWorld } from '@/test/graphBackend';
-import { getGraph, loadUntil, PAGE } from '@/state/graph';
+import { getGraph, loadUntil, PAGE, setGraphClock } from '@/state/graph';
 import { updatePrefs } from '@/state/graphPrefs';
 import { getSelection } from '@/state/graphSelection';
 import { activityStore } from '@/state/useActivity';
@@ -328,4 +328,45 @@ test('a 1 MB subject, author and ref name are shown cut to DISPLAY_MAX, in the t
   expect(row.textContent!.length).toBeLessThan(4 * DISPLAY_MAX);
   for (const el of row.querySelectorAll('[title]')) expect(el.getAttribute('title')!.length).toBeLessThanOrEqual(DISPLAY_MAX + 1);
   expect(row.querySelector('[data-cell=message] [title]')!.getAttribute('title')).toBe(`${'x'.repeat(DISPLAY_MAX)}…`);
+});
+
+const NOW = new Date(2026, 5, 15, 10, 0).getTime();
+const agoS = (s: number) => Math.floor(NOW / 1000) - s;
+const markerIds = () => [...document.querySelectorAll<HTMLElement>('[data-age-marker]')].map((e) => [e.closest<HTMLElement>('[data-row-id]')!.dataset.rowId, e.dataset.ageMarker]);
+
+// Invariant: an age marker is an aria-hidden in-row overlay on the row where a rung is crossed; it leaves row count, row geometry, lane height and selection/keyboard untouched.
+test('age markers sit inside the crossing rows without changing the row geometry, selection or keys', async () => {
+  setGraphClock(() => NOW);
+  const world = linearWorld(10);
+  const t = [60, 60, 9 * 86400, 9 * 86400, 9 * 86400, 40 * 86400];
+  world.commits.forEach((c, i) => { c.committerTime = agoS(t[i] ?? 40 * 86400); });
+  await show(world);
+  expect(markerIds()).toEqual([[oid(8), 'last week'], [oid(5), 'last month']]);
+  for (const m of document.querySelectorAll('[data-age-marker]')) expect(m.getAttribute('aria-hidden')).toBe('true');
+  expect(rowEls().map((e) => e.dataset.rowId)).toEqual(world.commits.map((c) => c.oid));
+  expect(list().querySelector<HTMLElement>('[style*="--graph-total"]')?.style.getPropertyValue('--graph-total')).toBe(`${10 * ROW_H}px`);
+  for (const svg of document.querySelectorAll('[data-cell="graph"] svg')) expect(svg.getAttribute('height')).toBe(String(ROW_H));
+  fireEvent.click(rowEl(oid(9))!);
+  expect(getSelection(TAB).ids).toEqual([oid(9)]);
+  fireEvent.keyDown(list(), { key: 'j' });
+  expect(getSelection(TAB).ids).toEqual([oid(8)]);
+  fireEvent.click(rowEl(oid(5))!);
+  expect(getSelection(TAB).ids).toEqual([oid(5)]);
+  expect(rowEl(oid(5))!.getAttribute('aria-selected')).toBe('true');
+});
+
+// Invariant: appending pages never changes the markers already shown on the loaded rows; a rung first crossed in a later page gets its marker then.
+test('loading more pages keeps the first page markers and adds the later crossing', async () => {
+  setGraphClock(() => NOW);
+  const n = PAGE + 100;
+  const world = linearWorld(n);
+  world.commits.forEach((c, i) => { c.committerTime = agoS(i < 2 ? 60 : i < PAGE + 10 ? 9 * 86400 : 40 * 86400); });
+  await show(world);
+  const before = markerIds();
+  expect(before).toEqual([[world.commits[2].oid, 'last week']]);
+  await act(async () => { await loadUntil(TAB, oid(1)); });
+  expect(getGraph(TAB).commits.length).toBe(n);
+  expect(markerIds()).toEqual(before);
+  await scrollTo((PAGE + 10) * ROW_H - 100);
+  expect(markerIds()).toContainEqual([world.commits[PAGE + 10].oid, 'last month']);
 });

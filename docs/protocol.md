@@ -195,7 +195,7 @@ Every log-family command adds `--no-show-signature --no-ext-diff --no-textconv`.
 - **`Stash`**: `{oid, parents: oid[], selector: 'stash@{n}', time: unix s, subject}`, newest first.
 - **`GitWorktree`**: `{path, head: oid|null, branch: full refname|null, detached, bare, locked}`, as git lists them (main first).
 - **`worktree list -z` failing** (git < 2.36): `worktrees: null`, `worktreesError` = its stderr; its activity entry is `failed`. Any other command failing fails the op.
-- **`CommitItem`**: `{oid, parents: oid[], author: {name, email}, time: author unix s, subject}`.
+- **`CommitItem`**: `{oid, parents: oid[], author: {name, email}, time: author unix s, committerTime: committer unix s, subject}`.
 - **`graph.page` cursor**: `nextCursor = skip + limit` when git returned `limit + 1` rows, else `null`.
 - **`graph.stats`**: `null` = a merge (no stat); a non-merge with no stat line is `{files: 0, insertions: 0, deletions: 0}`.
 - **`graph.search`**: `query` is 1..`QUERY_MAX` characters with no control character (`BAD_PARAMS`).

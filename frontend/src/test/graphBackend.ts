@@ -34,7 +34,7 @@ export function linearWorld(n: number): GraphWorld {
 }
 
 export const detailOf = (c: CommitItem, over: Partial<CommitDetail> = {}): CommitDetail => ({
-  oid: c.oid, parents: c.parents, author: { ...c.author, time: c.time }, committer: { ...c.author, time: c.time }, subject: c.subject, body: '',
+  oid: c.oid, parents: c.parents, author: { ...c.author, time: c.time }, committer: { ...c.author, time: c.committerTime }, subject: c.subject, body: '',
   coAuthors: [], signature: { status: 'N', signer: null, key: null }, files: [], filesError: null, ...over,
 });
 

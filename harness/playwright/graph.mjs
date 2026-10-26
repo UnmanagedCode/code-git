@@ -18,6 +18,7 @@ const check = (cond, what) => { if (!cond) throw new Error(`graph: ${what}`); co
 
 const world = await seedGraph();
 const o = world.oids;
+const a = world.ages;
 try {
   await withPage(async (page) => {
     const errors = [];
@@ -222,6 +223,37 @@ try {
       'Rebase main onto feature/a', 'Interactive rebase main onto feature/a…', 'Fast-forward main to feature/a', 'Reset main to feature/a',
     ];
     check(dropItems.join('|') === DROP_ITEMS.join('|'), `the drop opens the branch-drop menu (${dropItems.join(', ')})`);
+
+    // ---- age markers, on the `ages` world ----
+    await page.goto(`${world.url}/?project=ages`);
+    await row(a.a6).waitFor();
+    await page.getByRole('button', { name: 'Columns', exact: true }).click();
+    for (const c of ['Date']) await page.getByRole('menuitemcheckbox', { name: c }).click();
+    await page.keyboard.press('Escape');
+    const markers = await page.locator('[data-age-marker]').evaluateAll((els) => els.map((e) => [e.closest('[data-row-id]').getAttribute('data-row-id'), e.getAttribute('data-age-marker')]));
+    const want = [[a.a5, 'last week'], [a.a4, 'last month'], [a.a2, '3 months ago'], [a.a1, '1 year ago'], [a.a0, '2 years ago']];
+    check(JSON.stringify(markers) === JSON.stringify(want), `the age markers sit on their rows in order (${markers.map((m) => m[1]).join(', ')})`);
+    check(await row(a.a3).locator('[data-age-marker]').count() === 0 && await row(a.a6).locator('[data-age-marker]').count() === 0, 'a newer commit below a crossing, and the first row, carry no marker');
+    const boxes = await page.locator('[data-row-id]').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.height]; }));
+    check(boxes.length === 7 && boxes.every(([top, h], i) => h === 28 && (i === 0 || top - boxes[i - 1][0] === 28)), 'every row is 28px tall, 28px apart');
+    check((await page.locator('[data-row-id] [data-cell=graph] svg').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))).every((h) => h === 28), 'the lane svgs keep their 28px height');
+    await row(a.a4).click();
+    check(await row(a.a4).getAttribute('aria-selected') === 'true', 'clicking a marked row selects it');
+    await list.press('j');
+    check(await row(a.a3).getAttribute('aria-selected') === 'true', 'j moves the selection past the marker to the next row');
+    await page.keyboard.press('Escape');
+    await page.mouse.move(0, 0);
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const [vp, size] of Object.entries(VIEWPORTS)) {
+        await page.setViewportSize(size);
+        await page.goto(`${world.url}/?project=ages`);
+        await row(a.a6).waitFor();
+        await shot(`ages-${scheme}-${vp}`);
+      }
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.setViewportSize(VIEWPORTS.desktop);
 
     // ---- every scheme and viewport ----
     await page.mouse.move(0, 0); // off every chip: no hover dimming in the screenshots

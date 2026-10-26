@@ -20,7 +20,7 @@ export const QUERY_MAX = 200;
  * diff.external and textconv drivers are programs.
  */
 export const LOG_SAFE = ['--no-show-signature', '--no-ext-diff', '--no-textconv'];
-const COMMIT_FORMAT = '--format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%s';
+const COMMIT_FORMAT = '--format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%ct%x00%s';
 // %G? runs the repo's configured signing program (gpg.program / gpg.ssh.program) for this one commit.
 const META_FORMAT = '--format=%H%x00%P%x00%aN%x00%aE%x00%at%x00%cN%x00%cE%x00%ct%x00%G?%x00%GS%x00%GK%x00'
   + '%(trailers:key=Co-authored-by,valueonly,separator=%x1e)%x00%s%x00%b';

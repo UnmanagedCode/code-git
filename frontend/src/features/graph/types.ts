@@ -17,7 +17,8 @@ export interface GitWorktree { path: string; head: string | null; branch: string
 export interface GraphHead { oid: string | null; branch: string | null; detached: boolean; unborn: boolean }
 export interface RefsResult { head: GraphHead; refs: Ref[]; stashes: Stash[]; worktrees: GitWorktree[] | null; worktreesError: string | null }
 
-export interface CommitItem { oid: string; parents: string[]; author: { name: string; email: string }; time: number; subject: string }
+/** `time` is the author's unix seconds (the Date column); `committerTime` the committer's (the age markers). */
+export interface CommitItem { oid: string; parents: string[]; author: { name: string; email: string }; time: number; committerTime: number; subject: string }
 export interface PageResult { items: CommitItem[]; nextCursor: number | null }
 export interface Stat { files: number; insertions: number; deletions: number }
 export interface SearchResult { matches: string[]; truncated: boolean }

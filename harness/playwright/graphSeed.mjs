@@ -5,6 +5,9 @@
 //        origin; feature/b: C ← G, unmerged, checked out in cc worktree `wt` (dirty); cc worktree `side` on
 //        code-conductor/side at C (clean); annotated v1.0 on B, lightweight v1.1 on M1; one stash on D; main dirty.
 //        C carries a Co-authored-by trailer.
+// ages:  linear a0 ← … ← a6 (main), committed at now−800d, −400d, −100d, −2d (newer than its child), −40d, −10d, −5min
+//        relative to the seed's clock; top-down the age markers are a5 `last week`, a4 `last month`, a2 `3 months ago`,
+//        a1 `1 year ago`, a0 `2 years ago` (a3 none, a6 is the first row), at any time of day.
 // big:   the perf fixture (tests/_graphFixture.js defaults).
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -65,6 +68,17 @@ export async function seedGraph() {
     const sideDir = path.join(repo.root, 'side');
     repo.git('worktree', 'add', '-q', '-b', 'code-conductor/side', sideDir, o.C);
 
+    const agesRepo = makeRepo(t, { name: 'ages' });
+    const seededAt = Math.floor(Date.now() / 1000);
+    const ages = {};
+    [['a0', 800 * 86400], ['a1', 400 * 86400], ['a2', 100 * 86400], ['a3', 2 * 86400], ['a4', 40 * 86400], ['a5', 10 * 86400], ['a6', 300]].forEach(([name, age]) => {
+      const date = `@${seededAt - age} +0000`;
+      execFileSync('git', ['-C', agesRepo.dir, 'commit', '-q', '--allow-empty', '-m', name], {
+        env: { ...hermeticEnv(agesRepo.home), GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+      });
+      ages[name] = agesRepo.git('rev-parse', 'HEAD');
+    });
+
     const big = makeRepo(t, { name: 'big' });
     buildGraphFixture(big.dir, big.home);
 
@@ -72,13 +86,14 @@ export async function seedGraph() {
       home: repo.home,
       projects: {
         lanes: { dir: repo.dir, workspace: 'Graph', isGitRepo: true, worktrees: { wt: wtDir, side: sideDir } },
+        ages: { dir: agesRepo.dir, workspace: 'Graph', isGitRepo: true },
         big: { dir: big.dir, workspace: 'Graph', isGitRepo: true },
       },
     });
     cleanups.push(() => cc.close());
     srv = await bootServer({ cwd: projectRoot, entry: 'server.js', silent: true, env: { CONDUCTOR_URL: cc.url } });
     cleanups.push(() => srv.close());
-    return { url: srv.url, oids: o, close: cleanup };
+    return { url: srv.url, oids: o, ages, close: cleanup };
   } catch (e) {
     await cleanup();
     throw e;
