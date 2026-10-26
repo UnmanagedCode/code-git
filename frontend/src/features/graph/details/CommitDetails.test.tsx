@@ -9,11 +9,13 @@ import { dispatchSelection, fileIntentStore } from '@/state/graphSelection';
 import { openGraph } from '@/state/graph';
 import { loadSummary } from '@/state/useRepoSummary';
 import { diffStore } from '@/state/diff';
-import { closeDiff, openDiff } from '@/features/diff/openDiff';
+import { openDiff } from '@/features/diff/openDiff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
 import { DISPLAY_MAX, FILE_RENDER_CAP } from '@/lib/clip';
+import { getItem } from '@/lib/storage';
+import { DETAILS_HEADER, parseHeaderHeight, setDetailsHeader } from '@/state/detailsHeader';
 import { BODY_SHOWN, CO_AUTHORS_SHOWN, CommitDetails } from './CommitDetails';
 
 // The cap test caps with a small FILE_RENDER_CAP, so it mounts a few rows instead of a thousand; every other list here
@@ -149,13 +151,14 @@ test('while the bound diff list loads, the commit\'s own files stand in for the 
   await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Changed files' })).getAllByRole('option').map((o) => o.getAttribute('data-path'))).toEqual(['src/lib/a.ts']));
 });
 
-test('a file picked in the loading stand-in stays picked when the diff\'s list answers (View changes opens it at no file)', async () => {
+test('a file picked in the loading stand-in stays picked when the diff\'s list answers (a diff opened at no file)', async () => {
   let release: () => void = () => {};
   const held = new Promise<void>((r) => { release = r; });
   await show({ files }, [A], {
     'POST api/ops/diff.files': async () => { await held; return diffFiles['POST api/ops/diff.files']; },
   });
-  fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
+  await screen.findByText('4 files');
+  act(() => openDiff(TAB, { kind: 'commit', rev: A }));
   expect(diffStore.get().get('app\0')).toMatchObject({ viewed: null, list: { loading: true } });
   fireEvent.click(fileRow('gone.txt'));
   expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'gone.txt', selected: ['gone.txt'] });
@@ -171,7 +174,8 @@ test('the loading stand-in selects like the bound list (Ctrl- and Shift-click, â
   await show({ files }, [A], {
     'POST api/ops/diff.files': async () => { await held; return diffFiles['POST api/ops/diff.files']; },
   });
-  fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
+  await screen.findByText('4 files');
+  act(() => openDiff(TAB, { kind: 'commit', rev: A }));
   expect(screen.getByRole('listbox', { name: 'Changed files' }).getAttribute('aria-multiselectable')).toBe('true');
   fireEvent.click(fileRow('src/new.ts'));
   fireEvent.click(fileRow('src/lib/a.ts'), { ctrlKey: true });
@@ -240,17 +244,190 @@ test("a stash's Staged view binds the stash's details to the index commit's file
   await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Changed files' })).getAllByRole('option').map((o) => o.getAttribute('data-path'))).toEqual(['index.txt']));
   expect(screen.getByRole('complementary', { name: 'Commit details' })).toBeTruthy();
   expect(fileRow('index.txt').getAttribute('aria-current')).toBe('true');
+  expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull();
 });
 
-test('View changes opens the commit diff; a multi-selection offers the combined diff', async () => {
+test('a commit offers no View changes (its files open the diff); a multi-selection offers the combined diff', async () => {
   await show({ files });
-  fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
-  expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commit', rev: A });
-  // The diff replaces the graph in the shell: closed, the graph takes a multi-selection again.
-  act(() => closeDiff(TAB));
+  await screen.findByText('4 files');
+  expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull();
   act(() => dispatchSelection(TAB, { type: 'toggle', id: P, rows: rowsOf(A, P) }));
   fireEvent.click(screen.getByRole('button', { name: 'View combined diff' }));
   expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commits', oids: [A, P], wip: false });
+});
+
+const LONG_BODY = Array.from({ length: 200 }, (_, i) => `Body line ${i + 1}`).join('\n');
+
+test.each([['no body', ''], ['a 200-line body', LONG_BODY]])('the commit information is a header whose height ignores the message, scrolling on its own, apart from the files (%s)', async (_name, body) => {
+  await show({ body, files });
+  const header = await screen.findByRole('region', { name: 'Commit information' });
+  expect(within(header).getByText('Fix <b>it</b>')).toBeTruthy();
+  expect(within(header).getByText('Author')).toBeTruthy();
+  expect(within(header).getByLabelText('Commit SHA').textContent).toBe(A);
+  if (body) expect(within(header).getByText(/Body line 200$/)).toBeTruthy();
+  const list = screen.getByRole('listbox', { name: 'Changed files' });
+  expect(header.contains(list)).toBe(false);
+  expect(screen.getByRole('complementary', { name: 'Commit details' }).contains(list)).toBe(true);
+  // The height utility is the requirement (happy-dom has no layout; graph.mjs measures the pixels).
+  expect(header.className.split(' ').filter((c) => /^(h-|min-h-|max-h-|overflow-)/.test(c)).sort()).toEqual(['h-(--details-header)', 'overflow-y-auto']);
+});
+
+// happy-dom has no layout: the panel's height is defined on the aside, and a fake ResizeObserver reports it.
+function fakeResize() {
+  const live = new Set<() => void>();
+  vi.stubGlobal('ResizeObserver', class {
+    fire: () => void;
+    constructor(cb: ResizeObserverCallback) { this.fire = () => cb([], this as unknown as ResizeObserver); }
+    observe() { live.add(this.fire); }
+    unobserve() {}
+    disconnect() { live.delete(this.fire); }
+  });
+  return (h: number) => {
+    Object.defineProperty(screen.getByRole('complementary', { name: 'Commit details' }), 'clientHeight', { configurable: true, value: h });
+    act(() => { for (const f of live) f(); });
+  };
+}
+const handle = () => screen.getByRole('separator', { name: 'Resize commit information' });
+const valueNow = () => Number(handle().getAttribute('aria-valuenow'));
+const headerPx = () => screen.getByRole('region', { name: 'Commit information' }).style.getPropertyValue('--details-header');
+const { min: MIN, filesMin: FILES_MIN, handle: HANDLE, step: STEP } = DETAILS_HEADER;
+const MAX_600 = 600 - HANDLE - FILES_MIN;
+
+test('the header\'s resize handle: a horizontal separator with its value and bounds; the height reaches the header through --details-header', async () => {
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  const h = handle();
+  expect(h.getAttribute('aria-orientation')).toBe('horizontal');
+  expect([valueNow(), Number(h.getAttribute('aria-valuemin')), Number(h.getAttribute('aria-valuemax'))]).toEqual([DETAILS_HEADER.default, MIN, MAX_600]);
+  expect(headerPx()).toBe(`${DETAILS_HEADER.default}px`);
+  // touch-action none is the drag's contract on touch and pen: the browser must not turn the drag into a scroll.
+  expect(h.className.split(' ')).toContain('touch-none');
+});
+
+test('arrow keys step the height, Home and End go to the bounds; the height is stored and survives another selection and a remount', async () => {
+  const resize = fakeResize();
+  const fetch = await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  fireEvent.keyDown(handle(), { key: 'ArrowDown' });
+  expect([valueNow(), headerPx(), getItem('graph:detailsHeader')]).toEqual([DETAILS_HEADER.default + STEP, `${DETAILS_HEADER.default + STEP}px`, String(DETAILS_HEADER.default + STEP)]);
+  fireEvent.keyDown(handle(), { key: 'ArrowUp' });
+  expect(valueNow()).toBe(DETAILS_HEADER.default);
+  fireEvent.keyDown(handle(), { key: 'Home' });
+  expect([valueNow(), headerPx()]).toEqual([MIN, `${MIN}px`]);
+  fireEvent.keyDown(handle(), { key: 'End' });
+  expect([valueNow(), headerPx()]).toEqual([MAX_600, `${MAX_600}px`]);
+  fireEvent.keyDown(handle(), { key: 'Home' });
+  fireEvent.keyDown(handle(), { key: 'ArrowDown' });
+  // Another commit remounts the details (keyed by oid); the stub answers every oid with A's detail.
+  act(() => dispatchSelection(TAB, { type: 'click', id: P, rows: rowsOf(A, P) }));
+  await waitFor(() => expect(fetch.calls.filter((c) => c.url.pathname === '/api/ops/graph.commit').map((c) => (c.body as { params: { oid: string } }).params.oid)).toEqual([A, P]));
+  await screen.findByText('4 files');
+  expect(valueNow()).toBe(MIN + STEP);
+  // A reload reads the store back from storage.
+  expect(parseHeaderHeight(getItem('graph:detailsHeader'))).toBe(MIN + STEP);
+});
+
+// The handle captures the pointer, so every move and the release reach the handle itself.
+const drag = (from: number, to: number, end: 'pointerUp' | 'pointerCancel' | 'lostPointerCapture' | null = 'pointerUp') => {
+  fireEvent.pointerDown(handle(), { clientY: from, button: 0, pointerId: 1 });
+  fireEvent.pointerMove(handle(), { clientY: to, pointerId: 1 });
+  if (end) fireEvent[end](handle(), { clientY: to, pointerId: 1 });
+};
+
+test('a drag captures the pointer, resizes the header with aria-valuenow in step, stores the height once on release, and clamps at both ends', async () => {
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  const capture = vi.spyOn(handle(), 'setPointerCapture');
+  drag(300, 360, null);
+  expect(capture).toHaveBeenCalledWith(1);
+  expect([headerPx(), valueNow()]).toEqual([`${DETAILS_HEADER.default + 60}px`, DETAILS_HEADER.default + 60]);
+  expect(getItem('graph:detailsHeader')).toBeNull();
+  fireEvent.pointerUp(handle(), { clientY: 360, pointerId: 1 });
+  expect([valueNow(), getItem('graph:detailsHeader')]).toEqual([DETAILS_HEADER.default + 60, String(DETAILS_HEADER.default + 60)]);
+  // The capture's release after pointerup ends nothing more.
+  fireEvent.lostPointerCapture(handle(), { pointerId: 1 });
+  expect(valueNow()).toBe(DETAILS_HEADER.default + 60);
+  drag(300, -700);
+  expect(valueNow()).toBe(MIN);
+  drag(300, 1300);
+  expect([valueNow(), headerPx()]).toEqual([MAX_600, `${MAX_600}px`]);
+});
+
+test.each(['pointerCancel', 'lostPointerCapture'] as const)('a drag ended by %s is abandoned: the height goes back, nothing is stored, and later moves resize nothing', async (end) => {
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  drag(300, 360, end);
+  expect([valueNow(), headerPx(), getItem('graph:detailsHeader')]).toEqual([DETAILS_HEADER.default, `${DETAILS_HEADER.default}px`, null]);
+  fireEvent.pointerMove(handle(), { clientY: 420, pointerId: 1 });
+  fireEvent.pointerUp(handle(), { clientY: 420, pointerId: 1 });
+  expect([valueNow(), headerPx(), getItem('graph:detailsHeader')]).toEqual([DETAILS_HEADER.default, `${DETAILS_HEADER.default}px`, null]);
+});
+
+test('unmounting mid-drag abandons it: the pointer\'s later moves and release resize and store nothing', async () => {
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  const h = handle();
+  drag(300, 360, null);
+  act(() => dispatchSelection(TAB, { type: 'click', id: P, rows: rowsOf(A, P) }));
+  await screen.findByText('4 files');
+  for (const target of [h, window]) {
+    fireEvent.pointerMove(target, { clientY: 420, pointerId: 1 });
+    fireEvent.pointerUp(target, { clientY: 420, pointerId: 1 });
+  }
+  expect(getItem('graph:detailsHeader')).toBeNull();
+  expect(valueNow()).toBe(DETAILS_HEADER.default);
+});
+
+test('a shrinking panel re-clamps the rendered height so the files keep their minimum, and keeps the stored choice', async () => {
+  setDetailsHeader(400);
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  expect(valueNow()).toBe(400);
+  resize(354);
+  expect([valueNow(), headerPx(), Number(handle().getAttribute('aria-valuemax'))]).toEqual([354 - HANDLE - FILES_MIN, `${354 - HANDLE - FILES_MIN}px`, 354 - HANDLE - FILES_MIN]);
+  expect(getItem('graph:detailsHeader')).toBe('400');
+  resize(600);
+  expect(valueNow()).toBe(400);
+});
+
+test('a key that cannot move a clamped header leaves the stored choice alone; one that moves it stores the new height', async () => {
+  setDetailsHeader(400);
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(354);
+  const max = 354 - HANDLE - FILES_MIN;
+  for (const key of ['ArrowDown', 'End']) fireEvent.keyDown(handle(), { key });
+  expect([valueNow(), getItem('graph:detailsHeader')]).toEqual([max, '400']);
+  // A panel whose maximum is the minimum: no key moves the header, none collapses the choice.
+  resize(MIN + HANDLE + FILES_MIN - 40);
+  for (const key of ['ArrowUp', 'ArrowDown', 'Home', 'End']) fireEvent.keyDown(handle(), { key });
+  expect([valueNow(), getItem('graph:detailsHeader')]).toEqual([MIN, '400']);
+  resize(354);
+  fireEvent.keyDown(handle(), { key: 'ArrowUp' });
+  expect([valueNow(), getItem('graph:detailsHeader')]).toEqual([max - STEP, String(max - STEP)]);
+});
+
+test('in the narrow dialog the header keeps the default height, with no resize handle', async () => {
+  setDetailsHeader(300);
+  stubGraph(Object.assign(linearWorld(2), { detail: () => detailOf(commit(A, [P], { subject: 'Fix <b>it</b>' }), { files }) }));
+  await openGraph(TAB);
+  dispatchSelection(TAB, { type: 'click', id: A, rows: rowsOf(A, P) });
+  render(<CommitDetails tab={TAB} inDialog />);
+  await screen.findByText('4 files');
+  expect(screen.queryByRole('separator')).toBeNull();
+  expect(headerPx()).toBe(`${DETAILS_HEADER.default}px`);
 });
 
 test('the cap seam is in effect for this file', () => {

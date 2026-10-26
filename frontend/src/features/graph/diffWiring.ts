@@ -32,7 +32,7 @@ export function openIn(tab: Tab, target: Target, source: DiffSource, opts: { pat
   openDiff(target, source, opts);
 }
 
-/** Opens the diff of the tab's current selection (Enter, the details panel's button); a single WIP row opens its Changes panel. False when there is nothing to open. */
+/** Opens the diff of the tab's current selection (Enter, the multi-selection's View combined diff); a single WIP row opens its Changes panel. False when there is nothing to open. */
 export function openSelectionDiff(tab: Tab): boolean {
   const items = getSelection(tab).items;
   if (items.length === 1 && items[0].kind === 'wip') {

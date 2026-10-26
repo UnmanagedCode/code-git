@@ -155,14 +155,152 @@ try {
 
     // ---- keyboard, selection, details ----
     await row(o.C).click();
-    const details = page.getByRole('complementary', { name: 'Commit details' });
+    const details = page.getByRole('complementary', { name: 'Commit details', exact: true });
+    const header = details.getByRole('region', { name: 'Commit information', exact: true });
+    const files = details.getByRole('listbox', { name: 'Changed files', exact: true });
+    const headerHandle = details.getByRole('separator', { name: 'Resize commit information', exact: true });
+    const headerHeight = async () => (await header.boundingBox()).height;
+    const ariaNum = async (attr) => Number(await headerHandle.getAttribute(attr));
+    // isVisible ignores scroll clipping: a header row counts as shown only once scrolled to and inside the header's box.
+    const shownInHeader = async (loc) => {
+      await loc.scrollIntoViewIfNeeded();
+      const [b, h] = [await loc.boundingBox(), await header.boundingBox()];
+      return b.y >= h.y - 0.5 && b.y + b.height <= h.y + h.height + 0.5;
+    };
+    // The file list's own scroller: its nearest scrolling ancestor.
+    const listScroller = files.locator('xpath=ancestor::*[contains(concat(" ", @class, " "), " overflow-y-auto ")][1]');
+    const scroller = (fn) => listScroller.evaluate(fn);
     await details.getByText('Write the guide').waitFor();
-    check(await details.getByRole('region', { name: 'Co-authors' }).getByText('Alan Turing').isVisible(), 'details list the co-author');
-    check(await details.getByRole('button', { name: `Jump to parent ${o.B.slice(0, 7)}` }).isVisible(), 'details list the parent');
+    check(await shownInHeader(details.getByRole('region', { name: 'Co-authors', exact: true }).getByText('Alan Turing <alan@example.com>', { exact: true })), 'details list the co-author');
+    check(await shownInHeader(details.getByLabel('Commit SHA', { exact: true })), 'details list the SHA');
+    check(await shownInHeader(details.getByRole('button', { name: `Jump to parent ${o.B.slice(0, 7)}`, exact: true })), 'details list the parent');
+    await header.evaluate((el) => { el.scrollTop = 0; });
     check(await details.getByText('docs/guide.md').isVisible(), 'details list the changed file');
     await details.getByRole('button', { name: 'Tree', exact: true }).click();
     check(await details.getByText('docs', { exact: true }).isVisible() && await details.getByText('guide.md', { exact: true }).isVisible(), 'the tree view nests the file under its directory');
     await shot('details-light-desktop');
+    // The header's height is the user's (224 px by default); the files fill the rest of the panel, which fills the slot.
+    const shortHeight = await headerHeight();
+    const storedHeight = () => page.evaluate(() => localStorage.getItem('code-git:graph:detailsHeader'));
+    check(await storedHeight() === null && Math.abs(shortHeight - await ariaNum('aria-valuenow')) <= 1, `the header starts at its default height, the separator's value (${shortHeight})`);
+    const headerBox = await header.boundingBox();
+    const asideBox = await details.boundingBox();
+    const slotBox = await page.locator('[data-slot-name=right]').boundingBox();
+    check(Math.abs(asideBox.y - slotBox.y) <= 1 && Math.abs(asideBox.y + asideBox.height - (slotBox.y + slotBox.height)) <= 1, `the details fill the right slot (${asideBox.y}–${asideBox.y + asideBox.height} vs ${slotBox.y}–${slotBox.y + slotBox.height})`);
+    check((await files.boundingBox()).y >= headerBox.y + headerBox.height - 0.5, 'the file list starts below the commit information');
+    const filesBottom = await scroller((s) => s.getBoundingClientRect().bottom);
+    check(Math.abs(filesBottom - (asideBox.y + asideBox.height)) <= 1, `the file list reaches the panel's bottom (${filesBottom} vs ${asideBox.y + asideBox.height})`);
+    // A merge: the "Changes against…" note keeps its gap above the "N files" row.
+    await row(o.M1).click();
+    const note = details.getByText('Changes against the first parent', { exact: true });
+    await note.waitFor();
+    const noteBox = await note.boundingBox();
+    const countBox = await details.getByRole('heading', { name: '1 file', exact: true }).boundingBox();
+    check(countBox.y - (noteBox.y + noteBox.height) >= 8, `a merge's note keeps its gap above the file count (${countBox.y - (noteBox.y + noteBox.height)}px)`);
+    await shot('details-merge-light-desktop');
+    // G: a 200-line message and 31 files.
+    await row(o.G).click();
+    // The body is one element: its whole text, never one line per node.
+    const longBody = details.locator('[data-commit-body]', { hasText: 'Body line 200' });
+    await longBody.waitFor();
+    await details.getByRole('heading', { name: '31 files', exact: true }).waitFor();
+    const longHeight = await headerHeight();
+    check(Math.abs(longHeight - shortHeight) <= 0.5, `a 200-line message keeps the header's height (${longHeight} vs ${shortHeight})`);
+    check(await header.evaluate((el) => el.scrollHeight > el.clientHeight), 'the long message scrolls inside the header');
+    check(await files.isVisible() && await files.evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight; }), 'the file list stays in view below a long message');
+    check(await scroller((s) => s.scrollHeight > s.clientHeight), 'the 31 files scroll in the list\'s own scroller');
+    await scroller((s) => { s.scrollTop = s.scrollHeight; });
+    check(await scroller((s) => s.scrollTop > 0) && Math.abs(await headerHeight() - shortHeight) <= 0.5, 'scrolling the files leaves the header where it was');
+    await header.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    // The body is taller than the header: its end, then the SHA, must lie inside the header's box.
+    const endInHeader = async (loc) => {
+      const [b, h] = [await loc.boundingBox(), await header.boundingBox()];
+      return b.y + b.height > h.y && b.y + b.height <= h.y + h.height + 0.5;
+    };
+    check(await endInHeader(longBody) && await shownInHeader(details.getByLabel('Commit SHA', { exact: true })), 'the header scrolls to the end of the message and the SHA');
+    await shot('details-long-light-desktop');
+
+    // ---- resizing the commit information ----
+    // Every bound comes from the separator itself (aria-valuemin / aria-valuemax), never re-derived here. Box heights
+    // (getBoundingClientRect) and the app's clientHeight can differ by a fraction: ±1.
+    const near = (a, b) => Math.abs(a - b) <= 1;
+    const bounds = async () => [await ariaNum('aria-valuemin'), await ariaNum('aria-valuemax')];
+    const frames = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    // The file rows wholly inside the list's scroller, scrolled to its end (only file rows there, no directory rows).
+    const rowsShown = () => scroller((s) => {
+      s.scrollTop = s.scrollHeight;
+      const r = s.getBoundingClientRect();
+      return [...s.querySelectorAll('li[role="option"]')].filter((li) => { const b = li.getBoundingClientRect(); return b.top >= r.top - 0.5 && b.bottom <= r.bottom + 0.5; }).length;
+    });
+    const drag = async (dy) => {
+      const b = await headerHandle.boundingBox();
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(b.x + b.width / 2, Math.max(0, Math.min(page.viewportSize().height - 1, b.y + b.height / 2 + dy)), { steps: 5 });
+      await page.mouse.up();
+    };
+    const [min, max] = await bounds();
+    check(min < max, `the separator has a range to resize in (${min}–${max})`);
+    const clampTo = (px) => Math.max(min, Math.min(max, px));
+    for (const dy of [-40, 20]) {
+      const want = clampTo(await ariaNum('aria-valuenow') + dy);
+      await drag(dy);
+      const now = await ariaNum('aria-valuenow');
+      check(near(now, want) && near(await headerHeight(), now), `a drag of ${dy}px resizes the header to ${now}px (wanted ${want})`);
+    }
+    check(await scroller((s) => s.getBoundingClientRect().top) >= (await header.boundingBox()).y + await headerHeight() - 0.5, 'the files stay below the resized header');
+    await drag(-1000);
+    check(await ariaNum('aria-valuenow') === min && near(await headerHeight(), min), `a drag far up stops at aria-valuemin (${await headerHeight()})`);
+    await drag(1000);
+    check(await ariaNum('aria-valuenow') === max && near(await headerHeight(), max), `a drag far down stops at aria-valuemax (${await headerHeight()})`);
+    check(await rowsShown() >= 3, `at the maximum the files still show at least three whole rows (${await rowsShown()})`);
+    await headerHandle.focus();
+    await page.keyboard.press('ArrowUp');
+    const stepped = await ariaNum('aria-valuenow');
+    check(stepped < max && near(await headerHeight(), stepped), `↑ steps the header shorter (${max} → ${stepped})`);
+    await page.keyboard.press('ArrowDown');
+    check(await ariaNum('aria-valuenow') === max, '↓ steps it back');
+    await page.keyboard.press('Home');
+    check(near(await headerHeight(), min), 'Home goes to aria-valuemin');
+    await page.keyboard.press('End');
+    check(near(await headerHeight(), max), 'End goes to aria-valuemax');
+    await page.keyboard.press('Home');
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+    const chosen = await ariaNum('aria-valuenow');
+    check(chosen > min && chosen < max && await storedHeight() === String(chosen), `↓ steps the header taller, and the height is stored (${chosen})`);
+    await open();
+    await row(o.C).click();
+    await details.getByText('Write the guide').waitFor();
+    check(near(await headerHeight(), chosen), `the chosen height survives a reload (${await headerHeight()})`);
+    await row(o.G).click();
+    await longBody.waitFor();
+    check(near(await headerHeight(), chosen), 'and another selection');
+    await shot('details-resized-light-desktop');
+    // A panel too short for the chosen height re-clamps the header instead of crushing the files, and keeps the choice.
+    // How short the window must be depends on what else takes the height (the activity panel): step it down until the
+    // separator's maximum falls between its minimum and the chosen height.
+    let clampedAt = null;
+    for (let h = VIEWPORTS.desktop.height - 40; h >= 400; h -= 40) {
+      await page.setViewportSize({ width: VIEWPORTS.desktop.width, height: h });
+      await frames();
+      const [lo, hi] = await bounds();
+      if (hi < chosen && hi > lo) { clampedAt = h; break; }
+    }
+    check(clampedAt !== null, `a window between 400 and ${VIEWPORTS.desktop.height - 40}px tall makes the panel too short for the chosen ${chosen}px header with room to clamp (last panel ${(await details.boundingBox()).height}px, max ${await ariaNum('aria-valuemax')})`);
+    const shortMax = await ariaNum('aria-valuemax');
+    check(await ariaNum('aria-valuenow') === shortMax && near(await headerHeight(), shortMax) && await storedHeight() === String(chosen), `at 1280×${clampedAt} the header re-clamps to aria-valuemax (${shortMax}) and the stored ${chosen} stays`);
+    check(await rowsShown() >= 3, `the re-clamped files still show at least three whole rows (${await rowsShown()})`);
+    await page.setViewportSize(VIEWPORTS.desktop);
+    await frames();
+    check(near(await headerHeight(), chosen), 'the chosen height comes back when the panel grows');
+    // Back to the default: no stored height.
+    await page.evaluate(() => localStorage.removeItem('code-git:graph:detailsHeader'));
+    await open();
+    await row(o.G).click();
+    await longBody.waitFor();
+    check(near(await headerHeight(), shortHeight), 'back to the default height');
+    await row(o.C).click();
+    await details.getByText('Write the guide').waitFor();
     // The left slot: the refs panel first, the diff's Compare panel below it, both reachable.
     const left = page.locator('[data-slot-name=left]');
     const refsBox = await left.getByRole('navigation', { name: 'Refs' }).boundingBox();
@@ -295,8 +433,13 @@ try {
           await shot(`compare-dialog-${scheme}-phone`);
           await page.keyboard.press('Escape');
           await row(o.C).click();
-          await page.getByRole('dialog', { name: 'Details' }).getByText('Write the guide').waitFor();
+          await page.getByRole('dialog', { name: 'Details', exact: true }).getByText('Write the guide').waitFor();
           await shot(`details-dialog-${scheme}-phone`);
+          await page.keyboard.press('Escape');
+          await row(o.G).click();
+          await page.getByRole('dialog', { name: 'Details', exact: true }).locator('[data-commit-body]', { hasText: 'Body line 200' }).waitFor();
+          check(await page.getByRole('dialog', { name: 'Details', exact: true }).getByRole('separator').count() === 0, `${scheme} phone: the details dialog has no resize handle (the header keeps its default height)`);
+          await shot(`details-dialog-long-${scheme}-phone`);
           await page.keyboard.press('Escape');
         }
       }

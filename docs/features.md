@@ -83,7 +83,7 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 
 ## Commit graph
 
-The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree, with line counts; the list that drives the commit's diff while it is open: [File lists](#file-lists)). Full behaviour: [graph](graph.md).
+The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree, with line counts; the list that drives the commit's diff while it is open: [File lists](#file-lists)), the commit information in a header resizable by drag or keyboard (persisted; fixed in the narrow dialog). Full behaviour: [graph](graph.md).
 
 Age dividers: a hairline and a pill (`1 hour ago` … `N years ago`) mark where the rows below turn older ([docs/graph.md → Age markers](graph.md)).
 
@@ -309,7 +309,7 @@ A refusal (nothing to stash, a conflict in progress, a path behind an untracked 
 - No confirmation for apply or pop: git refuses to overwrite a local change — the toast says "Local changes would be overwritten" and names the files ("Commit, stash or discard these changes first."); nothing is written. That includes a file with *any* local change, even one the stash would merge cleanly into.
 - Conflicts: "Applied stash@{n} with conflicts in N files", the files named; the conflicted files show in the Changes panel (`U`).
 
-**View** — **View changes** (stash menu) or the details panel's **View changes**: the diff header's switch shows **All changes** (staged and unstaged together, against the stash's base), **Staged** (what was staged), **Untracked** (only for a stash with untracked files).
+**View** — **View changes** (stash menu): the diff header's switch shows **All changes** (staged and unstaged together, against the stash's base), **Staged** (what was staged), **Untracked** (only for a stash with untracked files).
 
 **One file** — **Apply this file** (the details panel's file menu, on a stash) or **Apply file from stash** (the diff's file list menu — the details while the stash is selected, on All changes or Untracked): the file's change goes into the working tree only, as a patch — all of it or nothing; a file that differs from the stash's base is refused, never overwritten. Pop is whole-stash only.
 

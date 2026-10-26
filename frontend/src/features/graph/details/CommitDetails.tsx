@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { clip } from '@/lib/clip';
 import { CopyIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
 import { runOp } from '@/lib/endpoints';
+import { setCssPx } from '@/lib/cssVars';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { clampHeader, DETAILS_HEADER, useDetailsHeader } from '@/state/detailsHeader';
 import { useGraphData } from '@/state/graph';
 import { requestFileOpen, useGraphSelection, type SelectedRow } from '@/state/graphSelection';
 import { tabKey, type Tab } from '@/state/tabs';
@@ -12,13 +14,14 @@ import { diffOwnerCommit, useOpenDiff } from '@/features/diff/binding';
 import { DiffFileList } from '@/features/diff/DiffFileList';
 import { FileList, FileViewToggle } from '@/features/diff/FileList';
 import { useRightSlot } from '@/features/workdir/rightSlot';
-import { openIn, openSelectionDiff, selectionDiff } from '../diffWiring';
+import { openSelectionDiff, selectionDiff } from '../diffWiring';
 import { formatTime } from '../time';
 import { initials } from '../initials';
 import { requestJump } from '../jump';
 import { WIDE_GRAPH_QUERY } from '../media';
 import { CONTEXT, type FileCtx } from '../contexts';
 import type { CommitDetail, Stash } from '../types';
+import { HEADER_VAR, HeaderSplitter } from './HeaderSplitter';
 import { SignatureBadge } from './SignatureBadge';
 
 /** Characters of a commit body shown until "Show the whole message". */
@@ -50,18 +53,36 @@ export function CommitDetails({ tab, inDialog = false }: { tab: Tab | null; inDi
   return <DetailsView key={tabKey(tab)} tab={tab} inDialog={inDialog} />;
 }
 
+/** An element's height, kept current by a ResizeObserver; 0 until measured (and where there is no layout). */
+function useHeight(ref: RefObject<HTMLElement | null>, active: boolean): number {
+  const [h, setH] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setH(el.clientHeight);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setH(el.clientHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [active]);
+  return h;
+}
+
 function DetailsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const sel = useGraphSelection(tab);
   const data = useGraphData(tab);
   const slot = useRightSlot(tab);
-  if (data.status === 'idle' || (!inDialog && slot !== 'details')) return null;
+  const aside = useRef<HTMLElement>(null);
+  const shown = data.status !== 'idle' && (inDialog || slot === 'details');
+  const available = useHeight(aside, shown);
+  if (!shown) return null;
   const only = sel.items.length === 1 ? sel.items[0] : null;
   let body;
-  if (sel.items.length > 1) body = <Multi tab={tab} items={sel.items} commits={data.commits} stashes={data.refs?.stashes ?? []} />;
-  else if (!only || only.kind === 'wip') body = <p className="text-sm text-muted-foreground">Select a commit</p>;
-  else body = <Commit key={only.oid} tab={tab} oid={only.oid} />;
+  if (sel.items.length > 1) body = <div className="flex flex-col gap-3 p-3"><Multi tab={tab} items={sel.items} commits={data.commits} stashes={data.refs?.stashes ?? []} /></div>;
+  else if (!only || only.kind === 'wip') body = <div className="flex flex-col gap-3 p-3"><p className="text-sm text-muted-foreground">Select a commit</p></div>;
+  else body = <Commit key={only.oid} tab={tab} oid={only.oid} inDialog={inDialog} available={available} />;
   return (
-    <aside className="flex flex-col gap-3 p-3" aria-label="Commit details">
+    <aside ref={aside} className="flex h-full min-h-0 flex-col" aria-label="Commit details">
       {body}
     </aside>
   );
@@ -105,9 +126,14 @@ function Person({ label, name, email, time }: { label: string; name: string; ema
   );
 }
 
-function Commit({ tab, oid }: { tab: Tab; oid: string }) {
+function Commit({ tab, oid, inDialog, available }: { tab: Tab; oid: string; inDialog: boolean; available: number }) {
   const [d, setD] = useState<CommitDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const header = useRef<HTMLElement>(null);
+  const chosen = useDetailsHeader();
+  // The narrow dialog is one scroller with no rest of the panel to give the files: the header keeps the default there.
+  const height = inDialog ? DETAILS_HEADER.default : clampHeader(chosen, available);
+  useLayoutEffect(() => { if (header.current) setCssPx(header.current, HEADER_VAR, height); }, [height, d]);
   const open = useOpenDiff(tab);
   const stashes = useGraphData(tab).refs?.stashes ?? [];
   useEffect(() => {
@@ -117,8 +143,8 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
       .catch((e) => { if (!ac.signal.aborted && !(e instanceof ApiError && e.code === 'CANCELLED')) setError(e instanceof Error ? e.message : String(e)); });
     return () => ac.abort();
   }, [oid]);
-  if (error) return <p className="text-sm text-destructive" role="alert">{error}</p>;
-  if (!d) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (error) return <div className="p-3"><p className="text-sm text-destructive" role="alert">{error}</p></div>;
+  if (!d) return <div className="p-3"><p className="text-sm text-muted-foreground">Loading…</p></div>;
   // The open diff is this commit's (or one of this stash's views): the list shows and drives the diff's files.
   const bound = open && diffOwnerCommit(open, stashes) === d.oid ? open : null;
   const boundParent = bound?.source.kind === 'commit' ? bound.source.parent ?? 1 : 1;
@@ -130,57 +156,64 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
   const sameCommitter = d.committer.name === d.author.name && d.committer.email === d.author.email;
   return (
     <>
-      <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-semibold break-words">{clip(d.subject)}</h2>
-        <Button variant="outline" size="sm" className="self-start" onClick={() => openIn(tab, tab, { kind: 'commit', rev: d.oid })}>View changes</Button>
-        {d.body && <Body text={d.body} />}
+      {/* The user's height, never the message's, scrolling on its own: a long message never pushes the files out of the panel. */}
+      <section ref={header} aria-label="Commit information" className="flex h-(--details-header) shrink-0 flex-col gap-3 overflow-y-auto border-b p-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold break-words">{clip(d.subject)}</h2>
+          {d.body && <Body text={d.body} />}
+        </div>
+        <Person label="Author" name={d.author.name} email={d.author.email} time={d.author.time} />
+        {!sameCommitter && <Person label="Committer" name={d.committer.name} email={d.committer.email} time={d.committer.time} />}
+        {d.coAuthors.length > 0 && (
+          <section aria-label="Co-authors" className="text-sm">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase">Co-authors</h3>
+            {d.coAuthors.length > CO_AUTHORS_SHOWN && <p className="text-xs text-muted-foreground">and {d.coAuthors.length - CO_AUTHORS_SHOWN} more</p>}
+            <ul>{d.coAuthors.slice(0, CO_AUTHORS_SHOWN).map((c, i) => <li key={i}>{clip(c.name)} <span className="text-muted-foreground">&lt;{clip(c.email)}&gt;</span></li>)}</ul>
+          </section>
+        )}
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-mono text-xs break-all" aria-label="Commit SHA">{d.oid}</span>
+          <Button variant="ghost" size="icon-sm" className="size-6" aria-label="Copy SHA" onClick={() => navigator.clipboard?.writeText(d.oid)}><CopyIcon /></Button>
+          <SignatureBadge status={d.signature.status} signer={d.signature.signer} keyId={d.signature.key} />
+        </div>
+        {d.parents.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 text-sm" role="group" aria-label="Parents">
+            <span className="text-muted-foreground">{d.parents.length > 1 ? 'Parents' : 'Parent'}</span>
+            {d.parents.map((p) => (
+              <Button key={p} variant="outline" size="sm" className="h-6 px-1.5 font-mono text-xs" aria-label={`Jump to parent ${p.slice(0, 7)}`} onClick={() => requestJump(tab, p)}>{p.slice(0, 7)}</Button>
+            ))}
+          </div>
+        )}
+      </section>
+      {!inDialog && <HeaderSplitter header={header} height={height} available={available} />}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 flex-col gap-3 px-3 pt-2">
+          {boundParent > 1
+            ? <p className="text-xs text-muted-foreground">Changes against parent {boundParent}</p>
+            : d.parents.length > 1 && <p className="text-xs text-muted-foreground">Changes against the first parent</p>}
+          {count !== undefined && (
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase">{count} {count === 1 ? 'file' : 'files'}</h3>
+              <div className="ml-auto"><FileViewToggle /></div>
+            </div>
+          )}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {listFailed ? <p className="px-3 py-2 text-xs text-muted-foreground">The changed files could not be listed; the diff says why.</p>
+            : bound ? <DiffFileList tab={tab} fallback={sameFiles ? d.files ?? undefined : undefined} /> : d.files ? (
+            <FileList
+              label="Changed files"
+              files={d.files}
+              onSelect={(_sel, f) => requestFileOpen({ tab, commit: d.oid, parent, path: f.path, oldPath: f.oldPath })}
+              menu={(f) => ({ context: CONTEXT.file, ctx: { tab, commit: d.oid, parent, file: f } satisfies FileCtx })}
+            />
+          ) : (
+            <p className="px-3 py-2 text-sm text-destructive" role="alert">
+              {d.filesError?.code === 'OUTPUT_TOO_LARGE' ? 'Too many changes to list.' : `The changed files could not be listed: ${d.filesError?.message ?? 'unknown error'}`}
+            </p>
+          )}
+        </div>
       </div>
-      <Person label="Author" name={d.author.name} email={d.author.email} time={d.author.time} />
-      {!sameCommitter && <Person label="Committer" name={d.committer.name} email={d.committer.email} time={d.committer.time} />}
-      {d.coAuthors.length > 0 && (
-        <section aria-label="Co-authors" className="text-sm">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase">Co-authors</h3>
-          {d.coAuthors.length > CO_AUTHORS_SHOWN && <p className="text-xs text-muted-foreground">and {d.coAuthors.length - CO_AUTHORS_SHOWN} more</p>}
-          <ul>{d.coAuthors.slice(0, CO_AUTHORS_SHOWN).map((c, i) => <li key={i}>{clip(c.name)} <span className="text-muted-foreground">&lt;{clip(c.email)}&gt;</span></li>)}</ul>
-        </section>
-      )}
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-mono text-xs break-all" aria-label="Commit SHA">{d.oid}</span>
-        <Button variant="ghost" size="icon-sm" className="size-6" aria-label="Copy SHA" onClick={() => navigator.clipboard?.writeText(d.oid)}><CopyIcon /></Button>
-        <SignatureBadge status={d.signature.status} signer={d.signature.signer} keyId={d.signature.key} />
-      </div>
-      {d.parents.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 text-sm" role="group" aria-label="Parents">
-          <span className="text-muted-foreground">{d.parents.length > 1 ? 'Parents' : 'Parent'}</span>
-          {d.parents.map((p) => (
-            <Button key={p} variant="outline" size="sm" className="h-6 px-1.5 font-mono text-xs" aria-label={`Jump to parent ${p.slice(0, 7)}`} onClick={() => requestJump(tab, p)}>{p.slice(0, 7)}</Button>
-          ))}
-        </div>
-      )}
-      {boundParent > 1
-        ? <p className="text-xs text-muted-foreground">Changes against parent {boundParent}</p>
-        : d.parents.length > 1 && <p className="text-xs text-muted-foreground">Changes against the first parent</p>}
-      {count !== undefined && (
-        <div className="flex items-center gap-2">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase">{count} {count === 1 ? 'file' : 'files'}</h3>
-          <div className="ml-auto"><FileViewToggle /></div>
-        </div>
-      )}
-      {listFailed ? <p className="text-xs text-muted-foreground">The changed files could not be listed; the diff says why.</p>
-        : bound ? <div className="-mx-3"><DiffFileList tab={tab} fallback={sameFiles ? d.files ?? undefined : undefined} /></div> : d.files ? (
-        <div className="-mx-3">
-          <FileList
-            label="Changed files"
-            files={d.files}
-            onSelect={(_sel, f) => requestFileOpen({ tab, commit: d.oid, parent, path: f.path, oldPath: f.oldPath })}
-            menu={(f) => ({ context: CONTEXT.file, ctx: { tab, commit: d.oid, parent, file: f } satisfies FileCtx })}
-          />
-        </div>
-      ) : (
-        <p className="text-sm text-destructive" role="alert">
-          {d.filesError?.code === 'OUTPUT_TOO_LARGE' ? 'Too many changes to list.' : `The changed files could not be listed: ${d.filesError?.message ?? 'unknown error'}`}
-        </p>
-      )}
     </>
   );
 }
