@@ -226,9 +226,16 @@ test('consultsAttributes: unlisted subcommands and unmeasured forms consult; the
     ['stash', 'apply', '-q', 'abc'], ['stash', 'push'], ['stash', 'create'], ['stash', 'show', '-p'], ['stash'], ['stash', 'list', '-p'], ['stash', 'list', '--stat'],
     ['worktree', 'add', 'x'], ['worktree', 'remove', 'x'], ['worktree'],
     ['ls-files', '--eol'], ['ls-files', '-z', '--eol', '--', 'a'], ['ls-files', '--eo'],
+    // `--textconv` and `--filters` run the attribute's conversion; git accepts unique prefixes (`--t`; `--fi`, `--f` on a
+    // git without `--filter`).
+    ['cat-file', '--textconv', 'HEAD:a'], ['cat-file', '--filters', 'HEAD:a'], ['cat-file', '--t', 'HEAD:a'], ['cat-file', '--textc', 'HEAD:a'],
+    ['cat-file', '--fi', 'HEAD:a'], ['cat-file', '--f', 'HEAD:a'], ['cat-file', '--filter', 'HEAD:a'], ['cat-file', '--batch', '--filters'],
+    ['cat-file', '--batch-check', '--buffer', '--textconv'],
   ];
   const free = [
     ['rev-parse', 'HEAD'], ['for-each-ref'], ['branch', '-m', 'a', 'b'], ['update-ref', '--stdin'], ['config', '--get', 'x.y'], ['cat-file', '--batch-check'],
+    ['cat-file', '-p', 'HEAD:a'], ['cat-file', '-t', 'abc'], ['cat-file', '-e', 'abc'], ['cat-file', '--batch-check=%(objectname) %(objecttype)', '--buffer'],
+    ['cat-file', '--batch', '-Z'], ['cat-file', '--batch-all-objects', '--batch-check', '--unordered', '--filter=blob:none'],
     ['fetch', 'origin'], ['ls-remote', 'origin'], ['commit-tree', 'abc'],
     ['log', '--stdin', '--topo-order', ...LOG_SAFE, '--format=%H', '--skip=0', '--max-count=11'],
     ['log', '--stdin', '--topo-order', ...LOG_SAFE, '--format=%H', '--max-count=11', '-i', '-F', '--grep=x', '--author=y'],
@@ -257,6 +264,39 @@ test('runGit decides on the subcommand past leading -c pairs and --no-literal-pa
   await run(['--no-literal-pathspecs', 'ls-files', '-z']);
   assert.deepEqual(w.argvs().map((a) => (isProbe(a) ? 'probe' : a.find((x) => ['status', 'rev-parse', 'ls-files'].includes(x)))),
     ['probe', 'status', 'rev-parse', 'probe', 'status', 'ls-files']);
+});
+
+// Invariant: an args-level `-C` / `--git-dir` (which the probe, keyed by ctx.target, would not follow) before a
+// consulting subcommand is a code-git bug: runGit throws before anything runs. Before an allow-listed subcommand the
+// command runs, unprobed.
+test('an args-level -C or --git-dir before a consulting subcommand throws before any exec; before an allow-listed one it runs unprobed', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  const ctx = ctxFor(w.target(), 'read');
+  const throwing = [
+    ['-C', 'libA', '--git-dir=.git', 'status'], ['-C', 'libA', 'diff', '--quiet'], ['--git-dir=.git', 'status'], ['--git-dir', '.git', 'add', '-A'],
+    ['-c', 'a.b=1', '-C', 'libA', '--git-dir=.git', 'status'], ['-C', 'libA', '--git-dir=.git', 'log', '--shortstat'],
+  ];
+  for (const args of throwing) {
+    await assert.rejects(runGit(ctx, args), (e) => e.code === undefined && /target\.sub/.test(e.message), JSON.stringify(args));
+  }
+  assert.deepEqual(w.execArgv(), [], 'nothing ran');
+  await runGit(ctx, ['-C', 'libA', '--git-dir=.git', 'rev-parse', 'HEAD']);
+  await runGit(ctx, ['-C', 'libA', '--git-dir', '.git', 'symbolic-ref', '-q', 'HEAD'], { okExit: [0, 1] });
+  assert.deepEqual(w.execArgv().map(afterBase), [
+    ['-C', 'libA', '--git-dir=.git', 'rev-parse', 'HEAD'], ['-C', 'libA', '--git-dir', '.git', 'symbolic-ref', '-q', 'HEAD'],
+  ]);
+});
+
+// Invariant: the route builds each op run's ctx with the attributeChecks memo: a real /api/ops run with several
+// consulting commands probes exactly once.
+test('through /api/ops: stage.discardFiles (several consulting commands) runs exactly one probe', async (t) => {
+  const w = await subWorld(t, { nested: false });
+  w.repo.write('p.txt', 'changed\n');
+  const r = await w.op('stage.discardFiles', { tracked: ['p.txt'] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const argvs = w.execArgv().map(afterBase);
+  assert.equal(argvs.filter(isProbe).length, 1, 'one probe');
+  assert.ok(argvs.filter((a) => !isProbe(a) && consultsAttributes(a)).length >= 2, `several consulting commands: ${JSON.stringify(argvs)}`);
 });
 
 // Invariant: a probe that exits non-zero is not a refusal: the op's own command answers (here: not a repository).
@@ -292,6 +332,26 @@ test('residual: a FIFO nested .gitattributes under a stat-dirty directory is not
   const { e } = await rejection(w.op('repo.summary', {}));
   assert.equal(e.code, 'GIT_TIMEOUT', e.message);
   assert.equal(w.argvs().filter(isProbe).length, 1, 'the root probe ran and passed');
+  await noneLeft(w.cc);
+});
+
+// Invariant (residual, pinned): the attribute files of a child repository git works in on the op's behalf are not
+// probed: the parent's probe passes, and the parent `status` that submodule.update runs (git runs `status` inside the
+// stat-dirty child) blocks on the child's FIFO .gitattributes until the write timeout, refused GIT_TIMEOUT — a claim of
+// per-child coverage fails here.
+test("residual: a FIFO at a submodule child's .gitattributes is not probed by a parent-target submodule.update: it waits out the write timeout, GIT_TIMEOUT", FIFO_TEST, async (t) => {
+  const prev = LIMITS.write.timeoutMs;
+  LIMITS.write.timeoutMs = 800;
+  t.after(() => { LIMITS.write.timeoutMs = prev; });
+  const w = await subWorld(t, { nested: false });
+  mkfifo(path.join(w.repo.dir, 'libA', '.gitattributes'));
+  const later = Date.now() / 1000 + 10;
+  fs.utimesSync(path.join(w.repo.dir, 'libA', 'a.txt'), later, later);
+  const r = await w.op('submodule.update', { paths: ['libA'] });
+  assert.equal(r.body.code, 'GIT_TIMEOUT', r.body.error);
+  const argvs = w.execArgv().map(afterBase);
+  assert.deepEqual(argvs.filter(isProbe), [PROBE], 'one probe, in the parent: it passed');
+  assert.equal(argvs.at(-1)[0], 'status', `the parent status blocked in the child: ${JSON.stringify(argvs.at(-1))}`);
   await noneLeft(w.cc);
 });
 

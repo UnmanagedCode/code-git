@@ -137,6 +137,15 @@ test('a GIT_FAILED message names the subcommand, past leading -c pairs', async (
   assert.equal(subcommandOf(['-c', 'protocol.ext.allow=never', '--no-literal-pathspecs', 'lfs', 'pull']), 'lfs', "the LFS ops' pathspec switch");
 });
 
+// Invariant: subcommandOf classifies a command by its real subcommand past an args-level `-C <path>` and `--git-dir`
+// (either form), as it does past `-c` pairs.
+test('subcommandOf skips an args-level -C <path> and --git-dir=<x> / --git-dir <x>', () => {
+  assert.equal(subcommandOf(['-C', 'libA', '--git-dir=.git', 'rev-parse', 'HEAD']), 'rev-parse');
+  assert.equal(subcommandOf(['-C', 'libA', '--git-dir', '.git', 'symbolic-ref', '-q', 'HEAD']), 'symbolic-ref');
+  assert.equal(subcommandOf(['-c', 'a.b=1', '-C', 'x', '--git-dir=.git', '-c', 'c.d=2', 'status']), 'status');
+  assert.equal(subcommandOf(['--git-dir=.git', 'rev-list', '--count', 'HEAD']), 'rev-list');
+});
+
 test('writes on one project are serialized; reads and other projects are not held behind them', async (t) => {
   const { cc } = await world(t);
   cc.state.execHook = () => 'hold';
