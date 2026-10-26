@@ -105,8 +105,13 @@ function subcommandAt(args) {
   }
 }
 
-/** Whether `args` names another repository before its subcommand (`-C`, `--git-dir`), past what runGit's target says. */
-const redirects = (args) => args.slice(0, subcommandAt(args)).some((a, i, pre) => (a === '-C' || a === '--git-dir' || a.startsWith('--git-dir=')) && pre[i - 1] !== '-c');
+/**
+ * Whether `args`, before its subcommand, sends git to attribute files the probe (ctx.target, no `-c` pairs) does not
+ * open: another repository (`-C`, `--git-dir`), or a `-c core.attributesFile` (config keys are case-insensitive).
+ */
+const redirects = (args) => args.slice(0, subcommandAt(args)).some((a, i, pre) => (pre[i - 1] === '-c'
+  ? a.split('=', 1)[0].toLowerCase() === 'core.attributesfile'
+  : a === '-C' || a === '--git-dir' || a.startsWith('--git-dir=')));
 
 /**
  * Runs one git command for an op, in `ctx.target` (subArgs for a submodule). `ctx` = {target, op, kind: 'read'|'write', cancellable, signal, opRunId, activity, locks, attributeChecks}.
@@ -120,8 +125,9 @@ export async function runGit(ctx, args, opts = {}) {
   const forbidden = Object.keys(opts.env ?? {}).filter(isProtectedEnv);
   if (forbidden.length) throw new Error(`runGit: ${ctx.op} may not set ${forbidden.join(', ')}`);
   if (consultsAttributes(args.slice(subcommandAt(args)))) {
-    // The probe runs in ctx.target's repository: a consulting command in another one goes through a target naming it.
-    if (redirects(args)) throw new Error(`runGit: ${ctx.op} runs ${subcommandOf(args)} under an args-level -C/--git-dir; name the repository in ctx.target.sub so its attribute files are probed`);
+    // The probe opens ctx.target's attribute files: a consulting command in another repository goes through a target
+    // naming it, and none overrides core.attributesFile.
+    if (redirects(args)) throw new Error(`runGit: ${ctx.op} runs ${subcommandOf(args)} under an args-level -C/--git-dir or -c core.attributesFile; name the repository in ctx.target.sub, and leave core.attributesFile to the repository, so the probe opens the files git will`);
     await attributesChecked(ctx);
   }
   return execOne(ctx, args, opts);

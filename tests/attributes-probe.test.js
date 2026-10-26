@@ -287,6 +287,30 @@ test('an args-level -C or --git-dir before a consulting subcommand throws before
   ]);
 });
 
+// Invariant: a leading `-c core.attributesFile=…` (git config keys are case-insensitive), which the probe — run without
+// the command's `-c` pairs — would not open, before a consulting subcommand is a code-git bug: runGit throws before
+// anything runs. Before an allow-listed subcommand the command runs, unprobed.
+test('a leading -c core.attributesFile (any case) before a consulting subcommand throws before any exec; before an allow-listed one it runs unprobed', async (t) => {
+  const w = await world(t);
+  const ctx = ctxFor(w.target, 'read');
+  const throwing = [
+    ['-c', 'core.attributesFile=/x', 'status'], ['-c', 'core.attributesfile=/x', 'status'], ['-c', 'CORE.ATTRIBUTESFILE=/x', 'add', '-A'],
+    ['-c', 'Core.AttributesFile=/x', 'diff', '--quiet'], ['-c', 'a.b=1', '-c', 'core.attributesFile=/x', 'log', '--shortstat'],
+    ['-c', 'core.attributesFile', 'status'],
+  ];
+  for (const args of throwing) {
+    await assert.rejects(runGit(ctx, args), (e) => e.code === undefined && /core\.attributesFile/.test(e.message), JSON.stringify(args));
+  }
+  assert.deepEqual(w.argvs(), [], 'nothing ran');
+  await runGit(ctx, ['-c', 'Core.AttributesFile=/x', 'rev-parse', 'HEAD']);
+  await runGit(ctx, ['-c', 'core.attributesfile=/x', 'ls-files', '-z']);
+  // Another key is no redirection: probed as usual.
+  await runGit(ctx, ['-c', 'core.attributes=/x', 'status']);
+  assert.deepEqual(w.argvs(), [
+    ['-c', 'Core.AttributesFile=/x', 'rev-parse', 'HEAD'], ['-c', 'core.attributesfile=/x', 'ls-files', '-z'], PROBE, ['-c', 'core.attributes=/x', 'status'],
+  ]);
+});
+
 // Invariant: the route builds each op run's ctx with the attributeChecks memo: a real /api/ops run with several
 // consulting commands probes exactly once.
 test('through /api/ops: stage.discardFiles (several consulting commands) runs exactly one probe', async (t) => {
