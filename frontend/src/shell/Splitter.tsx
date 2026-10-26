@@ -46,9 +46,12 @@ export function Splitter({ orientation, label, value, min, max, clamp, step, sig
     else preview(value);
     setDragged(null);
   };
-  const onPointerDown = (e: PointerEvent) => {
-    if (e.button !== 0) return;
+  const onPointerDown = (e: PointerEvent<HTMLElement>) => {
+    // A second contact (a touch's other finger) must not take over a drag in progress.
+    if (e.button !== 0 || drag.current) return;
+    // preventDefault keeps text from being selected during the drag, and also suppresses the focus a click would give.
     e.preventDefault();
+    e.currentTarget.focus();
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { pointerId: e.pointerId, from: at(e), px: value };
   };

@@ -1,5 +1,5 @@
 // The side panes' resize handles on the seeded `app` world, in light then dark, each on a fresh seed: A defaults (left
-// 256, right 320, both handles visible, <main> as wide as the viewport) → B a drag on each handle resizes the real pane
+// 256, right 320, both handles visible, <main> as wide as the viewport) → B a drag on each handle resizes (and leaves it focused, so an arrow works at once) the real pane
 // and aria-valuenow follows → C drags past both ends clamp, and the centre keeps 400 px → D keys (→ / ← step, Home, End)
 // → E a reload keeps the widths, stored under code-git:shell:paneWidths → F a narrower window renders fitted widths (left
 // first) and keeps the choice, a wider one brings it back, 1024 wide still leaves the centre 400 px, and below 1024 the
@@ -90,6 +90,11 @@ for (const scheme of ['light', 'dark']) {
       await dragBy('right', -120);
       w = await synced('B right');
       check(near(w.right, RIGHT.default + 120), `${scheme}: B: the right drag −120 grows the pane to ${w.right}`);
+      // A drag leaves its handle focused: an arrow works at once, with no focus() call.
+      await page.keyboard.press('ArrowLeft');
+      await settle();
+      w = await synced('B key after drag');
+      check(near(w.right, RIGHT.default + 120 + STEP), `${scheme}: B: ← right after a drag widens the same pane by ${STEP} (${w.right})`);
       await shot('widened');
 
       // C. Clamps and the centre minimum.
@@ -174,6 +179,9 @@ for (const scheme of ['light', 'dark']) {
       await page.mouse.up();
       await settle();
       check(near((await header.boundingBox()).height, h0 + 40) && near(Number(await hh.getAttribute('aria-valuenow')), h0 + 40), `${scheme}: G: the header handle still drags (${h0} → ${h0 + 40})`);
+      await page.keyboard.press('ArrowDown');
+      await settle();
+      check(near((await header.boundingBox()).height, h0 + 40 + STEP), `${scheme}: G: ↓ right after the header drag steps it by ${STEP} with no focus call`);
       await shot('details-header');
 
       check(errors.length === 0, `${scheme}: no console errors or ≥400 responses${errors.length ? `:\n${errors.join('\n')}` : ''}`);

@@ -45,9 +45,10 @@ test('a release at the start size stores nothing and puts the size back', () => 
   down(h, 50);
   fireEvent.pointerMove(h, { clientX: 80, pointerId: 1 });
   fireEvent.pointerMove(h, { clientX: 50, pointerId: 1 });
+  preview.mockClear();
   fireEvent.pointerUp(h, { clientX: 50, pointerId: 1 });
   expect(commit).not.toHaveBeenCalled();
-  expect(preview).toHaveBeenLastCalledWith(VALUE);
+  expect(preview.mock.calls).toEqual([[VALUE]]);
 });
 
 test.each(['pointerCancel', 'lostPointerCapture'] as const)('a drag ended by %s restores the size, stores nothing, and later events do nothing', (end) => {
@@ -87,6 +88,33 @@ test('only the primary button starts a drag, and only the capturing pointer driv
   expect(commit).not.toHaveBeenCalled();
   fireEvent.pointerMove(h, { clientX: 60, pointerId: 1 });
   expect(preview).toHaveBeenLastCalledWith(210);
+});
+
+test('a second pointer\'s down, move and up during a drag neither captures nor commits, and the first drag carries on', () => {
+  const { h, preview, commit } = setup();
+  const capture = vi.spyOn(h, 'setPointerCapture');
+  down(h, 50);
+  fireEvent.pointerMove(h, { clientX: 80, pointerId: 1 });
+  down(h, 300, { pointerId: 2 });
+  fireEvent.pointerMove(h, { clientX: 320, pointerId: 2 });
+  fireEvent.pointerUp(h, { clientX: 320, pointerId: 2 });
+  expect(capture.mock.calls).toEqual([[1]]);
+  expect(commit).not.toHaveBeenCalled();
+  expect(h.getAttribute('aria-valuenow')).toBe('230');
+  fireEvent.pointerMove(h, { clientX: 90, pointerId: 1 });
+  expect(preview).toHaveBeenLastCalledWith(240);
+  fireEvent.pointerUp(h, { clientX: 90, pointerId: 1 });
+  expect(commit.mock.calls).toEqual([[240]]);
+});
+
+test('a pointer-started drag leaves the handle focused, so the keys work right after', () => {
+  const { h, commit } = setup();
+  down(h, 50);
+  fireEvent.pointerMove(h, { clientX: 80, pointerId: 1 });
+  fireEvent.pointerUp(h, { clientX: 80, pointerId: 1 });
+  expect(document.activeElement).toBe(h);
+  fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+  expect(commit.mock.calls).toEqual([[230], [VALUE + STEP]]);
 });
 
 test('sign -1 inverts the drag and the arrow step, so a pane on the right grows as its handle moves left', () => {
