@@ -1,19 +1,20 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
+import { FileIcon, TrashIcon } from 'lucide-react';
 import type { MenuAction } from './menus';
 
 interface Ctx { name: string; flag: boolean }
 const ran: string[] = [];
 const TEST: MenuAction<Ctx>[] = [
   { id: 'late', context: 'x', label: 'Late', order: 900, group: 'copy', run: () => { ran.push('late'); } },
-  { id: 'first', context: 'x', label: ({ name }) => `Reset ${name} to this commit`, order: 100, group: 'nav', run: (c) => { ran.push(`first:${c.name}`); } },
+  { id: 'first', context: 'x', icon: FileIcon, label: ({ name }) => `Reset ${name} to this commit`, order: 100, group: 'nav', run: (c) => { ran.push(`first:${c.name}`); } },
   { id: 'second', context: 'x', label: 'Second', order: 100, group: 'nav', run: () => {} },
   { id: 'hidden', context: 'x', label: 'Hidden', when: (c) => c.flag, run: () => {} },
   {
-    id: 'reset', context: 'x', label: 'Reset', order: 300, group: 'rewrite', children: [
-      { id: 'soft', context: 'x', label: 'Soft', run: () => { ran.push('soft'); } },
-      { id: 'hard', context: 'x', label: 'Hard', destructive: true, when: (c) => c.flag, run: () => {} },
+    id: 'reset', context: 'x', icon: FileIcon, label: 'Reset', order: 300, group: 'rewrite', children: [
+      { id: 'soft', context: 'x', icon: FileIcon, label: 'Soft', run: () => { ran.push('soft'); } },
+      { id: 'hard', context: 'x', icon: TrashIcon, label: 'Hard', destructive: true, when: (c) => c.flag, run: () => {} },
     ],
   },
   { id: 'empty', context: 'x', label: 'Empty submenu', order: 300, group: 'rewrite', children: [{ id: 'never', context: 'x', label: 'Never', when: () => false, run: () => {} }] },
@@ -46,6 +47,29 @@ const texts = (menu: HTMLElement) => [...menu.querySelectorAll('[role=menuitem],
 test('actions sort by order then registration, with a separator between groups and label functions applied', () => {
   const menu = open('x', { name: 'main', flag: false });
   expect(texts(menu)).toEqual(['Reset main to this commit', 'Second', '|', 'Reset', '|', 'Late']);
+});
+
+test('every item leads with one aria-hidden icon cell (the action\'s icon, else a blank) and is named by its label alone', async () => {
+  const menu = open('x', { name: 'main', flag: true });
+  // The invariant: the icon cell is the item's first child *node* (not merely its first element), ahead of the label text.
+  const check = (item: HTMLElement, icon: boolean) => {
+    const cell = item.firstChild as HTMLElement;
+    expect(cell.nodeType).toBe(Node.ELEMENT_NODE);
+    expect(cell.getAttribute('data-slot')).toBe('menu-item-icon');
+    expect(cell.getAttribute('aria-hidden')).toBe('true');
+    expect(cell.tagName.toLowerCase()).toBe(icon ? 'svg' : 'span');
+    const label = [...item.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim());
+    expect(label).toBeDefined();
+    expect(cell.compareDocumentPosition(label!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  };
+  check(within(menu).getByRole('menuitem', { name: 'Reset main to this commit' }), true);
+  check(within(menu).getByRole('menuitem', { name: 'Second' }), false);
+  check(within(menu).getByRole('menuitem', { name: 'Late' }), false);
+  const trigger = within(menu).getByRole('menuitem', { name: 'Reset' });
+  check(trigger, true);
+  await userEvent.click(trigger);
+  check(await screen.findByRole('menuitem', { name: 'Soft' }), true);
+  check(screen.getByRole('menuitem', { name: 'Hard' }), true);
 });
 
 test('`when` filters actions and submenu children; a submenu with no child left is hidden', () => {

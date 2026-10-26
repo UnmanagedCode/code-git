@@ -1,3 +1,4 @@
+import type { LucideIcon } from 'lucide-react';
 import { DIFF_FILE_ACTIONS } from '@/features/diff/actions';
 import { GRAPH_ACTIONS } from '@/features/graph/actions';
 import { STASH_ACTIONS } from '@/features/stash/actions';
@@ -21,6 +22,8 @@ export interface MenuAction<C = unknown> {
   context: string;
   /** A function to inline names: "Reset main to this commit". */
   label: string | ((ctx: C) => string);
+  /** Decorative, in the menu's leading icon column (ActionMenu.tsx); the label stays the accessible name. */
+  icon?: LucideIcon;
   when?: (ctx: C) => boolean;
   /** Absent when `children` is set. */
   run?: (ctx: C) => void | Promise<void>;
@@ -38,7 +41,7 @@ export interface MenuAction<C = unknown> {
   primary?: boolean;
 }
 
-const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS, ...GRAPH_ACTIONS, ...WORKDIR_FILE_ACTIONS, RESTORE_ACTION, ...WORKDIR_GRAPH_ACTIONS, ...BRANCH_ACTIONS, ...STASH_ACTIONS, ...REMOTE_ACTIONS, ...SEQUENCE_ACTIONS, ...CONFLICT_FILE_ACTIONS, ...SUBMODULE_ACTIONS as MenuAction<never>[], ...HISTORY_ACTIONS, ...FLOW_ACTIONS, ...LFS_ACTIONS];
+export const ACTIONS: MenuAction<never>[] = [...TAB_ACTIONS, ...DIFF_FILE_ACTIONS, ...GRAPH_ACTIONS, ...WORKDIR_FILE_ACTIONS, RESTORE_ACTION, ...WORKDIR_GRAPH_ACTIONS, ...BRANCH_ACTIONS, ...STASH_ACTIONS, ...REMOTE_ACTIONS, ...SEQUENCE_ACTIONS, ...CONFLICT_FILE_ACTIONS, ...SUBMODULE_ACTIONS as MenuAction<never>[], ...HISTORY_ACTIONS, ...FLOW_ACTIONS, ...LFS_ACTIONS];
 
 /** An action as a menu shows it: its submenu, if any, built and resolved. */
 export type ResolvedAction<C> = Omit<MenuAction<C>, 'children'> & { children?: ResolvedAction<C>[] };

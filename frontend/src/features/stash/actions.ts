@@ -9,6 +9,7 @@ import type { Tab } from '@/state/tabs';
 import { stashApply, stashApplyFile, stashDrop, stashPop } from './api';
 import { appliedToast, runStashOp } from './run';
 import { stashesOf, stashViewOf } from './views';
+import { ArchiveIcon, ArchiveRestoreIcon, GitBranchPlusIcon, PackageOpenIcon, TextCursorInputIcon, Trash2Icon } from 'lucide-react';
 
 // The stash's menu actions (docs/features.md → Stash), group 'stash', orders 400+. Only Drop asks first: git refuses to
 // overwrite local changes on apply and pop (CHECKOUT_CONFLICT), and a conflict only adds markers to files that were clean.
@@ -49,24 +50,24 @@ const stashOfDiff = (c: DiffFileCtx): Stash | null => {
 
 const S = { group: 'stash' } as const;
 export const STASH_ACTIONS: MenuAction<never>[] = [
-  { ...S, id: 'stash.apply', context: CONTEXT.stash, label: 'Apply', order: 400, run: (c: StashCtx) => void applyStash(c.tab, c.stash) },
-  { ...S, id: 'stash.applyIndex', context: CONTEXT.stash, label: 'Apply with staged changes', order: 401, run: (c: StashCtx) => void applyStash(c.tab, c.stash, true) },
-  { ...S, id: 'stash.pop', context: CONTEXT.stash, label: 'Pop', order: 402, run: (c: StashCtx) => void popStash(c.tab, c.stash) },
-  { ...S, id: 'stash.branch', context: CONTEXT.stash, label: 'Create branch…', order: 403, run: (c: StashCtx) => openStashDialog({ kind: 'branch', tab: c.tab, stash: c.stash }) },
-  { ...S, id: 'stash.rename', context: CONTEXT.stash, label: 'Rename…', order: 404, run: (c: StashCtx) => openStashDialog({ kind: 'rename', tab: c.tab, stash: c.stash }) },
-  { ...S, id: 'stash.drop', context: CONTEXT.stash, label: 'Drop…', order: 405, destructive: true, run: (c: StashCtx) => dropStash(c.tab, c.stash) },
-  { ...S, id: 'stash.save.wip', context: CONTEXT.wip, label: 'Stash changes…', order: 400, when: (c: WipCtx) => c.isOwn, run: (c: WipCtx) => openStashSave(c.tab, { mode: 'all' }) },
+  { ...S, id: 'stash.apply', icon: ArchiveRestoreIcon, context: CONTEXT.stash, label: 'Apply', order: 400, run: (c: StashCtx) => void applyStash(c.tab, c.stash) },
+  { ...S, id: 'stash.applyIndex', icon: ArchiveRestoreIcon, context: CONTEXT.stash, label: 'Apply with staged changes', order: 401, run: (c: StashCtx) => void applyStash(c.tab, c.stash, true) },
+  { ...S, id: 'stash.pop', icon: PackageOpenIcon, context: CONTEXT.stash, label: 'Pop', order: 402, run: (c: StashCtx) => void popStash(c.tab, c.stash) },
+  { ...S, id: 'stash.branch', icon: GitBranchPlusIcon, context: CONTEXT.stash, label: 'Create branch…', order: 403, run: (c: StashCtx) => openStashDialog({ kind: 'branch', tab: c.tab, stash: c.stash }) },
+  { ...S, id: 'stash.rename', icon: TextCursorInputIcon, context: CONTEXT.stash, label: 'Rename…', order: 404, run: (c: StashCtx) => openStashDialog({ kind: 'rename', tab: c.tab, stash: c.stash }) },
+  { ...S, id: 'stash.drop', icon: Trash2Icon, context: CONTEXT.stash, label: 'Drop…', order: 405, destructive: true, run: (c: StashCtx) => dropStash(c.tab, c.stash) },
+  { ...S, id: 'stash.save.wip', icon: ArchiveIcon, context: CONTEXT.wip, label: 'Stash changes…', order: 400, when: (c: WipCtx) => c.isOwn, run: (c: WipCtx) => openStashSave(c.tab, { mode: 'all' }) },
   {
-    ...S, id: 'stash.save.file', context: 'workdir-file', label: 'Stash this file…', order: 400,
+    ...S, id: 'stash.save.file', icon: ArchiveIcon, context: 'workdir-file', label: 'Stash this file…', order: 400,
     run: (c: WorkdirFileCtx) => openStashSave(c.tab, { mode: 'files', paths: [c.file.path] }),
   },
   {
-    ...S, id: 'stash.applyFile.details', context: CONTEXT.file, label: 'Apply this file', order: 400,
+    ...S, id: 'stash.applyFile.details', icon: ArchiveRestoreIcon, context: CONTEXT.file, label: 'Apply this file', order: 400,
     when: (c: FileCtx) => stashOfCommit(c.tab, c.commit) !== null,
     run: (c: FileCtx) => { const s = stashOfCommit(c.tab, c.commit); if (s) void applyStashFile(c.tab, s, c.file.path); },
   },
   {
-    ...S, id: 'stash.applyFile.diff', context: 'diff-file', label: 'Apply file from stash', order: 400,
+    ...S, id: 'stash.applyFile.diff', icon: ArchiveRestoreIcon, context: 'diff-file', label: 'Apply file from stash', order: 400,
     when: (c: DiffFileCtx) => stashOfDiff(c) !== null,
     run: (c: DiffFileCtx) => { const s = stashOfDiff(c); if (s) void applyStashFile(c.tab, s, c.files[0].path); },
   },

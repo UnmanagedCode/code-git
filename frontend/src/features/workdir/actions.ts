@@ -11,6 +11,7 @@ import { tabKey, type Tab } from '@/state/tabs';
 import { runWorkdirOp, workdirOf } from '@/state/workdir';
 import { discardFiles, ignoreAdd, restoreFileOp, stageFiles, unstageFiles, type IgnoreKind } from './api';
 import { openWip, openWorkingTree } from './entry';
+import { CircleSlashIcon, CopyIcon, FileClockIcon, FileDiffIcon, MinusIcon, PencilIcon, PlusIcon, Undo2Icon } from 'lucide-react';
 
 // What the Changes panel does to files. Every discard asks first and sends nothing until confirmed.
 
@@ -109,7 +110,7 @@ const newCommit = (tab: Tab): string | null => {
 };
 
 export const RESTORE_ACTION: MenuAction<DiffFileCtx> = {
-  id: 'diff.restore', context: 'diff-file', label: 'Restore file to this version…', destructive: true,
+  id: 'diff.restore', icon: FileClockIcon, context: 'diff-file', label: 'Restore file to this version…', destructive: true,
   when: (c) => c.files.length === 1 && c.files[0].status !== 'D' && !c.files[0].submodule && newCommit(c.tab) !== null,
   run: (c) => { const oid = newCommit(c.tab); if (oid) void restoreFile(c.tab, oid, c.files[0].path); },
 };
@@ -118,7 +119,7 @@ export const RESTORE_ACTION: MenuAction<DiffFileCtx> = {
 const ignoreAction = (kind: IgnoreKind, order: number): MenuAction<WorkdirFileCtx> => {
   const target = (c: WorkdirFileCtx) => ignoreTargets(c.file.path).find((x) => x.kind === kind);
   return {
-    id: `workdir.ignore.${kind}`, context: 'workdir-file', group: 'ignore', order,
+    id: `workdir.ignore.${kind}`, context: 'workdir-file', icon: CircleSlashIcon, group: 'ignore', order,
     label: (c) => (c.file.status === '?' ? `Ignore ${target(c)?.label}` : `Ignore and stop tracking ${target(c)?.label}…`),
     when: (c) => !!target(c),
     run: (c) => { const t = target(c); if (t) return ignore(c.tab, c.file, kind, t.value); },
@@ -126,21 +127,21 @@ const ignoreAction = (kind: IgnoreKind, order: number): MenuAction<WorkdirFileCt
 };
 
 export const WORKDIR_FILE_ACTIONS: MenuAction<WorkdirFileCtx>[] = [
-  { id: 'workdir.stage', context: 'workdir-file', label: 'Stage', when: (c) => c.section === 'unstaged', run: (c) => void stageFile(c.tab, c.file) },
-  { id: 'workdir.unstage', context: 'workdir-file', label: 'Unstage', when: (c) => c.section === 'staged', run: (c) => void unstageFile(c.tab, c.file) },
-  { id: 'workdir.discard', context: 'workdir-file', label: 'Discard…', destructive: true, when: (c) => c.section === 'unstaged' && canDiscard(c.file), run: (c) => discardFile(c.tab, c.file) },
-  { id: 'workdir.copyPath', context: 'workdir-file', label: 'Copy path', run: (c) => navigator.clipboard?.writeText(c.file.path) },
+  { id: 'workdir.stage', icon: PlusIcon, context: 'workdir-file', label: 'Stage', when: (c) => c.section === 'unstaged', run: (c) => void stageFile(c.tab, c.file) },
+  { id: 'workdir.unstage', icon: MinusIcon, context: 'workdir-file', label: 'Unstage', when: (c) => c.section === 'staged', run: (c) => void unstageFile(c.tab, c.file) },
+  { id: 'workdir.discard', icon: Undo2Icon, context: 'workdir-file', label: 'Discard…', destructive: true, when: (c) => c.section === 'unstaged' && canDiscard(c.file), run: (c) => discardFile(c.tab, c.file) },
+  { id: 'workdir.copyPath', icon: CopyIcon, context: 'workdir-file', label: 'Copy path', run: (c) => navigator.clipboard?.writeText(c.file.path) },
   ignoreAction('path', 600), ignoreAction('ext', 601), ignoreAction('dir', 602),
 ];
 
 /** C4's actions on the graph's menus: a WIP row's Changes panel, and the HEAD commit's message (order 300: history-rewriting). */
 export const WORKDIR_GRAPH_ACTIONS: MenuAction<never>[] = [
   {
-    id: 'workdir.wip.changes', context: CONTEXT.wip, label: 'Show changes', group: 'view', order: 780,
+    id: 'workdir.wip.changes', icon: FileDiffIcon, context: CONTEXT.wip, label: 'Show changes', group: 'view', order: 780,
     run: (c: WipCtx) => openWip(c.tab, c.checkout),
   },
   {
-    id: 'workdir.commit.editHeadMessage', context: CONTEXT.commit, label: 'Edit HEAD message…', group: 'rewrite', order: 300,
+    id: 'workdir.commit.editHeadMessage', icon: PencilIcon, context: CONTEXT.commit, label: 'Edit HEAD message…', group: 'rewrite', order: 300,
     when: (c: CommitCtx) => !!c.commit.oid && getGraph(c.tab).refs?.head.oid === c.commit.oid,
     run: (c: CommitCtx) => openWorkingTree(c.tab, { amend: 'message' }),
   },

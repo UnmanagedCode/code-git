@@ -10,6 +10,7 @@ import { refsKey, type Tab } from '@/state/tabs';
 import { removeRemote } from './api';
 import { pushFlow } from './pushFlow';
 import { fetchFlow, runRemoteOp } from './run';
+import { ArrowUpFromLineIcon, CloudDownloadIcon, CopyIcon, PencilIcon, Trash2Icon } from 'lucide-react';
 
 // The remote actions (docs/remotes.md → Using it). Orders: on a branch and a drop, 250 (group `remote`, beside the tag
 // push); on a remote, 150 fetch, 700 edit, 720 remove, 900 copy.
@@ -48,17 +49,17 @@ async function removeFlow(tab: Tab, remote: string): Promise<void> {
 export const REMOTE_ACTIONS: MenuAction<never>[] = [
   // ---- a local branch ----
   {
-    id: 'remotes.branch.push', context: 'branch', group: 'remote', order: 250,
+    id: 'remotes.branch.push', icon: ArrowUpFromLineIcon, context: 'branch', group: 'remote', order: 250,
     label: 'Push',
     when: (c: RefCtx) => isLocal(c) && !!c.ref.oid && remoteUpstream(c.tab, c.ref.name) !== null,
     run: (c: RefCtx) => void pushFlow(c.tab, { branch: c.ref.short }),
   },
-  ...perRemote<RefCtx>('remotes.branch.pushTo', 'branch', { group: 'remote', order: 251 }, { one: (remote) => `Push to ${remote}…`, many: 'Push to remote' },
+  ...perRemote<RefCtx>('remotes.branch.pushTo', 'branch', { group: 'remote', order: 251, icon: ArrowUpFromLineIcon }, { one: (remote) => `Push to ${remote}…`, many: 'Push to remote' },
     (c, remote) => openRemoteDialog({ kind: 'push', tab: c.tab, branch: c.ref.short, remote }))
     .map((a) => ({ ...a, when: (c: RefCtx) => isLocal(c) && !!c.ref.oid && (a.when?.(c) ?? true) })),
   // ---- a branch dropped on a remote branch ----
   {
-    id: 'remotes.drop.push', context: 'branch-drop', group: 'remote', order: 250,
+    id: 'remotes.drop.push', icon: ArrowUpFromLineIcon, context: 'branch-drop', group: 'remote', order: 250,
     label: (c: BranchDropCtx) => `Push ${c.source.short} to ${c.target.short}`,
     when: dropPushes,
     run: (c: BranchDropCtx) => void pushFlow(c.tab, {
@@ -67,25 +68,25 @@ export const REMOTE_ACTIONS: MenuAction<never>[] = [
   },
   // ---- a remote (refs panel) ----
   {
-    id: 'remotes.remote.fetch', context: 'remote', group: 'fetch', order: 150,
+    id: 'remotes.remote.fetch', icon: CloudDownloadIcon, context: 'remote', group: 'fetch', order: 150,
     label: (c: RemoteCtx) => `Fetch ${c.remote}`, run: (c: RemoteCtx) => void fetchFlow(c.tab, c.remote),
   },
   {
-    id: 'remotes.remote.fetchPrune', context: 'remote', group: 'fetch', order: 151,
+    id: 'remotes.remote.fetchPrune', icon: CloudDownloadIcon, context: 'remote', group: 'fetch', order: 151,
     label: (c: RemoteCtx) => `Fetch ${c.remote} (prune)…`, run: (c: RemoteCtx) => void fetchFlow(c.tab, c.remote, true),
   },
   {
-    id: 'remotes.remote.edit', context: 'remote', group: 'edit', order: 700, label: 'Edit…',
+    id: 'remotes.remote.edit', icon: PencilIcon, context: 'remote', group: 'edit', order: 700, label: 'Edit…',
     when: (c: RemoteCtx) => remoteInfo(refsKey(c.tab), c.remote)?.legacy === false,
     run: (c: RemoteCtx) => openRemoteDialog({ kind: 'edit', tab: c.tab, remote: c.remote }),
   },
   {
-    id: 'remotes.remote.remove', context: 'remote', group: 'edit', order: 720, destructive: true, label: 'Remove…',
+    id: 'remotes.remote.remove', icon: Trash2Icon, context: 'remote', group: 'edit', order: 720, destructive: true, label: 'Remove…',
     when: (c: RemoteCtx) => remoteInfo(refsKey(c.tab), c.remote)?.legacy === false,
     run: (c: RemoteCtx) => void removeFlow(c.tab, c.remote),
   },
   {
-    id: 'remotes.remote.copyUrl', context: 'remote', group: 'copy', order: 900, label: 'Copy URL',
+    id: 'remotes.remote.copyUrl', icon: CopyIcon, context: 'remote', group: 'copy', order: 900, label: 'Copy URL',
     when: (c: RemoteCtx) => !!remoteInfo(refsKey(c.tab), c.remote)?.displayUrl,
     run: (c: RemoteCtx) => void navigator.clipboard?.writeText(remoteInfo(refsKey(c.tab), c.remote)!.displayUrl!),
   },

@@ -6,6 +6,7 @@ import { openFlowDialog } from '@/state/flowDialog';
 import type { Tab } from '@/state/tabs';
 import { FLOW_TYPES, type FlowType } from './api';
 import { flowBranchOf, getFlow } from './state';
+import { FlagIcon, GitBranchPlusIcon, Settings2Icon, WorkflowIcon } from 'lucide-react';
 
 // The git-flow menu items (docs/gitflow.md): a "Git-flow" submenu in the repository menu, and Finish on a flow branch's
 // menu (order 335: after the history-rewriting items, before Delete).
@@ -34,22 +35,22 @@ const branchFlow = (c: RefCtx) => (c.ref.kind === 'local' && c.ref.oid ? flowBra
 
 export const FLOW_ACTIONS: MenuAction<never>[] = [
   {
-    id: 'flow.repo', context: REPO_CONTEXT, label: 'Git-flow', group: 'flow', order: 100,
+    id: 'flow.repo', icon: WorkflowIcon, context: REPO_CONTEXT, label: 'Git-flow', group: 'flow', order: 100,
     when: (c: RepoCtx) => headOf(c.tab).oid !== null,
     children: (c: RepoCtx): MenuAction<RepoCtx>[] => {
       const f = headFlowBranch(c.tab);
       return [
-        { id: 'flow.repo.init', context: REPO_CONTEXT, label: initialized(c.tab) ? 'Git-flow settings…' : 'Initialize…', group: 'init', run: (x) => openFlowDialog({ kind: 'init', tab: x.tab }) },
+        { id: 'flow.repo.init', icon: Settings2Icon, context: REPO_CONTEXT, label: initialized(c.tab) ? 'Git-flow settings…' : 'Initialize…', group: 'init', run: (x) => openFlowDialog({ kind: 'init', tab: x.tab }) },
         ...FLOW_TYPES.map((type): MenuAction<RepoCtx> => ({
-          id: `flow.repo.start.${type}`, context: REPO_CONTEXT, label: `Start ${TYPE_LABEL[type]}…`, group: 'start',
+          id: `flow.repo.start.${type}`, context: REPO_CONTEXT, icon: GitBranchPlusIcon, label: `Start ${TYPE_LABEL[type]}…`, group: 'start',
           when: (x) => initialized(x.tab), run: (x) => openFlowDialog({ kind: 'start', tab: x.tab, type }),
         })),
-        ...(f ? [{ id: 'flow.repo.finish', context: REPO_CONTEXT, label: `Finish ${f.branch}…`, group: 'finish', destructive: true, run: (x: RepoCtx) => { finishHead(x.tab); } }] : []),
+        ...(f ? [{ id: 'flow.repo.finish', icon: FlagIcon, context: REPO_CONTEXT, label: `Finish ${f.branch}…`, group: 'finish', destructive: true, run: (x: RepoCtx) => { finishHead(x.tab); } }] : []),
       ];
     },
   },
   {
-    id: 'flow.branch.finish', context: 'branch', group: 'flow', order: 335, destructive: true,
+    id: 'flow.branch.finish', icon: FlagIcon, context: 'branch', group: 'flow', order: 335, destructive: true,
     label: (c: RefCtx) => `Finish ${TYPE_LABEL[branchFlow(c)?.type ?? 'feature']}…`,
     when: (c: RefCtx) => branchFlow(c) !== null,
     run: (c: RefCtx) => {
