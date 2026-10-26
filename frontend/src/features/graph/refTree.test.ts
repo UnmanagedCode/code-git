@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { MAX_TREE_DEPTH } from '@/features/diff/fileTree';
 import { oid, ref } from '@/test/graphData';
-import { refTreeRows, type RefTreeRow } from './refTree';
+import { folderName, refTreeRows, type RefTreeRow } from './refTree';
 
 const M = oid(1);
 const local = (path: string, over = {}) => ref(`refs/heads/${path}`, M, over);
@@ -54,4 +54,36 @@ test('a path deeper than MAX_TREE_DEPTH keeps its tail in the leaf name', () => 
   const leaf = rows.at(-1) as Extract<RefTreeRow, { kind: 'ref' }>;
   expect(leaf.depth).toBe(MAX_TREE_DEPTH);
   expect(leaf.name).toBe(segs.slice(MAX_TREE_DEPTH).join('/'));
+});
+
+// Invariant: the tree's depth never exceeds MAX_TREE_DEPTH folders, at the boundary of MAX+1 and MAX+2 components.
+test('MAX_TREE_DEPTH + 1 and + 2 components: at most the cap in folders, the leaf keeps the tail', () => {
+  for (const extra of [1, 2]) {
+    const segs = Array.from({ length: MAX_TREE_DEPTH + extra }, (_, i) => `d${i}`);
+    const rows = refTreeRows([local(segs.join('/'))], none);
+    expect(rows.filter((r) => r.kind === 'folder')).toHaveLength(MAX_TREE_DEPTH);
+    expect(Math.max(...rows.map((r) => r.depth))).toBe(MAX_TREE_DEPTH);
+    expect((rows.at(-1) as Extract<RefTreeRow, { kind: 'ref' }>).name).toBe(segs.slice(MAX_TREE_DEPTH).join('/'));
+  }
+});
+
+// Invariant: a folder's `refs` is every ref beneath it, pinned ones (not rendered in the tree) included.
+test('a folder\'s refs include a pinned member that is rendered flat above the tree', () => {
+  const rows = refTreeRows([local('team/a'), local('team/b'), local('team/sub/c')], { pinned: ['refs/heads/team/b', 'refs/heads/team/sub/c'], collapsed: () => false });
+  const folders = rows.filter((r): r is Extract<RefTreeRow, { kind: 'folder' }> => r.kind === 'folder');
+  expect(folders.map((f) => [f.name, f.refs.map((r) => r.name).sort()])).toEqual([
+    ['team', ['refs/heads/team/a', 'refs/heads/team/b', 'refs/heads/team/sub/c']],
+  ]);
+});
+
+// Invariant: accessible folder names differ across namespaces and remotes for the same path.
+test('folderName qualifies tag and remote folders so equal paths never share a name', () => {
+  const name = (r: ReturnType<typeof ref>) => folderName(refTreeRows([r], none)[0] as Extract<RefTreeRow, { kind: 'folder' }>);
+  const names = [
+    name(ref('refs/heads/release/a', M)), name(ref('refs/tags/release/a', M)),
+    name(ref('refs/remotes/origin/release/a', M, { remote: 'origin' })), name(ref('refs/remotes/up/release/a', M, { remote: 'up' })),
+    name(ref('refs/heads/origin/release/a', M)),
+  ];
+  expect(new Set(names).size).toBe(names.length);
+  expect(names[0]).toBe('folder release');
 });

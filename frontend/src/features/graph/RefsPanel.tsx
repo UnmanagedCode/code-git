@@ -1,4 +1,4 @@
-import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { clip } from '@/lib/clip';
 import { ArchiveIcon, ChevronDownIcon, ChevronRightIcon, CloudIcon, EyeIcon, EyeOffIcon, FolderGit2Icon, FolderIcon, FolderOpenIcon, GitBranchIcon, PinIcon, PlusIcon, TagIcon, TargetIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,7 @@ import { requestJump } from './jump';
 import { WIDE_GRAPH_QUERY } from './media';
 import { ownWorktree, worktreeName } from './labels';
 import type { Checkout, GitWorktree, Ref, Stash } from './types';
-import { refTreeRows, type RefTreeRow } from './refTree';
+import { folderName, refTreeRows, type RefTreeRow } from './refTree';
 import { resolveVisibility, sectionOf, SECTION_BASE, type Visibility } from './visibility';
 import { pointerMods } from '@/shell/shortcuts';
 
@@ -49,13 +49,14 @@ const INDENT = ['pl-5', 'pl-9', 'pl-13', 'pl-17', 'pl-21', 'pl-25', 'pl-29'];
 const indentFor = (level: number) => INDENT[Math.min(level, INDENT.length - 1)];
 
 const SHOWN = 'group-hover/row:opacity-100 group-has-[:focus-visible]/row:opacity-100';
-const CLICKABLE = 'group-hover/row:pointer-events-auto group-has-[:focus-visible]/row:pointer-events-auto';
+const CLICKABLE = 'group-hover/row:pointer-events-auto group-has-[:focus-visible]/row:pointer-events-auto pointer-coarse:pointer-events-auto';
 
 interface Toggle { key: string; label: string; on: boolean; disabled?: boolean; onClick: () => void; icon: ReactNode }
 
-function ToggleButton({ t, overlay }: { t: Toggle; overlay: boolean }) {
+function ToggleButton({ t, overlay, onActivate }: { t: Toggle; overlay: boolean; onActivate: () => void }) {
   return (
     <button
+      data-toggle={t.key}
       type="button"
       aria-label={t.label}
       aria-pressed={t.on}
@@ -64,7 +65,7 @@ function ToggleButton({ t, overlay }: { t: Toggle; overlay: boolean }) {
         'flex shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-40',
         overlay ? cn('size-6', CLICKABLE) : 'size-5 text-warning',
       )}
-      onClick={(e) => { e.stopPropagation(); t.onClick(); }}
+      onClick={(e) => { e.stopPropagation(); onActivate(); t.onClick(); }}
     >
       {t.icon}
     </button>
@@ -77,18 +78,27 @@ function ToggleButton({ t, overlay }: { t: Toggle; overlay: boolean }) {
  */
 function RowControls({ name, toggles, after }: { name: ReactNode; toggles: Toggle[]; after?: ReactNode }) {
   const idle = toggles.filter((t) => !t.on);
+  const wrap = useRef<HTMLDivElement>(null);
+  const activated = useRef<string | null>(null);
+  // A toggle moves between the overlay and the flow when it flips, which remounts its button: focus follows it.
+  useLayoutEffect(() => {
+    const key = activated.current;
+    activated.current = null;
+    if (key) wrap.current?.parentElement?.querySelector<HTMLElement>(`[data-toggle="${key}"]`)?.focus();
+  });
+  const activate = (t: Toggle) => () => { activated.current = t.key; };
   return (
     <>
-      <div className="relative flex min-w-0 flex-1">
+      <div ref={wrap} className="relative flex min-w-0 flex-1">
         {name}
         {idle.length > 0 && (
-          <div data-row-overlay className={cn('pointer-events-none absolute inset-y-0 right-0 flex items-center pl-6 opacity-0 bg-linear-to-l from-(--refs-row-bg) from-60% to-transparent', SHOWN)}>
-            {idle.map((t) => <ToggleButton key={t.key} t={t} overlay />)}
+          <div data-row-overlay className={cn('pointer-events-none absolute inset-y-0 right-0 flex items-center pl-6 opacity-0 pointer-coarse:opacity-100 bg-linear-to-l from-(--refs-row-bg) from-60% to-transparent', SHOWN)}>
+            {idle.map((t) => <ToggleButton key={t.key} t={t} overlay onActivate={activate(t)} />)}
           </div>
         )}
       </div>
       {after}
-      {toggles.filter((t) => t.on).map((t) => <ToggleButton key={t.key} t={t} overlay={false} />)}
+      {toggles.filter((t) => t.on).map((t) => <ToggleButton key={t.key} t={t} overlay={false} onActivate={activate(t)} />)}
     </>
   );
 }
@@ -186,8 +196,8 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
             </button>
           )}
           toggles={[
-            { key: 'hide', label: `${hidden ? 'Show' : 'Hide'} folder ${clip(row.label)}`, on: hidden, onClick: () => toggleFolder('hiddenFolders', hidden), icon: eye(hidden) },
-            { key: 'solo', label: `${soloed ? 'Unsolo' : 'Solo'} folder ${clip(row.label)}`, on: soloed, onClick: () => toggleFolder('soloedFolders', soloed), icon: <TargetIcon className="size-3.5" /> },
+            { key: 'hide', label: `${hidden ? 'Show' : 'Hide'} ${clip(folderName(row))}`, on: hidden, onClick: () => toggleFolder('hiddenFolders', hidden), icon: eye(hidden) },
+            { key: 'solo', label: `${soloed ? 'Unsolo' : 'Solo'} ${clip(folderName(row))}`, on: soloed, onClick: () => toggleFolder('soloedFolders', soloed), icon: <TargetIcon className="size-3.5" /> },
           ]}
         />
       </li>

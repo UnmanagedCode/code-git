@@ -1,6 +1,6 @@
 import { buildFileTree, type TreeNode } from '@/features/diff/fileTree';
 import type { Ref } from './types';
-import { refBase, sectionOf, SECTION_BASE } from './visibility';
+import { inFolder, refBase, sectionOf, SECTION_BASE } from './visibility';
 
 export type RefTreeRow =
   | { kind: 'folder'; prefix: string; name: string; label: string; depth: number; expanded: boolean; refs: Ref[] }
@@ -8,6 +8,7 @@ export type RefTreeRow =
 
 interface Leaf { path: string; ref: Ref }
 
+/** The first ref beneath `nodes`, in tree order. */
 const leaves = (nodes: TreeNode<Leaf>[]): Ref[] => nodes.flatMap((n) => (n.kind === 'file' ? [n.file.ref] : leaves(n.children)));
 
 /**
@@ -29,13 +30,23 @@ export function refTreeRows(refs: readonly Ref[], opts: { pinned: readonly strin
         rows.push({ kind: 'ref', ref: n.file.ref, name: n.name, depth });
         continue;
       }
-      const under = leaves(n.children);
-      const prefix = `${refBase(under[0])}${n.path}/`;
+      const first = leaves(n.children)[0];
+      const prefix = `${refBase(first)}${n.path}/`;
+      // Every ref beneath, pinned ones included: they are not rendered here but still belong to the folder.
+      const under = refs.filter((r) => inFolder(r, prefix));
       const expanded = !opts.collapsed(prefix);
-      rows.push({ kind: 'folder', prefix, name: n.name, label: prefix.slice(SECTION_BASE[sectionOf(under[0])].length, -1), depth, expanded, refs: under });
+      rows.push({ kind: 'folder', prefix, name: n.name, label: prefix.slice(SECTION_BASE[sectionOf(first)].length, -1), depth, expanded, refs: under });
       if (expanded) walk(n.children, depth + 1);
     }
   };
   walk(tree, 0);
   return rows;
+}
+
+/** A folder's accessible name, unique across namespaces: `folder a/b`, `tag folder a/b`, `remote origin folder a/b`. */
+export function folderName(row: Extract<RefTreeRow, { kind: 'folder' }>): string {
+  const r = row.refs[0];
+  if (r.kind === 'tag') return `tag folder ${row.label}`;
+  if (r.kind === 'remote') return `remote ${r.remote ?? ''} folder ${row.prefix.slice(refBase(r).length, -1)}`;
+  return `folder ${row.label}`;
 }

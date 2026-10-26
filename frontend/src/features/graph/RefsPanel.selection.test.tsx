@@ -122,3 +122,44 @@ test('an anchor inside a collapsed folder starts a new selection at the clicked 
   fireEvent.click(nameButton('refs/heads/b'), { shiftKey: true });
   expect(selected()).toEqual(['refs/heads/b']);
 });
+
+const collapseFolder = (prefix: string) => fireEvent.click(document.querySelector(`[data-folder="${prefix}"] button[aria-expanded]`)!);
+const collapseButton = (name: string | RegExp) => fireEvent.click(screen.getByRole('button', { name, expanded: true }));
+
+// Invariant: the order handed to the reducer is the rendered rows: a range over a collapsed folder stores only rendered refs, so the multi-selection menu never acts on hidden ones.
+test('the stored selection of a Shift range over a collapsed local folder or remote-group folder holds only rendered refs', async () => {
+  await show([...DIR, ...UP]);
+  collapseFolder('refs/heads/dir/');
+  fireEvent.click(nameButton('refs/heads/a'), { ctrlKey: true });
+  fireEvent.click(nameButton('refs/heads/c'), { shiftKey: true });
+  expect(getRefSelection(TAB).names).toEqual(['refs/heads/a', 'refs/heads/b', 'refs/heads/c']);
+  fireEvent.click(nameButton('refs/heads/main'));
+  collapseFolder('refs/remotes/up/m/');
+  fireEvent.click(nameButton('refs/remotes/origin/a'), { ctrlKey: true });
+  fireEvent.click(nameButton('refs/remotes/up/z'), { shiftKey: true });
+  expect(getRefSelection(TAB).names).toEqual(['refs/remotes/origin/a', 'refs/remotes/up/z']);
+});
+
+// Invariant: a collapsed remote group is left out of the range order.
+test('a Shift range skips the refs of a collapsed remote group', async () => {
+  await show(UP);
+  fireEvent.click(nameButton('refs/heads/b'), { ctrlKey: true });
+  collapseButton('origin');
+  fireEvent.click(nameButton('refs/remotes/up/z'), { shiftKey: true });
+  expect(getRefSelection(TAB).names).toEqual(['refs/heads/b', 'refs/heads/c', 'refs/heads/main', 'refs/remotes/up/m/x', 'refs/remotes/up/m/y', 'refs/remotes/up/z']);
+});
+
+// Invariant: a collapsed section is left out of the range order, so an anchor inside it is gone and the click starts a new selection.
+test('a Shift range with a collapsed Local or Remotes section starts a new selection when the anchor is inside it', async () => {
+  await show(UP);
+  fireEvent.click(nameButton('refs/heads/b'), { ctrlKey: true });
+  collapseButton(/^Local/);
+  fireEvent.click(nameButton('refs/remotes/origin/a'), { shiftKey: true });
+  expect(getRefSelection(TAB).names).toEqual(['refs/remotes/origin/a']);
+  fireEvent.click(nameButton('refs/remotes/up/z'), { ctrlKey: true });
+  collapseButton(/^Remotes/);
+  expect(getRefSelection(TAB).names).toEqual(['refs/remotes/origin/a', 'refs/remotes/up/z']);
+  fireEvent.click(screen.getByRole('button', { name: /^Local/ }));
+  fireEvent.click(nameButton('refs/heads/c'), { shiftKey: true });
+  expect(getRefSelection(TAB).names).toEqual(['refs/heads/c']);
+});

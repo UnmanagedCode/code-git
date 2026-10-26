@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 import { getPrefs, resetGraphPrefs, updatePrefs } from '@/state/graphPrefs';
@@ -7,21 +7,22 @@ import { oid, ref } from '@/test/graphData';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
 import { GraphPanel } from './GraphPanel';
 import { RefsPanel } from './RefsPanel';
+import type { Ref } from './types';
 
 const TAB = { project: 'app', worktree: null };
 const CC = 'refs/heads/code-conductor/';
 const FEATURE = 'refs/remotes/origin/feature/';
 
-function world() {
+function world(extra: Ref[] = []) {
   const w = linearWorld(20);
   w.refs.refs.push(
     ref('refs/heads/code-conductor/a', oid(18)), ref('refs/heads/code-conductor/b', oid(17)), ref('refs/heads/backup/pre-rebase', oid(10)),
-    ref('refs/heads/feature/ui/x', oid(15)), ref('refs/remotes/origin/feature/b', oid(16), { remote: 'origin' }), ref('refs/tags/release/1.0', oid(12)),
+    ref('refs/heads/feature/ui/x', oid(15)), ref('refs/remotes/origin/feature/b', oid(16), { remote: 'origin' }), ref('refs/tags/release/1.0', oid(12)), ...extra,
   );
   return w;
 }
-async function show() {
-  stubGraph(world(), {
+async function show(extra: Ref[] = []) {
+  stubGraph(world(extra), {
     'POST api/ops/branch.tracking': { ok: true, result: { remotes: ['origin'], branches: { [`${CC}a`]: { upstream: 'refs/remotes/origin/a', ahead: 2, behind: 0, gone: false } } } },
   });
   await loadSummary(TAB);
@@ -94,7 +95,7 @@ test('folder Hide and Solo write the prefix and flip to Show / Unsolo', async ()
   expect(getPrefs('app').soloedFolders).toEqual([CC]);
   expect(screen.getByRole('button', { name: 'Unsolo folder code-conductor' }).getAttribute('aria-pressed')).toBe('true');
   expect(folder(CC).className).not.toContain('opacity-50');
-  fireEvent.click(screen.getByRole('button', { name: 'Hide folder origin/feature' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Hide remote origin folder feature' }));
   expect(getPrefs('app').hiddenFolders).toEqual([CC, FEATURE]);
   fireEvent.click(screen.getByRole('button', { name: 'Unsolo folder code-conductor' }));
   fireEvent.click(screen.getByRole('button', { name: 'Show folder code-conductor' }));
@@ -107,7 +108,7 @@ test('Show all appears while a folder under the section is hidden and clears onl
   await show();
   expect(screen.queryByRole('button', { name: 'Show all' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Hide folder code-conductor' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Hide folder origin/feature' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Hide remote origin folder feature' }));
   const showAll = screen.getAllByRole('button', { name: 'Show all' });
   expect(showAll).toHaveLength(2);
   fireEvent.click(showAll[0]);
@@ -206,4 +207,71 @@ test('a collapsed folder that holds the checked-out branch renders its name semi
   await screen.findByRole('navigation', { name: 'Refs' });
   expect(within(folder('refs/heads/feature/')).getByText('feature').className).toContain('font-semibold');
   expect(within(folder(CC)).getByText('code-conductor').className).not.toContain('font-semibold');
+});
+
+// Invariant: a pinned ref still belongs to its folder: the folder is not dimmed while only its pinned member is shown.
+test('a folder whose only shown member is pinned is not dimmed', async () => {
+  updatePrefs('app', (p) => ({ ...p, pinned: [`${CC}b`], hidden: [`${CC}a`] }));
+  await show();
+  expect(row(`${CC}a`).className).toContain('opacity-50');
+  expect(folder(CC).className).not.toContain('opacity-50');
+  act(() => updatePrefs('app', (p) => ({ ...p, hidden: [`${CC}a`, `${CC}b`] })));
+  expect(folder(CC).className).toContain('opacity-50');
+});
+
+// Invariant: the HEAD mark on a collapsed folder counts a pinned checked-out branch beneath it.
+test('a collapsed folder keeps the HEAD emphasis when the checked-out branch under it is pinned', async () => {
+  const w = world();
+  w.refs.head.branch = `${CC}a`;
+  w.refs.refs = w.refs.refs.map((r) => ({ ...r, isHead: r.name === `${CC}a` }));
+  stubGraph(w);
+  await loadSummary(TAB);
+  updatePrefs('app', (p) => ({ ...p, pinned: [`${CC}a`], collapsedFolders: [CC] }));
+  render(<><GraphPanel tab={TAB} /><RefsPanel tab={TAB} /></>);
+  await screen.findByRole('navigation', { name: 'Refs' });
+  expect(within(folder(CC)).getByText('code-conductor').className).toContain('font-semibold');
+});
+
+// Invariant: the filter applies to pinned rows: a pinned ref that does not match is not listed.
+test('a pinned ref that the filter does not match is not listed', async () => {
+  updatePrefs('app', (p) => ({ ...p, pinned: [`${CC}b`] }));
+  await show();
+  expect(row(`${CC}b`)).not.toBeNull();
+  await userEvent.type(filter(), 'backup');
+  expect(row(`${CC}b`)).toBeNull();
+  expect(keys('Local branches')).toEqual(['refs/heads/backup/', BACKUP]);
+});
+
+const BACKUP = 'refs/heads/backup/pre-rebase';
+
+// Invariant: folder toggles have unique accessible names across namespaces and remotes.
+test('equal folder paths in Local, Tags and a remote have distinct toggle names', async () => {
+  await show([ref('refs/heads/release/x', oid(11)), ref('refs/remotes/origin/release/y', oid(11), { remote: 'origin' })]);
+  const names = [...document.querySelectorAll('[data-folder$="release/"] [data-row-overlay] button')].map((b) => b.getAttribute('aria-label'));
+  expect(names).toHaveLength(6);
+  expect(new Set(names).size).toBe(6);
+  fireEvent.click(screen.getByRole('button', { name: 'Hide tag folder release' }));
+  expect(getPrefs('app').hiddenFolders).toEqual(['refs/tags/release/']);
+});
+
+// Invariant: activating a toggle from the keyboard leaves focus on that same toggle with its flipped label, in both directions.
+test('keyboard activation keeps focus on the toggle as it flips, on ref, folder, remote and section rows', async () => {
+  await show();
+  const flip = async (host: HTMLElement | null, label: string, flipped: string) => {
+    const b = within(host!).getByRole('button', { name: label });
+    b.focus();
+    await userEvent.keyboard('{Enter}');
+    expect((document.activeElement as HTMLElement).getAttribute('aria-label')).toBe(flipped);
+    await userEvent.keyboard(' ');
+    expect((document.activeElement as HTMLElement).getAttribute('aria-label')).toBe(label);
+  };
+  await flip(row(`${CC}a`), `Hide ${'code-conductor/a'}`, 'Show code-conductor/a');
+  await flip(row(`${CC}a`), 'Pin code-conductor/a to left', 'Unpin code-conductor/a');
+  await flip(row(`${CC}a`), 'Solo code-conductor/a', 'Unsolo code-conductor/a');
+  await flip(folder(CC), 'Hide folder code-conductor', 'Show folder code-conductor');
+  await flip(folder(CC), 'Solo folder code-conductor', 'Unsolo folder code-conductor');
+  const remote = screen.getByRole('button', { name: 'origin', expanded: true }).parentElement!.parentElement!;
+  await flip(remote, 'Hide remote origin', 'Show remote origin');
+  const tags = screen.getByRole('button', { name: /^Tags/ }).parentElement!.parentElement!;
+  await flip(tags, 'Solo Tags', 'Unsolo Tags');
 });
