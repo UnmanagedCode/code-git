@@ -31,7 +31,7 @@ export function ChangesDialog({ tab }: { tab: Tab }) {
   const open = workdirOf(tab).dialogOpen;
   return (
     <Dialog open={open} onOpenChange={(o) => setDialogOpen(tab, o)}>
-      <DialogContent className="gap-0 p-0 sm:max-w-lg" showCloseButton={false}>
+      <DialogContent className="h-[calc(100dvh-2rem)] gap-0 p-0 sm:max-w-lg" showCloseButton={false}>
         <DialogTitle className="sr-only">Changes</DialogTitle>
         <DialogDescription className="sr-only">Stage, unstage, discard and commit</DialogDescription>
         {open && <WorkdirContent tab={tab} instance="dialog" />}

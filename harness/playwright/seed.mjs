@@ -119,6 +119,7 @@ export async function seed() {
       url: srv.url,
       diffs,
       stage,
+      detached,
       stash,
       subs,
       /** While on, every exec is held by the fake cc (until cancelled or released). */

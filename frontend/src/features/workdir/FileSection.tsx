@@ -80,9 +80,9 @@ export function FileSection({ tab, section, files, busy }: { tab: Tab; section: 
     );
   };
   return (
-    <section aria-label={TITLE[section]} className="border-b">
-      <div className="flex flex-wrap items-center gap-x-1 px-2 py-1">
-        <h3 className="flex-1 text-xs font-semibold whitespace-nowrap text-muted-foreground uppercase">{label}</h3>
+    <section aria-label={TITLE[section]} className="flex min-h-0 flex-col border-b">
+      <div className="flex shrink-0 items-center gap-1 px-2 py-1">
+        <h3 className="min-w-0 flex-1 truncate text-xs font-semibold text-muted-foreground uppercase" title={label}>{label}</h3>
         {section === 'unstaged' ? (
           <>
             <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" disabled={busy || !files.some(canDiscard)} onClick={() => void discardAll(tab, files)}>Discard all…</Button>
@@ -92,23 +92,25 @@ export function FileSection({ tab, section, files, busy }: { tab: Tab; section: 
           <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" disabled={busy || !files.length} onClick={() => void unstageAll(tab)}>Unstage all</Button>
         )}
       </div>
-      {files.length ? (
-        <FileList
-          label={label}
-          files={files}
-          viewed={bound?.viewed ?? null}
-          selected={bound?.selected}
-          multi={!!bound}
-          followFocus={!!bound}
-          onSelect={open}
-          actions={actions}
-          dirActions={dirActions}
-          menu={(file) => ({ context: 'workdir-file', ctx: { tab, file, section } satisfies WorkdirFileCtx })}
-          onRowKeyDown={onRowKeyDown}
-        />
-      ) : (
-        <p className="px-3 pb-2 text-xs text-muted-foreground">{section === 'unstaged' ? 'No unstaged changes.' : 'Nothing staged.'}</p>
-      )}
+      <div data-section-list="" className="min-h-0 flex-1 overflow-y-auto">
+        {files.length ? (
+          <FileList
+            label={label}
+            files={files}
+            viewed={bound?.viewed ?? null}
+            selected={bound?.selected}
+            multi={!!bound}
+            followFocus={!!bound}
+            onSelect={open}
+            actions={actions}
+            dirActions={dirActions}
+            menu={(file) => ({ context: 'workdir-file', ctx: { tab, file, section } satisfies WorkdirFileCtx })}
+            onRowKeyDown={onRowKeyDown}
+          />
+        ) : (
+          <p className="px-3 pb-2 text-xs text-muted-foreground">{section === 'unstaged' ? 'No unstaged changes.' : 'Nothing staged.'}</p>
+        )}
+      </div>
     </section>
   );
 }

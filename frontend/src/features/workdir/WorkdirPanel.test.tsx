@@ -5,6 +5,7 @@ import { Shell } from '@/shell/Shell';
 import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { dispatchTabs, tabKey } from '@/state/tabs';
+import { setDialogOpen } from '@/state/workdir';
 import { dfile, fdiff, hunk } from '@/test/diffFixtures';
 import { json, summary } from '@/test/fixtures';
 import { workdirWorld, type WorkdirWorld } from '@/test/workdirWorld';
@@ -456,4 +457,72 @@ test('a click on a conflicted (U) row opens the merge tool for it instead of a d
   await waitFor(() => expect(shownPanelStore.get().get(tabKey(APP))).toBe('conflicts'));
   expect(w.posts('conflict.read')).toEqual([{ path: 'c.ts' }]);
   expect(diffStore.get().get(tabKey(APP))).toBeUndefined();
+});
+
+// The pane's structure, asserted inside `root` (the slot instance also renders in happy-dom, so the dialog's is scoped).
+function expectContained(root: HTMLElement) {
+  const q = within(root);
+  const sections = (['Unstaged Files', 'Staged Files'] as const).map((name) => q.getByRole('region', { name }));
+  for (const sec of sections) {
+    const scrollers = sec.querySelectorAll('[data-section-list]');
+    expect(scrollers).toHaveLength(1);
+    expect(scrollers[0].contains(within(sec).getByRole('listbox'))).toBe(true);
+    expect(scrollers[0].contains(within(sec).getByRole('heading'))).toBe(false);
+    for (const b of within(sec).queryAllByRole('button', { name: /^(Stage all|Discard all…|Unstage all)$/ })) expect(scrollers[0].contains(b)).toBe(false);
+  }
+  const box = q.getByRole('region', { name: 'Commit message' });
+  const follows = (a: Node, b: Node) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  // The pane's own heading: the one sharing a parent chain with the sections (other panels may carry a "Changes" heading).
+  const pane = q.getAllByRole('heading', { name: 'Changes' }).filter((h) => h.closest('div.flex-col')?.contains(sections[0]));
+  expect(pane).toHaveLength(1);
+  expect(follows(pane[0], sections[0])).toBe(true);
+  expect(follows(sections[0], sections[1])).toBe(true);
+  expect(follows(sections[1], box)).toBe(true);
+  for (const sec of sections) expect(sec.contains(box)).toBe(false);
+  const fields = box.querySelector('[data-commit-fields]')!;
+  expect(fields.contains(within(box).getByRole('textbox', { name: 'Summary' }))).toBe(false);
+  expect(fields.contains(within(box).getByRole('textbox', { name: 'Description' }))).toBe(true);
+  expect(fields.contains(within(box).getByRole('button', { name: /^Commit/ }))).toBe(false);
+  return box;
+}
+
+test('each section\'s list scrolls in its own scroller; its heading and bulk buttons stay outside it', async () => {
+  await show();
+  for (const name of ['Unstaged Files', 'Staged Files'] as const) {
+    const scrollers = section(name).querySelectorAll('[data-section-list]');
+    expect(scrollers).toHaveLength(1);
+    expect(scrollers[0].contains(within(section(name)).getByRole('listbox'))).toBe(true);
+    expect(scrollers[0].contains(within(section(name)).getByRole('heading'))).toBe(false);
+  }
+  for (const label of ['Stage all', 'Discard all…']) expect(section('Unstaged Files').querySelector('[data-section-list]')!.contains(screen.getByRole('button', { name: label }))).toBe(false);
+  expect(section('Staged Files').querySelector('[data-section-list]')!.contains(screen.getByRole('button', { name: 'Unstage all' }))).toBe(false);
+});
+
+test('an empty section\'s message sits inside its scroller', async () => {
+  await show({ staged: [] });
+  expect(section('Staged Files').querySelector('[data-section-list]')!.contains(screen.getByText('Nothing staged.'))).toBe(true);
+});
+
+test('the pane runs header → Unstaged → Staged → Commit message, with the commit box outside both sections', async () => {
+  await show();
+  const box = expectContained(document.body);
+  expect(box).toBe(commitBox());
+});
+
+test('Summary and the commit button sit outside the commit fields\' scroller; Description inside it; the amend pair too', async () => {
+  await show();
+  const fields = () => commitBox().querySelector('[data-commit-fields]')!;
+  expect(fields().contains(summaryBox())).toBe(false);
+  expect(fields().contains(descBox())).toBe(true);
+  expect(fields().contains(within(commitBox()).getByRole('button', { name: /^Commit/ }))).toBe(false);
+  await userEvent.click(within(commitBox()).getByRole('checkbox', { name: 'Amend previous commit' }));
+  for (const name of ['Amend commit', 'Update message only']) expect(fields().contains(within(commitBox()).getByRole('button', { name }))).toBe(false);
+});
+
+test('the Changes dialog has the same structure', async () => {
+  await show();
+  act(() => setDialogOpen(APP, true));
+  const d = await screen.findByRole('dialog', { name: 'Changes' });
+  const box = expectContained(d);
+  expect(d.contains(box)).toBe(true);
 });
