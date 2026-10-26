@@ -237,6 +237,27 @@ try {
     const boxes = await page.locator('[data-row-id]').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.height]; }));
     check(boxes.length === 7 && boxes.every(([top, h], i) => h === 28 && (i === 0 || top - boxes[i - 1][0] === 28)), 'every row is 28px tall, 28px apart');
     check((await page.locator('[data-row-id] [data-cell=graph] svg').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))).every((h) => h === 28), 'the lane svgs keep their 28px height');
+    // A border-based marker would shrink the row's content box and shift the lane svg down: the svg's top is its row's top.
+    check(await page.evaluate((id) => {
+      const r = document.querySelector(`[data-row-id="${id}"]`);
+      return r.querySelector('[data-age-marker]') && r.querySelector('[data-cell=graph] svg').getBoundingClientRect().top === r.getBoundingClientRect().top;
+    }, a.a5), 'on a marked row the lane svg starts at the row top');
+    // Every optional column on: the columns overflow the list, and each pill must still lie inside the list's visible rect.
+    await page.getByRole('button', { name: 'Columns', exact: true }).click();
+    for (const c of ['Author', 'SHA', 'Changes']) await page.getByRole('menuitemcheckbox', { name: c }).click();
+    await page.keyboard.press('Escape');
+    const pillsVisible = () => page.evaluate(() => {
+      const l = document.querySelector('[role=listbox][aria-label=Commits]').getBoundingClientRect();
+      const pills = [...document.querySelectorAll('[data-age-marker] > span')].map((e) => e.getBoundingClientRect());
+      return { overflow: document.querySelector('[role=listbox][aria-label=Commits]').scrollWidth > Math.ceil(l.width), n: pills.length, ok: pills.every((p) => p.left >= l.left && p.right <= l.right + 0.5) };
+    });
+    for (const [vp, size] of Object.entries(VIEWPORTS)) {
+      await page.setViewportSize(size);
+      await page.waitForTimeout(100);
+      const v = await pillsVisible();
+      check(v.overflow && v.n === 5 && v.ok, `${vp}, every optional column on: the columns overflow and all 5 pills lie within the list's visible rect`);
+    }
+    await page.setViewportSize(VIEWPORTS.desktop);
     await row(a.a4).click();
     check(await row(a.a4).getAttribute('aria-selected') === 'true', 'clicking a marked row selects it');
     await list.press('j');

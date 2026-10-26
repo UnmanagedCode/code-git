@@ -34,5 +34,5 @@ How the commit graph's pieces fit, and the words used for them. Behaviour: `docs
 - **Prefs are per project**, not per checkout: refs are shared by every checkout of a project.
 - **Pointer events for drag**, not HTML5 drag and drop: only the app's own chips can be dragged, and no foreign `dataTransfer` can be dropped. The drop publishes to `branchDropStore` and opens the `branch-drop` menu; C2 registers no action there.
 - **`CommitItem.time` is the author time; age markers read `committerTime`** (`%ct`). The Date column keeps the author time.
-- **A commit's age level is the highest rung it has crossed** (`ageMarkers`): every rung's crossed set is "all times below a cutoff", so levels never rise down the list and `yesterday` (calendar) suppresses `1 hour ago` / `3 hours ago` just after midnight with no sorting rule.
+- **A commit's age level is the highest rung it has crossed** (`ageMarkers`): every rung's crossed set is "all times below a cutoff", so levels never fall down the list (a level is non-increasing in commit time) and `yesterday` (calendar) suppresses `1 hour ago` / `3 hours ago` just after midnight with no sorting rule.
 - **Age markers are an in-row overlay, never a border**: with `box-sizing: border-box` a `border-t` would shrink the 28px row's content box and shift the lane SVG; the windowing is pure index × `ROW_H`.

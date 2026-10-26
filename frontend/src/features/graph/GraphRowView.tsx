@@ -154,8 +154,8 @@ export const GraphRowView = memo(function GraphRowView(p: RowViewProps) {
         </div>
       ))}
       {p.ageMarker && (
-        <span aria-hidden data-age-marker={p.ageMarker} className="pointer-events-none absolute inset-x-0 top-0 h-px bg-border">
-          <span className="absolute top-0 right-2 flex h-3.5 -translate-y-1/2 items-center rounded-full border bg-background px-1.5 text-xs leading-none whitespace-nowrap text-muted-foreground">{p.ageMarker}</span>
+        <span aria-hidden data-age-marker={p.ageMarker} className="pointer-events-none absolute inset-x-0 top-0 flex h-px items-center justify-end bg-border">
+          <span className="sticky right-2 mr-2 flex h-3.5 shrink-0 items-center rounded-full border bg-background px-1.5 text-xs leading-none whitespace-nowrap text-muted-foreground">{p.ageMarker}</span>
         </span>
       )}
     </div>
