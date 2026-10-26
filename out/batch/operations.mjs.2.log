@@ -1,0 +1,30 @@
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:39277/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:39277/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+ok: git: the rebase is in progress, app.txt unmerged
+ok: graph.refs was held until the title wait started
+ok: the banner reads "Rebasing main onto origin/main (step 1 of 2)"
+ok: Continue is disabled while app.txt is conflicted
+ok: no detached-HEAD banner during the rebase
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/operations-rebase-pull-light-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:39277/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:39277/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:39277/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: graph.refs was held until the title wait started (after the reload)
+ok: the banner is still there after a reload
+ok: Cancel left the rebase in progress
+ok: git: no rebase, main back at its own tip
+ok: git: a clean tree
+ok: the banner names the cherry-pick
+ok: git: the cherry-pick is in progress
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/operations-cherry-pick-light-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/operations-cherry-pick-light-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/operations-cherry-pick-dark-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/operations-cherry-pick-dark-phone.png
+ok: git: app.txt is staged, nothing unmerged
+ok: Continue is enabled once nothing is conflicted
+ok: git: the cherry-pick is committed on main
+ok: git: with the resolution and the picked message
+ok: no console error and no ≥400 response

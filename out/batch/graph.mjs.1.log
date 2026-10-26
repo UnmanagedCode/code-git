@@ -1,0 +1,185 @@
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+ok: the merge M1 continues into 2 lanes
+ok: feature/a commits share a lane apart from main
+ok: B is where feature/a branched off: 2 lanes end in it
+ok: feature/b has its own lane
+ok: two WIP rows: the own checkout first, then wt
+ok: a WIP row reads // WIP
+ok: feature/b is labelled "in wt"
+ok: code-conductor/side is labelled "in side"
+ok: main and origin/main share one chip, the checked-out one
+ok: both tags label their commits
+ok: the stash row sits directly above its base
+ok: an HTML-looking subject is shown as text
+ok: no img element exists
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/lanes-light-desktop.png
+ok: hiding feature/b removes G and its worktree WIP row
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: the hide survives a reload
+ok: solo main shows only its ancestry
+ok: pinned feature/a takes lane 0
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/pinned-light-desktop.png
+ok: the Graph handle starts at the column's rendered width
+ok: a handle drag holds the pointer capture
+ok: the author width persists after a drag (+60px)
+ok: a lost pointer capture restores the width and stores nothing
+ok: a pointercancel restores the width and stores nothing
+ok: resize drags do not reorder the columns
+ok: header cells stay over their columns after a header menu took focus
+ok: the header scrolls sideways with the rows
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/columns-light-desktop.png
+ok: Tab from the Author header cell reaches its resize handle
+ok: → widens the column by one step
+ok: End goes to the maximum
+ok: Home goes to the minimum
+ok: → once more steps from the minimum
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/columns-handle-focus-light-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/columns-handle-focus-dark-desktop.png
+ok: Enter and ArrowDown on a resize handle open no menu
+ok: the header cell still opens its menu with Enter and Shift+F10
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: the column order persists (refs, graph, message, author, sha, date, changes)
+ok: the key-set author width persists (96px)
+ok: commits search "feature" marks its 4 matches
+ok: Enter jumps to the first match
+ok: path search src/b.js marks E and F
+ok: an author search finds Grace Hopper’s commit
+ok: a sha prefix finds its commit
+ok: details list the co-author
+ok: details list the SHA
+ok: details list the parent
+ok: details list the changed file
+ok: the tree view nests the file under its directory
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/details-light-desktop.png
+ok: the header starts at its default height, the separator's value (224)
+ok: the details fill the right slot (89–763 vs 89–763)
+ok: the file list starts below the commit information
+ok: the file list reaches the panel's bottom (763 vs 763)
+ok: a merge's note keeps its gap above the file count (16px)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/details-merge-light-desktop.png
+ok: a 200-line message keeps the header's height (224 vs 224)
+ok: the long message scrolls inside the header
+ok: the file list stays in view below a long message
+ok: the 31 files scroll in the list's own scroller
+ok: scrolling the files leaves the header where it was
+ok: the header scrolls to the end of the message and the SHA
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/details-long-light-desktop.png
+ok: the separator has a range to resize in (96–554)
+ok: a drag of -40px resizes the header to 184px (wanted 184)
+ok: a drag of 20px resizes the header to 204px (wanted 204)
+ok: the files stay below the resized header
+ok: a drag far up stops at aria-valuemin (96)
+ok: a drag far down stops at aria-valuemax (554)
+ok: at the maximum the files still show at least three whole rows (3)
+ok: ↑ steps the header shorter (554 → 538)
+ok: ↓ steps it back
+ok: Home goes to aria-valuemin
+ok: End goes to aria-valuemax
+ok: ↓ steps the header taller, and the height is stored (160)
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: the chosen height survives a reload (160)
+ok: and another selection
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/details-resized-light-desktop.png
+ok: a window between 400 and 760px tall makes the panel too short for the chosen 160px header with room to clamp (last panel 274px, max 154)
+ok: at 1280×400 the header re-clamps to aria-valuemax (154) and the stored 160 stays
+ok: the re-clamped files still show at least three whole rows (3)
+ok: the chosen height comes back when the panel grows
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: back to the default height
+ok: the left slot stacks the refs panel above the Compare panel
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/left-slot-light-desktop.png
+ok: the diff has no file list of its own: the details drive it
+ok: a file click opens that commit’s diff
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/file-diff-light-desktop.png
+ok: Esc closes the diff and the graph is back
+ok: j moves the selection down
+ok: k moves it back
+ok: Shift-click selects the range D…F
+ok: Ctrl-click toggles one row off
+ok: a commit row menu offers Copy SHA
+ok: a branch chip menu offers Hide, Solo, Pin (Checkout, Create branch here…, Create tag here…, Rename…, Set upstream…, Push to origin…, Reset main to here, Merge feature/a into main, Rebase main onto feature/a, Interactive rebase main onto feature/a…, Delete feature/a…, Jump to commit, Show reflog, Copy name, Hide, Solo, Pin to left)
+ok: hovering feature/b dims the commits it does not reach
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/hover-light-desktop.png
+ok: dragging feature/a over main marks main the drop target
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/drag-light-desktop.png
+ok: the drop opens the branch-drop menu (Merge feature/a into main, Merge feature/a into main (no fast-forward), Squash feature/a into main, Rebase main onto feature/a, Interactive rebase main onto feature/a…, Fast-forward main to feature/a, Reset main to feature/a)
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: the age markers sit on their rows in order (last week, last month, 3 months ago, 1 year ago, 2 years ago)
+ok: a newer commit below a crossing, and the first row, carry no marker
+ok: every row is 28px tall, 28px apart
+ok: the lane svgs keep their 28px height
+ok: on a marked row the lane svg starts at the row top
+ok: desktop, every optional column on: the columns overflow and all 5 pills lie within the list's visible rect
+ok: phone, every optional column on: the columns overflow and all 5 pills lie within the list's visible rect
+ok: clicking a marked row selects it
+ok: j moves the selection past the marker to the next row
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/ages-light-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/ages-light-phone.png
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/ages-dark-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/ages-dark-phone.png
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/graph-light-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/graph-light-phone.png
+ok: light phone: the refs panel is not squeezed beside the graph
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/refs-dialog-light-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/compare-dialog-light-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/details-dialog-light-phone.png
+ok: light phone: the details dialog has no resize handle (the header keeps its default height)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/details-dialog-long-light-phone.png
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/graph-dark-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:40511/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:40511/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/graph-dark-phone.png
+ok: dark phone: the refs panel is not squeezed beside the graph
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/refs-dialog-dark-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/compare-dialog-dark-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/details-dialog-dark-phone.png
+ok: dark phone: the details dialog has no resize handle (the header keeps its default height)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/graph/details-dialog-long-dark-phone.png

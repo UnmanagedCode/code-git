@@ -1,0 +1,40 @@
+[page error] Refused to apply style from 'http://127.0.0.1:41425/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:41425/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:41425/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+{
+  "loaded": 5000,
+  "maxRows": 61,
+  "listHeightPx": 544,
+  "pageRoundTripMs": {
+    "count": 10,
+    "p50": 26,
+    "p95": 31,
+    "max": 31
+  },
+  "longTaskMs": {
+    "count": 1,
+    "p50": 56,
+    "p95": 56,
+    "max": 56
+  },
+  "frameMs": {
+    "count": 233,
+    "p50": 16.7,
+    "p95": 16.8,
+    "max": 16.8
+  },
+  "ccGraphPageMs": {
+    "count": 10,
+    "p50": 17,
+    "p95": 20,
+    "max": 20
+  },
+  "conditions": {
+    "fixture": "tests/_graphFixture.js defaults (seed 42, 5000 commits, 60 branches / 45 merged, 200 refs)",
+    "viewport": "1280x800",
+    "browser": "headless Chromium (code-playwright)"
+  }
+}
+ok: gates passed (rows ≤ 120, graph.page ≤ 500 ms, long tasks ≤ 250 ms)

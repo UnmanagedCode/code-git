@@ -1,0 +1,149 @@
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:41501/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:41501/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:41501/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to apply style from 'http://127.0.0.1:41501/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:41501/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:41501/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: light: ticking the untracked file ticks Include untracked
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/save-dialog-light.png
+ok: light: git lists the new stash on top
+ok: light: only the selected files left the worktree
+ok: light: the untracked file is in the stash
+ok: light: the graph shows the stash row above its base
+ok: light: the refs panel lists the stash
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/saved-light.png
+ok: light: Undo dropped the save's stash
+ok: light: Undo put todo.txt back and lib/util.js staged again
+ok: light: the Changes panel lists both files again
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/save-undone-light.png
+ok: light: Redo stored the same stash and took the files again
+ok: light: the switch offers All changes / Staged / Untracked
+ok: light: no parent select for a stash
+ok: light: All changes lists lib/util.js
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/view-all-light.png
+ok: light: Staged is checked
+ok: light: Staged lists lib/util.js
+ok: light: Untracked lists todo.txt
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/view-untracked-light.png
+ok: light: Apply this file changed the worktree file only
+ok: light: the stash stays
+ok: light: the rename dialog says the stash moves to the top
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/rename-light.png
+ok: light: git lists the renamed stash at stash@{0}, the original gone
+ok: light: each hunk offers Stash hunk…
+ok: light: the dialog names the line and the file
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/lines-dialog-light.png
+ok: light: git lists the line stash on top
+ok: light: exactly the selected line left the worktree
+ok: light: the stash holds HEAD plus that line
+ok: light: Pop dropped exactly that stash
+ok: light: Pop restored the files
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/drop-confirm-light.png
+ok: light: Cancel dropped nothing
+ok: light: Drop removed the stash
+ok: light: Undo stored the stash back at stash@{0}
+ok: light: the redo confirmation lists the stash it drops
+ok: light: nothing dropped before confirming
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/redo-drop-confirm-light.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/redo-drop-confirm-phone-light.png
+ok: light: the confirmed redo dropped it again
+ok: light: README.md is HEAD's and scratch/ is absent before the apply
+ok: light: Apply wrote the stash's files and kept the stash
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/apply-undo-ready-light.png
+ok: light: Undo took the apply back (git status as before, the untracked file removed)
+ok: light: the stash is still listed after the undo
+ok: light: Redo applied the stash again
+ok: light: a second Undo leaves the checkout as before the apply
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/branch-dialog-light.png
+ok: light: the branch is checked out at the stash's base
+ok: light: the stash was applied, untracked files included
+ok: light: the stash was dropped
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/after-branch-light.png
+[page error] Refused to apply style from 'http://127.0.0.1:41501/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:41501/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:41501/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/phone-save-light.png
+ok: light: the phone stash menu lists the stash actions first
+ok: light: opening the menu ran nothing
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/phone-menu-light.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/phone-rename-light.png
+ok: light: Cancel renamed nothing
+ok: light: no console errors or ≥400 responses
+[page error] Refused to apply style from 'http://127.0.0.1:35295/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35295/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35295/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35295/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35295/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: dark: ticking the untracked file ticks Include untracked
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/save-dialog-dark.png
+ok: dark: git lists the new stash on top
+ok: dark: only the selected files left the worktree
+ok: dark: the untracked file is in the stash
+ok: dark: the graph shows the stash row above its base
+ok: dark: the refs panel lists the stash
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/saved-dark.png
+ok: dark: Undo dropped the save's stash
+ok: dark: Undo put todo.txt back and lib/util.js staged again
+ok: dark: the Changes panel lists both files again
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/save-undone-dark.png
+ok: dark: Redo stored the same stash and took the files again
+ok: dark: the switch offers All changes / Staged / Untracked
+ok: dark: no parent select for a stash
+ok: dark: All changes lists lib/util.js
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/view-all-dark.png
+ok: dark: Staged is checked
+ok: dark: Staged lists lib/util.js
+ok: dark: Untracked lists todo.txt
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/view-untracked-dark.png
+ok: dark: Apply this file changed the worktree file only
+ok: dark: the stash stays
+ok: dark: the rename dialog says the stash moves to the top
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/rename-dark.png
+ok: dark: git lists the renamed stash at stash@{0}, the original gone
+ok: dark: each hunk offers Stash hunk…
+ok: dark: the dialog names the line and the file
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/lines-dialog-dark.png
+ok: dark: git lists the line stash on top
+ok: dark: exactly the selected line left the worktree
+ok: dark: the stash holds HEAD plus that line
+ok: dark: Pop dropped exactly that stash
+ok: dark: Pop restored the files
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/drop-confirm-dark.png
+ok: dark: Cancel dropped nothing
+ok: dark: Drop removed the stash
+ok: dark: Undo stored the stash back at stash@{0}
+ok: dark: the redo confirmation lists the stash it drops
+ok: dark: nothing dropped before confirming
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/redo-drop-confirm-dark.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/redo-drop-confirm-phone-dark.png
+ok: dark: the confirmed redo dropped it again
+ok: dark: README.md is HEAD's and scratch/ is absent before the apply
+ok: dark: Apply wrote the stash's files and kept the stash
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/apply-undo-ready-dark.png
+ok: dark: Undo took the apply back (git status as before, the untracked file removed)
+ok: dark: the stash is still listed after the undo
+ok: dark: Redo applied the stash again
+ok: dark: a second Undo leaves the checkout as before the apply
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/branch-dialog-dark.png
+ok: dark: the branch is checked out at the stash's base
+ok: dark: the stash was applied, untracked files included
+ok: dark: the stash was dropped
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/after-branch-dark.png
+[page error] Refused to apply style from 'http://127.0.0.1:35295/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35295/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35295/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/phone-save-dark.png
+ok: dark: the phone stash menu lists the stash actions first
+ok: dark: opening the menu ran nothing
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/phone-menu-dark.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/stash/phone-rename-dark.png
+ok: dark: Cancel renamed nothing
+ok: dark: no console errors or ≥400 responses

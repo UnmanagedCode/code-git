@@ -1,0 +1,115 @@
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35007/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35007/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to apply style from 'http://127.0.0.1:35007/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35007/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35007/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: light: libs/c is Uninitialised
+ok: light: libs/a has no status badge (cloned, at its pointer)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/panel-light.png
+ok: light: libs/c's url is registered
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/updating-light.png
+ok: light: Update cloned libs/c
+ok: light: libs/c is at its recorded commit
+ok: light: after Update: no alert ever showed in the header or a panel
+ok: light: after Update: no watcher read started during a submodule write
+ok: light: after Update: the header shows its counts
+ok: light: the URL names the submodule
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/open-light.png
+ok: light: the commit landed in libs/a
+ok: light: the message is prefilled
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/pointer-prompt-light.png
+ok: light: the parent committed the pointer
+ok: light: the committed pointer is libs/a's new HEAD
+ok: light: the parent's working tree is clean
+ok: light: the header shows no changes
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/pointer-committed-light.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/add-dialog-light.png
+ok: light: .gitmodules declares libs/d
+ok: light: libs/d's gitlink is staged
+ok: light: .gitmodules has libs/d's new url
+ok: light: the url was synced into the config
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/remove-confirm-light.png
+[page error] Failed to load resource: the server responded with a status of 409 (Conflict)
+ok: light: the refused remove changed nothing
+ok: light: after the refused Remove: no alert ever showed in the header or a panel
+ok: light: after the refused Remove: no watcher read started during a submodule write
+ok: light: after the refused Remove: the header shows its counts
+ok: light: the edited url is named as staged with the removal
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/remove-discard-light.png
+ok: light: libs/d is removed
+ok: light: .gitmodules no longer declares libs/d
+ok: light: .git/modules/libs/d is kept
+ok: light: after Remove: no alert ever showed in the header or a panel
+ok: light: after Remove: no watcher read started during a submodule write
+ok: light: after Remove: the header shows its counts
+[page error] Refused to apply style from 'http://127.0.0.1:35007/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35007/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35007/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/phone-panel-light.png
+ok: light: the phone menu lists the submodule actions
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/phone-menu-light.png
+ok: light: at the end: no alert ever showed in the header or a panel
+ok: light: at the end: no watcher read started during a submodule write
+ok: light: no console errors or unexpected ≥400 responses
+[page error] Refused to apply style from 'http://127.0.0.1:46633/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:46633/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:46633/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to apply style from 'http://127.0.0.1:46633/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:46633/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:46633/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: dark: libs/c is Uninitialised
+ok: dark: libs/a has no status badge (cloned, at its pointer)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/panel-dark.png
+ok: dark: libs/c's url is registered
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/updating-dark.png
+ok: dark: Update cloned libs/c
+ok: dark: libs/c is at its recorded commit
+ok: dark: after Update: no alert ever showed in the header or a panel
+ok: dark: after Update: no watcher read started during a submodule write
+ok: dark: after Update: the header shows its counts
+ok: dark: the URL names the submodule
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/open-dark.png
+ok: dark: the commit landed in libs/a
+ok: dark: the message is prefilled
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/pointer-prompt-dark.png
+ok: dark: the parent committed the pointer
+ok: dark: the committed pointer is libs/a's new HEAD
+ok: dark: the parent's working tree is clean
+ok: dark: the header shows no changes
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/pointer-committed-dark.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/add-dialog-dark.png
+ok: dark: .gitmodules declares libs/d
+ok: dark: libs/d's gitlink is staged
+ok: dark: .gitmodules has libs/d's new url
+ok: dark: the url was synced into the config
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/remove-confirm-dark.png
+[page error] Failed to load resource: the server responded with a status of 409 (Conflict)
+ok: dark: the refused remove changed nothing
+ok: dark: after the refused Remove: no alert ever showed in the header or a panel
+ok: dark: after the refused Remove: no watcher read started during a submodule write
+ok: dark: after the refused Remove: the header shows its counts
+ok: dark: the edited url is named as staged with the removal
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/remove-discard-dark.png
+ok: dark: libs/d is removed
+ok: dark: .gitmodules no longer declares libs/d
+ok: dark: .git/modules/libs/d is kept
+ok: dark: after Remove: no alert ever showed in the header or a panel
+ok: dark: after Remove: no watcher read started during a submodule write
+ok: dark: after Remove: the header shows its counts
+[page error] Refused to apply style from 'http://127.0.0.1:46633/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:46633/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:46633/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/phone-panel-dark.png
+ok: dark: the phone menu lists the submodule actions
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/submodules/phone-menu-dark.png
+ok: dark: at the end: no alert ever showed in the header or a panel
+ok: dark: at the end: no watcher read started during a submodule write
+ok: dark: no console errors or unexpected ≥400 responses

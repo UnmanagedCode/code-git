@@ -23,6 +23,9 @@ export const isColumnId = (v: unknown): v is ColumnId => typeof v === 'string' &
 /** `w` within the column's resize bounds. */
 export const clampWidth = (id: ColumnId, w: number): number => Math.min(COLUMNS[id].max, Math.max(COLUMNS[id].min, Math.round(w)));
 
+/** Pixels a column's resize handle moves per ←/→ press. */
+export const COLUMN_RESIZE_STEP = 16;
+
 /** Each column's width class: resizable widths come from `--col-<id>` (set with setCssPx), the message takes the rest. */
 export const CELL_CLASS: Record<ColumnId, string> = {
   refs: 'w-(--col-refs)', graph: 'w-(--col-graph)', message: 'min-w-30 flex-1', author: 'w-(--col-author)',

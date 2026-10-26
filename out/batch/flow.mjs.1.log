@@ -1,0 +1,75 @@
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:45829/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:45829/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+ok: Initialize is prefilled with main
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/init-desktop-light.png
+ok: git agrees: the gitflow.* keys are set
+ok: develop was created at main
+ok: git agrees: HEAD is feature/login
+ok: the feature branch's menu offers Finish feature… (Create branch here… | Create tag here… | Rename… | Set upstream… | Finish feature… | Jump to commit | Show reflog | Copy name | Solo | Pin to left)
+ok: the dialog lists the steps (Merge feature/login into develop (no fast-forward) | Delete feature/login; HEAD ends on develop)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-feature-desktop-light.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-feature-phone-light.png
+ok: develop gained a --no-ff merge of the feature tip
+ok: the feature branch is deleted
+ok: HEAD is develop
+ok: the tag message is prefilled
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-release-desktop-light.png
+ok: main gained a --no-ff merge of the release tip
+ok: develop gained a --no-ff merge of the release tip
+ok: annotated tag 1.0 on main's merge
+ok: the tag message is the one typed
+ok: the release branch is deleted
+[page error] Failed to load resource: the server responded with a status of 409 (Conflict)
+ok: the FLOW_CONFLICT alert lists app.txt
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-conflict-desktop-light.png
+ok: git agrees: nothing changed
+[page error] Failed to load resource: the server responded with a status of 409 (Conflict)
+ok: the FLOW_INCOMPLETE alert names the merge step and shows the hook output
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-hook-desktop-light.png
+ok: the branch is kept
+ok: the activity entry's Show output has the hook output
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/activity-hook-desktop-light.png
+ok: the graph toolbar, Repository actions included, fits 390×844
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/toolbar-phone-light.png
+ok: the only refusals are the deliberate ones (FLOW_CONFLICT, FLOW_INCOMPLETE)
+ok: no console errors or failed responses
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:44913/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:44913/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+ok: Initialize is prefilled with main
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/init-desktop-dark.png
+ok: git agrees: the gitflow.* keys are set
+ok: develop was created at main
+ok: git agrees: HEAD is feature/login
+ok: the feature branch's menu offers Finish feature… (Create branch here… | Create tag here… | Rename… | Set upstream… | Finish feature… | Jump to commit | Show reflog | Copy name | Solo | Pin to left)
+ok: the dialog lists the steps (Merge feature/login into develop (no fast-forward) | Delete feature/login; HEAD ends on develop)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-feature-desktop-dark.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-feature-phone-dark.png
+ok: develop gained a --no-ff merge of the feature tip
+ok: the feature branch is deleted
+ok: HEAD is develop
+ok: the tag message is prefilled
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-release-desktop-dark.png
+ok: main gained a --no-ff merge of the release tip
+ok: develop gained a --no-ff merge of the release tip
+ok: annotated tag 1.0 on main's merge
+ok: the tag message is the one typed
+ok: the release branch is deleted
+[page error] Failed to load resource: the server responded with a status of 409 (Conflict)
+ok: the FLOW_CONFLICT alert lists app.txt
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-conflict-desktop-dark.png
+ok: git agrees: nothing changed
+[page error] Failed to load resource: the server responded with a status of 409 (Conflict)
+ok: the FLOW_INCOMPLETE alert names the merge step and shows the hook output
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/finish-hook-desktop-dark.png
+ok: the branch is kept
+ok: the activity entry's Show output has the hook output
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/activity-hook-desktop-dark.png
+ok: the graph toolbar, Repository actions included, fits 390×844
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/flow/toolbar-phone-dark.png
+ok: the only refusals are the deliberate ones (FLOW_CONFLICT, FLOW_INCOMPLETE)
+ok: no console errors or failed responses
+flow: all checks passed

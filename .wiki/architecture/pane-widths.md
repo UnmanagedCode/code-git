@@ -13,4 +13,3 @@ User-facing behaviour: `docs/features.md` → Shell. Bounds: `PANE` in `frontend
 
 ## Gotchas
 
-- **`GraphHeader`'s column resize is not on `Splitter`.** Its handle sits inside a column header that is already a Radix menu trigger (focusable, pointer-driven for column reorder, keyboard-driven to open the menu): a `Splitter` there would add a tab stop per column and need a keyboard design for columns. Its widths are per-checkout graph prefs with their own bounds. Its drag listens on `window`, which outlives a `pointercancel`.

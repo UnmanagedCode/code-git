@@ -1,0 +1,46 @@
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:46875/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+ok: the drop menu onto HEAD's branch is exactly Merge feature/ff into main, Merge feature/ff into main (no fast-forward), Squash feature/ff into main, Rebase main onto feature/ff, Interactive rebase main onto feature/ff…, Fast-forward main to feature/ff, Reset main to feature/ff (Merge feature/ff into main, Merge feature/ff into main (no fast-forward), Squash feature/ff into main, Rebase main onto feature/ff, Interactive rebase main onto feature/ff…, Fast-forward main to feature/ff, Reset main to feature/ff)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-drop-menu-light-desktop.png
+ok: git: main fast-forwarded to feature/ff, no merge commit
+ok: git: a merge commit of ff and p3, "Merge branch 'picks'"
+ok: git: t1…t4 staged, main unmoved
+ok: git: no MERGE_HEAD (a squash is no merge in progress)
+ok: the description lists the squashed commits
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-squash-light-desktop.png
+ok: git: one commit on main with the squash message
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-branch-menu-light-desktop.png
+ok: git: topic's six commits replayed onto side
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-rebase-onto-light-desktop.png
+ok: git: only t3 and t4 are on topic, onto feature/ff
+ok: git: t4.txt kept, t1.txt left out
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:46875/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-drop-menu-light-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-branch-menu-light-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-rebase-onto-light-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:46875/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-branch-menu-light-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-rebase-onto-light-phone.png
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:46875/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-drop-menu-dark-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-branch-menu-dark-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-rebase-onto-dark-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:46875/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:46875/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-branch-menu-dark-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/c7/merge-rebase-onto-dark-phone.png
+ok: no console error and no ≥400 response

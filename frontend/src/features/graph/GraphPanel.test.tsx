@@ -15,6 +15,7 @@ import { workdirOf } from '@/state/workdir';
 import { GraphPanel } from './GraphPanel';
 import { requestJump } from './jump';
 import { DISPLAY_MAX } from '@/lib/clip';
+import { COLUMNS } from './columns';
 import { LANE_CAP } from './layout';
 import { TIPS_MAX } from './visibility';
 import { ROW_H } from './windowFor';
@@ -369,4 +370,14 @@ test('loading more pages keeps the first page markers and adds the later crossin
   expect(markerIds()).toEqual(before);
   await scrollTo((PAGE + 10) * ROW_H - 100);
   expect(markerIds()).toContainEqual([world.commits[PAGE + 10].oid, 'last month']);
+});
+
+test("each column handle's aria-valuenow equals the width its column renders (--col-<id> on the graph root)", async () => {
+  updatePrefs('app', (p) => ({ ...p, columns: { ...p.columns, visible: ['author', 'date'], widths: { author: 210 } } }));
+  await show(linearWorld(30));
+  const root = list().closest<HTMLElement>('[style*="--col-"]')!;
+  for (const id of ['refs', 'graph', 'author', 'date'] as const) {
+    const h = screen.getByRole('separator', { name: `Resize ${COLUMNS[id].label}` });
+    expect(h.getAttribute('aria-valuenow')).toBe(String(parseFloat(root.style.getPropertyValue(`--col-${id}`))));
+  }
 });

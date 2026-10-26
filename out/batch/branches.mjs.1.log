@@ -1,0 +1,109 @@
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+ok: feature/a shows ↑1 (ahead of origin)
+ok: feature/b shows ↓1 (behind origin)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/badges-light-desktop.png
+ok: double-click on feature/a checks it out (header)
+ok: git agrees: HEAD is feature/a
+ok: "Check out after creating" is on by default
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/create-branch-light-desktop.png
+ok: topic was created at the commit and checked out
+ok: rename: topic is topic2 in the refs panel
+ok: Ctrl/⌘-click selects two rows
+ok: the delete dialog lists both (scratch1,scratch2)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/delete-two-light-desktop.png
+ok: both branches are gone
+ok: deleting code-conductor/old shows the cc warning
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/delete-cc-light-desktop.png
+ok: code-conductor/wt (checked out in wt) offers no Delete or Rename (Create branch here…, Create tag here…, Set upstream…, Push to origin…, Jump to commit, Show reflog, Copy name, Hide, Solo, Pin to left)
+ok: the drop menu holds only Fast-forward and Reset (Fast-forward feature/b to origin/feature/b, Reset feature/b to origin/feature/b…)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/drop-menu-light-desktop.png
+ok: feature/b was fast-forwarded to origin/feature/b
+ok: the hard-reset dialog says what it discards
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/reset-hard-light-desktop.png
+ok: Cancel left HEAD alone
+ok: rel-1 is an annotated tag
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/push-loading-light-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/push-done-light-desktop.png
+ok: rel-1 is gone from origin, kept locally
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/pick-conflict-light-desktop.png
+ok: Abort restored HEAD and the tree
+ok: the branch named like markup is listed
+ok: no img element exists
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: double-click in the cc checkout shows the cc warning
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/cc-head-checkout-light-desktop.png
+ok: Cancel leaves the header on code-conductor/wt
+ok: a soft reset in the cc checkout shows the same warning
+ok: nothing moved code-conductor/wt
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: refs/remotes/origin/feature/a: the opened menu lies under the pointer (on "Hide"), so the release would hit an item
+ok: refs/remotes/origin/feature/a: the menu is still open after the right-press is released
+ok: refs/remotes/origin/feature/a: the release ran no menu item (nothing hidden)
+ok: refs/tags/v1.0: the opened menu lies under the pointer (on "Copy name"), so the release would hit an item
+ok: refs/tags/v1.0: the menu is still open after the right-press is released
+ok: refs/tags/v1.0: the release ran no menu item (nothing hidden)
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/toolbar-light-desktop.png
+ok: light desktop: the graph toolbar (Changes, Branch, …) fits the width
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/delete-cc-light-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/reset-hard-light-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/create-branch-light-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/cc-head-checkout-light-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/toolbar-light-phone.png
+ok: light phone: the graph toolbar (Changes, Branch, …) fits the width
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/delete-cc-light-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/reset-hard-light-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/create-branch-light-phone.png
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/cc-head-checkout-light-phone.png
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/toolbar-dark-desktop.png
+ok: dark desktop: the graph toolbar (Changes, Branch, …) fits the width
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/delete-cc-dark-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/reset-hard-dark-desktop.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/create-branch-dark-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/cc-head-checkout-dark-desktop.png
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/toolbar-dark-phone.png
+ok: dark phone: the graph toolbar (Changes, Branch, …) fits the width
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/delete-cc-dark-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/reset-hard-dark-phone.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/create-branch-dark-phone.png
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42631/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42631/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/branches/cc-head-checkout-dark-phone.png
+ok: no console error and no unexpected ≥400 response

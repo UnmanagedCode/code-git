@@ -1,0 +1,56 @@
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:33487/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:33487/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+ok: the filter leaves Create branch… (Create branch…BranchesCtrl/⌘+B)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/palette-desktop-light.png
+ok: Enter runs it: the create-branch dialog is open
+ok: the pick lists side and origin/main, not HEAD's main (side|origin/mainremote)
+ok: git agrees: side is checked out
+ok: Undo names the checkout (Undo Checkout side (Ctrl/⌘+Z))
+ok: undo: back on main
+ok: the sheet lists the scopes (Global, Command palette, Side panes, Tabs, Graph, Commit details, Changes, Commit box, Diff, File lists, Rebase editor, Merge tool)
+ok: the sheet shows Undo as Ctrl/⌘+Z
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/sheet-desktop-light.png
+ok: the commit landed
+ok: undo: HEAD back at the commit before
+ok: undo: new.txt is staged again
+ok: Ctrl/⌘+Shift+Z: the same commit is back
+ok: the hard reset moved main
+ok: undoing the hard reset asks first
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/undo-confirm-desktop-light.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/undo-confirm-phone-light.png
+ok: confirmed: main is back
+ok: Undo is disabled with the reason (A cherry-pick is in progress: continue or abort it first)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/undo-disabled-desktop-light.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/palette-phone-light.png
+ok: no console errors or failed responses
+[page error] Refused to apply style from 'http://127.0.0.1:45189/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:45189/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:45189/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+ok: the filter leaves Create branch… (Create branch…BranchesCtrl/⌘+B)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/palette-desktop-dark.png
+ok: Enter runs it: the create-branch dialog is open
+ok: the pick lists side and origin/main, not HEAD's main (side|origin/mainremote)
+ok: git agrees: side is checked out
+ok: Undo names the checkout (Undo Checkout side (Ctrl/⌘+Z))
+ok: undo: back on main
+ok: the sheet lists the scopes (Global, Command palette, Side panes, Tabs, Graph, Commit details, Changes, Commit box, Diff, File lists, Rebase editor, Merge tool)
+ok: the sheet shows Undo as Ctrl/⌘+Z
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/sheet-desktop-dark.png
+ok: the commit landed
+ok: undo: HEAD back at the commit before
+ok: undo: new.txt is staged again
+ok: Ctrl/⌘+Shift+Z: the same commit is back
+ok: the hard reset moved main
+ok: undoing the hard reset asks first
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/undo-confirm-desktop-dark.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/undo-confirm-phone-dark.png
+ok: confirmed: main is back
+ok: Undo is disabled with the reason (A cherry-pick is in progress: continue or abort it first)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/undo-disabled-desktop-dark.png
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/palette/palette-phone-dark.png
+ok: no console errors or failed responses
+palette: all checks passed

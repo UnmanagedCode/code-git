@@ -1,0 +1,125 @@
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35805/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35805/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to apply style from 'http://127.0.0.1:35805/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35805/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35805/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: light: unstaged lists the deleted, modified and untracked files
+ok: light: nothing staged yet
+ok: light: the unedited template cannot be committed (nothing staged either)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-panel-light.png
+ok: light: each hunk header offers Stage hunk
+ok: light: a toggle per added/removed line (2 + 3)
+ok: light: the unstaged row shows its line counts
+ok: light: an untracked row shows no counts
+ok: light: the open diff's row is marked in the Changes list
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-diff-light.png
+ok: light: ↓ in the section views the next file
+ok: light: Ignore whitespace on offers no line toggles and no Stage hunk
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-ignore-ws-light.png
+ok: light: Ignore whitespace off brings the toggles and Stage hunk back
+ok: light: Hunk+Split offers Stage hunk per header and the line toggles
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-hunk-split-light.png
+ok: light: Stage hunk in Hunk+Split staged exactly the first hunk
+ok: light: the selection bar counts 2 lines
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-selection-light.png
+ok: light: Stage lines staged exactly the selected pair
+ok: light: the discard confirmation previews the line
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-discard-lines-light.png
+ok: light: the worktree lost exactly the discarded line
+ok: light: Discard all names the untracked file
+ok: light: Discard all shows the count and that it cannot be undone
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-discard-all-light.png
+ok: light: Cancel discarded nothing
+ok: light: the commit has the joined message
+ok: light: the commit holds the staged content
+ok: light: the template pre-fills the box again after the commit
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-amend-light.png
+ok: light: Update message only rewrote the message and kept the tree
+ok: light: the amend replaced HEAD (still 2 commits)
+ok: light: Tree nests the folder's files
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-tree-light.png
+ok: light: Stage folder staged both files
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-tree-staged-light.png
+ok: light: Unstage folder unstaged both
+ok: light: a row's Stage in Tree staged that file only
+[page error] Refused to apply style from 'http://127.0.0.1:35805/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35805/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35805/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: light: the detached banner shows
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-detached-light.png
+[page error] Refused to apply style from 'http://127.0.0.1:35805/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:35805/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:35805/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: light: the right slot is hidden on a phone
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-phone-dialog-light.png
+ok: light: staging from the phone dialog staged the deletion
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-phone-staged-light.png
+ok: light: no console errors or ≥400 responses
+[page error] Refused to apply style from 'http://127.0.0.1:42131/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42131/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42131/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to apply style from 'http://127.0.0.1:42131/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42131/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42131/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: dark: unstaged lists the deleted, modified and untracked files
+ok: dark: nothing staged yet
+ok: dark: the unedited template cannot be committed (nothing staged either)
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-panel-dark.png
+ok: dark: each hunk header offers Stage hunk
+ok: dark: a toggle per added/removed line (2 + 3)
+ok: dark: the unstaged row shows its line counts
+ok: dark: an untracked row shows no counts
+ok: dark: the open diff's row is marked in the Changes list
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-diff-dark.png
+ok: dark: ↓ in the section views the next file
+ok: dark: Ignore whitespace on offers no line toggles and no Stage hunk
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-ignore-ws-dark.png
+ok: dark: Ignore whitespace off brings the toggles and Stage hunk back
+ok: dark: Hunk+Split offers Stage hunk per header and the line toggles
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-hunk-split-dark.png
+ok: dark: Stage hunk in Hunk+Split staged exactly the first hunk
+ok: dark: the selection bar counts 2 lines
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-selection-dark.png
+ok: dark: Stage lines staged exactly the selected pair
+ok: dark: the discard confirmation previews the line
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-discard-lines-dark.png
+ok: dark: the worktree lost exactly the discarded line
+ok: dark: Discard all names the untracked file
+ok: dark: Discard all shows the count and that it cannot be undone
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-discard-all-dark.png
+ok: dark: Cancel discarded nothing
+ok: dark: the commit has the joined message
+ok: dark: the commit holds the staged content
+ok: dark: the template pre-fills the box again after the commit
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-amend-dark.png
+ok: dark: Update message only rewrote the message and kept the tree
+ok: dark: the amend replaced HEAD (still 2 commits)
+ok: dark: Tree nests the folder's files
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-tree-dark.png
+ok: dark: Stage folder staged both files
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-tree-staged-dark.png
+ok: dark: Unstage folder unstaged both
+ok: dark: a row's Stage in Tree staged that file only
+[page error] Refused to apply style from 'http://127.0.0.1:42131/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42131/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42131/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: dark: the detached banner shows
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-detached-dark.png
+[page error] Refused to apply style from 'http://127.0.0.1:42131/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+[page error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[page error] Refused to execute script from 'http://127.0.0.1:42131/pluginBridge.js' because its MIME type ('text/plain') is not executable, and strict MIME type checking is enabled.
+[page error] Refused to apply style from 'http://127.0.0.1:42131/pluginTheme.css' because its MIME type ('text/plain') is not a supported stylesheet MIME type, and strict MIME checking is enabled.
+ok: dark: the right slot is hidden on a phone
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-phone-dialog-dark.png
+ok: dark: staging from the phone dialog staged the deletion
+screenshot: /workspaces/cc-projects/.worktrees/code-git/c34-graph-col-resize/harness/playwright/out/staging-phone-staged-dark.png
+ok: dark: no console errors or ≥400 responses

@@ -104,14 +104,40 @@ try {
     await page.keyboard.press('Escape');
     await page.locator('[data-header-col=sha]').click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Move left' }).click();
-    const handle = page.getByRole('separator', { name: 'Resize Author' });
+    const handle = page.getByRole('separator', { name: 'Resize Author', exact: true });
+    const headerW = async (id) => (await page.locator(`[data-header-col=${id}]`).boundingBox()).width;
+    const handleNow = async (name) => Number(await page.getByRole('separator', { name, exact: true }).getAttribute('aria-valuenow'));
+    const storedGraph = () => page.evaluate(() => JSON.stringify(Object.entries(localStorage).filter(([k]) => k.startsWith('code-git:graph:') && k !== 'code-git:graph:detailsHeader').sort()));
+    const orderNow = () => page.locator('[data-header-col]').evaluateAll((els) => els.map((e) => e.getAttribute('data-header-col')));
+    const orderBefore = JSON.stringify(await orderNow());
+    check(Math.abs(await handleNow('Resize Graph') - await headerW('graph')) <= 1, "the Graph handle starts at the column's rendered width");
     const box = await handle.boundingBox();
-    const before = (await page.locator('[data-header-col=author]').boundingBox()).width;
+    const before = await headerW('author');
     await page.mouse.move(box.x + 2, box.y + 5);
     await page.mouse.down();
     await page.mouse.move(box.x + 62, box.y + 5, { steps: 5 });
+    check(await handle.evaluate((el) => el.hasPointerCapture(1)), 'a handle drag holds the pointer capture');
     await page.mouse.up();
     await row(o.D).locator('[data-cell=changes]').getByText(/^\d+$/).waitFor();
+    const dragged = await headerW('author');
+    check(Math.abs(dragged - before - 60) <= 2, `the author width persists after a drag (+${dragged - before}px)`);
+    // An abandoned drag restores the width and stores nothing, and a later move or release changes nothing.
+    const abandon = async (end, what) => {
+      const stored = await storedGraph();
+      const b = await handle.boundingBox();
+      await page.mouse.move(b.x + 2, b.y + 5);
+      await page.mouse.down();
+      await page.mouse.move(b.x + 42, b.y + 5, { steps: 4 });
+      await page.waitForFunction((w) => Math.abs(document.querySelector('[data-header-col=author]').getBoundingClientRect().width - w) > 20, dragged);
+      await handle.evaluate(end);
+      await page.waitForFunction((w) => Math.abs(document.querySelector('[data-header-col=author]').getBoundingClientRect().width - w) <= 1, dragged);
+      await page.mouse.move(b.x + 100, b.y + 5, { steps: 3 });
+      await page.mouse.up();
+      check(Math.abs(await headerW('author') - dragged) <= 1 && await storedGraph() === stored, what);
+    };
+    await abandon((el) => el.releasePointerCapture(1), 'a lost pointer capture restores the width and stores nothing');
+    await abandon((el) => el.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true })), 'a pointercancel restores the width and stores nothing');
+    check(JSON.stringify(await orderNow()) === orderBefore, 'resize drags do not reorder the columns');
     const aligned = async () => {
       const xs = await Promise.all(['author', 'sha', 'changes'].map(async (c) => [
         (await page.locator(`[data-header-col=${c}]`).boundingBox()).x, (await row(o.D).locator(`[data-cell=${c}]`).boundingBox()).x]));
@@ -123,11 +149,46 @@ try {
     check(await aligned(), 'the header scrolls sideways with the rows');
     await list.evaluate((el) => { el.scrollLeft = 0; });
     await shot('columns-light-desktop');
+    // Keys on a focused handle: Tab from the header cell reaches it; ←/→ step, End/Home go to the bounds.
+    const cellBtn = page.getByRole('button', { name: 'Author', exact: true });
+    await cellBtn.focus();
+    await page.keyboard.press('Tab');
+    check(await handle.evaluate((el) => el === document.activeElement), 'Tab from the Author header cell reaches its resize handle');
+    const step = 16;
+    const w0 = await headerW('author');
+    const n0 = await handleNow('Resize Author');
+    await page.keyboard.press('ArrowRight');
+    check(await handleNow('Resize Author') === n0 + step && Math.abs(await headerW('author') - w0 - step) <= 1, '→ widens the column by one step');
+    await page.keyboard.press('End');
+    check(await handleNow('Resize Author') === Number(await handle.getAttribute('aria-valuemax')), 'End goes to the maximum');
+    await page.keyboard.press('Home');
+    const colMin = Number(await handle.getAttribute('aria-valuemin'));
+    check(await handleNow('Resize Author') === colMin && Math.abs(await headerW('author') - colMin) <= 1, 'Home goes to the minimum');
+    await page.keyboard.press('ArrowRight');
+    check(await handleNow('Resize Author') === colMin + step, '→ once more steps from the minimum');
+    await shot('columns-handle-focus-light-desktop');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await shot('columns-handle-focus-dark-desktop');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
+    check(await page.getByRole('menu').count() === 0, 'Enter and ArrowDown on a resize handle open no menu');
+    await cellBtn.focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('menu').waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('menu').waitFor({ state: 'detached' });
+    await cellBtn.focus();
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('menu').waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('menu').waitFor({ state: 'detached' });
+    check(true, 'the header cell still opens its menu with Enter and Shift+F10');
     await open();
-    const order = await page.locator('[data-header-col]').evaluateAll((els) => els.map((e) => e.getAttribute('data-header-col')));
+    const order = await orderNow();
     check(JSON.stringify(order) === JSON.stringify(['refs', 'graph', 'message', 'author', 'sha', 'date', 'changes']), `the column order persists (${order.join(', ')})`);
-    const after = (await page.locator('[data-header-col=author]').boundingBox()).width;
-    check(Math.abs(after - before - 60) <= 2, `the author width persists (+${after - before}px)`);
+    const after = await headerW('author');
+    check(Math.abs(after - (colMin + step)) <= 1, `the key-set author width persists (${after}px)`);
 
     // ---- search ----
     const box2 = page.getByRole('textbox', { name: 'Search commits' });
