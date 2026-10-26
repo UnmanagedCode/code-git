@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { PROBE_ARGS } from '../src/git/attributes.js';
+import { DIFF_LIMITS } from '../src/git/diff/limits.js';
 import { createLocks } from '../src/git/locks.js';
 import { getOp, OPS } from '../src/git/ops/index.js';
 import { fifoBeforeRead, lockFree, mkfifo, rejection, shortProbe, shortRead } from './_git.js';
@@ -18,7 +20,8 @@ test('absence: with no git-lfs on the System PATH, status answers available: fal
   assert.deepEqual(await w.op('lfs.status', {}), {
     available: false, version: null, supported: false, filters: null, attributes: null, patterns: null,
   });
-  assert.deepEqual(w.argvs(), [LFS_PROBE]);
+  // `lfs` is not on the attribute allow-list: the attribute probe runs first.
+  assert.deepEqual(w.argvs(), [PROBE_ARGS, LFS_PROBE]);
   for (const [name, params] of WRITES) {
     const before = w.argvs().length;
     await assert.rejects(w.op(name, params), refused('LFS_UNAVAILABLE'), name);
@@ -109,23 +112,23 @@ test('status never reads through a symlinked .gitattributes: attributes unsuppor
 /** Well under the read (60 s) and write (300 s) timeouts a blocked probe would otherwise wait out. */
 const PROMPT_MS = 5000;
 
-test('a FIFO .gitattributes, or a symlink to one: status, track and untrack refuse PROBE_TIMEOUT promptly, and the project lock is free again', { skip: !HAVE_LFS && LFS_SKIP, timeout: 10_000 }, async (t) => {
+test('a FIFO .gitattributes refuses status, track and untrack ATTRIBUTES_TIMEOUT (git\'s attribute probe); a symlink to one, which git does not follow there, PROBE_TIMEOUT (our own read); promptly, and the project lock is free again', { skip: !HAVE_LFS && LFS_SKIP, timeout: 10_000 }, async (t) => {
   shortProbe(t);
   const w = await lfsWorld(t);
   const attrs = path.join(w.repo.dir, '.gitattributes');
   const outside = path.join(w.repo.root, 'outside-pipe');
   mkfifo(outside);
   const layouts = {
-    fifo() { fs.rmSync(attrs); mkfifo(attrs); },
-    'link to a fifo'() { fs.rmSync(attrs); fs.symlinkSync(outside, attrs); },
+    fifo: { make() { fs.rmSync(attrs); mkfifo(attrs); }, code: 'ATTRIBUTES_TIMEOUT', extra: { timeoutMs: DIFF_LIMITS.probeTimeoutMs } },
+    'link to a fifo': { make() { fs.rmSync(attrs); fs.symlinkSync(outside, attrs); }, code: 'PROBE_TIMEOUT', extra: { path: '.gitattributes', timeoutMs: DIFF_LIMITS.probeTimeoutMs } },
   };
   const locks = createLocks();
-  for (const [layout, make] of Object.entries(layouts)) {
+  for (const [layout, { make, code, extra }] of Object.entries(layouts)) {
     make();
     for (const [name, params] of [['lfs.status', {}], ['lfs.track', { pattern: '*.dat' }], ['lfs.untrack', { pattern: '*.bin' }]]) {
       const { e, ms } = await rejection(w.op(name, params, { locks }));
-      assert.equal(e.code, 'PROBE_TIMEOUT', `${layout} ${name}: ${e.message}`);
-      assert.equal(e.extra.path, '.gitattributes', `${layout} ${name}`);
+      assert.equal(e.code, code, `${layout} ${name}: ${e.message}`);
+      assert.deepEqual(e.extra, extra, `${layout} ${name}`);
       assert.ok(ms < PROMPT_MS, `${layout} ${name} refused after ${ms} ms`);
     }
   }

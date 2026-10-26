@@ -24,6 +24,8 @@ export function mount(router, { ops, activity, locks, journal }) {
     const ctx = {
       target, op: op.name, kind: op.kind, cancellable: op.cancellable, signal: controller.signal,
       opRunId: activity.newRunId(), activity, locks,
+      // The run's attribute probes, one per target (runGit).
+      attributeChecks: new Map(),
     };
     // A write's run is bracketed (`event: run`) so the UI refreshes once it settled, never between its commands.
     // Reads open none. assertInsideCheckout awaits each of its commands, so they settled before end() either way.

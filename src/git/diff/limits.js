@@ -17,7 +17,8 @@ export const DIFF_LIMITS = {
    * The bound on noIndex.js's stat-only `--raw` probe. A regular file is only stat-ed, never opened or hashed, so this
    * covers process spawn and cc's exec round trip, not file size; a FIFO, which git opens, is refused PROBE_TIMEOUT
    * within it. The measurement and its conditions: wiki gotchas/diff-parsing → "The `--no-index` probe is bounded".
-   * Read at call time.
+   * It also bounds runGit's attribute probe (src/git/attributes.js: one `check-attr`, ~1 ms locally, ~7 ms with a
+   * 100k-entry index it loads), refused ATTRIBUTES_TIMEOUT past it. Read at call time.
    */
   probeTimeoutMs: 10_000,
   /**

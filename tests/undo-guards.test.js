@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { getOp, OPS } from '../src/git/ops/index.js';
-import { BASE_ARGS, BASE_ENV, isProtectedEnv } from '../src/git/runner.js';
+import { BASE_ARGS, BASE_ENV, isProtectedEnv, READ_ENV } from '../src/git/runner.js';
 import { createJournal } from '../src/git/undo/journal.js';
 import { ctxFor, gitFor } from './_ctx.js';
 import { fakeCc } from './_fakeCc.js';
@@ -306,7 +306,7 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})/;
 // `--opt=value` aside; rev-parse takes only hex-led revisions, `symbolic-ref -q` only a full `refs/` name, `stash store`
 // only its final full oid, `config` a value after its key); never `git apply --index`; `reset --hard` only for a hard reset's plan, `reset --keep
 // --end-of-options` for the commit-making ops' (cherry-pick, revert, merge, rebase); a url only as an argument of its
-// own; no env beyond the base but GIT_INDEX_FILE, no protected env; exec form A only.
+// own; no env beyond the base but GIT_INDEX_FILE (and READ_ENV on the attribute probe), no protected env; exec form A only.
 test('argv scan over every undo and redo exec', async (t) => {
   const w = await undoWorld(t);
   const runs = [];
@@ -427,7 +427,8 @@ test('argv scan over every undo and redo exec', async (t) => {
       const own = Object.entries(body.env ?? {}).filter(([k, v]) => isProtectedEnv(k) && BASE_ENV[k] !== v);
       assert.deepEqual(own, [], `${label}: a protected env name set by the op`);
       const extra = Object.keys(body.env ?? {}).filter((k) => !(k in BASE_ENV));
-      assert.ok(extra.every((k) => k === 'GIT_INDEX_FILE'), `${label}: ${argv.join(' ')}: env beyond the base: ${extra.join(', ')}`);
+      // runGit's attribute probe is a read: it carries READ_ENV.
+      assert.ok(extra.every((k) => k === 'GIT_INDEX_FILE' || (sub === 'check-attr' && k in READ_ENV)), `${label}: ${argv.join(' ')}: env beyond the base: ${extra.join(', ')}`);
     }
   }
   for (const label of keepLabels) {

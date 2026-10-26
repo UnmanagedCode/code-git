@@ -36,6 +36,8 @@ async function run(name, raw, target = APP) {
   const result = await op.run(gitFor(ctx), op.params(raw));
   return { result, entries: ctx.activity.list() };
 }
+/** An entry that is not runGit's attribute probe (tests/attributes-probe.test.js covers that). */
+const ownCommand = (e) => !e.argv.includes('check-attr');
 const reject = (name, raw, code) => assert.throws(() => getOp(OPS, name).params(raw), (e) => e.code === code, `${name} ${JSON.stringify(raw)?.slice(0, 80)}`);
 /** An entry's argv after `git` and BASE_ARGS. */
 const op = (e) => e.argv.slice(1 + BASE_ARGS.length);
@@ -443,12 +445,13 @@ test('commit: subject, body with blank lines, co-authors, parents, author vs com
     { status: 'R', path: 'new name.txt', oldPath: 'old name.txt', added: 0, deleted: 0, ...counts },
   ]);
   assert.equal(result.filesError, null);
-  assert.equal(entries.length, 2, 'metadata and the file list are separate commands');
-  assert.ok(entries[0].argv.some((a) => a.includes('%G?')));
+  const own = entries.filter(ownCommand);
+  assert.equal(own.length, 2, 'metadata and the file list are separate commands');
+  assert.ok(own[0].argv.some((a) => a.includes('%G?')));
   // One command lists the files with their line counts.
-  assert.ok(op(entries[1]).includes('--numstat') && op(entries[1]).includes('--raw'));
+  assert.ok(op(own[1]).includes('--numstat') && op(own[1]).includes('--raw'));
   // The oid is checked as full hex, so no --end-of-options (git 2.24) is needed: details work from git 2.22.
-  assert.deepEqual(op(entries[1]).slice(-2), [A, B]);
+  assert.deepEqual(op(own[1]).slice(-2), [A, B]);
   assert.ok(!entries.some((e) => e.argv.includes('--end-of-options')));
 });
 
@@ -484,7 +487,7 @@ test('commit: files carry numstat counts; a binary file is binary with null coun
   assert.deepEqual(by['three.txt'], { status: 'M', path: 'three.txt', oldPath: null, added: 2, deleted: 1, binary: false, submodule: false });
   assert.equal(by['vendor/lib'].submodule, true);
   assert.equal(by['vendor/lib'].binary, false);
-  assert.equal(entries.length, 2);
+  assert.equal(entries.filter(ownCommand).length, 2);
   const r = (await run('graph.commit', { oid: root })).result;
   assert.deepEqual(r.files, [{ status: 'A', path: 'three.txt', oldPath: null, added: 3, deleted: 0, binary: false, submodule: false }]);
 });
@@ -501,7 +504,7 @@ test('commit: a file list over the output cap keeps the metadata and reports OUT
   assert.equal(result.files, null);
   assert.equal(result.filesError.code, 'OUTPUT_TOO_LARGE');
   assert.equal(result.filesError.limitBytes, 33554432);
-  assert.deepEqual(entries.map((e) => e.status), ['ok', 'refused']);
+  assert.deepEqual(entries.filter(ownCommand).map((e) => e.status), ['ok', 'refused']);
 });
 
 test('commit: a cancelled file list cancels the op; an unknown commit fails it; only a full oid is accepted', async (t) => {

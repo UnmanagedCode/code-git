@@ -6,7 +6,7 @@ import { runGit } from '../src/git/runner.js';
 export function ctxFor(target, kind = 'read', over = {}) {
   return {
     target: { project: target.project, worktree: target.worktree ?? null }, op: 'test.op', kind, cancellable: kind === 'read',
-    signal: undefined, opRunId: 'run-t', activity: createActivityLog(), locks: createLocks(), ...over,
+    signal: undefined, opRunId: 'run-t', activity: createActivityLog(), locks: createLocks(), attributeChecks: new Map(), ...over,
   };
 }
 

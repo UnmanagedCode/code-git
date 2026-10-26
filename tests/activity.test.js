@@ -27,10 +27,10 @@ async function runLogged(ctx, args, opts) {
 test('a successful command: running then ok, with argv, target, exit code and duration recorded exactly', async (t) => {
   await world(t);
   const ctx = ctxFor({ project: 'app', worktree: null }, 'read', { op: 'repo.summary', opRunId: 'run-9' });
-  const { events, entry } = await runLogged(ctx, ['status', '--porcelain=v2']);
+  const { events, entry } = await runLogged(ctx, ['rev-parse', 'HEAD']);
   assert.deepEqual(events.map((e) => e.status), ['running', 'ok']);
   assert.equal(events[0].exitCode, null);
-  assert.deepEqual(entry.argv, ['git', ...BASE_ARGS, 'status', '--porcelain=v2']);
+  assert.deepEqual(entry.argv, ['git', ...BASE_ARGS, 'rev-parse', 'HEAD']);
   assert.deepEqual(entry.target, { project: 'app', worktree: null });
   assert.equal(entry.op, 'repo.summary');
   assert.equal(entry.opRunId, 'run-9');
@@ -43,8 +43,8 @@ test('a successful command: running then ok, with argv, target, exit code and du
 
 test("an entry records its op's kind, so a client can tell a finished write from a read", async (t) => {
   await world(t);
-  const read = await runLogged(ctxFor(APP, 'read'), ['status']);
-  const write = await runLogged(ctxFor(APP, 'write'), ['status']);
+  const read = await runLogged(ctxFor(APP, 'read'), ['rev-parse', 'HEAD']);
+  const write = await runLogged(ctxFor(APP, 'write'), ['rev-parse', 'HEAD']);
   assert.deepEqual(read.events.map((e) => e.kind), ['read', 'read']);
   assert.deepEqual(write.events.map((e) => e.kind), ['write', 'write']);
   assert.equal(read.entry.kind, 'read');
@@ -64,12 +64,12 @@ test('a non-zero exit closes the entry failed/GIT_FAILED with stderr', async (t)
 test('cc refusals close the entry as timeout or refused', async (t) => {
   const { cc } = await world(t);
   cc.state.execHook = () => ({ status: 504, body: { error: 'x', code: 'EXEC_TIMEOUT', stdout: '', stderr: Buffer.from('slow').toString('base64') } });
-  const timedOut = await runLogged(ctxFor(APP), ['status']);
+  const timedOut = await runLogged(ctxFor(APP), ['rev-parse', 'HEAD']);
   assert.equal(timedOut.entry.status, 'timeout');
   assert.equal(timedOut.entry.code, 'GIT_TIMEOUT');
   assert.equal(timedOut.entry.stderr, 'slow');
   cc.state.execHook = () => ({ status: 502, body: { error: 'x', code: 'SYSTEM_UNREACHABLE' } });
-  const refused = await runLogged(ctxFor(APP), ['status']);
+  const refused = await runLogged(ctxFor(APP), ['rev-parse', 'HEAD']);
   assert.equal(refused.entry.status, 'refused');
   assert.equal(refused.entry.code, 'SYSTEM_UNREACHABLE');
 });
@@ -78,7 +78,7 @@ test('cancel aborts a running cancellable entry: cc sees the disconnect and the 
   const { cc } = await world(t);
   cc.state.execHook = () => 'hold';
   const ctx = ctxFor(APP, 'read');
-  const p = runLogged(ctx, ['status']);
+  const p = runLogged(ctx, ['rev-parse', 'HEAD']);
   const held = await cc.nextHeld();
   const running = ctx.activity.list().at(-1);
   assert.equal(running.status, 'running');
@@ -96,7 +96,7 @@ test('cancel refuses an unknown id, a non-cancellable entry (even while running)
   const ctx = ctxFor(APP, 'write', { cancellable: false });
   assert.throws(() => ctx.activity.cancel(42), (e) => e.code === 'ACTIVITY_UNKNOWN');
   cc.state.execHook = () => 'hold';
-  const p = runGit(ctx, ['status']);
+  const p = runGit(ctx, ['rev-parse', 'HEAD']);
   const held = await cc.nextHeld();
   const entry = ctx.activity.list().at(-1);
   assert.equal(entry.cancellable, false);
@@ -108,7 +108,7 @@ test('cancel refuses an unknown id, a non-cancellable entry (even while running)
 
   cc.state.execHook = null;
   const readCtx = ctxFor(APP, 'read');
-  await runGit(readCtx, ['status']);
+  await runGit(readCtx, ['rev-parse', 'HEAD']);
   assert.throws(() => readCtx.activity.cancel(readCtx.activity.list()[0].id), (e) => e.code === 'NOT_RUNNING');
 });
 
@@ -117,7 +117,7 @@ test("the op's signal aborting cancels the entry too", async (t) => {
   cc.state.execHook = () => 'hold';
   const controller = new AbortController();
   const ctx = ctxFor(APP, 'read', { signal: controller.signal });
-  const p = runLogged(ctx, ['status']);
+  const p = runLogged(ctx, ['rev-parse', 'HEAD']);
   await cc.nextHeld();
   controller.abort();
   const { entry } = await p;
@@ -149,7 +149,7 @@ test('stderr is capped to its tail and flagged truncated', async (t) => {
 test("only the op's own env is recorded, and secret-looking values are redacted", async (t) => {
   await world(t);
   const env = { GH_TOKEN: 't', MY_PASSWORD: 'p', API_KEY: 'k', CLIENT_SECRET: 's', PLAIN: 'v' };
-  const { entry } = await runLogged(ctxFor(APP), ['status'], { env, stdin: 'four' });
+  const { entry } = await runLogged(ctxFor(APP), ['rev-parse', 'HEAD'], { env, stdin: 'four' });
   assert.deepEqual(entry.env, { GH_TOKEN: '[redacted]', MY_PASSWORD: '[redacted]', API_KEY: '[redacted]', CLIENT_SECRET: '[redacted]', PLAIN: 'v' });
   assert.equal(entry.stdinBytes, 4);
   assert.equal(JSON.stringify(entry).includes('four'), false, 'stdin content is never recorded');
