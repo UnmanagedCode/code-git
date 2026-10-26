@@ -90,19 +90,23 @@ export const isProtectedEnv = (name) => PROTECTED_ENV.includes(name) || PROTECTE
 const STATUS_OF = { CANCELLED: 'cancelled', GIT_TIMEOUT: 'timeout' };
 
 /**
- * The subcommand of an op's `args`, past any leading `-c <key=value>` pairs (netRun's, a pull's config overrides) and
- * the LFS ops' `--no-literal-pathspecs` (src/git/ops/lfs.js).
+ * The subcommand of an op's `args`, past any leading `-c <key=value>` pairs (netRun's, a pull's config overrides), the
+ * LFS ops' `--no-literal-pathspecs` (src/git/ops/lfs.js), and an args-level `-C <path>` / `--git-dir=<x>` /
+ * `--git-dir <x>` (a submodule's own repository named per command: src/git/submodule/list.js, gates.js).
  */
 export const subcommandOf = (args) => args[subcommandAt(args)];
 
 function subcommandAt(args) {
   let i = 0;
   for (;;) {
-    if (args[i] === '-c') i += 2;
-    else if (args[i] === '--no-literal-pathspecs') i += 1;
+    if (args[i] === '-c' || args[i] === '-C' || args[i] === '--git-dir') i += 2;
+    else if (args[i] === '--no-literal-pathspecs' || args[i]?.startsWith('--git-dir=')) i += 1;
     else return i;
   }
 }
+
+/** Whether `args` names another repository before its subcommand (`-C`, `--git-dir`), past what runGit's target says. */
+const redirects = (args) => args.slice(0, subcommandAt(args)).some((a, i, pre) => (a === '-C' || a === '--git-dir' || a.startsWith('--git-dir=')) && pre[i - 1] !== '-c');
 
 /**
  * Runs one git command for an op, in `ctx.target` (subArgs for a submodule). `ctx` = {target, op, kind: 'read'|'write', cancellable, signal, opRunId, activity, locks, attributeChecks}.
@@ -115,7 +119,11 @@ export async function runGit(ctx, args, opts = {}) {
   // An op setting a protected name is a code-git bug: refuse before anything runs.
   const forbidden = Object.keys(opts.env ?? {}).filter(isProtectedEnv);
   if (forbidden.length) throw new Error(`runGit: ${ctx.op} may not set ${forbidden.join(', ')}`);
-  if (consultsAttributes(args.slice(subcommandAt(args)))) await attributesChecked(ctx);
+  if (consultsAttributes(args.slice(subcommandAt(args)))) {
+    // The probe runs in ctx.target's repository: a consulting command in another one goes through a target naming it.
+    if (redirects(args)) throw new Error(`runGit: ${ctx.op} runs ${subcommandOf(args)} under an args-level -C/--git-dir; name the repository in ctx.target.sub so its attribute files are probed`);
+    await attributesChecked(ctx);
+  }
   return execOne(ctx, args, opts);
 }
 

@@ -3,8 +3,9 @@ import { DIFF_LIMITS } from './diff/limits.js';
 
 // git's own opens of its attribute files: which commands consult them, and the bounded probe runGit runs before one
 // that does. git opens the system file, core.attributesFile (or its XDG default), the root .gitattributes and
-// .git/info/attributes without O_NONBLOCK, the last two and the global one following links: a FIFO or a device there
-// blocks the command until its kind's timeout. Measurements and their conditions: wiki gotchas/flow-lfs.
+// .git/info/attributes without O_NONBLOCK; .git/info/attributes and core.attributesFile follow links, the in-tree
+// .gitattributes is opened O_NOFOLLOW. A FIFO there, or a device or a link to one where links are followed, blocks the
+// command until its kind's timeout. Measurements and their conditions: wiki gotchas/flow-lfs.
 
 /** `log` options measured not to consult attributes; the value-taking ones by their `--opt=` prefix. */
 const LOG_OPTIONS = new Set([
@@ -33,10 +34,13 @@ function logFree(rest) {
  * the worktree), and `diff`, `diff-index`, `diff-tree`, `hash-object`, `submodule`, `lfs` (mixed forms, none hot).
  */
 export const ATTRIBUTE_FREE = new Map([
-  ...['rev-parse', 'symbolic-ref', 'for-each-ref', 'update-ref', 'branch', 'tag', 'remote', 'config', 'cat-file', 'ls-tree',
+  ...['rev-parse', 'symbolic-ref', 'for-each-ref', 'update-ref', 'branch', 'tag', 'remote', 'config', 'ls-tree',
     'merge-base', 'rev-list', 'commit-tree', 'mktree', 'write-tree', 'stripspace', 'var', 'version', 'fetch', 'ls-remote'].map((s) => [s, true]),
   // `--eol` reads each file's content to report its line endings; git accepts any unique prefix of it (`--eo`).
   ['ls-files', (rest) => !rest.slice(0, rest.includes('--') ? rest.indexOf('--') : rest.length).some((a) => a.startsWith('--eo'))],
+  // `--textconv` and `--filters` run the path's attribute conversion. git accepts a unique prefix of either (`--t`; `--f`
+  // and `--fi` on a git without `--filter`): any prefix down to `--t` / `--f` consults.
+  ['cat-file', (rest) => !rest.some((a) => a.length >= 3 && ('--textconv'.startsWith(a) || '--filters'.startsWith(a)))],
   // `worktree add` checks files out.
   ['worktree', ([verb]) => verb === 'list'],
   ['stash', ([verb, ...rest]) => verb === 'store' || verb === 'drop' || (verb === 'list' && logFree(rest))],
