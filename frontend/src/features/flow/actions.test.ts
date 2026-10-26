@@ -96,3 +96,11 @@ test('Finish needs usable settings: prefixes set but initialized false offers no
   world(FEATURE, { ...CONFIG, initialized: false });
   expect(menu('repo', { tab: T }).some((l) => l.includes('Finish') || l.includes('Start'))).toBe(false);
 });
+
+test('every Repository menu item, the Git-flow submenu children included, has an icon', () => {
+  const bare = <C,>(list: ResolvedAction<C>[]): string[] => list.flatMap((a) => [...(a.icon ? [] : [a.id]), ...bare(a.children ?? [])]);
+  world(FEATURE, CONFIG);
+  expect(bare(actionsFor('repo', { tab: T }))).toEqual([]);
+  world(MAIN, UNSET);
+  expect(bare(actionsFor('repo', { tab: T }))).toEqual([]);
+});

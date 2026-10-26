@@ -42,6 +42,7 @@ A failed listing shows the error with **Retry**.
 - Click activates; × closes. Closing the active tab activates its right neighbour, else its left one.
 - **Shortcuts:** Ctrl+1…Ctrl+8 (⌘ on macOS) activate tab 1…8; Ctrl/⌘+9 the last tab. Shift or Alt with them does nothing. Only while focus is inside the plugin frame.
 - **Tab menu** (⋮ button, or right-click the tab): **Close**, **Close others** (only with more than one tab), **Copy name** (`project/worktree` to the clipboard).
+- **Menu icons:** every context and ⋮ menu item shows an icon in a leading column.
 - Tabs persist in `localStorage` key `code-git:tabs`. The active tab is mirrored into the URL query (`?project=…&worktree=…`, plus `&sub=…` per submodule of a submodule tab); loading such a URL opens that checkout beside the persisted tabs, and Back/cc navigation (`popstate`) activates the tab the URL names.
 
 ## Repo header

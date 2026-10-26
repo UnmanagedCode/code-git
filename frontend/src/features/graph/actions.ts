@@ -9,6 +9,7 @@ import { openIn, selectionDiff } from './diffWiring';
 import { requestDetails, requestJump } from './jump';
 import { buildInputs } from './rows';
 import type { CommitDetail } from './types';
+import { CopyIcon, CrosshairIcon, EyeIcon, FileDiffIcon, GitCompareIcon, InfoIcon, PinIcon, SquareArrowOutUpRightIcon, TargetIcon } from 'lucide-react';
 
 // The graph's own menu actions: view (800), copy (900), visibility (950). Write actions come from later cards
 // (docs/architecture.md → Extension points has the order convention).
@@ -35,75 +36,75 @@ const select = (c: CommitCtx, id: string) => {
 type RefAction = MenuAction<RefCtx>;
 const refActions = (context: 'branch' | 'tag'): RefAction[] => [
   {
-    id: `graph.${context}.jump`, context, label: 'Jump to commit', group: 'view', order: 800, when: (c) => !!c.ref.oid, run: (c) => requestJump(c.tab, c.ref.oid!),
+    id: `graph.${context}.jump`, context, icon: CrosshairIcon, label: 'Jump to commit', group: 'view', order: 800, when: (c) => !!c.ref.oid, run: (c) => requestJump(c.tab, c.ref.oid!),
     // A tag's double-click jumps (a branch's checks out: features/branches/actions.ts).
     primary: context === 'tag',
   },
-  { id: `graph.${context}.copyName`, context, label: 'Copy name', group: 'copy', order: 900, run: (c) => copy(c.ref.short) },
+  { id: `graph.${context}.copyName`, context, icon: CopyIcon, label: 'Copy name', group: 'copy', order: 900, run: (c) => copy(c.ref.short) },
   {
-    id: `graph.${context}.hide`, context, group: 'visibility', order: 950,
+    id: `graph.${context}.hide`, context, icon: EyeIcon, group: 'visibility', order: 950,
     label: (c) => (prefs(c).hidden.includes(c.ref.name) ? 'Show' : 'Hide'),
     // The checked-out branch cannot be hidden.
     when: (c) => !c.ref.isHead,
     run: (c) => set(c, (p) => ({ ...p, hidden: toggled(p.hidden, c.ref.name, !p.hidden.includes(c.ref.name)) })),
   },
   {
-    id: `graph.${context}.solo`, context, group: 'visibility', order: 951,
+    id: `graph.${context}.solo`, context, icon: TargetIcon, group: 'visibility', order: 951,
     label: (c) => (prefs(c).soloed.includes(c.ref.name) ? 'Unsolo' : 'Solo'),
     run: (c) => set(c, (p) => ({ ...p, soloed: toggled(p.soloed, c.ref.name, !p.soloed.includes(c.ref.name)) })),
   },
 ];
 
 export const GRAPH_ACTIONS: MenuAction<never>[] = [
-  { id: 'graph.commit.details', context: 'commit', label: 'Show details', group: 'view', order: 800, run: (c: CommitCtx) => select(c, c.commit.oid) },
+  { id: 'graph.commit.details', icon: InfoIcon, context: 'commit', label: 'Show details', group: 'view', order: 800, run: (c: CommitCtx) => select(c, c.commit.oid) },
   {
-    id: 'graph.commit.viewChanges', context: 'commit', label: 'View changes', group: 'view', order: 801,
+    id: 'graph.commit.viewChanges', icon: FileDiffIcon, context: 'commit', label: 'View changes', group: 'view', order: 801,
     run: (c: CommitCtx) => openIn(c.tab, c.tab, { kind: 'commit', rev: c.commit.oid }),
   },
   {
-    id: 'graph.commit.compareWorktree', context: 'commit', label: 'Compare with working directory', group: 'view', order: 802,
+    id: 'graph.commit.compareWorktree', icon: GitCompareIcon, context: 'commit', label: 'Compare with working directory', group: 'view', order: 802,
     run: (c: CommitCtx) => openIn(c.tab, c.tab, { kind: 'worktree', rev: c.commit.oid }),
   },
   {
-    id: 'graph.commits.viewDiff', context: 'commits', label: 'View combined diff', group: 'view', order: 800,
+    id: 'graph.commits.viewDiff', icon: FileDiffIcon, context: 'commits', label: 'View combined diff', group: 'view', order: 800,
     when: (c: CommitsCtx) => !!selectionDiff(c.tab, c.rows.map(toSelected)),
     run: (c: CommitsCtx) => {
       const d = selectionDiff(c.tab, c.rows.map(toSelected));
       if (d) openIn(c.tab, d.target, d.source);
     },
   },
-  { id: 'graph.commit.copySha', context: 'commit', label: 'Copy SHA', group: 'copy', order: 900, run: (c: CommitCtx) => copy(c.commit.oid) },
-  { id: 'graph.commit.copyMessage', context: 'commit', label: 'Copy message', group: 'copy', order: 901, run: (c: CommitCtx) => copyMessage(c.tab, c.commit.oid, c.commit.subject) },
+  { id: 'graph.commit.copySha', icon: CopyIcon, context: 'commit', label: 'Copy SHA', group: 'copy', order: 900, run: (c: CommitCtx) => copy(c.commit.oid) },
+  { id: 'graph.commit.copyMessage', icon: CopyIcon, context: 'commit', label: 'Copy message', group: 'copy', order: 901, run: (c: CommitCtx) => copyMessage(c.tab, c.commit.oid, c.commit.subject) },
   {
-    id: 'graph.commits.copyShas', context: 'commits', label: (c: CommitsCtx) => `Copy ${c.rows.length} SHAs`, group: 'copy', order: 900,
+    id: 'graph.commits.copyShas', icon: CopyIcon, context: 'commits', label: (c: CommitsCtx) => `Copy ${c.rows.length} SHAs`, group: 'copy', order: 900,
     run: (c: CommitsCtx) => copy(c.rows.map((r) => (r.kind === 'commit' ? r.item.oid : r.kind === 'stash' ? r.stash.oid : null)).filter(Boolean).join('\n')),
   },
   ...refActions('branch'),
   {
-    id: 'graph.branch.pin', context: 'branch', group: 'visibility', order: 952,
+    id: 'graph.branch.pin', icon: PinIcon, context: 'branch', group: 'visibility', order: 952,
     label: (c: RefCtx) => (prefs(c).pinned.includes(c.ref.name) ? 'Unpin' : 'Pin to left'),
     run: (c: RefCtx) => set(c, (p) => ({ ...p, pinned: toggled(p.pinned, c.ref.name, !p.pinned.includes(c.ref.name)) })),
   },
   ...refActions('tag'),
   {
-    id: 'graph.remote.hide', context: 'remote', group: 'visibility', order: 950,
+    id: 'graph.remote.hide', icon: EyeIcon, context: 'remote', group: 'visibility', order: 950,
     label: (c: RemoteCtx) => (prefs(c).hiddenRemotes.includes(c.remote) ? 'Show remote' : 'Hide remote'),
     run: (c: RemoteCtx) => set(c, (p) => ({ ...p, hiddenRemotes: toggled(p.hiddenRemotes, c.remote, !p.hiddenRemotes.includes(c.remote)) })),
   },
   {
-    id: 'graph.remote.solo', context: 'remote', group: 'visibility', order: 951,
+    id: 'graph.remote.solo', icon: TargetIcon, context: 'remote', group: 'visibility', order: 951,
     label: (c: RemoteCtx) => (prefs(c).soloedRemotes.includes(c.remote) ? 'Unsolo remote' : 'Solo remote'),
     run: (c: RemoteCtx) => set(c, (p) => ({ ...p, soloedRemotes: toggled(p.soloedRemotes, c.remote, !p.soloedRemotes.includes(c.remote)) })),
   },
   {
-    id: 'graph.remote.showAll', context: 'remote', label: 'Show all', group: 'visibility', order: 952,
+    id: 'graph.remote.showAll', icon: EyeIcon, context: 'remote', label: 'Show all', group: 'visibility', order: 952,
     when: (c: RemoteCtx) => prefs(c).hiddenRemotes.includes(c.remote) || prefs(c).hidden.some((n) => n.startsWith(`refs/remotes/${c.remote}/`)),
     run: (c: RemoteCtx) => set(c, (p) => ({
       ...p, hiddenRemotes: p.hiddenRemotes.filter((r) => r !== c.remote), hidden: p.hidden.filter((n) => !n.startsWith(`refs/remotes/${c.remote}/`)),
     })),
   },
   {
-    id: 'graph.stash.details', context: 'stash', label: 'Show details', group: 'view', order: 800,
+    id: 'graph.stash.details', icon: InfoIcon, context: 'stash', label: 'Show details', group: 'view', order: 800,
     // A hidden Stashes section has no stash rows to select.
     when: (c: StashCtx) => !prefs(c).hiddenSections.includes('stashes'),
     // From the refs panel the stash's base may not be loaded yet: jump (page to it), then select the stash row.
@@ -113,30 +114,30 @@ export const GRAPH_ACTIONS: MenuAction<never>[] = [
     },
   },
   {
-    id: 'graph.stash.viewChanges', context: 'stash', label: 'View changes', group: 'view', order: 801,
+    id: 'graph.stash.viewChanges', icon: FileDiffIcon, context: 'stash', label: 'View changes', group: 'view', order: 801,
     run: (c: StashCtx) => openIn(c.tab, c.tab, { kind: 'commit', rev: c.stash.oid }),
   },
-  { id: 'graph.stash.copyMessage', context: 'stash', label: 'Copy message', group: 'copy', order: 900, run: (c: StashCtx) => copy(c.stash.subject) },
+  { id: 'graph.stash.copyMessage', icon: CopyIcon, context: 'stash', label: 'Copy message', group: 'copy', order: 900, run: (c: StashCtx) => copy(c.stash.subject) },
   {
-    id: 'graph.stash.hide', context: 'stash', label: 'Hide stashes', group: 'visibility', order: 950,
+    id: 'graph.stash.hide', icon: EyeIcon, context: 'stash', label: 'Hide stashes', group: 'visibility', order: 950,
     run: (c: StashCtx) => set(c, (p) => ({ ...p, hiddenSections: toggled(p.hiddenSections, 'stashes', true) })),
   },
   {
-    id: 'graph.wip.unstaged', context: 'wip', label: 'View unstaged changes', group: 'view', order: 790,
+    id: 'graph.wip.unstaged', icon: FileDiffIcon, context: 'wip', label: 'View unstaged changes', group: 'view', order: 790,
     run: (c: WipCtx) => openIn(c.tab, c.checkout, { kind: 'unstaged' }),
   },
   {
-    id: 'graph.wip.staged', context: 'wip', label: 'View staged changes', group: 'view', order: 791,
+    id: 'graph.wip.staged', icon: FileDiffIcon, context: 'wip', label: 'View staged changes', group: 'view', order: 791,
     run: (c: WipCtx) => openIn(c.tab, c.checkout, { kind: 'staged' }),
   },
   {
-    id: 'graph.wip.open', context: 'wip', label: (c: WipCtx) => `Open ${c.name} in a tab`, group: 'view', order: 800,
+    id: 'graph.wip.open', icon: SquareArrowOutUpRightIcon, context: 'wip', label: (c: WipCtx) => `Open ${c.name} in a tab`, group: 'view', order: 800,
     when: (c: WipCtx) => !c.isOwn, run: (c: WipCtx) => dispatchTabs({ type: 'open', tab: c.checkout }),
   },
   {
-    id: 'graph.worktree.open', context: 'worktree', label: 'Open in a tab', group: 'view', order: 800,
+    id: 'graph.worktree.open', icon: SquareArrowOutUpRightIcon, context: 'worktree', label: 'Open in a tab', group: 'view', order: 800,
     when: (c: WorktreeCtx) => c.ccCheckout !== null, run: (c: WorktreeCtx) => dispatchTabs({ type: 'open', tab: c.ccCheckout! }),
   },
-  { id: 'graph.worktree.copyPath', context: 'worktree', label: 'Copy path', group: 'copy', order: 900, run: (c: WorktreeCtx) => copy(c.worktree.path) },
-  { id: 'graph.file.copyPath', context: 'file', label: 'Copy path', group: 'copy', order: 900, run: (c: FileCtx) => copy(c.file.path) },
+  { id: 'graph.worktree.copyPath', icon: CopyIcon, context: 'worktree', label: 'Copy path', group: 'copy', order: 900, run: (c: WorktreeCtx) => copy(c.worktree.path) },
+  { id: 'graph.file.copyPath', icon: CopyIcon, context: 'file', label: 'Copy path', group: 'copy', order: 900, run: (c: FileCtx) => copy(c.file.path) },
 ] as MenuAction<never>[];

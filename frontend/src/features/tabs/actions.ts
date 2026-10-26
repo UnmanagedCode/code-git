@@ -1,5 +1,6 @@
 import type { MenuAction } from '@/shell/menus';
 import { dispatchTabs, parentTab, tabKey, tabsStore, type Tab } from '@/state/tabs';
+import { CopyIcon, CopyXIcon, XIcon } from 'lucide-react';
 
 export interface TabMenuCtx { tab: Tab; index: number; count: number }
 
@@ -15,10 +16,10 @@ export function backToParent(t: Tab): void {
 }
 
 export const TAB_ACTIONS: MenuAction<TabMenuCtx>[] = [
-  { id: 'tab.close', context: 'tab', label: 'Close', run: ({ index }) => dispatchTabs({ type: 'close', index }) },
+  { id: 'tab.close', icon: XIcon, context: 'tab', label: 'Close', run: ({ index }) => dispatchTabs({ type: 'close', index }) },
   {
-    id: 'tab.closeOthers', context: 'tab', label: 'Close others',
+    id: 'tab.closeOthers', icon: CopyXIcon, context: 'tab', label: 'Close others',
     when: ({ count }) => count > 1, run: ({ index }) => dispatchTabs({ type: 'closeOthers', index }),
   },
-  { id: 'tab.copyName', context: 'tab', label: 'Copy name', run: ({ tab }) => navigator.clipboard?.writeText(tabLabel(tab)) },
+  { id: 'tab.copyName', icon: CopyIcon, context: 'tab', label: 'Copy name', run: ({ tab }) => navigator.clipboard?.writeText(tabLabel(tab)) },
 ];

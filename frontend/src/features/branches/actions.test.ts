@@ -226,3 +226,12 @@ test('on a code-conductor/* HEAD, checking out its own remote twin (only a fast-
   expect(confirmStore.get()).toBeNull();
   await waitFor(() => expect(sent(f, 'branch.checkout')).toEqual([{ ref: 'refs/remotes/origin/code-conductor/wt' }]));
 });
+
+test('every item of the tag menu, the Push to / Delete from submenus and their per-remote children included, has an icon', () => {
+  setRefs(refsOn());
+  const bare = <C,>(list: ResolvedAction<C>[]): string[] => list.flatMap((a) => [...(a.icon ? [] : [a.id]), ...bare(a.children ?? [])]);
+  for (const remotes of [['origin'], ['origin', 'upstream']]) {
+    trackingStore.set(new Map([['app', { loading: false, data: { remotes, branches: {} } }]]));
+    expect(bare(actionsFor('tag', branch(TAG)))).toEqual([]);
+  }
+});

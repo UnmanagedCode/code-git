@@ -12,11 +12,13 @@ import {
 } from './api';
 import { abbrev, ccHead, ccHeadWarning, checkedOutAnywhere, checkedOutElsewhere, headLabel, headOf, isCcOwned, refNamed, remoteBranch, remotesOf, shortBranch } from './refInfo';
 import { applyToast, fileList, rejectedLines, runRefOp } from './run';
+import { ArrowRightLeftIcon, ArrowUpFromLineIcon, CherryIcon, CloudIcon, EraserIcon, FastForwardIcon, FileIcon, GitBranchPlusIcon, LayersIcon, LinkIcon, RotateCcwIcon, TagIcon, TextCursorInputIcon, Trash2Icon, UndoDotIcon, type LucideIcon } from 'lucide-react';
 
 // The branch, tag and HEAD actions (docs/refs.md → Menus). Orders: 100 checkout, 200 create, 300 history-rewriting;
 // on the branch-drop menu 100–199 are merge and rebase's (features/sequence/actions.ts).
 
 const MODES: ResetMode[] = ['soft', 'mixed', 'hard'];
+export const MODE_ICON: Record<ResetMode, LucideIcon> = { soft: LayersIcon, mixed: FileIcon, hard: EraserIcon };
 const MODE_LABEL: Record<ResetMode, string> = { soft: 'Soft (keep index and files)', mixed: 'Mixed (keep files)', hard: 'Hard (discard changes)' };
 
 const pointOf = (r: Ref): Point | null => (r.oid ? { oid: r.oid, label: r.short } : null);
@@ -95,7 +97,7 @@ export function reset(tab: Tab, to: Point, mode: ResetMode): void {
 
 /** The Soft / Mixed / Hard submenu resetting HEAD to the ctx's point. */
 const resetChildren = <C extends { tab: Tab }>(id: string, context: string, point: (c: C) => Point | null): MenuAction<C>[] => MODES.map((mode) => ({
-  id: `${id}.${mode}`, context, label: MODE_LABEL[mode], destructive: mode === 'hard',
+  id: `${id}.${mode}`, context, icon: MODE_ICON[mode], label: MODE_LABEL[mode], destructive: mode === 'hard',
   run: (c: C) => { const p = point(c); if (p) reset(c.tab, p, mode); },
 }));
 
@@ -103,27 +105,27 @@ const headBorn = (tab: Tab) => headOf(tab).oid !== null;
 
 /** One item per remote: a plain item (`one(remote)`) for a single remote, a submenu (`many`) for several. */
 export function perRemote<C extends { tab: Tab }>(
-  id: string, context: string, base: Pick<MenuAction<C>, 'group' | 'order' | 'destructive'>,
+  id: string, context: string, base: Pick<MenuAction<C>, 'group' | 'order' | 'destructive' | 'icon'>,
   labels: { one: (remote: string) => string; many: string }, run: (c: C, remote: string) => void,
 ): MenuAction<C>[] {
   return [
     { ...base, id, context, label: (c) => labels.one(remotesOf(c.tab)[0]), when: (c) => remotesOf(c.tab).length === 1, run: (c) => run(c, remotesOf(c.tab)[0]) },
     {
       ...base, id: `${id}.pick`, context, label: labels.many, when: (c) => remotesOf(c.tab).length > 1,
-      children: (c) => remotesOf(c.tab).map((remote) => ({ id: `${id}.${remote}`, context, label: remote, destructive: base.destructive, run: (x: C) => run(x, remote) })),
+      children: (c) => remotesOf(c.tab).map((remote) => ({ id: `${id}.${remote}`, context, icon: CloudIcon, label: remote, destructive: base.destructive, run: (x: C) => run(x, remote) })),
     },
   ];
 }
 
 function createBranchAt<C extends { tab: Tab }>(id: string, context: string, point: (c: C) => Point | null): MenuAction<C> {
   return {
-    id, context, label: 'Create branch here…', group: 'create', order: 200, when: (c) => point(c) !== null,
+    id, context, icon: GitBranchPlusIcon, label: 'Create branch here…', group: 'create', order: 200, when: (c) => point(c) !== null,
     run: (c) => openRefDialog({ kind: 'createBranch', tab: c.tab, from: point(c) }),
   };
 }
 function createTagAt<C extends { tab: Tab }>(id: string, context: string, point: (c: C) => Point | null): MenuAction<C> {
   return {
-    id, context, label: 'Create tag here…', group: 'create', order: 201, when: (c) => point(c) !== null,
+    id, context, icon: TagIcon, label: 'Create tag here…', group: 'create', order: 201, when: (c) => point(c) !== null,
     run: (c) => { const at = point(c); if (at) openRefDialog({ kind: 'createTag', tab: c.tab, at }); },
   };
 }
@@ -176,47 +178,47 @@ const dropPoint = (c: BranchDropCtx): Point | null => (c.source.oid ? { oid: c.s
 export const BRANCH_ACTIONS: MenuAction<never>[] = [
   // ---- branch (local or remote) ----
   {
-    id: 'branches.branch.checkout', context: 'branch', label: 'Checkout', group: 'checkout', order: 100, primary: true,
+    id: 'branches.branch.checkout', icon: ArrowRightLeftIcon, context: 'branch', label: 'Checkout', group: 'checkout', order: 100, primary: true,
     when: (c: RefCtx) => (isLocal(c) ? !c.ref.isHead && !checkedOutElsewhere(c.tab, c.ref.name) : isRemote(c)),
     run: (c: RefCtx) => checkout(c.tab, c.ref),
   },
   createBranchAt('branches.branch.createBranch', 'branch', refPoint),
   createTagAt('branches.branch.createTag', 'branch', refPoint),
   {
-    id: 'branches.branch.rename', context: 'branch', label: 'Rename…', group: 'create', order: 210,
+    id: 'branches.branch.rename', icon: TextCursorInputIcon, context: 'branch', label: 'Rename…', group: 'create', order: 210,
     // cc's worktree record names a checked-out cc branch, wherever it is checked out.
     when: (c: RefCtx) => isLocal(c) && !checkedOutElsewhere(c.tab, c.ref.name) && !(isCcOwned(c.ref.short) && checkedOutAnywhere(c.tab, c.ref.name)),
     run: (c: RefCtx) => openRefDialog({ kind: 'renameBranch', tab: c.tab, name: c.ref.short }),
   },
   {
-    id: 'branches.branch.upstream', context: 'branch', label: 'Set upstream…', group: 'create', order: 220, when: isLocal,
+    id: 'branches.branch.upstream', icon: LinkIcon, context: 'branch', label: 'Set upstream…', group: 'create', order: 220, when: isLocal,
     run: (c: RefCtx) => openRefDialog({ kind: 'setUpstream', tab: c.tab, branch: c.ref.short }),
   },
   {
-    id: 'branches.branch.fastForward', context: 'branch', group: 'create', order: 230,
+    id: 'branches.branch.fastForward', icon: FastForwardIcon, context: 'branch', group: 'create', order: 230,
     label: (c: RefCtx) => `Fast-forward to ${upstreamOf(c)?.short ?? 'upstream'}`,
     when: (c: RefCtx) => isLocal(c) && !!c.ref.oid && !checkedOutElsewhere(c.tab, c.ref.name) && upstreamOf(c) !== null,
     run: (c: RefCtx) => { const up = upstreamOf(c)!; fastForwardTo(c.tab, c.ref.short, up.oid!, up.short, c.ref.oid!); },
   },
   {
-    id: 'branches.branch.reset', context: 'branch', group: 'rewrite', order: 300, label: (c: RefCtx) => `Reset ${headLabel(c.tab)} to here`,
+    id: 'branches.branch.reset', icon: RotateCcwIcon, context: 'branch', group: 'rewrite', order: 300, label: (c: RefCtx) => `Reset ${headLabel(c.tab)} to here`,
     when: (c: RefCtx) => !c.ref.isHead && !!c.ref.oid && headBorn(c.tab) && c.ref.oid !== headOf(c.tab).oid,
     children: resetChildren<RefCtx>('branches.branch.reset', 'branch', refPoint),
   },
   {
-    id: 'branches.branch.delete', context: 'branch', group: 'delete', order: 340, destructive: true,
+    id: 'branches.branch.delete', icon: Trash2Icon, context: 'branch', group: 'delete', order: 340, destructive: true,
     label: (c: RefCtx) => `Delete ${c.ref.short}…`,
     when: (c: RefCtx) => isLocal(c) && !checkedOutAnywhere(c.tab, c.ref.name),
     run: (c: RefCtx) => openRefDialog({ kind: 'deleteBranches', tab: c.tab, refs: [c.ref] }),
   },
   {
-    id: 'branches.branch.deleteRemote', context: 'branch', group: 'delete', order: 341, destructive: true,
+    id: 'branches.branch.deleteRemote', icon: Trash2Icon, context: 'branch', group: 'delete', order: 341, destructive: true,
     label: (c: RefCtx) => `Delete ${remoteBranch(c.ref)} from ${c.ref.remote}…`, when: isRemote,
     run: (c: RefCtx) => openRefDialog({ kind: 'deleteBranches', tab: c.tab, refs: [c.ref] }),
   },
   // ---- a refs-panel multi-selection ----
   {
-    id: 'branches.branches.delete', context: 'branches', group: 'delete', order: 340, destructive: true,
+    id: 'branches.branches.delete', icon: Trash2Icon, context: 'branches', group: 'delete', order: 340, destructive: true,
     label: (c: BranchesCtx) => `Delete ${deleteBatch(c).length} branches…`, when: (c: BranchesCtx) => deletable(c).length > 0,
     run: (c: BranchesCtx) => {
       const all = deletable(c);
@@ -225,53 +227,53 @@ export const BRANCH_ACTIONS: MenuAction<never>[] = [
   },
   // ---- tag ----
   createBranchAt('branches.tag.createBranch', 'tag', refPoint),
-  ...perRemote<RefCtx>('branches.tag.push', 'tag', { group: 'remote', order: 250 }, { one: (remote) => `Push to ${remote}`, many: 'Push to' },
+  ...perRemote<RefCtx>('branches.tag.push', 'tag', { group: 'remote', order: 250, icon: ArrowUpFromLineIcon }, { one: (remote) => `Push to ${remote}`, many: 'Push to' },
     (c, remote) => pushTag(c.tab, c.ref.short, remote)),
   {
-    id: 'branches.tag.reset', context: 'tag', group: 'rewrite', order: 300, label: (c: RefCtx) => `Reset ${headLabel(c.tab)} to here`,
+    id: 'branches.tag.reset', icon: RotateCcwIcon, context: 'tag', group: 'rewrite', order: 300, label: (c: RefCtx) => `Reset ${headLabel(c.tab)} to here`,
     when: (c: RefCtx) => !!c.ref.oid && headBorn(c.tab) && c.ref.oid !== headOf(c.tab).oid,
     children: resetChildren<RefCtx>('branches.tag.reset', 'tag', refPoint),
   },
   {
-    id: 'branches.tag.delete', context: 'tag', group: 'delete', order: 340, destructive: true, label: 'Delete locally…',
+    id: 'branches.tag.delete', icon: Trash2Icon, context: 'tag', group: 'delete', order: 340, destructive: true, label: 'Delete locally…',
     run: (c: RefCtx) => openRefDialog({ kind: 'deleteTags', tab: c.tab, names: [c.ref.short], remote: null }),
   },
-  ...perRemote<RefCtx>('branches.tag.deleteRemote', 'tag', { group: 'delete', order: 341, destructive: true }, { one: (remote) => `Delete from ${remote}…`, many: 'Delete from' },
+  ...perRemote<RefCtx>('branches.tag.deleteRemote', 'tag', { group: 'delete', order: 341, destructive: true, icon: Trash2Icon }, { one: (remote) => `Delete from ${remote}…`, many: 'Delete from' },
     (c, remote) => openRefDialog({ kind: 'deleteTags', tab: c.tab, names: [c.ref.short], remote })),
   // ---- commit ----
   createBranchAt('branches.commit.createBranch', 'commit', commitPoint),
   createTagAt('branches.commit.createTag', 'commit', commitPoint),
   {
-    id: 'branches.commit.reset', context: 'commit', group: 'rewrite', order: 300, label: (c: CommitCtx) => `Reset ${headLabel(c.tab)} to this commit`,
+    id: 'branches.commit.reset', icon: RotateCcwIcon, context: 'commit', group: 'rewrite', order: 300, label: (c: CommitCtx) => `Reset ${headLabel(c.tab)} to this commit`,
     when: (c: CommitCtx) => headBorn(c.tab) && c.commit.oid !== headOf(c.tab).oid,
     children: resetChildren<CommitCtx>('branches.commit.reset', 'commit', commitPoint),
   },
   {
-    id: 'branches.commit.revert', context: 'commit', group: 'rewrite', order: 310, when: (c: CommitCtx) => headBorn(c.tab),
+    id: 'branches.commit.revert', icon: UndoDotIcon, context: 'commit', group: 'rewrite', order: 310, when: (c: CommitCtx) => headBorn(c.tab),
     label: (c: CommitCtx) => (c.commit.parents.length > 1 ? 'Revert merge (keep first parent)' : 'Revert commit'),
     run: (c: CommitCtx) => apply(c.tab, 'revert', c),
   },
   {
-    id: 'branches.commit.cherryPick', context: 'commit', group: 'rewrite', order: 311,
+    id: 'branches.commit.cherryPick', icon: CherryIcon, context: 'commit', group: 'rewrite', order: 311,
     label: (c: CommitCtx) => (c.commit.parents.length > 1 ? 'Cherry-pick merge (first parent)' : 'Cherry-pick commit'),
     when: (c: CommitCtx) => headBorn(c.tab) && c.commit.oid !== headOf(c.tab).oid,
     run: (c: CommitCtx) => apply(c.tab, 'cherry-pick', c),
   },
   // ---- a branch dropped on another (100–199: merge and rebase, features/sequence/actions.ts) ----
   {
-    id: 'branches.drop.fastForward', context: 'branch-drop', group: 'ff', order: 200,
+    id: 'branches.drop.fastForward', icon: FastForwardIcon, context: 'branch-drop', group: 'ff', order: 200,
     label: (c: BranchDropCtx) => `Fast-forward ${c.target.short} to ${c.source.short}`,
     when: (c: BranchDropCtx) => dropTargetLocal(c) && !checkedOutElsewhere(c.tab, c.target.name) && c.source.oid !== c.target.oid,
     run: (c: BranchDropCtx) => fastForwardTo(c.tab, c.target.short, c.source.oid!, c.source.short, c.target.oid!),
   },
   {
-    id: 'branches.drop.resetHead', context: 'branch-drop', group: 'rewrite', order: 300,
+    id: 'branches.drop.resetHead', icon: RotateCcwIcon, context: 'branch-drop', group: 'rewrite', order: 300,
     label: (c: BranchDropCtx) => `Reset ${c.target.short} to ${c.source.short}`,
     when: (c: BranchDropCtx) => dropIsHead(c) && c.source.oid !== c.target.oid,
     children: resetChildren<BranchDropCtx>('branches.drop.resetHead', 'branch-drop', dropPoint),
   },
   {
-    id: 'branches.drop.move', context: 'branch-drop', group: 'rewrite', order: 300, destructive: true,
+    id: 'branches.drop.move', icon: RotateCcwIcon, context: 'branch-drop', group: 'rewrite', order: 300, destructive: true,
     label: (c: BranchDropCtx) => `Reset ${c.target.short} to ${c.source.short}…`,
     when: (c: BranchDropCtx) => dropTargetLocal(c) && !checkedOutAnywhere(c.tab, c.target.name) && c.source.oid !== c.target.oid,
     run: (c: BranchDropCtx) => openRefDialog({ kind: 'moveBranch', tab: c.tab, name: c.target.short, from: c.target.oid!, to: dropPoint(c)! }),

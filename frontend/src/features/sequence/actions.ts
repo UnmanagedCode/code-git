@@ -9,6 +9,7 @@ import { openSequenceDialog } from '@/state/sequenceDialog';
 import type { Tab } from '@/state/tabs';
 import type { MergeMode } from './api';
 import { mergeFlow, rebaseFlow } from './flows';
+import { CherryIcon, CombineIcon, CornerUpRightIcon, GitMergeIcon, ListOrderedIcon, type LucideIcon } from 'lucide-react';
 
 // The merge and rebase menu items (docs/merge.md → Where the actions are). Orders: the branch-drop menu's 100–199
 // (merge 100–102, rebase 110, interactive 120), the branch menu's 330–332, the commit menu's 312–313, the commits menu's
@@ -54,10 +55,10 @@ function merge(tab: Tab, source: { ref: string | null; oid: string; label: strin
 const dropMergeable = (c: BranchDropCtx) => c.target.kind === 'local' && isHeadBranch(c.tab, c.target) && !!c.source.oid && !!c.target.oid && c.source.oid !== c.target.oid;
 const dropSource = (c: BranchDropCtx) => ({ ref: c.source.name, oid: c.source.oid!, label: c.source.short });
 
-const MERGE_ITEMS: [MergeMode, number, (s: string, t: string) => string][] = [
-  ['ff', 100, (s, t) => `Merge ${s} into ${t}`],
-  ['noFf', 101, (s, t) => `Merge ${s} into ${t} (no fast-forward)`],
-  ['squash', 102, (s, t) => `Squash ${s} into ${t}`],
+const MERGE_ITEMS: [MergeMode, number, LucideIcon, (s: string, t: string) => string][] = [
+  ['ff', 100, GitMergeIcon, (s, t) => `Merge ${s} into ${t}`],
+  ['noFf', 101, GitMergeIcon, (s, t) => `Merge ${s} into ${t} (no fast-forward)`],
+  ['squash', 102, CombineIcon, (s, t) => `Squash ${s} into ${t}`],
 ];
 
 // ---- rebase ----
@@ -102,55 +103,55 @@ const otherBranch = (c: RefCtx) => !!c.ref.oid && headBorn(c.tab) && !isHeadBran
 
 export const SEQUENCE_ACTIONS: MenuAction<never>[] = [
   // ---- a branch dropped on HEAD's branch (merge), or HEAD's branch dropped on another / another on it (rebase) ----
-  ...MERGE_ITEMS.map(([mode, order, label]): MenuAction<BranchDropCtx> => ({
-    id: `sequence.drop.merge.${mode}`, context: 'branch-drop', group: 'merge', order,
+  ...MERGE_ITEMS.map(([mode, order, icon, label]): MenuAction<BranchDropCtx> => ({
+    id: `sequence.drop.merge.${mode}`, context: 'branch-drop', icon, group: 'merge', order,
     label: (c) => label(c.source.short, c.target.short), when: dropMergeable,
     run: (c) => merge(c.tab, dropSource(c), mode),
   })),
   {
-    id: 'sequence.drop.rebase', context: 'branch-drop', group: 'rebase', order: 110,
+    id: 'sequence.drop.rebase', icon: CornerUpRightIcon, context: 'branch-drop', group: 'rebase', order: 110,
     label: (c: BranchDropCtx) => { const d = dropRebase(c)!; return `Rebase ${d.branch.short} onto ${d.onto.short}`; },
     when: (c: BranchDropCtx) => dropRebase(c) !== null,
     run: (c: BranchDropCtx) => { const d = dropRebase(c)!; rebaseOnto(c.tab, d.onto.oid!, d.onto.short); },
   },
   {
-    id: 'sequence.drop.interactive', context: 'branch-drop', group: 'rebase', order: 120,
+    id: 'sequence.drop.interactive', icon: ListOrderedIcon, context: 'branch-drop', group: 'rebase', order: 120,
     label: (c: BranchDropCtx) => { const d = dropRebase(c)!; return `Interactive rebase ${d.branch.short} onto ${d.onto.short}…`; },
     when: (c: BranchDropCtx) => dropRebase(c) !== null,
     run: (c: BranchDropCtx) => { const d = dropRebase(c)!; interactiveOnto(c.tab, d.onto.oid!, d.onto.short); },
   },
   // ---- a branch other than HEAD's ----
   {
-    id: 'sequence.branch.merge', context: 'branch', group: 'rewrite', order: 330,
+    id: 'sequence.branch.merge', icon: GitMergeIcon, context: 'branch', group: 'rewrite', order: 330,
     label: (c: RefCtx) => `Merge ${c.ref.short} into ${headLabel(c.tab)}`, when: otherBranch,
     run: (c: RefCtx) => merge(c.tab, { ref: c.ref.name, oid: c.ref.oid!, label: c.ref.short }, 'ff'),
   },
   {
-    id: 'sequence.branch.rebase', context: 'branch', group: 'rewrite', order: 331,
+    id: 'sequence.branch.rebase', icon: CornerUpRightIcon, context: 'branch', group: 'rewrite', order: 331,
     label: (c: RefCtx) => `Rebase ${headLabel(c.tab)} onto ${c.ref.short}`, when: otherBranch,
     run: (c: RefCtx) => rebaseOnto(c.tab, c.ref.oid!, c.ref.short),
   },
   {
-    id: 'sequence.branch.interactive', context: 'branch', group: 'rewrite', order: 332,
+    id: 'sequence.branch.interactive', icon: ListOrderedIcon, context: 'branch', group: 'rewrite', order: 332,
     label: (c: RefCtx) => `Interactive rebase ${headLabel(c.tab)} onto ${c.ref.short}…`, when: otherBranch,
     run: (c: RefCtx) => interactiveOnto(c.tab, c.ref.oid!, c.ref.short),
   },
   // ---- a commit outside HEAD's history ----
   {
-    id: 'sequence.commit.rebase', context: 'commit', group: 'rewrite', order: 312,
+    id: 'sequence.commit.rebase', icon: CornerUpRightIcon, context: 'commit', group: 'rewrite', order: 312,
     label: (c: CommitCtx) => `Rebase ${headLabel(c.tab)} onto this commit`,
     when: (c: CommitCtx) => headBorn(c.tab) && c.commit.oid !== headOf(c.tab).oid && !inHeadHistory(c.tab, c.commit.oid),
     run: (c: CommitCtx) => rebaseOnto(c.tab, c.commit.oid, abbrev(c.commit.oid)),
   },
   {
     // A parent commit of HEAD's: the commits after it, up to HEAD, in the editor.
-    id: 'sequence.commit.interactive', context: 'commit', group: 'rewrite', order: 313, label: 'Interactive rebase from here…',
+    id: 'sequence.commit.interactive', icon: ListOrderedIcon, context: 'commit', group: 'rewrite', order: 313, label: 'Interactive rebase from here…',
     when: (c: CommitCtx) => c.commit.oid !== headOf(c.tab).oid && inHeadHistory(c.tab, c.commit.oid),
     run: (c: CommitCtx) => interactiveOnto(c.tab, c.commit.oid, abbrev(c.commit.oid)),
   },
   // ---- several commits ----
   {
-    id: 'sequence.commits.squash', context: 'commits', group: 'rewrite', order: 320,
+    id: 'sequence.commits.squash', icon: CombineIcon, context: 'commits', group: 'rewrite', order: 320,
     label: (c: CommitsCtx) => `Squash ${c.rows.length} commits…`, when: (c: CommitsCtx) => squashable(c) !== null,
     run: (c: CommitsCtx) => {
       const chain = squashable(c)!;
@@ -162,7 +163,7 @@ export const SEQUENCE_ACTIONS: MenuAction<never>[] = [
     },
   },
   {
-    id: 'sequence.commits.cherryPick', context: 'commits', group: 'rewrite', order: 321,
+    id: 'sequence.commits.cherryPick', icon: CherryIcon, context: 'commits', group: 'rewrite', order: 321,
     label: (c: CommitsCtx) => `Cherry-pick ${c.rows.length} commits…`, when: (c: CommitsCtx) => pickable(c) !== null,
     run: (c: CommitsCtx) => {
       const head = headOf(c.tab).oid!;
@@ -172,7 +173,7 @@ export const SEQUENCE_ACTIONS: MenuAction<never>[] = [
     },
   },
   {
-    id: 'sequence.commits.rebaseOnto', context: 'commits', group: 'rewrite', order: 322,
+    id: 'sequence.commits.rebaseOnto', icon: CornerUpRightIcon, context: 'commits', group: 'rewrite', order: 322,
     label: (c: CommitsCtx) => `Rebase ${c.rows.length} commits onto…`,
     when: (c: CommitsCtx) => chainOf(c)?.[0].oid === headOf(c.tab).oid,
     run: (c: CommitsCtx) => {

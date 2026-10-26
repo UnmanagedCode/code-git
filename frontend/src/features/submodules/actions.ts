@@ -6,6 +6,7 @@ import { openSubmoduleDialog } from '@/state/submoduleDialog';
 import { dispatchTabs, type Tab } from '@/state/tabs';
 import { initSubmodules, removeSubmodule, syncSubmodules, updateSubmodules, type SubmoduleEntry } from './api';
 import { runSubmoduleOp } from './run';
+import { DownloadIcon, PencilIcon, PowerIcon, RefreshCcwIcon, SquareArrowOutUpRightIcon, Trash2Icon } from 'lucide-react';
 
 // The Submodules panel's row menu (docs/features.md → Submodules), context 'submodule'. Remove asks first; a refusal over
 // work the server found (SUBMODULE_DIRTY, SUBMODULE_COMMITS_AT_RISK) offers a second, irreversible confirmation from
@@ -116,12 +117,12 @@ export const recorded = (e: SubmoduleEntry): boolean => e.recorded !== null || e
 const addressable = (c: SubmoduleCtx) => usable(c) && recorded(c.entry);
 export const SUBMODULE_ACTIONS: MenuAction<SubmoduleCtx>[] = [
   {
-    id: 'submodule.open', context: SUBMODULE_CONTEXT, label: 'Open', order: 100, primary: true,
+    id: 'submodule.open', icon: SquareArrowOutUpRightIcon, context: SUBMODULE_CONTEXT, label: 'Open', order: 100, primary: true,
     when: (c) => usable(c) && c.entry.populated, run: (c) => openSubmodule(c.tab, c.entry),
   },
-  { id: 'submodule.init', context: SUBMODULE_CONTEXT, label: 'Initialize', order: 200, when: (c) => addressable(c) && !c.entry.initialized, run: (c) => void initialize(c.tab, c.entry) },
-  { id: 'submodule.update', context: SUBMODULE_CONTEXT, label: 'Update', order: 210, when: (c) => addressable(c) && !c.entry.conflicted, run: (c) => void update(c.tab, [c.entry.path]) },
-  { id: 'submodule.sync', context: SUBMODULE_CONTEXT, label: 'Sync', order: 220, when: (c) => addressable(c) && c.entry.initialized, run: (c) => void sync(c.tab, c.entry) },
-  { id: 'submodule.editUrl', context: SUBMODULE_CONTEXT, label: 'Edit URL…', order: 300, group: 'edit', when: usable, run: (c) => openSubmoduleDialog({ kind: 'editUrl', tab: c.tab, entry: c.entry }) },
-  { id: 'submodule.remove', context: SUBMODULE_CONTEXT, label: 'Remove…', order: 310, group: 'edit', destructive: true, when: (c) => usable(c) && !c.entry.typeChanged, run: (c) => remove(c.tab, c.entry) },
+  { id: 'submodule.init', icon: PowerIcon, context: SUBMODULE_CONTEXT, label: 'Initialize', order: 200, when: (c) => addressable(c) && !c.entry.initialized, run: (c) => void initialize(c.tab, c.entry) },
+  { id: 'submodule.update', icon: DownloadIcon, context: SUBMODULE_CONTEXT, label: 'Update', order: 210, when: (c) => addressable(c) && !c.entry.conflicted, run: (c) => void update(c.tab, [c.entry.path]) },
+  { id: 'submodule.sync', icon: RefreshCcwIcon, context: SUBMODULE_CONTEXT, label: 'Sync', order: 220, when: (c) => addressable(c) && c.entry.initialized, run: (c) => void sync(c.tab, c.entry) },
+  { id: 'submodule.editUrl', icon: PencilIcon, context: SUBMODULE_CONTEXT, label: 'Edit URL…', order: 300, group: 'edit', when: usable, run: (c) => openSubmoduleDialog({ kind: 'editUrl', tab: c.tab, entry: c.entry }) },
+  { id: 'submodule.remove', icon: Trash2Icon, context: SUBMODULE_CONTEXT, label: 'Remove…', order: 310, group: 'edit', destructive: true, when: (c) => usable(c) && !c.entry.typeChanged, run: (c) => remove(c.tab, c.entry) },
 ];
