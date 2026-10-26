@@ -64,8 +64,9 @@ export function WorkdirContent({ tab, instance }: { tab: Tab; instance: 'slot' |
       )}
       {/* Two tracks sized minmax(0, auto): grid's maximize-tracks step shares the free space equally and freezes a track
           at its content height, so a short section fits and two long ones split evenly; content-start leaves the spare
-          room above the commit box. min-h-44 is the floor: two sections x (header + two rows). */}
-      <div className="grid min-h-44 flex-1 grid-rows-[minmax(0,auto)_minmax(0,auto)] content-start">
+          room above the commit box. min-h-44 is the floor: two sections x (header + two rows). The one column is minmax(0, 1fr):
+          an implicit auto column would grow to the longest unwrapped row and widen the pane instead of truncating it. */}
+      <div className="grid min-h-44 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,auto)_minmax(0,auto)] content-start">
         {!state.unstaged || !state.staged ? (
           !state.error && <p className="px-3 py-2 text-xs text-muted-foreground">Loading changes…</p>
         ) : (
