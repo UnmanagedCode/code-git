@@ -22,6 +22,22 @@ test('Path lists every file label in input order; a rename reads old → new', (
   expect(option('src/a/x.ts').textContent).toContain('src/a/x.ts');
 });
 
+test('a row\'s title is its full path in Path and Tree, and old → new for a rename', () => {
+  const long = 'a-long-directory/nested/Generated_Image_kbfutlkbfutlkbfutl_x40.png';
+  render(
+    <>
+      <FileViewToggle />
+      <FileList label="Changed files" files={[lf(long), lf('new.ts', { status: 'R', oldPath: 'old.ts' })]} onSelect={() => {}} />
+    </>,
+  );
+  expect(option(long).getAttribute('title')).toBe(long);
+  expect(option('new.ts').getAttribute('title')).toBe('old.ts → new.ts');
+  fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
+  expect(within(option(long)).queryByText(long)).toBeNull();
+  expect(option(long).getAttribute('title')).toBe(long);
+  expect(option('new.ts').getAttribute('title')).toBe('old.ts → new.ts');
+});
+
 test('Tree nests files under directory groups; the toggle switches every mounted list and persists the choice', () => {
   render(
     <>

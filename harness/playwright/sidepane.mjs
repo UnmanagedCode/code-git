@@ -4,7 +4,7 @@
 // Activity panel open (the pane about 354 px tall); C the Changes (n) dialog at 390×844, then at 390×380 where its fields overflow; D one section empty; E both
 // short, the commit box pinned at the bottom; F below the floors, where the pane scrolls as a last resort but each list
 // keeps two rows and the commit box keeps Summary and its button; G the longest button label (detached HEAD, 12 staged
-// files, wrapped) at that floor. Runs in light then dark, each on a fresh seed;
+// files, wrapped) at that floor; H very long paths at both panes' minimum widths: nothing scrolls sideways, the names truncate. Runs in light then dark, each on a fresh seed;
 // screenshots go to out/sidepane/*-{light,dark}.png.
 // Run: node harness/playwright/sidepane.mjs   (needs `npm run prepare` first, for frontend/dist)
 import { execFileSync } from 'node:child_process';
@@ -252,6 +252,85 @@ for (const scheme of ['light', 'dark']) {
       check(near(m.commit.rect.height, 120), `${scheme}: G: the commit box sits at its floor (${m.commit.rect.height} = 120)`);
       check(inside(m.summary, m.commit.rect) && inside(m.button, m.commit.rect), `${scheme}: G: Summary and the wrapped button are fully inside the commit box at the floor`);
       await shot('detached-floor');
+
+      // H. Very long paths at the minimum pane widths (right 320 px, left 192 px): no pane scrolls sideways, the header
+      // buttons, Discard all and the commit box stay inside the slot, a row truncates and keeps its full path as title.
+      const LONG_DIR = 'a-very-long-directory-name-for-the-overflow-check';
+      const LONG_NAME = `Generated_Image_${'kbfutl'.repeat(12)}_x40.png`;
+      const LONG = `${LONG_DIR}/${LONG_NAME}`;
+      const LONG_UN = `${LONG_DIR}/Unstaged_${'qwxzvb'.repeat(12)}.png`;
+      mkdirSync(path.join(stage.dir, LONG_DIR), { recursive: true });
+      writeFileSync(path.join(stage.dir, LONG), 'long\n');
+      writeFileSync(path.join(stage.dir, LONG_UN), 'long\n');
+      git('add', LONG);
+      await page.setViewportSize(DESKTOP);
+      await page.goto(`${world.url}/?project=stage`);
+      await unstaged.getByRole('option').first().waitFor();
+      await setActivity(page, false);
+      for (const side of ['left', 'right']) {
+        await page.getByRole('separator', { name: `Resize ${side} pane`, exact: true }).focus();
+        await page.keyboard.press('Home');
+      }
+      const slotWidths = async (name) => page.locator(`[data-slot-name=${name}]`).evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth, left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right }));
+      const rs = await slotWidths('right');
+      const ls = await slotWidths('left');
+      console.log(`H: right slot ${rs.cw}px, left slot ${ls.cw}px`);
+      check(Math.abs(rs.cw - 320) <= 2 && Math.abs(ls.cw - 192) <= 2, `${scheme}: H: both panes at their minimum widths (${rs.cw} / ${ls.cw})`);
+      const withinX = (b, s2) => b && b.x >= s2.left - 1 && b.x + b.width <= s2.right + 1;
+      const hCheck = async (view) => {
+        const s2 = await slotWidths('right');
+        check(s2.sw <= s2.cw, `${scheme}: H: ${view}: the right pane does not scroll sideways (${s2.sw} ≤ ${s2.cw})`);
+        const ctl = [
+          slot.getByRole('button', { name: 'Path', exact: true }), slot.getByRole('button', { name: 'Tree', exact: true }),
+          slot.getByRole('button', { name: 'Stash changes…', exact: true }), slot.getByRole('button', { name: 'Reload changes', exact: true }),
+          slot.getByRole('button', { name: 'Changes menu', exact: true }), slot.getByRole('button', { name: 'Discard all…', exact: true }),
+          slot.getByRole('textbox', { name: 'Summary', exact: true }), slot.getByRole('button', { name: /^Commit/ }),
+        ];
+        for (const c of ctl) check(withinX(await c.boundingBox(), s2), `${scheme}: H: ${view}: a control sits inside the pane`);
+        for (const [region, p] of [[staged, LONG], [unstaged, LONG_UN]]) {
+          const row = region.locator(`li[data-path="${p}"]`);
+          await row.scrollIntoViewIfNeeded();
+          check(await row.getAttribute('title') === p, `${scheme}: H: ${view}: the row's title is the full path`);
+          const name = await row.evaluate((li) => { const sp = [...li.querySelectorAll('span')].find((e) => e.classList.contains('truncate')); return { sw: sp.scrollWidth, cw: sp.clientWidth }; });
+          check(name.sw > name.cw, `${scheme}: H: ${view}: the name is truncated (${name.sw} > ${name.cw})`);
+          check(withinX(await row.getByRole('button', { name: `Actions for ${p}`, exact: true }).boundingBox(), s2), `${scheme}: H: ${view}: the row's actions button sits inside the pane`);
+        }
+      };
+      await hCheck('Path');
+      await shot('long-paths-path');
+      await slot.getByRole('button', { name: 'Tree', exact: true }).click();
+      await hCheck('Tree');
+      await shot('long-paths-tree');
+      await slot.getByRole('button', { name: 'Path', exact: true }).click();
+      m = await measure(page, SLOT);
+      check(m.unstaged.scrollHeight > m.unstaged.clientHeight, `${scheme}: H: the long unstaged list still overflows vertically`);
+      await wheelOver(unstaged, 300);
+      m = await measure(page, SLOT);
+      check(m.unstaged.scrollTop > 0 && m.pane.scrollTop === 0, `${scheme}: H: a wheel scrolls the list, not the pane`);
+      const l2 = await slotWidths('left');
+      check(l2.sw <= l2.cw, `${scheme}: H: the left pane does not scroll sideways (${l2.sw} ≤ ${l2.cw})`);
+
+      // The commit's details list in the right slot.
+      git('commit', '-q', '-m', 'long path commit', '--', LONG);
+      await page.goto(`${world.url}/?project=stage`);
+      await page.getByRole('region', { name: 'Commit graph', exact: true }).getByRole('option', { name: /long path commit/ }).click();
+      const dRow = slot.locator(`li[role=option][data-path="${LONG}"]`);
+      await dRow.waitFor();
+      const d = await slotWidths('right');
+      check(d.sw <= d.cw, `${scheme}: H: commit details: the right pane does not scroll sideways (${d.sw} ≤ ${d.cw})`);
+      check(await dRow.evaluate((li) => { const sp = [...li.querySelectorAll('span')].find((e) => e.classList.contains('truncate')); return sp.scrollWidth > sp.clientWidth; }), `${scheme}: H: commit details: the name is truncated`);
+      await shot('long-paths-details');
+
+      // The Changes (n) dialog on a phone.
+      await page.setViewportSize(PHONE);
+      await page.goto(`${world.url}/?project=stage`);
+      await page.getByRole('button', { name: /^Changes \(\d+\)$/ }).click();
+      await dlg.getByRole('region', { name: 'Unstaged Files', exact: true }).getByRole('option').first().waitFor();
+      const pd = await dlg.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth }));
+      check(pd.sw <= pd.cw, `${scheme}: H: the phone dialog does not scroll sideways (${pd.sw} ≤ ${pd.cw})`);
+      const db = await dlg.boundingBox();
+      check(withinX(await dlg.getByRole('button', { name: /^Commit/ }).boundingBox(), { left: db.x, right: db.x + db.width }), `${scheme}: H: the phone dialog's commit button is inside it`);
+      await shot('long-paths-phone');
       check(errors.length === 0, `${scheme}: no console errors or ≥400 responses${errors.length ? `:\n${errors.join('\n')}` : ''}`);
     });
   } finally {
