@@ -9,7 +9,7 @@ import { dispatchSelection, fileIntentStore } from '@/state/graphSelection';
 import { openGraph } from '@/state/graph';
 import { loadSummary } from '@/state/useRepoSummary';
 import { diffStore } from '@/state/diff';
-import { closeDiff, openDiff } from '@/features/diff/openDiff';
+import { openDiff } from '@/features/diff/openDiff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
@@ -149,13 +149,14 @@ test('while the bound diff list loads, the commit\'s own files stand in for the 
   await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Changed files' })).getAllByRole('option').map((o) => o.getAttribute('data-path'))).toEqual(['src/lib/a.ts']));
 });
 
-test('a file picked in the loading stand-in stays picked when the diff\'s list answers (View changes opens it at no file)', async () => {
+test('a file picked in the loading stand-in stays picked when the diff\'s list answers (a diff opened at no file)', async () => {
   let release: () => void = () => {};
   const held = new Promise<void>((r) => { release = r; });
   await show({ files }, [A], {
     'POST api/ops/diff.files': async () => { await held; return diffFiles['POST api/ops/diff.files']; },
   });
-  fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
+  await screen.findByText('4 files');
+  act(() => openDiff(TAB, { kind: 'commit', rev: A }));
   expect(diffStore.get().get('app\0')).toMatchObject({ viewed: null, list: { loading: true } });
   fireEvent.click(fileRow('gone.txt'));
   expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'gone.txt', selected: ['gone.txt'] });
@@ -171,7 +172,8 @@ test('the loading stand-in selects like the bound list (Ctrl- and Shift-click, â
   await show({ files }, [A], {
     'POST api/ops/diff.files': async () => { await held; return diffFiles['POST api/ops/diff.files']; },
   });
-  fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
+  await screen.findByText('4 files');
+  act(() => openDiff(TAB, { kind: 'commit', rev: A }));
   expect(screen.getByRole('listbox', { name: 'Changed files' }).getAttribute('aria-multiselectable')).toBe('true');
   fireEvent.click(fileRow('src/new.ts'));
   fireEvent.click(fileRow('src/lib/a.ts'), { ctrlKey: true });
@@ -240,17 +242,32 @@ test("a stash's Staged view binds the stash's details to the index commit's file
   await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Changed files' })).getAllByRole('option').map((o) => o.getAttribute('data-path'))).toEqual(['index.txt']));
   expect(screen.getByRole('complementary', { name: 'Commit details' })).toBeTruthy();
   expect(fileRow('index.txt').getAttribute('aria-current')).toBe('true');
+  expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull();
 });
 
-test('View changes opens the commit diff; a multi-selection offers the combined diff', async () => {
+test('a commit offers no View changes (its files open the diff); a multi-selection offers the combined diff', async () => {
   await show({ files });
-  fireEvent.click(await screen.findByRole('button', { name: 'View changes' }));
-  expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commit', rev: A });
-  // The diff replaces the graph in the shell: closed, the graph takes a multi-selection again.
-  act(() => closeDiff(TAB));
+  await screen.findByText('4 files');
+  expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull();
   act(() => dispatchSelection(TAB, { type: 'toggle', id: P, rows: rowsOf(A, P) }));
   fireEvent.click(screen.getByRole('button', { name: 'View combined diff' }));
   expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commits', oids: [A, P], wip: false });
+});
+
+const LONG_BODY = Array.from({ length: 200 }, (_, i) => `Body line ${i + 1}`).join('\n');
+
+test.each([['no body', ''], ['a 200-line body', LONG_BODY]])('the commit information is a fixed-height header that scrolls on its own, apart from the files (%s)', async (_name, body) => {
+  await show({ body, files });
+  const header = await screen.findByRole('region', { name: 'Commit information' });
+  expect(within(header).getByText('Fix <b>it</b>')).toBeTruthy();
+  expect(within(header).getByText('Author')).toBeTruthy();
+  expect(within(header).getByLabelText('Commit SHA').textContent).toBe(A);
+  if (body) expect(within(header).getByText(/Body line 200$/)).toBeTruthy();
+  const list = screen.getByRole('listbox', { name: 'Changed files' });
+  expect(header.contains(list)).toBe(false);
+  expect(screen.getByRole('complementary', { name: 'Commit details' }).contains(list)).toBe(true);
+  // The height utility is the requirement (happy-dom has no layout; graph.mjs measures the pixels).
+  expect(header.className.split(' ').filter((c) => /^(h-|min-h-|max-h-|overflow-)/.test(c)).sort()).toEqual(['h-56', 'overflow-y-auto']);
 });
 
 test('the cap seam is in effect for this file', () => {

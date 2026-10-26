@@ -155,7 +155,7 @@ try {
 
     // ---- keyboard, selection, details ----
     await row(o.C).click();
-    const details = page.getByRole('complementary', { name: 'Commit details' });
+    const details = page.getByRole('complementary', { name: 'Commit details', exact: true });
     await details.getByText('Write the guide').waitFor();
     check(await details.getByRole('region', { name: 'Co-authors' }).getByText('Alan Turing').isVisible(), 'details list the co-author');
     check(await details.getByRole('button', { name: `Jump to parent ${o.B.slice(0, 7)}` }).isVisible(), 'details list the parent');
@@ -163,6 +163,32 @@ try {
     await details.getByRole('button', { name: 'Tree', exact: true }).click();
     check(await details.getByText('docs', { exact: true }).isVisible() && await details.getByText('guide.md', { exact: true }).isVisible(), 'the tree view nests the file under its directory');
     await shot('details-light-desktop');
+    // The commit information is a fixed-height header; the files fill the rest of the panel below it.
+    const header = details.getByRole('region', { name: 'Commit information', exact: true });
+    const files = details.getByRole('listbox', { name: 'Changed files', exact: true });
+    const shortBox = await header.boundingBox();
+    const asideBox = await details.boundingBox();
+    check((await files.boundingBox()).y >= shortBox.y + shortBox.height - 0.5, 'the file list starts below the commit information');
+    const filesSectionBottom = await files.evaluate((el) => el.parentElement.parentElement.getBoundingClientRect().bottom);
+    check(Math.abs(filesSectionBottom - (asideBox.y + asideBox.height)) <= 1, `the file section fills the panel to its bottom (${filesSectionBottom} vs ${asideBox.y + asideBox.height})`);
+    await row(o.G).click();
+    // The body is one element: its whole text, never one line per node.
+    const longBody = details.locator('[data-commit-body]', { hasText: 'Body line 200' });
+    await longBody.waitFor();
+    const longBox = await header.boundingBox();
+    check(Math.abs(longBox.height - shortBox.height) <= 0.5, `a 200-line message keeps the header's height (${longBox.height} vs ${shortBox.height})`);
+    check(await header.evaluate((el) => el.scrollHeight > el.clientHeight), 'the long message scrolls inside the header');
+    check(await files.isVisible() && await files.evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight; }), 'the file list stays in view below a long message');
+    await header.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    // isVisible ignores scroll clipping: the end of the body and the SHA must lie inside the header's box.
+    const inHeader = async (loc) => {
+      const [b, h] = [await loc.boundingBox(), await header.boundingBox()];
+      return b.y + b.height > h.y && b.y + b.height <= h.y + h.height + 0.5;
+    };
+    check(await inHeader(longBody) && await inHeader(details.getByLabel('Commit SHA', { exact: true })), 'the header scrolls to the end of the message and the SHA');
+    await shot('details-long-light-desktop');
+    await row(o.C).click();
+    await details.getByText('Write the guide').waitFor();
     // The left slot: the refs panel first, the diff's Compare panel below it, both reachable.
     const left = page.locator('[data-slot-name=left]');
     const refsBox = await left.getByRole('navigation', { name: 'Refs' }).boundingBox();
@@ -295,8 +321,12 @@ try {
           await shot(`compare-dialog-${scheme}-phone`);
           await page.keyboard.press('Escape');
           await row(o.C).click();
-          await page.getByRole('dialog', { name: 'Details' }).getByText('Write the guide').waitFor();
+          await page.getByRole('dialog', { name: 'Details', exact: true }).getByText('Write the guide').waitFor();
           await shot(`details-dialog-${scheme}-phone`);
+          await page.keyboard.press('Escape');
+          await row(o.G).click();
+          await page.getByRole('dialog', { name: 'Details', exact: true }).locator('[data-commit-body]', { hasText: 'Body line 200' }).waitFor();
+          await shot(`details-dialog-long-${scheme}-phone`);
           await page.keyboard.press('Escape');
         }
       }

@@ -309,7 +309,7 @@ A refusal (nothing to stash, a conflict in progress, a path behind an untracked 
 - No confirmation for apply or pop: git refuses to overwrite a local change — the toast says "Local changes would be overwritten" and names the files ("Commit, stash or discard these changes first."); nothing is written. That includes a file with *any* local change, even one the stash would merge cleanly into.
 - Conflicts: "Applied stash@{n} with conflicts in N files", the files named; the conflicted files show in the Changes panel (`U`).
 
-**View** — **View changes** (stash menu) or the details panel's **View changes**: the diff header's switch shows **All changes** (staged and unstaged together, against the stash's base), **Staged** (what was staged), **Untracked** (only for a stash with untracked files).
+**View** — **View changes** (stash menu): the diff header's switch shows **All changes** (staged and unstaged together, against the stash's base), **Staged** (what was staged), **Untracked** (only for a stash with untracked files).
 
 **One file** — **Apply this file** (the details panel's file menu, on a stash) or **Apply file from stash** (the diff's file list menu — the details while the stash is selected, on All changes or Untracked): the file's change goes into the working tree only, as a patch — all of it or nothing; a file that differs from the stash's base is refused, never overwritten. Pop is whole-stash only.
 
