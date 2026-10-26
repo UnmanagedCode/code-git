@@ -1,7 +1,7 @@
 // The Changes side pane's layout, asserted on the seeded `stage` project with 63 unstaged and 60 staged files (far
 // taller than any pane) and on `detached`: the pane never scrolls, each list scrolls inside its own section, the split
 // is fit-then-equal, and the Summary field and commit button stay in view. Steps: A desktop with both lists long; B the
-// Activity panel open (the pane about 354 px tall); C the Changes (n) dialog at 390×844; D one section empty; E both
+// Activity panel open (the pane about 354 px tall); C the Changes (n) dialog at 390×844, then at 390×380 where its fields overflow; D one section empty; E both
 // short, the commit box pinned at the bottom; F below the floors, where the pane scrolls as a last resort but each list
 // keeps two rows and the commit box keeps Summary and its button; G the longest button label (detached HEAD, 12 staged
 // files, wrapped) at that floor. Runs in light then dark, each on a fresh seed;
@@ -179,10 +179,18 @@ for (const scheme of ['light', 'dark']) {
       await wheelOver(dStaged, 300);
       m = await measure(page, dialogSel);
       check(m.staged.scrollTop > 0 && m.unstaged.scrollTop === 0 && m.pane.scrollTop === 0, `${scheme}: C: a wheel over the staged list scrolls only it`);
-      await dlg.getByRole('checkbox', { name: 'Skip Git hooks', exact: true }).focus();
-      m = await measure(page, dialogSel);
-      check(inside(m.summary, m.commit.rect) && inside(m.summary, m.pane.rect) && inside(m.button, m.pane.rect), `${scheme}: C: Summary and the button stay visible with a lower checkbox focused`);
       await shot('phone');
+      // A short phone: the dialog's fields overflow, so focusing a lower checkbox scrolls them while Summary stays put.
+      await page.setViewportSize({ width: 390, height: 380 });
+      await page.waitForFunction(() => { const f = document.querySelector('[role=dialog] [data-commit-fields]'); return f.scrollHeight > f.clientHeight; });
+      m = await measure(page, dialogSel);
+      check(m.commit.fields.scrollHeight > m.commit.fields.clientHeight && m.commit.fields.scrollTop === 0, `${scheme}: C: at 390×380 the dialog's commit fields overflow`);
+      await dlg.getByRole('checkbox', { name: 'Skip Git hooks', exact: true }).focus();
+      await page.waitForTimeout(100);
+      m = await measure(page, dialogSel);
+      check(m.commit.fields.scrollTop > 0, `${scheme}: C: focusing a lower checkbox scrolls the fields (${m.commit.fields.scrollTop})`);
+      check(inside(m.summary, m.commit.rect) && inside(m.summary, m.pane.rect) && inside(m.button, m.pane.rect), `${scheme}: C: Summary and the button stay fully visible after that scroll`);
+      await shot('phone-short');
       await page.keyboard.press('Escape');
       await dlg.waitFor({ state: 'detached' });
       await page.setViewportSize(DESKTOP);
