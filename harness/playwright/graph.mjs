@@ -28,6 +28,11 @@ try {
     const row = (id) => page.locator(`[data-row-id="${id}"]`);
     const list = page.getByRole('listbox', { name: 'Commits' });
     const refs = page.getByRole('navigation', { name: 'Refs' });
+    /** Clicks a row's inactive toggle: they show on hover, so the pointer goes to the row first (an active one is clicked directly). */
+    const toggle = async (refName, label) => {
+      await refs.locator(`[data-ref="${refName}"]`).hover();
+      await refs.getByRole('button', { name: label, exact: true }).click();
+    };
     const col = async (id) => Number(await row(id).getAttribute('data-col'));
     /** The lanes a node's own edges reach: bottom edges leaving it, or top edges ending in it. */
     const nodeLanes = async (id, half) => {
@@ -79,19 +84,19 @@ try {
     await shot('lanes-light-desktop');
 
     // ---- visibility, persisted ----
-    await refs.getByRole('button', { name: 'Hide feature/b', exact: true }).click();
+    await toggle('refs/heads/feature/b', 'Hide feature/b');
     await row(o.G).waitFor({ state: 'detached' });
     check(await row('wip:wt').count() === 0, 'hiding feature/b removes G and its worktree WIP row');
     await open({ wt: false });
     check(await row(o.G).count() === 0, 'the hide survives a reload');
     await refs.getByRole('button', { name: 'Show feature/b', exact: true }).click();
     await row(o.G).waitFor();
-    await refs.getByRole('button', { name: 'Solo main', exact: true }).click();
+    await toggle('refs/heads/main', 'Solo main');
     await row(o.G).waitFor({ state: 'detached' });
     check(await row(o.E).count() === 1 && await row(o.A).count() === 1, 'solo main shows only its ancestry');
     await refs.getByRole('button', { name: 'Unsolo main', exact: true }).click();
     await row(o.G).waitFor();
-    await refs.getByRole('button', { name: 'Pin feature/a to left', exact: true }).click();
+    await toggle('refs/heads/feature/a', 'Pin feature/a to left');
     await page.waitForFunction((e) => document.querySelector(`[data-row-id="${e}"]`)?.getAttribute('data-col') === '0', o.E);
     check(await col(o.E) === 0 && await col(o.F) === 0, 'pinned feature/a takes lane 0');
     await shot('pinned-light-desktop');

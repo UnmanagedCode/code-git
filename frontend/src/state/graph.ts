@@ -334,7 +334,7 @@ function watchGraph(tab: Tab): () => void {
   const visKey = () => {
     // Read without storing: this runs inside the prefs store's own notification.
     const p = graphPrefsStore.get().get(prefsKey(tab)) ?? loadPrefs(prefsKey(tab));
-    return JSON.stringify([p.hidden, p.hiddenRemotes, p.hiddenSections, p.soloed, p.soloedRemotes, p.soloedSections]);
+    return JSON.stringify([p.hidden, p.hiddenRemotes, p.hiddenSections, p.soloed, p.soloedRemotes, p.soloedSections, p.hiddenFolders, p.soloedFolders]);
   };
   let lastVis = visKey();
   const unsubPrefs = graphPrefsStore.subscribe(() => {

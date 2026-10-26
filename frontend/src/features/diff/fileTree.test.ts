@@ -37,3 +37,15 @@ test('a path of 20,000 components nests MAX_TREE_DEPTH directories and keeps the
   expect(node.path).toBe(parts.join('/'));
   expect(buildFileTree([f(Array.from({ length: MAX_TREE_DEPTH + 1 }, (_, i) => `x${i}`).join('/'))])[0].kind).toBe('dir');
 });
+
+// Invariant: nesting never exceeds MAX_TREE_DEPTH directories, at the boundary: MAX+1 components fill it with a one-component leaf; MAX+2 keep the tail joined in the leaf.
+test('MAX_TREE_DEPTH + 1 and + 2 components: the nesting stops at the cap and the leaf keeps the tail', () => {
+  for (const extra of [1, 2]) {
+    const parts = Array.from({ length: MAX_TREE_DEPTH + extra }, (_, i) => `d${i}`);
+    let node = buildFileTree([f(parts.join('/'))])[0];
+    let depth = 0;
+    while (node.kind === 'dir') { depth++; node = node.children[0]; }
+    expect(depth).toBe(MAX_TREE_DEPTH);
+    expect(node.name).toBe(parts.slice(MAX_TREE_DEPTH).join('/'));
+  }
+});

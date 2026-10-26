@@ -1,4 +1,4 @@
-// A file list's Tree view (features/diff/FileList.tsx): the files as nested directories, and the order it shows them in.
+// A file list's Tree view (features/diff/FileList.tsx) and the refs panel's folders (features/graph/refTree.ts): paths as nested directories, and the order shown.
 
 export interface TreeDir<F> { kind: 'dir'; name: string; path: string; children: TreeNode<F>[] }
 export interface TreeFile<F> { kind: 'file'; name: string; path: string; file: F }
@@ -10,14 +10,21 @@ export const MAX_TREE_DEPTH = 32;
 /** The changed files as nested directories (at most MAX_TREE_DEPTH deep): directories first, then files, each by name. */
 export function buildFileTree<F extends { path: string }>(files: readonly F[]): TreeNode<F>[] {
   const root: TreeDir<F> = { kind: 'dir', name: '', path: '', children: [] };
+  // Each directory's sub-directories by name, so a wide level is not searched linearly per file.
+  const subdirs = new Map<TreeDir<F>, Map<string, TreeDir<F>>>();
   for (const file of files) {
     const all = file.path.split('/');
     const parts = all.length > MAX_TREE_DEPTH + 1 ? [...all.slice(0, MAX_TREE_DEPTH), all.slice(MAX_TREE_DEPTH).join('/')] : all;
     let dir = root;
     parts.slice(0, -1).forEach((name, i) => {
       const path = parts.slice(0, i + 1).join('/');
-      let next = dir.children.find((c): c is TreeDir<F> => c.kind === 'dir' && c.name === name);
-      if (!next) dir.children.push(next = { kind: 'dir', name, path, children: [] });
+      let byName = subdirs.get(dir);
+      if (!byName) subdirs.set(dir, byName = new Map());
+      let next = byName.get(name);
+      if (!next) {
+        dir.children.push(next = { kind: 'dir', name, path, children: [] });
+        byName.set(name, next);
+      }
       dir = next;
     });
     dir.children.push({ kind: 'file', name: parts[parts.length - 1], path: file.path, file });

@@ -33,12 +33,12 @@ async function show(w = world()) {
   render(<><GraphPanel tab={TAB} /><RefsPanel tab={TAB} /></>);
   return screen.findByRole('navigation', { name: 'Refs' });
 }
-const names = (list: string) => within(screen.getByRole('list', { name: list })).getAllByRole('listitem').map((li) => li.getAttribute('data-ref') ?? li.getAttribute('data-worktree') ?? li.textContent);
+const names = (list: string) => within(screen.getByRole('list', { name: list })).getAllByRole('listitem').map((li) => li.getAttribute('data-ref') ?? li.getAttribute('data-folder') ?? li.getAttribute('data-worktree') ?? li.textContent);
 
 test('sections: local, remotes grouped per remote, tags, stashes and worktrees with their cc name and badges', async () => {
   await show();
-  expect(names('Local branches')).toEqual(['refs/heads/main', 'refs/heads/feat', 'refs/heads/old']);
-  expect(names('Branches on origin')).toEqual(['refs/remotes/origin/main', 'refs/remotes/origin/feat']);
+  expect(names('Local branches')).toEqual(['refs/heads/feat', 'refs/heads/main', 'refs/heads/old']);
+  expect(names('Branches on origin')).toEqual(['refs/remotes/origin/feat', 'refs/remotes/origin/main']);
   expect(names('Branches on up')).toEqual(['refs/remotes/up/x']);
   expect(names('Tags')).toEqual(['refs/tags/v1']);
   expect(within(screen.getByRole('list', { name: 'Stashes' })).getByText('stash@{0}')).toBeTruthy();
@@ -158,9 +158,11 @@ test('a long list shows REFS_SHOWN rows and a Show more button for the rest', as
   w.refs.refs.push(...Array.from({ length: REFS_SHOWN + 30 }, (_, i) => ref(`refs/heads/many/${String(i).padStart(3, '0')}`, oid(800))));
   await show(w);
   const local = () => within(screen.getByRole('list', { name: 'Local branches' }));
-  expect(local().getAllByRole('listitem').filter((li) => li.hasAttribute('data-ref'))).toHaveLength(REFS_SHOWN);
-  fireEvent.click(local().getByRole('button', { name: 'Show 33 more of 33' }));
-  expect(local().getAllByRole('listitem')).toHaveLength(REFS_SHOWN + 33);
+  // The `many/` folder row counts toward the cap, as every other row does.
+  expect(local().getAllByRole('listitem').filter((li) => li.hasAttribute('data-ref') || li.hasAttribute('data-folder'))).toHaveLength(REFS_SHOWN);
+  expect(local().getAllByRole('listitem').filter((li) => li.hasAttribute('data-folder'))).toHaveLength(1);
+  fireEvent.click(local().getByRole('button', { name: 'Show 34 more of 34' }));
+  expect(local().getAllByRole('listitem')).toHaveLength(REFS_SHOWN + 34);
 });
 
 test('with the Stashes section hidden, clicking a stash pages to its base and selects that commit', async () => {

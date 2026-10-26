@@ -94,7 +94,7 @@ export async function seedGraph() {
     cleanups.push(() => cc.close());
     srv = await bootServer({ cwd: projectRoot, entry: 'server.js', silent: true, env: { CONDUCTOR_URL: cc.url } });
     cleanups.push(() => srv.close());
-    return { url: srv.url, oids: o, ages, close: cleanup };
+    return { url: srv.url, oids: o, ages, git: (...args) => repo.git(...args), close: cleanup };
   } catch (e) {
     await cleanup();
     throw e;
