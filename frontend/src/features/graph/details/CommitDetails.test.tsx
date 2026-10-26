@@ -14,6 +14,8 @@ import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
 import { DISPLAY_MAX, FILE_RENDER_CAP } from '@/lib/clip';
+import { getItem } from '@/lib/storage';
+import { DETAILS_HEADER, parseHeaderHeight, setDetailsHeader } from '@/state/detailsHeader';
 import { BODY_SHOWN, CO_AUTHORS_SHOWN, CommitDetails } from './CommitDetails';
 
 // The cap test caps with a small FILE_RENDER_CAP, so it mounts a few rows instead of a thousand; every other list here
@@ -256,7 +258,7 @@ test('a commit offers no View changes (its files open the diff); a multi-selecti
 
 const LONG_BODY = Array.from({ length: 200 }, (_, i) => `Body line ${i + 1}`).join('\n');
 
-test.each([['no body', ''], ['a 200-line body', LONG_BODY]])('the commit information is a fixed-height header that scrolls on its own, apart from the files (%s)', async (_name, body) => {
+test.each([['no body', ''], ['a 200-line body', LONG_BODY]])('the commit information is a header whose height ignores the message, scrolling on its own, apart from the files (%s)', async (_name, body) => {
   await show({ body, files });
   const header = await screen.findByRole('region', { name: 'Commit information' });
   expect(within(header).getByText('Fix <b>it</b>')).toBeTruthy();
@@ -267,7 +269,109 @@ test.each([['no body', ''], ['a 200-line body', LONG_BODY]])('the commit informa
   expect(header.contains(list)).toBe(false);
   expect(screen.getByRole('complementary', { name: 'Commit details' }).contains(list)).toBe(true);
   // The height utility is the requirement (happy-dom has no layout; graph.mjs measures the pixels).
-  expect(header.className.split(' ').filter((c) => /^(h-|min-h-|max-h-|overflow-)/.test(c)).sort()).toEqual(['h-56', 'overflow-y-auto']);
+  expect(header.className.split(' ').filter((c) => /^(h-|min-h-|max-h-|overflow-)/.test(c)).sort()).toEqual(['h-(--details-header)', 'overflow-y-auto']);
+});
+
+// happy-dom has no layout: the panel's height is defined on the aside, and a fake ResizeObserver reports it.
+function fakeResize() {
+  const live = new Set<() => void>();
+  vi.stubGlobal('ResizeObserver', class {
+    fire: () => void;
+    constructor(cb: ResizeObserverCallback) { this.fire = () => cb([], this as unknown as ResizeObserver); }
+    observe() { live.add(this.fire); }
+    unobserve() {}
+    disconnect() { live.delete(this.fire); }
+  });
+  return (h: number) => {
+    Object.defineProperty(screen.getByRole('complementary', { name: 'Commit details' }), 'clientHeight', { configurable: true, value: h });
+    act(() => { for (const f of live) f(); });
+  };
+}
+const handle = () => screen.getByRole('separator', { name: 'Resize commit information' });
+const valueNow = () => Number(handle().getAttribute('aria-valuenow'));
+const headerPx = () => screen.getByRole('region', { name: 'Commit information' }).style.getPropertyValue('--details-header');
+const { min: MIN, filesMin: FILES_MIN, handle: HANDLE, step: STEP } = DETAILS_HEADER;
+const MAX_600 = 600 - HANDLE - FILES_MIN;
+
+test('the header\'s resize handle: a horizontal separator with its value and bounds; the height reaches the header through --details-header', async () => {
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  const h = handle();
+  expect(h.getAttribute('aria-orientation')).toBe('horizontal');
+  expect([valueNow(), Number(h.getAttribute('aria-valuemin')), Number(h.getAttribute('aria-valuemax'))]).toEqual([DETAILS_HEADER.default, MIN, MAX_600]);
+  expect(headerPx()).toBe(`${DETAILS_HEADER.default}px`);
+});
+
+test('arrow keys step the height, Home and End go to the bounds; the height is stored and survives another selection and a remount', async () => {
+  const resize = fakeResize();
+  const fetch = await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  fireEvent.keyDown(handle(), { key: 'ArrowDown' });
+  expect([valueNow(), headerPx(), getItem('graph:detailsHeader')]).toEqual([DETAILS_HEADER.default + STEP, `${DETAILS_HEADER.default + STEP}px`, String(DETAILS_HEADER.default + STEP)]);
+  fireEvent.keyDown(handle(), { key: 'ArrowUp' });
+  expect(valueNow()).toBe(DETAILS_HEADER.default);
+  fireEvent.keyDown(handle(), { key: 'Home' });
+  expect([valueNow(), headerPx()]).toEqual([MIN, `${MIN}px`]);
+  fireEvent.keyDown(handle(), { key: 'End' });
+  expect([valueNow(), headerPx()]).toEqual([MAX_600, `${MAX_600}px`]);
+  fireEvent.keyDown(handle(), { key: 'Home' });
+  fireEvent.keyDown(handle(), { key: 'ArrowDown' });
+  // Another commit remounts the details (keyed by oid); the stub answers every oid with A's detail.
+  act(() => dispatchSelection(TAB, { type: 'click', id: P, rows: rowsOf(A, P) }));
+  await waitFor(() => expect(fetch.calls.filter((c) => c.url.pathname === '/api/ops/graph.commit').map((c) => (c.body as { params: { oid: string } }).params.oid)).toEqual([A, P]));
+  await screen.findByText('4 files');
+  expect(valueNow()).toBe(MIN + STEP);
+  // A reload reads the store back from storage.
+  expect(parseHeaderHeight(getItem('graph:detailsHeader'))).toBe(MIN + STEP);
+});
+
+test('a drag resizes the header, stores the height once on release, and clamps at both ends', async () => {
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  fireEvent.pointerDown(handle(), { clientY: 300, button: 0 });
+  fireEvent.pointerMove(window, { clientY: 360 });
+  expect(headerPx()).toBe(`${DETAILS_HEADER.default + 60}px`);
+  expect(getItem('graph:detailsHeader')).toBeNull();
+  fireEvent.pointerUp(window, { clientY: 360 });
+  expect([valueNow(), getItem('graph:detailsHeader')]).toEqual([DETAILS_HEADER.default + 60, String(DETAILS_HEADER.default + 60)]);
+  fireEvent.pointerDown(handle(), { clientY: 300, button: 0 });
+  fireEvent.pointerMove(window, { clientY: -700 });
+  fireEvent.pointerUp(window, { clientY: -700 });
+  expect(valueNow()).toBe(MIN);
+  fireEvent.pointerDown(handle(), { clientY: 300, button: 0 });
+  fireEvent.pointerMove(window, { clientY: 1300 });
+  fireEvent.pointerUp(window, { clientY: 1300 });
+  expect([valueNow(), headerPx()]).toEqual([MAX_600, `${MAX_600}px`]);
+});
+
+test('a shrinking panel re-clamps the rendered height so the files keep their minimum, and keeps the stored choice', async () => {
+  setDetailsHeader(400);
+  const resize = fakeResize();
+  await show({ files });
+  await screen.findByText('4 files');
+  resize(600);
+  expect(valueNow()).toBe(400);
+  resize(354);
+  expect([valueNow(), headerPx(), Number(handle().getAttribute('aria-valuemax'))]).toEqual([354 - HANDLE - FILES_MIN, `${354 - HANDLE - FILES_MIN}px`, 354 - HANDLE - FILES_MIN]);
+  expect(getItem('graph:detailsHeader')).toBe('400');
+  resize(600);
+  expect(valueNow()).toBe(400);
+});
+
+test('in the narrow dialog the header keeps the default height, with no resize handle', async () => {
+  setDetailsHeader(300);
+  stubGraph(Object.assign(linearWorld(2), { detail: () => detailOf(commit(A, [P], { subject: 'Fix <b>it</b>' }), { files }) }));
+  await openGraph(TAB);
+  dispatchSelection(TAB, { type: 'click', id: A, rows: rowsOf(A, P) });
+  render(<CommitDetails tab={TAB} inDialog />);
+  await screen.findByText('4 files');
+  expect(screen.queryByRole('separator')).toBeNull();
+  expect(headerPx()).toBe(`${DETAILS_HEADER.default}px`);
 });
 
 test('the cap seam is in effect for this file', () => {

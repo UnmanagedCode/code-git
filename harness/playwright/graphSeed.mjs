@@ -4,7 +4,7 @@
 // lanes: main A ← B ← C ← M1 (merge of feature/a: B ← E ← F) ← D (HEAD, an HTML-looking subject), pushed to a bare
 //        origin; feature/b: C ← G, unmerged, checked out in cc worktree `wt` (dirty); cc worktree `side` on
 //        code-conductor/side at C (clean); annotated v1.0 on B, lightweight v1.1 on M1; one stash on D; main dirty.
-//        C carries a Co-authored-by trailer; G carries a 200-line body.
+//        C carries a Co-authored-by trailer; G carries a 200-line body and 31 files (src/g.js, src/g/part-01…30.js).
 // ages:  linear a0 ← … ← a6 (main), committed at now−800d, −400d, −100d, −2d (newer than its child), −40d, −10d, −5min
 //        relative to the seed's clock; top-down the age markers are a5 `last week`, a4 `last month`, a2 `3 months ago`,
 //        a1 `1 year ago`, a0 `2 years ago` (a3 none, a6 is the first row), at any time of day.
@@ -48,7 +48,8 @@ export async function seedGraph() {
     repo.checkout('main');
     o.C = as('Grace Hopper', { 'docs/guide.md': 'guide\n' }, 'Write the guide\n\nCo-authored-by: Alan Turing <alan@example.com>\n');
     repo.branch('feature/b');
-    o.G = as('Margaret Hamilton', { 'src/g.js': 'g\n' }, `feature b: add g\n\n${Array.from({ length: 200 }, (_, i) => `Body line ${i + 1}`).join('\n')}\n`);
+    const gParts = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`src/g/part-${String(i + 1).padStart(2, '0')}.js`, `part ${i + 1}\n`]));
+    o.G = as('Margaret Hamilton', { 'src/g.js': 'g\n', ...gParts }, `feature b: add g\n\n${Array.from({ length: 200 }, (_, i) => `Body line ${i + 1}`).join('\n')}\n`);
     repo.checkout('main');
     repo.git('merge', '-q', '--no-ff', '-m', "Merge branch 'feature/a'", 'feature/a');
     o.M1 = repo.git('rev-parse', 'HEAD');

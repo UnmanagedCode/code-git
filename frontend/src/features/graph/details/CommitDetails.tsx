@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { clip } from '@/lib/clip';
 import { CopyIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
 import { runOp } from '@/lib/endpoints';
+import { setCssPx } from '@/lib/cssVars';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { clampHeader, DETAILS_HEADER, useDetailsHeader } from '@/state/detailsHeader';
 import { useGraphData } from '@/state/graph';
 import { requestFileOpen, useGraphSelection, type SelectedRow } from '@/state/graphSelection';
 import { tabKey, type Tab } from '@/state/tabs';
@@ -19,6 +21,7 @@ import { requestJump } from '../jump';
 import { WIDE_GRAPH_QUERY } from '../media';
 import { CONTEXT, type FileCtx } from '../contexts';
 import type { CommitDetail, Stash } from '../types';
+import { HEADER_VAR, HeaderSplitter } from './HeaderSplitter';
 import { SignatureBadge } from './SignatureBadge';
 
 /** Characters of a commit body shown until "Show the whole message". */
@@ -50,18 +53,36 @@ export function CommitDetails({ tab, inDialog = false }: { tab: Tab | null; inDi
   return <DetailsView key={tabKey(tab)} tab={tab} inDialog={inDialog} />;
 }
 
+/** An element's height, kept current by a ResizeObserver; 0 until measured (and where there is no layout). */
+function useHeight(ref: RefObject<HTMLElement | null>, active: boolean): number {
+  const [h, setH] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setH(el.clientHeight);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setH(el.clientHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [active]);
+  return h;
+}
+
 function DetailsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   const sel = useGraphSelection(tab);
   const data = useGraphData(tab);
   const slot = useRightSlot(tab);
-  if (data.status === 'idle' || (!inDialog && slot !== 'details')) return null;
+  const aside = useRef<HTMLElement>(null);
+  const shown = data.status !== 'idle' && (inDialog || slot === 'details');
+  const available = useHeight(aside, shown);
+  if (!shown) return null;
   const only = sel.items.length === 1 ? sel.items[0] : null;
   let body;
   if (sel.items.length > 1) body = <div className="flex flex-col gap-3 p-3"><Multi tab={tab} items={sel.items} commits={data.commits} stashes={data.refs?.stashes ?? []} /></div>;
   else if (!only || only.kind === 'wip') body = <div className="flex flex-col gap-3 p-3"><p className="text-sm text-muted-foreground">Select a commit</p></div>;
-  else body = <Commit key={only.oid} tab={tab} oid={only.oid} />;
+  else body = <Commit key={only.oid} tab={tab} oid={only.oid} inDialog={inDialog} available={available} />;
   return (
-    <aside className="flex h-full min-h-0 flex-col" aria-label="Commit details">
+    <aside ref={aside} className="flex h-full min-h-0 flex-col" aria-label="Commit details">
       {body}
     </aside>
   );
@@ -105,9 +126,14 @@ function Person({ label, name, email, time }: { label: string; name: string; ema
   );
 }
 
-function Commit({ tab, oid }: { tab: Tab; oid: string }) {
+function Commit({ tab, oid, inDialog, available }: { tab: Tab; oid: string; inDialog: boolean; available: number }) {
   const [d, setD] = useState<CommitDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const header = useRef<HTMLElement>(null);
+  const chosen = useDetailsHeader();
+  // The narrow dialog is one scroller with no rest of the panel to give the files: the header keeps the default there.
+  const height = inDialog ? DETAILS_HEADER.default : clampHeader(chosen, available);
+  useLayoutEffect(() => { if (header.current) setCssPx(header.current, HEADER_VAR, height); }, [height, d]);
   const open = useOpenDiff(tab);
   const stashes = useGraphData(tab).refs?.stashes ?? [];
   useEffect(() => {
@@ -130,8 +156,8 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
   const sameCommitter = d.committer.name === d.author.name && d.committer.email === d.author.email;
   return (
     <>
-      {/* Fixed height, scrolling on its own: a long message never pushes the files out of the panel. */}
-      <section aria-label="Commit information" className="flex h-56 shrink-0 flex-col gap-3 overflow-y-auto border-b p-3">
+      {/* The user's height, never the message's, scrolling on its own: a long message never pushes the files out of the panel. */}
+      <section ref={header} aria-label="Commit information" className="flex h-(--details-header) shrink-0 flex-col gap-3 overflow-y-auto border-b p-3">
         <div className="flex flex-col gap-1">
           <h2 className="text-sm font-semibold break-words">{clip(d.subject)}</h2>
           {d.body && <Body text={d.body} />}
@@ -159,8 +185,9 @@ function Commit({ tab, oid }: { tab: Tab; oid: string }) {
           </div>
         )}
       </section>
+      {!inDialog && <HeaderSplitter header={header} height={height} available={available} />}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="shrink-0 px-3 pt-2">
+        <div className="flex shrink-0 flex-col gap-3 px-3 pt-2">
           {boundParent > 1
             ? <p className="text-xs text-muted-foreground">Changes against parent {boundParent}</p>
             : d.parents.length > 1 && <p className="text-xs text-muted-foreground">Changes against the first parent</p>}

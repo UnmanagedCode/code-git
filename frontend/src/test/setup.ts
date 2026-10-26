@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeEach, vi } from 'vitest';
 import { toast } from 'sonner';
 import { resetDiff } from '@/state/diff';
 import { resetFileView } from '@/state/fileView';
+import { resetDetailsHeader } from '@/state/detailsHeader';
 import { resetShownPanels } from '@/state/shownPanel';
 import { resetDrag } from '@/features/graph/drag';
 import { resetJump } from '@/features/graph/jump';
@@ -56,6 +57,7 @@ afterEach(() => {
   resetSummaries();
   resetDiff();
   resetFileView();
+  resetDetailsHeader();
   resetShownPanels();
   // The graph's triggers first: they read the prefs.
   resetGraph();
