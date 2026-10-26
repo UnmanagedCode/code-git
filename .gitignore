@@ -4,3 +4,4 @@ package-lock.json
 .mutation/
 harness/playwright/out/
 frontend/.vite-cache/
+out/

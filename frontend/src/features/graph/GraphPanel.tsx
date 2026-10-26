@@ -23,7 +23,7 @@ import { clampWidth, COLUMNS } from './columns';
 import { CONTEXT, type CommitCtx, type CommitsCtx, type RefCtx, type StashCtx, type WipCtx, type WorktreeCtx } from './contexts';
 import { CommitDetails } from './details/CommitDetails';
 import { DragGhost, startBranchDrag, toDragRef } from './drag';
-import { ColumnToggles, GraphHeader, shownColumns } from './GraphHeader';
+import { ColumnToggles, columnWidth, GraphHeader, shownColumns } from './GraphHeader';
 import { ageMarkers } from './ages';
 import { GraphRowView } from './GraphRowView';
 import { ChangesButton } from '@/features/workdir/ChangesButton';
@@ -137,7 +137,7 @@ function GraphView({ tab }: { tab: Tab }) {
     let total = COLUMNS.message.min;
     for (const id of columns) {
       if (id === 'message') continue;
-      const w = id === 'graph' ? graphWidth : prefs.columns.widths[id] ?? COLUMNS[id].width;
+      const w = columnWidth(prefs, id, graphWidth);
       setCssPx(el, `--col-${id}`, w);
       total += w;
     }
@@ -460,7 +460,7 @@ function GraphView({ tab }: { tab: Tab }) {
         <>
           <div ref={head} className="shrink-0 overflow-hidden" onScroll={() => syncX(head.current, body.current)}>
             <div className="min-w-(--graph-min-w)">
-              <GraphHeader prefsKey={prefsKey(tab)} prefs={prefs} root={() => root.current} />
+              <GraphHeader prefsKey={prefsKey(tab)} prefs={prefs} root={() => root.current} graphWidth={graphWidth} />
             </div>
           </div>
           <div

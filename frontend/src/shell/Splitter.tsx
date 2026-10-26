@@ -23,6 +23,8 @@ interface SplitterProps {
   preview: (px: number) => void;
   /** Stores a size: on release, and for a key. */
   commit: (px: number) => void;
+  /** False: no inner grip, only the strip's hover / focus highlight (for a handle on an edge too short for the grip). Default true. */
+  grip?: boolean;
   className?: string;
 }
 
@@ -32,7 +34,7 @@ interface SplitterProps {
  * and stores nothing more. A drag previews the size and commits it once on release; a cancelled one previews the old
  * size again. A key commits only a size it actually moves to, so a clamped value keeps the user's stored choice.
  */
-export function Splitter({ orientation, label, value, min, max, clamp, step, sign, stepKey, boundKey, preview, commit, className }: SplitterProps) {
+export function Splitter({ orientation, label, value, min, max, clamp, step, sign, stepKey, boundKey, preview, commit, grip = true, className }: SplitterProps) {
   const vertical = orientation === 'vertical';
   // The live drag (its latest size read on release) and the same size as state, for aria-valuenow.
   const drag = useRef<{ pointerId: number; from: number; px: number } | null>(null);
@@ -89,7 +91,7 @@ export function Splitter({ orientation, label, value, min, max, clamp, step, sig
       onLostPointerCapture={(e) => end(e, false)}
       onKeyDown={onKeyDown}
     >
-      <span className={cn('rounded-full bg-border group-hover:bg-ring group-focus-visible:bg-ring', vertical ? 'h-8 w-1' : 'h-1 w-8')} />
+      {grip && <span className={cn('rounded-full bg-border group-hover:bg-ring group-focus-visible:bg-ring', vertical ? 'h-8 w-1' : 'h-1 w-8')} />}
     </div>
   );
 }

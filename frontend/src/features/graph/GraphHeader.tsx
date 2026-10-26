@@ -5,12 +5,17 @@ import {
 import { setCssPx } from '@/lib/cssVars';
 import { cn } from '@/lib/utils';
 import { toggled, updatePrefs, type GraphPrefs } from '@/state/graphPrefs';
-import { CELL_CLASS, clampWidth, COLUMNS, OPTIONAL_COLUMNS, type ColumnId, type OptionalColumnId } from './columns';
+import { CELL_CLASS, clampWidth, COLUMN_RESIZE_STEP, COLUMNS, OPTIONAL_COLUMNS, type ColumnId, type OptionalColumnId } from './columns';
 import { matches } from '@/shell/shortcuts';
-import { COLUMN_MENU_KEY } from './keys';
+import { Splitter } from '@/shell/Splitter';
+import { COLUMN_MENU_KEY, GRAPH_COLUMN_WIDTH_BOUND_KEY, GRAPH_COLUMN_WIDTH_STEP_KEY } from './keys';
 
 /** Columns shown, in order. */
 export const shownColumns = (p: GraphPrefs): ColumnId[] => p.columns.order.filter((id) => !COLUMNS[id].optional || p.columns.visible.includes(id as OptionalColumnId));
+
+/** A column's rendered width: the stored one, else its default (the Graph column fits its lanes: `graphWidth`). */
+export const columnWidth = (p: GraphPrefs, id: ColumnId, graphWidth: number): number =>
+  id === 'graph' ? graphWidth : p.columns.widths[id] ?? COLUMNS[id].width;
 
 /** Moves column `id` by `by` places among the shown columns (persisted). */
 export function moveColumn(prefsKey: string, id: ColumnId, by: number): void {
@@ -43,33 +48,16 @@ export function ColumnToggles({ prefsKey, prefs }: { prefsKey: string; prefs: Gr
 }
 
 /**
- * The column header: drag a cell onto another to reorder, drag its right edge to resize (live through `--col-<id>` on
- * `root`, persisted on release); right-click for Move left / Move right and the column toggles.
+ * The column header: drag a cell onto another to reorder; right-click for Move left / Move right and the column toggles.
+ * Each resizable column's right edge is a `Splitter` (drag, or ←/→ Home/End when focused; live through `--col-<id>` on
+ * `root`, persisted on release). The handle is a sibling of the menu trigger, never inside it: its pointer and key events
+ * must not reach the trigger's reorder, menu keys or Radix's open keys (stopping propagation would also starve the shell's
+ * window-level shortcuts).
  */
-export function GraphHeader({ prefsKey, prefs, root }: { prefsKey: string; prefs: GraphPrefs; root: () => HTMLElement | null }) {
+export function GraphHeader({ prefsKey, prefs, root, graphWidth }: { prefsKey: string; prefs: GraphPrefs; root: () => HTMLElement | null; graphWidth: number }) {
   const shown = shownColumns(prefs);
   const [menu, setMenu] = useState<ColumnId | null>(null);
   const [dragging, setDragging] = useState<ColumnId | null>(null);
-
-  const startResize = (e: ReactPointerEvent, id: ColumnId) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const el = root();
-    const start = prefs.columns.widths[id] ?? COLUMNS[id].width;
-    const x0 = e.clientX;
-    let w = start;
-    const move = (ev: PointerEvent) => {
-      w = clampWidth(id, start + ev.clientX - x0);
-      if (el) setCssPx(el, `--col-${id}`, w);
-    };
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      if (w !== start) updatePrefs(prefsKey, (p) => ({ ...p, columns: { ...p.columns, widths: { ...p.columns.widths, [id]: w } } }));
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-  };
 
   const startReorder = (e: ReactPointerEvent, id: ColumnId) => {
     if (e.button !== 0) return;
@@ -96,28 +84,42 @@ export function GraphHeader({ prefsKey, prefs, root }: { prefsKey: string; prefs
     <div className="flex h-7 shrink-0 items-center border-b bg-muted/40 text-xs font-medium text-muted-foreground" role="row" aria-label="Columns">
       {shown.map((id, i) => (
         <DropdownMenu key={id} open={menu === id} onOpenChange={(o) => setMenu(o ? id : null)}>
-          <DropdownMenuTrigger asChild>
-            <div
-              role="columnheader"
-              tabIndex={0}
-              data-header-col={id}
-              className={cn('relative flex h-full shrink-0 items-center px-2 select-none', CELL_CLASS[id], dragging === id && 'opacity-50')}
-              onPointerDown={(e) => { if (e.button === 0) { e.preventDefault(); startReorder(e, id); } }}
-              onContextMenu={(e) => { e.preventDefault(); setMenu(id); }}
-              onKeyDown={(e) => { if (matches(e, COLUMN_MENU_KEY)) { e.preventDefault(); setMenu(id); } }}
-            >
-              <span className="truncate">{COLUMNS[id].label}</span>
-              {COLUMNS[id].resizable && (
-                <span
-                  role="separator"
-                  aria-orientation="vertical"
-                  aria-label={`Resize ${COLUMNS[id].label}`}
-                  className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-ring/40"
-                  onPointerDown={(e) => startResize(e, id)}
-                />
-              )}
-            </div>
-          </DropdownMenuTrigger>
+          <div
+            role="columnheader"
+            data-header-col={id}
+            className={cn('relative flex h-full shrink-0', CELL_CLASS[id], dragging === id && 'opacity-50')}
+            onContextMenu={(e) => { e.preventDefault(); setMenu(id); }}
+          >
+            <DropdownMenuTrigger asChild>
+              <div
+                role="button"
+                tabIndex={0}
+                className="flex h-full min-w-0 flex-1 items-center px-2 select-none"
+                onPointerDown={(e) => { if (e.button === 0) { e.preventDefault(); startReorder(e, id); } }}
+                onKeyDown={(e) => { if (matches(e, COLUMN_MENU_KEY)) { e.preventDefault(); setMenu(id); } }}
+              >
+                <span className="truncate">{COLUMNS[id].label}</span>
+              </div>
+            </DropdownMenuTrigger>
+            {COLUMNS[id].resizable && (
+              <Splitter
+                orientation="vertical"
+                label={`Resize ${COLUMNS[id].label}`}
+                value={columnWidth(prefs, id, graphWidth)}
+                min={COLUMNS[id].min}
+                max={COLUMNS[id].max}
+                clamp={(px) => clampWidth(id, px)}
+                step={COLUMN_RESIZE_STEP}
+                sign={1}
+                stepKey={GRAPH_COLUMN_WIDTH_STEP_KEY}
+                boundKey={GRAPH_COLUMN_WIDTH_BOUND_KEY}
+                preview={(px) => { const el = root(); if (el) setCssPx(el, `--col-${id}`, px); }}
+                commit={(px) => updatePrefs(prefsKey, (p) => ({ ...p, columns: { ...p.columns, widths: { ...p.columns.widths, [id]: px } } }))}
+                grip={false}
+                className="absolute top-0 right-0 h-full"
+              />
+            )}
+          </div>
           <DropdownMenuContent align="start">
             <DropdownMenuItem disabled={i === 0} onSelect={() => moveColumn(prefsKey, id, -1)}>Move left</DropdownMenuItem>
             <DropdownMenuItem disabled={i === shown.length - 1} onSelect={() => moveColumn(prefsKey, id, 1)}>Move right</DropdownMenuItem>

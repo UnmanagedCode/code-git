@@ -84,7 +84,7 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 
 ## Commit graph
 
-The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree, with line counts; the list that drives the commit's diff while it is open: [File lists](#file-lists)), the commit information in a header resizable by drag or keyboard (persisted; fixed in the narrow dialog). Full behaviour: [graph](graph.md).
+The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize by drag or ←/→, Home/End on the focused handle); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree, with line counts; the list that drives the commit's diff while it is open: [File lists](#file-lists)), the commit information in a header resizable by drag or keyboard (persisted; fixed in the narrow dialog). Full behaviour: [graph](graph.md).
 
 Age dividers: a hairline and a pill (`1 hour ago` … `N years ago`) mark where the rows below turn older ([docs/graph.md → Age markers](graph.md)).
 

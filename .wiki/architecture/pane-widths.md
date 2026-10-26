@@ -10,7 +10,3 @@ User-facing behaviour: `docs/features.md` → Shell. Bounds: `PANE` in `frontend
 - **A pane's live maximum** (`paneMax`) is its ceiling or the room the other rendered pane leaves, whichever is less; it bounds the drag, End and `aria-valuemax`. A key stores only a width it moves to, so a fitted pane's End or arrow leaves the choice alone.
 - **The centre minimum needs no last-resort branch.** The panes show only from `lg` (1024 px), and `<main>` is the viewport's width there (`panes.mjs` asserts it): both floors plus handles plus the centre minimum, and the defaults, fit in 1024. `panes.mjs` and a `fitPanes` property test cover the whole range.
 - **Widths reach the slots as `--pane-left` / `--pane-right` on `<main>`** (`setCssPx`; a drag previews through the same property and stores once on release).
-
-## Gotchas
-
-- **`GraphHeader`'s column resize is not on `Splitter`.** Its handle sits inside a column header that is already a Radix menu trigger (focusable, pointer-driven for column reorder, keyboard-driven to open the menu): a `Splitter` there would add a tab stop per column and need a keyboard design for columns. Its widths are per-checkout graph prefs with their own bounds. Its drag listens on `window`, which outlives a `pointercancel`.

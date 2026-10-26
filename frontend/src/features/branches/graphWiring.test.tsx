@@ -32,7 +32,7 @@ test('double-click on a branch chip checks it out; on a tag chip it jumps to the
 
 test('the toolbar Branch button and Ctrl/⌘+B open "create branch from HEAD"; not while typing in a field', async () => {
   await show();
-  fireEvent.click(screen.getByRole('button', { name: /Branch/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^Branch$/ }));
   expect(refDialogStore.get()).toEqual({ kind: 'createBranch', tab: TAB, from: null });
   act(() => refDialogStore.set(null));
   fireEvent.keyDown(window, { key: 'b', ctrlKey: true });

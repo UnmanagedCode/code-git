@@ -15,10 +15,13 @@ export const GRAPH_SEARCH_NEXT_KEY: Shortcut = { id: 'graph.searchNext', label: 
 export const GRAPH_SEARCH_CLOSE_KEY: Shortcut = { id: 'graph.searchClose', label: 'Clear the search (in the search box)', scope: 'Graph', combos: [{ key: 'Escape', mod: ANY, shift: ANY, alt: ANY }] };
 export const DRAG_CANCEL_KEY: Shortcut = { id: 'graph.dragCancel', label: 'Cancel a branch drag', scope: 'Graph', combos: [{ key: 'Escape', mod: ANY, shift: ANY, alt: ANY }] };
 export const COLUMN_MENU_KEY: Shortcut = { id: 'graph.columnMenu', label: "A column header's menu", scope: 'Graph', combos: [{ key: 'ContextMenu', mod: ANY, shift: ANY, alt: ANY }, { key: 'F10', shift: true, mod: ANY, alt: ANY }] };
+// On a column's resize handle (features/graph/GraphHeader.tsx): which combo matched picks the direction.
+export const GRAPH_COLUMN_WIDTH_STEP_KEY: Shortcut = { id: 'graph.columnWidthStep', label: 'Column narrower / wider (on its resize handle)', scope: 'Graph', combos: [{ key: 'ArrowLeft' }, { key: 'ArrowRight' }] };
+export const GRAPH_COLUMN_WIDTH_BOUND_KEY: Shortcut = { id: 'graph.columnWidthBound', label: 'Column at its minimum / maximum width (on its resize handle)', scope: 'Graph', combos: [{ key: 'Home' }, { key: 'End' }] };
 // On the details' resize handle (features/graph/details/HeaderSplitter.tsx): which combo matched picks the direction.
 export const DETAILS_HEADER_STEP_KEY: Shortcut = { id: 'graph.detailsHeaderStep', label: 'Commit information shorter / taller (on its resize handle)', scope: 'Commit details', combos: [{ key: 'ArrowUp' }, { key: 'ArrowDown' }] };
 export const DETAILS_HEADER_BOUND_KEY: Shortcut = { id: 'graph.detailsHeaderBound', label: 'Commit information at its minimum / maximum (on its resize handle)', scope: 'Commit details', combos: [{ key: 'Home' }, { key: 'End' }] };
 export const GRAPH_KEYS: Shortcut[] = [
   GRAPH_STEP_KEY, GRAPH_LANE_KEY, GRAPH_FIRST_KEY, GRAPH_LAST_KEY, GRAPH_OPEN_KEY, GRAPH_MENU_KEY, GRAPH_CLEAR_KEY, GRAPH_SEARCH_KEY,
-  GRAPH_SEARCH_NEXT_KEY, GRAPH_SEARCH_CLOSE_KEY, DRAG_CANCEL_KEY, COLUMN_MENU_KEY, DETAILS_HEADER_STEP_KEY, DETAILS_HEADER_BOUND_KEY,
+  GRAPH_SEARCH_NEXT_KEY, GRAPH_SEARCH_CLOSE_KEY, DRAG_CANCEL_KEY, COLUMN_MENU_KEY, GRAPH_COLUMN_WIDTH_STEP_KEY, GRAPH_COLUMN_WIDTH_BOUND_KEY, DETAILS_HEADER_STEP_KEY, DETAILS_HEADER_BOUND_KEY,
 ];
