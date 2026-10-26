@@ -107,6 +107,13 @@ try {
     await waitHead('topic');
     await nameButton('refs/heads/side').click({ button: 'right' });
     await shot('merge-branch-menu-light-desktop');
+    await page.getByRole('menuitem', { name: 'Reset topic to here' }).click();
+    await page.getByRole('menuitem', { name: /^Hard/ }).waitFor();
+    await shot('merge-branch-reset-submenu-light-desktop');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await page.getByRole('menu').first().waitFor({ state: 'detached' });
+    await nameButton('refs/heads/side').click({ button: 'right' });
     await choose('Rebase topic onto side');
     await toast('Rebased topic onto side').waitFor();
     check(git('rev-parse', 'topic~6') === o.side && git('symbolic-ref', 'HEAD') === 'refs/heads/topic', 'git: topic\'s six commits replayed onto side');
