@@ -51,11 +51,16 @@ test('actions sort by order then registration, with a separator between groups a
 
 test('every item leads with one aria-hidden icon cell (the action\'s icon, else a blank) and is named by its label alone', async () => {
   const menu = open('x', { name: 'main', flag: true });
-  const lead = (item: HTMLElement) => item.firstElementChild as HTMLElement;
+  // The invariant: the icon cell is the item's first child *node* (not merely its first element), ahead of the label text.
   const check = (item: HTMLElement, icon: boolean) => {
-    expect(lead(item).getAttribute('data-slot')).toBe('menu-item-icon');
-    expect(lead(item).getAttribute('aria-hidden')).toBe('true');
-    expect(lead(item).tagName.toLowerCase()).toBe(icon ? 'svg' : 'span');
+    const cell = item.firstChild as HTMLElement;
+    expect(cell.nodeType).toBe(Node.ELEMENT_NODE);
+    expect(cell.getAttribute('data-slot')).toBe('menu-item-icon');
+    expect(cell.getAttribute('aria-hidden')).toBe('true');
+    expect(cell.tagName.toLowerCase()).toBe(icon ? 'svg' : 'span');
+    const label = [...item.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent?.trim());
+    expect(label).toBeDefined();
+    expect(cell.compareDocumentPosition(label!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   };
   check(within(menu).getByRole('menuitem', { name: 'Reset main to this commit' }), true);
   check(within(menu).getByRole('menuitem', { name: 'Second' }), false);
