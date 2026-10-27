@@ -692,7 +692,7 @@ The document stays at the plugin root; the active tab is in the query string, ne
 | `?project=<name>` | The project's main checkout |
 | `?project=<name>&worktree=<name>` | That worktree |
 | `…&sub=<path>&sub=<path>…` | A submodule tab: one `sub` per chain entry, in order |
-| `…&commit=<oid>` | A link: open the tab, then select and centre that commit in its graph (with its details), once the graph's first snapshot is loaded. A panel shown in the graph's place (a diff, History, Reflog) is closed. The link is dropped, never applied later, when the tab closes first, its summary is refused (the graph never starts), its graph fails, App unmounts, or a newer link arrives. Not in the loaded pages → the graph's **Load more**; unknown → "Not in the visible graph" |
+| `…&commit=<oid>` | A link: open the tab, then select and centre that commit in its graph (with its details), once the graph's first snapshot is loaded. A panel shown in the graph's place (a diff, History, Reflog) is closed. The link is dropped, never applied later, when the tab closes first, its summary is refused (the graph never starts), its graph fails, or a newer link arrives. Not in the loaded pages → the graph's **Load more**; unknown → "Not in the visible graph" |
 | `…&commit=<oid>&path=<repo path>` | A link: open the tab and that file's history from `commit` (the History panel); the graph is not touched |
 
 **Link keys (`commit`, `path`; `readLink` / `consumeLink` in `frontend/src/lib/route.ts`, applied by `followLink` in `frontend/src/features/links/inbound.ts`):**

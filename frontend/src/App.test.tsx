@@ -1,11 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, expect, test } from 'vitest';
 import { App } from './App';
 import { fileHistoryStore } from '@/features/history/state';
 import { cancelLink } from '@/features/links/inbound';
-import { EMPTY_GRAPH, graphStore } from '@/state/graph';
 import { getSelection } from '@/state/graphSelection';
-import { jumpStore } from '@/features/graph/jump';
 import { dispatchTabs, tabKey, tabsStore } from '@/state/tabs';
 import { summary } from '@/test/fixtures';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
@@ -104,19 +103,21 @@ test('an invalid link opens the tab, applies nothing and is stripped', async () 
   expect(getSelection(APP).ids).toEqual([]);
 });
 
-test('unmounting App ends a link still waiting for its graph: a graph ready afterwards does not jump', async () => {
-  stubFetch({
-    'GET api/repos': { repos: [] },
-    'GET api/activity': { entries: [], runs: [] },
-    'POST api/ops/repo.summary': { ok: true, result: summary() },
-    'GET api/repos/app/worktrees': { worktrees: [] },
-    // The graph never answers: the link stays waiting until App goes away.
-    'POST api/ops/graph.refs': () => new Promise(() => {}),
-  });
+// main.tsx renders App under StrictMode, whose dev double mount runs the effect twice: the first run consumes the link,
+// so its cleanup must not drop the wait the second run cannot restart.
+test('under StrictMode a commit link survives the double mount and selects the commit once the graph is ready', async () => {
+  linkWorld();
   history.replaceState(null, '', `?project=app&commit=${oid(2)}`);
-  const { unmount } = render(<App />);
+  render(<StrictMode><App /></StrictMode>);
   expect(location.search).toBe('?project=app');
-  unmount();
-  graphStore.set(new Map([[tabKey(APP), { ...EMPTY_GRAPH, status: 'ready' }]]));
-  expect(jumpStore.get()).toBeNull();
+  await waitFor(() => expect(getSelection(APP).ids).toEqual([oid(2)]));
+});
+
+test('under StrictMode a path link opens the file\'s history', async () => {
+  linkWorld();
+  history.replaceState(null, '', `?project=app&commit=${oid(3)}&path=a.txt`);
+  render(<StrictMode><App /></StrictMode>);
+  expect(location.search).toBe('?project=app');
+  expect(await screen.findByRole('region', { name: 'File history panel' })).toBeTruthy();
+  expect(fileHistoryStore.get().get(tabKey(APP))).toMatchObject({ path: 'a.txt', rev: oid(3) });
 });

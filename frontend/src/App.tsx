@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { cancelLink, followLink } from '@/features/links/inbound';
+import { followLink } from '@/features/links/inbound';
 import { consumeLink, readRoute, writeRoute } from '@/lib/route';
 import { Shell } from '@/shell/Shell';
 import { loadIntegrations } from '@/state/integrations';
@@ -30,7 +30,7 @@ export function App() {
     // The header's System badge needs the project rows.
     void loadRepos();
     void loadIntegrations();
-    return () => { unsubscribe(); window.removeEventListener('popstate', onPop); cancelLink(); };
+    return () => { unsubscribe(); window.removeEventListener('popstate', onPop); };
   }, []);
   return <Shell />;
 }
