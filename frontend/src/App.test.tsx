@@ -3,7 +3,9 @@ import { afterEach, expect, test } from 'vitest';
 import { App } from './App';
 import { fileHistoryStore } from '@/features/history/state';
 import { cancelLink } from '@/features/links/inbound';
+import { EMPTY_GRAPH, graphStore } from '@/state/graph';
 import { getSelection } from '@/state/graphSelection';
+import { jumpStore } from '@/features/graph/jump';
 import { dispatchTabs, tabKey, tabsStore } from '@/state/tabs';
 import { summary } from '@/test/fixtures';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
@@ -100,4 +102,21 @@ test('an invalid link opens the tab, applies nothing and is stripped', async () 
   expect(fileHistoryStore.get().size).toBe(0);
   await screen.findByRole('region', { name: 'Commit graph' });
   expect(getSelection(APP).ids).toEqual([]);
+});
+
+test('unmounting App ends a link still waiting for its graph: a graph ready afterwards does not jump', async () => {
+  stubFetch({
+    'GET api/repos': { repos: [] },
+    'GET api/activity': { entries: [], runs: [] },
+    'POST api/ops/repo.summary': { ok: true, result: summary() },
+    'GET api/repos/app/worktrees': { worktrees: [] },
+    // The graph never answers: the link stays waiting until App goes away.
+    'POST api/ops/graph.refs': () => new Promise(() => {}),
+  });
+  history.replaceState(null, '', `?project=app&commit=${oid(2)}`);
+  const { unmount } = render(<App />);
+  expect(location.search).toBe('?project=app');
+  unmount();
+  graphStore.set(new Map([[tabKey(APP), { ...EMPTY_GRAPH, status: 'ready' }]]));
+  expect(jumpStore.get()).toBeNull();
 });

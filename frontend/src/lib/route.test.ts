@@ -50,6 +50,12 @@ test('consumeLink strips invalid keys too', () => {
   expect(location.search).toBe('?project=p');
 });
 
+test('consumeLink strips a path that came without a commit', () => {
+  history.replaceState(null, '', '?project=p&path=a.txt');
+  expect(consumeLink()).toBeNull();
+  expect(location.search).toBe('?project=p');
+});
+
 test('consumeLink leaves a URL without link keys alone', () => {
   history.replaceState(null, '', '?project=p&worktree=w');
   const replace = vi.spyOn(history, 'replaceState');

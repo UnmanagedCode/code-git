@@ -72,7 +72,8 @@ test('rangeToHead: no range unless the selection is exactly a chain ending at HE
   setHead(4);
   expect(rangeToHead(sel(row(3), row(2))), 'not at HEAD').toBeNull();
   expect(rangeToHead(sel(row(4), row(2))), 'a gap').toBeNull();
-  expect(rangeToHead(sel(row(3), row(2), row(1))), 'a root').toBeNull();
+  setHead(2);
+  expect(rangeToHead(sel(row(2), row(1))), 'a chain to HEAD through the root commit').toBeNull();
   setHead(6);
   expect(rangeToHead(sel(row(6), row(4))), 'a merge').toBeNull();
   setHead(4);
