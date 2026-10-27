@@ -25,6 +25,7 @@ The backend's HTTP API (all paths relative to the plugin root: `/plugins/code-gi
 | `GET api/repos` | — | `{repos: Repo[]}` | `CONDUCTOR_UNAVAILABLE` |
 | `GET api/repos/:project/worktrees` | — | `{worktrees: Worktree[]}` | `BAD_TARGET`, `PROJECT_UNKNOWN`, `CONDUCTOR_UNAVAILABLE` |
 | `POST api/ops/:name` | `{target, params?}` | `{ok: true, result}` | see [Ops](#ops) |
+| `GET api/integrations` | — | `{codeReview: {id} \| null}`: `id` when cc lists plugin `CODE_REVIEW_PLUGIN` (`src/conductor/integrations.js`) with `enabled` and `hasFrontend` both `true`, else `null` | `CONDUCTOR_UNAVAILABLE` (cc unreachable, `CONDUCTOR_URL` unset, or cc without `GET /api/plugins`) |
 | `GET api/activity` | — | `{entries: ActivityEntry[], runs: OpRun[]}`, each newest last | — |
 | `GET api/activity/events` | — | `text/event-stream` (below) | — |
 | `POST api/activity/:id/cancel` | `{}` (JSON) | `{ok: true}` | 404 `ACTIVITY_UNKNOWN`; 409 `NOT_CANCELLABLE` (the op does not allow cancel, whatever its state); 409 `NOT_RUNNING` (already finished) |
@@ -691,15 +692,40 @@ The document stays at the plugin root; the active tab is in the query string, ne
 | `?project=<name>` | The project's main checkout |
 | `?project=<name>&worktree=<name>` | That worktree |
 | `…&sub=<path>&sub=<path>…` | A submodule tab: one `sub` per chain entry, in order |
+| `…&commit=<oid>` | A link: open the tab, then select and centre that commit in its graph (with its details), once the graph's first snapshot is loaded. A panel shown in the graph's place (a diff, History, Reflog) is closed. The link is dropped, never applied later, when the tab closes first, its summary is refused (the graph never starts), its graph fails, or a newer link arrives. Not in the loaded pages → the graph's **Load more**; unknown → "Not in the visible graph" |
+| `…&commit=<oid>&path=<repo path>` | A link: open the tab and that file's history from `commit` (the History panel); the graph is not touched |
+
+**Link keys (`commit`, `path`; `readLink` / `consumeLink` in `frontend/src/lib/route.ts`, applied by `followLink` in `frontend/src/features/links/inbound.ts`):**
+
+- Read on load and on every `popstate` (cc steers an open frame with its bridge's `navigate`, which arrives as `popstate`).
+- `commit` must be a full lowercase oid (40 or 64 hex, the backend's `OID_RE`); anything else → no link. A `path` without a valid `commit` → no link.
+- `path` must pass `assertPath`'s rules (non-empty, ≤ 4096 chars, no NUL or `\`, no leading `/`, no `..` segment); an invalid `path` is dropped and the commit is still selected. The backend re-validates both when the history is read.
+- One-shot: both keys, valid or not, are stripped with `history.replaceState` before the tab opens — never `pushState` — so no history entry keeps them: Back / Forward and a reload never re-apply a link. Embedded, the bridge reports the stripped route and cc rewrites its own current entry; an identical second link from code-review still applies (cc sees a different subpath and steers).
+- Never throws: a malformed value is stripped and ignored.
+
+### Links to code-review
+
+A commit's and a selection's graph menus offer code-review's new-review view (`LINK_ACTIONS` in `frontend/src/features/links/actions.ts`; URLs built by `reviewSubpath` / `reviewHref` in `frontend/src/features/links/codeReview.ts`):
+
+| Menu (context) | Item | Offered when | cc URL |
+|---|---|---|---|
+| A commit (`commit`) | **Review in code-review** | always (a root commit included) | `#plugin/<id>/?project=<P>[&worktree=<W>]&view=new&sha=<oid>` |
+| Two or more rows (`commits`) | **Review range in code-review** | the rows are one first-parent chain (`chainOf`: no merge, root, WIP or stash row) whose newest commit is HEAD | `…&view=new&range=<oldest's parent>...<HEAD's oid>` |
+
+- Both are hidden on a submodule tab, outside cc (no `ccBridge`, or `window.top` unreadable), and when `GET api/integrations` gives `codeReview: null` or fails (a `console.warn`). Standalone, `api/integrations` is never requested.
+- HEAD goes as its full oid, never the literal `HEAD`: if HEAD moved before code-review resolves it, code-review reports a mismatch rather than reviewing another range.
+- `<id>` is the plugin id `api/integrations` returns; the query is built with `URLSearchParams` in that key order.
+- Navigation: `window.top.location.assign(<cc's pathname + search> + '#plugin/…')` (`navigateTop` in `frontend/src/lib/host.ts`), on the menu item's select. Only cc's hash changes, so cc does not reload. No middle-click / new tab (no menu item has one).
 
 ## cc routes consumed
 
-Base: `$CONDUCTOR_URL`, read per call. Unset → 503 `CONDUCTOR_UNAVAILABLE` on the routes that reach cc: `api/repos`, `api/repos/:project/worktrees` and `api/ops/:name` (after its own request checks). The activity routes (`api/activity`, `api/activity/events`, `api/activity/:id/cancel`) keep working, an unknown `api/` path is still a 404 `NOT_FOUND`, and `/health` and the UI stay up.
+Base: `$CONDUCTOR_URL`, read per call. Unset → 503 `CONDUCTOR_UNAVAILABLE` on the routes that reach cc: `api/repos`, `api/repos/:project/worktrees`, `api/integrations` and `api/ops/:name` (after its own request checks). The activity routes (`api/activity`, `api/activity/events`, `api/activity/:id/cancel`) keep working, an unknown `api/` path is still a 404 `NOT_FOUND`, and `/health` and the UI stay up.
 
 | Route | Use | Deadline / retry |
 |---|---|---|
 | `GET /api/projects` | `api/repos` | `LIMITS.ccReadTimeoutMs`; connection failures retried |
 | `GET /api/projects/:name/worktrees` | `api/repos/:project/worktrees` | same |
+| `GET /api/plugins` | `api/integrations` (its `rows`: `id`, `enabled`, `hasFrontend`); any answer but 200 with a `rows` array → `CONDUCTOR_UNAVAILABLE` | same |
 | `POST /api/exec` | every git command | `timeoutMs + min(10 s, timeoutMs)`, past cc's own deadline so cc reports the timeout; connection failures retried for reads only |
 
 **Exec request** (form A only; `exec` in `src/conductor/exec.js`):

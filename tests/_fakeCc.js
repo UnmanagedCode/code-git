@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { hermeticEnv } from './_git.js';
 
-// A fake cc REST host: GET /api/projects, GET /api/projects/:name/worktrees and POST /api/exec, the exec request
+// A fake cc REST host: GET /api/projects, GET /api/projects/:name/worktrees, GET /api/plugins and POST /api/exec, the exec request
 // validated as strictly as cc's src/hostExec.ts. Exec runs real git on this machine in the resolved directory.
 
 const KEYS = new Set(['project', 'worktree', 'system', 'remoteId', 'cwd', 'argv', 'shell', 'env', 'stdin', 'stdinB64', 'timeoutMs', 'encoding', 'maxOutputBytes']);
@@ -123,11 +123,12 @@ function run(state, spec, req, res, body) {
  * `projects`: {name: {dir, system?, remoteId?, workspace?, worktrees?: {name: dir}, locked?: [worktree names], isGitRepo?, unbornHead?,
  * systemUnreachable?, gitRefusal?, degraded?}}. A project with `system: 'docker'` still runs here: code-git
  * addresses it by {project, worktree} alone. `home` is the git HOME (default: a temp dir of its own).
+ * `plugins`: the rows `GET /api/plugins` answers (`{rows, notices: []}`); absent, that route is a 404 as on an older cc.
  * Knobs on the returned object: `state.inheritedEnv` (the System's own environment, under the request's env, as cc's
  * local provider merges it), `state.execCalls`, `state.violations` (any form-B or shell use), `state.disconnects`,
  * `state.execHook(body)` → `{status, body}` | `{status, raw}` (a non-JSON body) | `'hold'` | `'reset'` (the connection is destroyed unanswered) | undefined, `systemDown(project, down)`, `nextHeld()`.
  */
-export async function fakeCc({ projects = {}, home } = {}) {
+export async function fakeCc({ projects = {}, home, plugins } = {}) {
   const ownHome = home ? null : fs.mkdtempSync(path.join(os.tmpdir(), 'cg-fakecc-'));
   const state = {
     projects, home: home ?? ownHome, execCalls: [], violations: [], disconnects: [], execHook: null, inheritedEnv: {},
@@ -183,6 +184,7 @@ export async function fakeCc({ projects = {}, home } = {}) {
         worktrees: Object.keys(p.worktrees ?? {}).map((w) => ({ worktreeName: w })),
       })));
     }
+    if (req.method === 'GET' && url.pathname === '/api/plugins' && plugins) return send(res, { rows: plugins, notices: [] });
     const m = req.method === 'GET' && url.pathname.match(/^\/api\/projects\/([^/]+)\/worktrees$/);
     if (m) {
       const name = decodeURIComponent(m[1]);

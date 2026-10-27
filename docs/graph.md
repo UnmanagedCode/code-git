@@ -53,6 +53,7 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 |---|---|
 | Commit | Show details, View changes, Compare with working directory, Copy SHA, Copy message (the full message; the subject when it cannot be read); on the HEAD commit also C4's **Edit HEAD message…** (order 300: the Changes panel with Amend ticked and HEAD's message loaded) |
 | Multi-selection | View combined diff (when the selection has one), Copy N SHAs (newline-separated) |
+| Commit / multi-selection, inside cc with code-review enabled | **Review in code-review** (a commit), **Review range in code-review** (a first-parent chain ending at HEAD); hidden on a submodule tab and standalone ([protocol → Links to code-review](protocol.md#links-to-code-review)) |
 | Branch / tag | Jump to commit, Copy name, Hide / Show (not offered for the checked-out branch), Solo / Unsolo; branches also Pin to left / Unpin |
 | Remote | Hide remote / Show remote, Solo remote / Unsolo remote, Show all (while something on that remote is hidden) |
 | Stash | C8's **Apply**, **Apply with staged changes**, **Pop**, **Create branch…**, **Rename…**, **Drop…** (order 400–405: [stash](stash.md)); Show details (not while the Stashes section is hidden: there is no stash row to select), View changes, Copy message, Hide stashes |
