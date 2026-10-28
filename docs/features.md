@@ -85,7 +85,7 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 
 ## Commit graph
 
-The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize by drag or ←/→, Home/End on the focused handle); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree, with line counts; the list that drives the commit's diff while it is open: [File lists](#file-lists)), the commit information in a header resizable by drag or keyboard (persisted; fixed in the narrow dialog). Full behaviour: [graph](graph.md).
+The active checkout's history: a lane graph with ref labels, a WIP row per dirty checkout and stash rows; columns (Author, Date, SHA, Changes optional; reorder, resize by drag or ←/→, Home/End on the focused handle); search by message/author/SHA or by path, through git; keyboard navigation and multi-select; hover highlight; context menus; branch-onto-branch drag. The refs panel hides, solos and pins refs (per project, persisted); the details panel shows the selected commit's message, people, signature, parents and files (path or tree, with line counts; the list that drives the commit's diff while it is open: [File lists](#file-lists)) — for two selected commits, the files of their diff, at once — the commit information in a header resizable by drag or keyboard (persisted; fixed in the narrow dialog). Full behaviour: [graph](graph.md).
 
 Age dividers: a hairline and a pill (`1 hour ago` … `N years ago`) mark where the rows below turn older ([docs/graph.md → Age markers](graph.md)).
 
@@ -226,9 +226,9 @@ The diff has no file list of its own: the list beside it in the right slot drive
 
 | Diff | Its list |
 |---|---|
-| The commit or stash selected in the graph (a stash's All changes / Staged / Untracked view included; a merge vs any parent) | The commit details' files, bound to the diff (they list the diff's files: a stash's Staged view lists the index commit's) |
+| The commit or stash selected in the graph (a stash's All changes / Staged / Untracked view included; a merge vs any parent); the two commits selected in the graph | The commit details' files, bound to the diff (they list the diff's files: a stash's Staged view lists the index commit's) |
 | Unstaged / staged changes | The Changes panel's Unstaged / Staged section (shown even with a commit selected) |
-| Anything else: Compare panel commit, commit vs working directory, two refs; a combined multi-commit diff; a reflog entry's or another commit's diff not selected in the graph | **Changed files** panel in the right slot: "N files", the Path / Tree toggle, the list |
+| Anything else: Compare panel commit, commit vs working directory, two refs; a combined diff of any other selection; a reflog entry's or another commit's diff not selected in the graph | **Changed files** panel in the right slot: "N files", the Path / Tree toggle, the list |
 | Any, below `lg` | **Files (n)** in the diff header (above) |
 
 | Part | Behaviour |
@@ -237,9 +237,9 @@ The diff has no file list of its own: the list beside it in the right slot drive
 | Line counts | `+added −deleted`; **binary** for a binary file; **submodule** for a gitlink; none for an untracked or conflicted file. Commit details with no diff open: `graph.commit`'s counts; an open diff: `diff.files`'; Changes: each section's own list |
 | Path / Tree | One choice for every list, persisted as `code-git:graph:fileView`. Tree: directories first, then files, each by name; at most `MAX_TREE_DEPTH` (`features/diff/fileTree.ts`) directory levels |
 | Bound to the open diff | The viewed file is highlighted (`aria-current`). Click, ↑/↓ or Enter views a file (no list refetch; in Changes, a file the diff's list does not have yet — it appeared on a reload of the panel — refetches the list and is shown); Ctrl/⌘-click toggles it in the selection; Shift-click extends the selection over the displayed order |
-| Not bound | Click or Enter opens the diff at that file (details: the commit's diff; Changes: the section's diff, a conflicted file the merge tool); the list then becomes bound |
+| Not bound | Click or Enter opens the diff at that file (details: the commit's diff, or the two selected commits' diff; Changes: the section's diff, a conflicted file the merge tool); the list then becomes bound |
 | Keys | ↑/↓ (`files.move`): previous / next file row (directory rows are skipped; bound: views it). Enter (`files.open`): opens / views the focused file |
-| Row menu (⋮ or right-click) | Bound to a diff (details, Changed files panel, Files dialog), on the selection when the row is in it, else on the row: **Apply file from stash** (one file of a stash's All changes or Untracked view), **File history**, **Blame**, **Copy path**, **Create patch from selection (download)**, **Copy patch of selection**, **Restore file to this version…**. Details with no diff open: the commit file menu (**Apply this file** on a stash, **File history**, **Blame**, **Copy path**). Changes: its row menu (below) |
+| Row menu (⋮ or right-click) | Bound to a diff (details, Changed files panel, Files dialog), on the selection when the row is in it, else on the row: **Apply file from stash** (one file of a stash's All changes or Untracked view), **File history**, **Blame**, **Copy path**, **Create patch from selection (download)**, **Copy patch of selection**, **Restore file to this version…**. Details with no diff open: the commit file menu (**Apply this file** on a stash, **File history**, **Blame**, **Copy path**); two commits: the diff's. Changes: its row menu (below) |
 | Large lists | The first `FILE_RENDER_CAP` (`lib/clip.ts`) rows, then **Show all N**; a viewed file past the cap shows them all |
 
 **Viewer toolbar** (the choices persist in `localStorage` key `code-git:diff-prefs`):

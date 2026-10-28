@@ -1,4 +1,4 @@
-import type { DiffSource } from '@/features/diff/api';
+import type { DiffFilesResult, DiffSource } from '@/features/diff/api';
 import { openDiff } from '@/features/diff/openDiff';
 import { openWip } from '@/features/workdir/entry';
 import type { Target } from '@/lib/endpoints';
@@ -26,8 +26,8 @@ export function selectionDiff(tab: Tab, items: SelectedRow[]): { target: Target;
   return { target: tab, source: { kind: 'commits', oids, wip: wips.length === 1 } };
 }
 
-/** Opens a diff, in the checkout's own tab when it is another checkout's. */
-export function openIn(tab: Tab, target: Target, source: DiffSource, opts: { path?: string } = {}): void {
+/** Opens a diff, in the checkout's own tab when it is another checkout's; `preloaded` as openDiff's. */
+export function openIn(tab: Tab, target: Target, source: DiffSource, opts: { path?: string; preloaded?: DiffFilesResult } = {}): void {
   if (tabKey(target) !== tabKey(tab)) dispatchTabs({ type: 'open', tab: target });
   openDiff(target, source, opts);
 }

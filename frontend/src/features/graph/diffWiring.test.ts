@@ -4,6 +4,7 @@ import { fileIntentStore, requestFileOpen } from '@/state/graphSelection';
 import { shownPanelStore } from '@/state/shownPanel';
 import { tabsStore } from '@/state/tabs';
 import { oid } from '@/test/graphData';
+import { dfile, filesResult } from '@/test/diffFixtures';
 import { linearWorld, stubGraph } from '@/test/graphBackend';
 import { openIn, selectionDiff } from './diffWiring';
 
@@ -44,4 +45,12 @@ test("another checkout's diff opens in that checkout's tab", () => {
   expect(tabsStore.get().open).toEqual([WT]);
   expect(diffStore.get().get('app\0wt')!.source).toEqual({ kind: 'unstaged' });
   expect(diffStore.get().has('app\0')).toBe(false);
+});
+
+test('openIn passes a preloaded list through to the diff', () => {
+  const fetch = stubGraph(linearWorld(2));
+  const preloaded = filesResult([dfile({ path: 'x.ts' }), dfile({ path: 'y.ts' })]);
+  openIn(TAB, TAB, { kind: 'commits', oids: [oid(2), oid(1)] }, { path: 'y.ts', preloaded });
+  expect(diffStore.get().get('app\0')).toMatchObject({ source: { kind: 'commits', oids: [oid(2), oid(1)] }, viewed: 'y.ts', list: { loading: false, result: preloaded } });
+  expect(fetch.count('POST api/ops/diff.files')).toBe(0);
 });
