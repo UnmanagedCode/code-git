@@ -8,7 +8,7 @@ import { dfile, filesResult } from '@/test/diffFixtures';
 import { dispatchSelection, fileIntentStore } from '@/state/graphSelection';
 import { openGraph } from '@/state/graph';
 import { loadSummary } from '@/state/useRepoSummary';
-import { diffStore } from '@/state/diff';
+import { diffStore, setPrefs } from '@/state/diff';
 import { openDiff } from '@/features/diff/openDiff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { jumpStore } from '../jump';
@@ -247,13 +247,28 @@ test("a stash's Staged view binds the stash's details to the index commit's file
   expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull();
 });
 
-test('a commit offers no View changes (its files open the diff); a multi-selection offers the combined diff', async () => {
-  await show({ files });
+test('a commit offers no View changes (its files open the diff); three commits, or a commit with WIP, keep the multi view and its View combined diff button', async () => {
+  const C = oid(3);
+  const world = linearWorld(3);
+  world.detail = () => detailOf(commit(A, [P]), { files });
+  world.summaries[''] = summary({ head: { oid: C, branch: 'main', unborn: false }, counts: { staged: 0, unstaged: 1, untracked: 0, conflicted: 0 } });
+  const fetch = stubGraph(world);
+  await loadSummary(TAB);
+  await openGraph(TAB);
+  const rows: GraphRow[] = [{ kind: 'wip', id: 'wip:', checkout: checkout(null) }, ...rowsOf(C, A, P)];
+  dispatchSelection(TAB, { type: 'click', id: A, rows });
+  render(<CommitDetails tab={TAB} />);
   await screen.findByText('4 files');
   expect(screen.queryByRole('button', { name: 'View changes' })).toBeNull();
-  act(() => dispatchSelection(TAB, { type: 'toggle', id: P, rows: rowsOf(A, P) }));
+  act(() => dispatchSelection(TAB, { type: 'toggle', id: 'wip:', rows }));
+  expect(screen.getByText('2 selected')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'View combined diff' })).toBeTruthy();
+  act(() => { dispatchSelection(TAB, { type: 'toggle', id: 'wip:', rows }); dispatchSelection(TAB, { type: 'toggle', id: C, rows }); dispatchSelection(TAB, { type: 'toggle', id: P, rows }); });
+  expect(screen.getByText('3 selected')).toBeTruthy();
+  // Neither selection is a two-commit pair: nothing is listed until asked.
+  expect(paramsOf(fetch, 'POST api/ops/diff.files')).toHaveLength(0);
   fireEvent.click(screen.getByRole('button', { name: 'View combined diff' }));
-  expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commits', oids: [A, P], wip: false });
+  expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'commits', oids: [C, A, P], wip: false });
 });
 
 const LONG_BODY = Array.from({ length: 200 }, (_, i) => `Body line ${i + 1}`).join('\n');
@@ -461,7 +476,7 @@ test('a merge says its changes are against the first parent; a failed load shows
 test('a failed load shows its error; a multi-selection lists the commits', async () => {
   await show(json({ error: 'bad object', code: 'GIT_FAILED' }, 422));
   expect((await screen.findByRole('alert')).textContent).toBe('bad object');
-  act(() => dispatchSelection(TAB, { type: 'toggle', id: P, rows: rowsOf(A, P) }));
+  act(() => dispatchSelection(TAB, { type: 'toggle', id: 'wip:', rows: [{ kind: 'wip', id: 'wip:', checkout: checkout(null) }, ...rowsOf(A, P)] }));
   expect(screen.getByText('2 selected')).toBeTruthy();
 });
 
@@ -534,4 +549,147 @@ test('in the right slot the details give way to the Changes panel for no selecti
   unmount();
   render(<CommitDetails tab={TAB} inDialog />);
   expect(screen.getByRole('complementary', { name: 'Commit details' }).textContent).toContain('Select a commit');
+});
+
+// Two commits selected: the details list the pair's diff (diff.files of the commits source) at once. Oids whose
+// 7-character forms differ, so the endpoints and the Jump buttons tell them apart.
+const X = 'abcdef1'.padEnd(40, '1');
+const Y = '7654321'.padEnd(40, '2');
+const Z = '1234567'.padEnd(40, '3');
+const pairFiles = [dfile({ path: 'src/new.ts', status: 'A' }), dfile({ path: 'gone.txt', status: 'D' }), dfile({ path: 'src/lib/a.ts' })];
+const pairResult = (direct = true, oids = [X, Y], fs = pairFiles) => filesResult(fs, { commit: null, series: { oids, direct, wip: false, merges: false } });
+const pathsOf = (list: HTMLElement) => within(list).getAllByRole('option').map((o) => o.getAttribute('data-path'));
+
+/** A graph of Z ← Y ← X (X the tip) with `select` picked in it and the details rendered; diff.files answers `files`. */
+async function showPair(files: unknown = { ok: true, result: pairResult() }, select = [X, Y]) {
+  const world = linearWorld(2);
+  world.commits = [commit(X, [Y], { subject: 'Newer change' }), commit(Y, [Z], { subject: 'Older change' }), commit(Z, [], { subject: 'Root' })];
+  world.refs = { ...world.refs, head: { ...world.refs.head, oid: X }, refs: world.refs.refs.map((r) => ({ ...r, oid: X })) };
+  const fetch = stubGraph(world, { 'POST api/ops/diff.files': files });
+  await openGraph(TAB);
+  const rows = rowsOf(X, Y, Z);
+  dispatchSelection(TAB, { type: 'click', id: select[0], rows });
+  for (const id of select.slice(1)) dispatchSelection(TAB, { type: 'toggle', id, rows });
+  render(<CommitDetails tab={TAB} />);
+  return fetch;
+}
+
+test("two selected commits list their diff's files at once, with no View combined diff step; the row menu is the diff's", async () => {
+  const fetch = await showPair();
+  const list = await screen.findByRole('listbox', { name: 'Changed files' });
+  expect(pathsOf(list).sort()).toEqual(['gone.txt', 'src/lib/a.ts', 'src/new.ts']);
+  expect(screen.getByText('3 files')).toBeTruthy();
+  expect(paramsOf(fetch, 'POST api/ops/diff.files')).toEqual([{ source: { kind: 'commits', oids: [X, Y] }, whitespace: 'none' }]);
+  expect(fetch.count('POST api/ops/graph.commit')).toBe(0);
+  expect(screen.queryByRole('button', { name: 'View combined diff' })).toBeNull();
+  expect(screen.queryByText('2 selected')).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: 'Actions for gone.txt' }));
+  expect(await screen.findByRole('menuitem', { name: 'Copy patch of selection' })).toBeTruthy();
+});
+
+test("the two-commit list follows the Path / Tree choice like a commit's", async () => {
+  await showPair();
+  const list = await screen.findByRole('listbox', { name: 'Changed files' });
+  expect(within(list).queryByRole('group')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
+  expect(localStorage.getItem('code-git:graph:fileView')).toBe('tree');
+  const src = within(screen.getByRole('listbox', { name: 'Changed files' })).getByRole('group', { name: 'src' });
+  expect(within(src).getByRole('group', { name: 'src/lib' }).contains(fileRow('src/lib/a.ts'))).toBe(true);
+  expect(src.contains(fileRow('gone.txt'))).toBe(false);
+});
+
+test("a file of the two-commit list opens the pair's diff at that file and the list becomes the diff's", async () => {
+  const fetch = await showPair();
+  await screen.findByText('3 files');
+  expect(fileRow('src/lib/a.ts').getAttribute('aria-current')).toBeNull();
+  fireEvent.click(fileRow('src/lib/a.ts'));
+  expect(shownPanelStore.get().get('app\0')).toBe('diff');
+  expect(diffStore.get().get('app\0')).toMatchObject({ source: { kind: 'commits', oids: [X, Y] }, viewed: 'src/lib/a.ts' });
+  // The pane's answer is the diff's list: no second diff.files.
+  expect(diffStore.get().get('app\0')?.list.result).toEqual(pairResult());
+  await waitFor(() => expect(fileRow('src/lib/a.ts').getAttribute('aria-current')).toBe('true'));
+  expect(screen.getAllByRole('listbox', { name: 'Changed files' })).toHaveLength(1);
+  expect(screen.getByText('3 files')).toBeTruthy();
+  // Bound: a row views its file in the same diff, Ctrl-click multi-selects, ↓ follows.
+  fireEvent.click(fileRow('gone.txt'));
+  expect(diffStore.get().get('app\0')).toMatchObject({ viewed: 'gone.txt', selected: ['gone.txt'] });
+  fireEvent.click(fileRow('src/new.ts'), { ctrlKey: true });
+  expect(diffStore.get().get('app\0')?.selected).toEqual(['gone.txt', 'src/new.ts']);
+  fireEvent.keyDown(fileRow('gone.txt'), { key: 'ArrowDown' });
+  expect(diffStore.get().get('app\0')?.viewed).toBe('src/lib/a.ts');
+  expect(paramsOf(fetch, 'POST api/ops/diff.files')).toHaveLength(1);
+});
+
+test("with Ignore whitespace on, the two-commit pane's answer is not reused: the opened diff lists its own files", async () => {
+  setPrefs({ ignoreWhitespace: true });
+  const fetch = await showPair();
+  await screen.findByText('3 files');
+  fireEvent.click(fileRow('gone.txt'));
+  expect(diffStore.get().get('app\0')).toMatchObject({ source: { kind: 'commits', oids: [X, Y] }, viewed: 'gone.txt' });
+  await waitFor(() => expect(paramsOf(fetch, 'POST api/ops/diff.files')).toEqual([
+    { source: { kind: 'commits', oids: [X, Y] }, whitespace: 'none' },
+    { source: { kind: 'commits', oids: [X, Y] }, whitespace: 'all' },
+  ]));
+});
+
+test.each([
+  [true, `${Y.slice(0, 7)} → ${X.slice(0, 7)}`],
+  [false, `2 commits ${Y.slice(0, 7)}…${X.slice(0, 7)}`],
+])('the two-commit header names the resolved endpoints as the diff does (direct: %s); each commit jumps', async (direct, label) => {
+  await showPair({ ok: true, result: pairResult(direct) });
+  const header = screen.getByRole('region', { name: 'Selected commits' });
+  expect(within(header).getByRole('heading', { name: '2 commits' })).toBeTruthy();
+  expect(await within(header).findByText(label)).toBeTruthy();
+  expect(within(header).getByText('Newer change')).toBeTruthy();
+  expect(within(header).getByText('Older change')).toBeTruthy();
+  fireEvent.click(within(header).getByRole('button', { name: `Jump to commit ${Y.slice(0, 7)}` }));
+  expect(jumpStore.get()).toMatchObject({ oid: Y, rowId: Y });
+  fireEvent.click(within(header).getByRole('button', { name: `Jump to commit ${X.slice(0, 7)}` }));
+  expect(jumpStore.get()).toMatchObject({ oid: X, rowId: X });
+});
+
+test.each([
+  [{ error: 'too big', code: 'OUTPUT_TOO_LARGE' }, 'Too many changes to list.'],
+  [{ error: 'bad object', code: 'GIT_FAILED' }, 'The changed files could not be listed: bad object'],
+])('the two-commit pane shows Loading, then the error as an alert (%o)', async (body, text) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  await showPair(async () => { await held; return json(body, 422); });
+  expect(screen.getByText('Loading…')).toBeTruthy();
+  expect(screen.queryByRole('listbox', { name: 'Changed files' })).toBeNull();
+  await act(async () => { release(); await held; });
+  expect((await screen.findByRole('alert')).textContent).toBe(text);
+  expect(screen.queryByText('Loading…')).toBeNull();
+  expect(screen.queryByRole('listbox', { name: 'Changed files' })).toBeNull();
+});
+
+test('a two-commit diff with no changes shows 0 files and an empty list', async () => {
+  await showPair({ ok: true, result: pairResult(true, [X, Y], []) });
+  const list = await screen.findByRole('listbox', { name: 'Changed files' });
+  expect(within(list).queryAllByRole('option')).toHaveLength(0);
+  expect(screen.getByText('0 files')).toBeTruthy();
+});
+
+test('changing the pair aborts the old list request and lists the new pair', async () => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => { release = r; });
+  const signals: AbortSignal[] = [];
+  const fetch = await showPair(async (_u: URL, init?: RequestInit) => {
+    signals.push(init!.signal!);
+    const { oids } = (JSON.parse(String(init!.body)) as { params: { source: { oids: string[] } } }).params.source;
+    if (oids[0] === X) { await held; return { ok: true, result: pairResult(true, oids) }; }
+    return { ok: true, result: pairResult(true, oids, [dfile({ path: 'root.txt', status: 'A' })]) };
+  });
+  expect(screen.getByText('Loading…')).toBeTruthy();
+  const rows = rowsOf(X, Y, Z);
+  act(() => { dispatchSelection(TAB, { type: 'click', id: Y, rows }); dispatchSelection(TAB, { type: 'toggle', id: Z, rows }); });
+  expect(signals[0].aborted).toBe(true);
+  expect(pathsOf(await screen.findByRole('listbox', { name: 'Changed files' }))).toEqual(['root.txt']);
+  await act(async () => { release(); await held; });
+  expect(pathsOf(screen.getByRole('listbox', { name: 'Changed files' }))).toEqual(['root.txt']);
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(paramsOf(fetch, 'POST api/ops/diff.files')).toEqual([
+    { source: { kind: 'commits', oids: [X, Y] }, whitespace: 'none' },
+    { source: { kind: 'commits', oids: [Y, Z] }, whitespace: 'none' },
+  ]);
 });

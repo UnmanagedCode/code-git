@@ -396,7 +396,27 @@ try {
     check(await page.locator('[role=option][aria-selected=true]').count() === 3, 'Shift-click selects the range D…F');
     await row(o.M1).click({ modifiers: ['Control'] });
     check(await page.locator('[role=option][aria-selected=true]').count() === 2, 'Ctrl-click toggles one row off');
-    await details.getByText('2 selected').waitFor();
+    // Two commits (D and F): the details list their diff's files at once, the ends named as the diff names them.
+    const pair = details.getByRole('region', { name: 'Selected commits', exact: true });
+    await pair.getByRole('heading', { name: '2 commits', exact: true }).waitFor();
+    const ends = pair.getByText(`${o.F.slice(0, 7)} → ${o.D.slice(0, 7)}`, { exact: true });
+    await ends.waitFor();
+    check(await details.getByRole('button', { name: 'View combined diff', exact: true }).count() === 0, 'two commits need no View combined diff step');
+    await details.getByRole('button', { name: 'Tree', exact: true }).click();
+    const pairGuide = files.locator('[data-path="docs/guide.md"]');
+    await pairGuide.waitFor();
+    check(await files.getByRole('group', { name: 'docs', exact: true }).count() === 1 && await files.getByRole('group', { name: 'src', exact: true }).count() === 1, 'the two-commit tree nests docs/guide.md and src/a.js under their directories');
+    check(await files.locator('[role=option]').count() === 2, 'the two-commit list holds F → D’s two files');
+    await shot('two-commits-light-desktop');
+    // A file opens the pair's diff at it; the details' list then drives that diff.
+    await pairGuide.click();
+    await details.locator('[data-path="docs/guide.md"][aria-current="true"]').waitFor();
+    check(await diff.getByRole('listbox').count() === 0, 'two commits: the details drive the diff');
+    check(await diff.getByLabel('Diff source').textContent() === await ends.textContent(), 'the diff’s source label is the pane’s ends line');
+    await diff.locator('[data-diff-body]').click();
+    await page.keyboard.press('Escape');
+    await row(o.D).waitFor();
+    check(await diff.count() === 0, 'Esc closes the two-commit diff');
 
     // ---- menus ----
     await row(o.A).click({ button: 'right' });

@@ -29,3 +29,13 @@ export function diffOwnerCommit(state: DiffTabState, stashes: readonly Stash[]):
   const oid = state.list.result?.commit?.oid ?? state.source.rev;
   return stashViewOf(stashes, oid)?.stash.oid ?? oid;
 }
+
+/** The two commits a two-commit diff (no working directory) belongs to, as given; null for any other source. */
+export function diffOwnerPair(state: DiffTabState): string[] | null {
+  const s = state.source;
+  return s.kind === 'commits' && s.oids.length === 2 && !s.wip ? s.oids : null;
+}
+
+/** Whether `pair` is the same two commits as `oids`, in any order. */
+export const samePair = (pair: readonly string[] | null, oids: readonly string[]): boolean =>
+  !!pair && oids.length === 2 && pair.includes(oids[0]) && pair.includes(oids[1]);

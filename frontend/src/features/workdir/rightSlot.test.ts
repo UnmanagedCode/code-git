@@ -3,7 +3,7 @@ import type { DiffSource } from '@/features/diff/api';
 import type { DiffTabState } from '@/state/diff';
 import type { SelectedRow } from '@/state/graphSelection';
 import { oid } from '@/test/graphData';
-import { diffOwnerCommit } from '@/features/diff/binding';
+import { diffOwnerCommit, diffOwnerPair } from '@/features/diff/binding';
 import { rightSlotFor } from './rightSlot';
 
 const A = oid(1);
@@ -66,6 +66,27 @@ test('compare, worktree, commits and pair diffs show the Changed files panel', (
     expect(rightSlotFor([commitRow(A)], diff(source), [])).toBe('diff-files');
     expect(rightSlotFor([], diff(source), [])).toBe('diff-files');
   }
+});
+
+test('a two-commit diff of the selected pair binds the details (any order); a WIP or other pair shows the Changed files panel', () => {
+  const C = oid(3);
+  expect(rightSlotFor([commitRow(A), commitRow(B)], diff({ kind: 'commits', oids: [A, B] }), [])).toBe('details');
+  expect(rightSlotFor([commitRow(A), commitRow(B)], diff({ kind: 'commits', oids: [B, A], wip: false }), [])).toBe('details');
+  expect(rightSlotFor([commitRow(A), commitRow(B)], diff({ kind: 'commits', oids: [A, B], wip: true }), [])).toBe('diff-files');
+  expect(rightSlotFor([commitRow(A), commitRow(C)], diff({ kind: 'commits', oids: [A, B] }), [])).toBe('diff-files');
+  expect(rightSlotFor([commitRow(A), commitRow(B), commitRow(C)], diff({ kind: 'commits', oids: [A, B, C] }), [])).toBe('diff-files');
+  expect(rightSlotFor([commitRow(A), commitRow(B), commitRow(C)], diff({ kind: 'commits', oids: [A, B] }), [])).toBe('diff-files');
+  expect(rightSlotFor([commitRow(A), WIP], diff({ kind: 'commits', oids: [A], wip: true }), [])).toBe('diff-files');
+  expect(rightSlotFor([stashRow(W), commitRow(A)], diff({ kind: 'commits', oids: [W, A] }), STASHES)).toBe('diff-files');
+  expect(rightSlotFor([commitRow(A)], diff({ kind: 'commits', oids: [A, B] }), [])).toBe('diff-files');
+});
+
+test('diffOwnerPair: the oids of a two-commit diff without WIP; null for anything else', () => {
+  expect(diffOwnerPair(diff({ kind: 'commits', oids: [A, B] }))).toEqual([A, B]);
+  expect(diffOwnerPair(diff({ kind: 'commits', oids: [A, B], wip: true }))).toBeNull();
+  expect(diffOwnerPair(diff({ kind: 'commits', oids: [A, B, oid(3)] }))).toBeNull();
+  expect(diffOwnerPair(diff({ kind: 'commits', oids: [A] }))).toBeNull();
+  expect(diffOwnerPair(diff({ kind: 'commit', rev: A }))).toBeNull();
 });
 
 test('diffOwnerCommit: the resolved commit, else the given rev, mapped to its stash; null for a non-commit source', () => {

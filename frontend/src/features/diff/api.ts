@@ -77,8 +77,8 @@ export interface FileDiff {
 
 export interface PatchResult { filename: string; base64: string; bytes: number }
 
-export const listDiffFiles = (t: Target, source: DiffSource, whitespace: Whitespace) =>
-  runOp<DiffFilesResult>('diff.files', t, { source, whitespace });
+export const listDiffFiles = (t: Target, source: DiffSource, whitespace: Whitespace, opts?: { signal?: AbortSignal }) =>
+  runOp<DiffFilesResult>('diff.files', t, { source, whitespace }, opts);
 
 export interface FileRequest { path: string; oldPath?: string; untracked?: boolean; context: number | 'full'; whitespace: Whitespace }
 export const loadFileDiff = (t: Target, source: DiffSource, req: FileRequest) => runOp<FileDiff>('diff.file', t, { source, ...req });
