@@ -10,5 +10,9 @@
   "frontend": {
     "path": "/",
     "navLabel": "Code Git"
-  }
+  },
+  "menuItems": [
+    { "label": "Open repository", "scope": "project", "path": "/" },
+    { "label": "Open worktree", "scope": "worktree", "path": "/" }
+  ]
 }

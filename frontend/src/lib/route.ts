@@ -54,3 +54,28 @@ export function consumeLink(): LinkIntent | null {
   if (q.has('commit') || q.has('path')) history.replaceState(null, '', routeSearch(readRoute()) || location.pathname);
   return link;
 }
+
+// code-conductor's row ⋮ items (manifest `menuItems`) add `ccProject` and, for a worktree row, `ccWorktree`; cc owns the
+// names (cc docs/plugins.md → `menuItems`). They are one-shot like the link keys, and untrusted: features/links/menu.ts
+// checks them against cc's listing before anything is built from them.
+
+const MENU_KEYS = { project: 'ccProject', worktree: 'ccWorktree' };
+
+export interface MenuTarget { project: string | null; worktree: string | null }
+
+/** The cc row target in `search`: null when neither key is there; an empty value counts as absent. */
+export function readMenuTarget(search = location.search): MenuTarget | null {
+  const q = new URLSearchParams(search);
+  if (!q.has(MENU_KEYS.project) && !q.has(MENU_KEYS.worktree)) return null;
+  return { project: q.get(MENU_KEYS.project) || null, worktree: q.get(MENU_KEYS.worktree) || null };
+}
+
+/**
+ * Reads the URL's cc row target and, when there is one, replaces the whole URL with `active`'s route before anything
+ * validates it, so a reload or Back never repeats the click. Any other key beside cc's goes with it.
+ */
+export function consumeMenuTarget(active: Target | null): MenuTarget | null {
+  const t = readMenuTarget();
+  if (t) history.replaceState(null, '', routeSearch(active) || location.pathname);
+  return t;
+}

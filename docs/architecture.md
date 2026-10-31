@@ -72,15 +72,16 @@
 
 | Path | Responsibility |
 |---|---|
-| `main.tsx`, `App.tsx` | Mount; restore tabs (storage, then the URL's tab), mirror the active tab into the URL, follow `popstate` |
+| `main.tsx`, `App.tsx` | Mount; restore tabs (storage, then the URL's tab), mirror the active tab into the URL, follow `popstate`, open a cc row ⋮ target |
 | `lib/api.ts` | `api()`: relative URLs only, JSON body + content type on non-GET, `ApiError` |
 | `lib/endpoints.ts` | Typed calls and the API's TypeScript shapes |
-| `lib/route.ts` | Query-string route read/write |
+| `lib/route.ts` | Query-string route read/write; the one-shot link keys (`consumeLink`) and cc menu keys (`consumeMenuTarget`) |
 | `lib/sse.ts` | One shared `EventSource` on `api/activity/events`; handlers are payload-free signals (an `activity` or `run` event, a (re)connect); `setEventSourceFactory` is the test seam |
 | `lib/storage.ts` | The only `localStorage` user; keys prefixed `code-git:` |
 | `state/store.ts` | `createStore` + `useStore` (`useSyncExternalStore`) |
 | `state/tabs.ts` | `tabsReducer` (pure), `tabsStore`, `tabKey`, `parentTab`, `refsKey`, `prefsKey`, `isSubChain`, persistence |
 | `state/useRepos.ts`, `useActivity.ts`, `useRepoSummary.ts` | One store per feature; per-checkout state is a map keyed by `tabKey`. `activityStore` holds `{entries, runs}` |
+| `features/links/` | Cross-plugin links: `inbound.ts` (`followLink`: a code-review link), `menu.ts` (`openMenuTarget`: a cc row ⋮ target, checked against fresh listings), `actions.ts` / `codeReview.ts` (links to code-review) |
 | `state/settledWrites.ts` | When a watcher may read after a write ([Write op runs](#write-op-runs)): `onSettledWrite(project, match, fn)`, `writeRunning(project)` over `activityStore`'s runs |
 | `state/shownPanel.ts` | Which on-demand panel each tab shows (`showPanel`, `hidePanel`, `useShownPanel`); `pruneClosedTabs` drops a closed tab's keys from a tab-keyed store |
 | `state/diff.ts` | `diffStore` (per tab: source, list, selection, viewed path, file diffs by `fileKey`), `prefsStore` (persisted `code-git:diff-prefs`, read through `parsePrefs`), `contextFor` / `whitespaceFor` (prefs → request), the list/file loaders |

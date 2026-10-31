@@ -8,11 +8,13 @@ export interface ReposState { repos: Repo[] | null; error: string | null; loadin
 const INITIAL: ReposState = { repos: null, error: null, loading: false };
 export const reposStore = createStore<ReposState>(INITIAL);
 export const resetRepos = (): void => reposStore.set(INITIAL);
+/** Takes a fresh listing as the page's copy (header badge, picker). */
+export const commitRepos = (repos: Repo[]): void => reposStore.set({ repos, error: null, loading: false });
 
 export async function loadRepos(): Promise<void> {
   reposStore.set((s) => ({ ...s, loading: true }));
   try {
-    reposStore.set({ repos: await listRepos(), error: null, loading: false });
+    commitRepos(await listRepos());
   } catch (e) {
     reposStore.set((s) => ({ ...s, error: e instanceof ApiError || e instanceof Error ? e.message : String(e), loading: false }));
   }
