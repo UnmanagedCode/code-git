@@ -694,6 +694,7 @@ The document stays at the plugin root; the active tab is in the query string, ne
 | `…&sub=<path>&sub=<path>…` | A submodule tab: one `sub` per chain entry, in order |
 | `…&commit=<oid>` | A link: open the tab, then select and centre that commit in its graph (with its details), once the graph's first snapshot is loaded. A panel shown in the graph's place (a diff, History, Reflog) is closed. The link is dropped, never applied later, when the tab closes first, its summary is refused (the graph never starts), its graph fails, or a newer link arrives. Not in the loaded pages → the graph's **Load more**; unknown → "Not in the visible graph" |
 | `…&commit=<oid>&path=<repo path>` | A link: open the tab and that file's history from `commit` (the History panel); the graph is not touched |
+| `?ccProject=<name>[&ccWorktree=<name>]` | A cc row ⋮ item ([Menu keys](#menu-keys)): replaced by the active tab's route, then that checkout's tab opens (or activates) once cc's listing confirms it |
 
 **Link keys (`commit`, `path`; `readLink` / `consumeLink` in `frontend/src/lib/route.ts`, applied by `followLink` in `frontend/src/features/links/inbound.ts`):**
 
@@ -702,6 +703,23 @@ The document stays at the plugin root; the active tab is in the query string, ne
 - `path` must pass `assertPath`'s rules (non-empty, ≤ 4096 chars, no NUL or `\`, no leading `/`, no `..` segment); an invalid `path` is dropped and the commit is still selected. The backend re-validates both when the history is read.
 - One-shot: both keys, valid or not, are stripped with `history.replaceState` before the tab opens — never `pushState` — so no history entry keeps them: Back / Forward and a reload never re-apply a link. Embedded, the bridge reports the stripped route and cc rewrites its own current entry; an identical second link from code-review still applies (cc sees a different subpath and steers).
 - Never throws: a malformed value is stripped and ignored.
+
+### Menu keys
+
+cc's sidebar row ⋮ items (`menuItems` in `conductor.plugin.json`; cc `docs/plugins.md` → `menuItems`) open the plugin at `/` with these keys. `readMenuTarget` / `consumeMenuTarget` in `frontend/src/lib/route.ts`; applied by `openMenuTarget` in `frontend/src/features/links/menu.ts`.
+
+| Key | Item (scope) | Value |
+|---|---|---|
+| `ccProject` | **Open repository** (`project`), **Open worktree** (`worktree`) | cc's project name |
+| `ccWorktree` | **Open worktree** (`worktree`) only | cc's `worktreeName`; absent at project scope |
+
+- Read on load and on every `popstate` (cc's `navigate`). A target exists when either key is present; an empty value counts as absent (an empty `ccWorktree` = the main checkout).
+- One-shot: the whole URL is replaced with `history.replaceState` (never `pushState`) by the active tab's route — the bare pathname when no tab is open — before any request. Other keys beside them (`project`, `worktree`, `sub`, `commit`, `path`) are dropped unread. An active submodule tab keeps its `&sub=…` route.
+- Validation, each listing fetched fresh: `GET api/repos`, then (worktree scope) `GET api/repos/:project/worktrees` with the listing's project string. A request is built only from a name a listing vouched for.
+- Refused (one `toast.error`, names as text; tabs, active tab and URL unchanged): `ccProject` absent or empty; no repo with that `project`; the repo has a `disabledReason` (`degraded`, `systemUnreachable`, `gitRefusal`, `isGitRepo: false`; no worktree request then); no row with that `worktreeName`; either listing failing.
+- Opened: `{project: <listing's project>, worktree: <listing's worktreeName> | null}`, never `sub`. An open tab is activated; the tab store's `writeRoute` adds the one history entry (embedded, the bridge makes it a replace). An already-active tab adds none.
+- A successful listing for the latest target is written to `reposStore`.
+- Latest wins: a newer target, or a `popstate` without cc keys (Back / Forward), supersedes a pending one, whose listings then open, toast and store nothing.
 
 ### Links to code-review
 

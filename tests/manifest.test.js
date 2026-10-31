@@ -10,7 +10,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'conductor.plugin.js
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 // The key sets cc's validator accepts (cc's src/plugins/manifest.ts: KNOWN_TOP_KEYS, backend and frontend checks).
-const TOP = ['id', 'name', 'version', 'pluginApi', 'backend', 'frontend', 'mcp', 'conventions', 'roles', 'playbooks', 'claudePlugin'];
+const TOP = ['id', 'name', 'version', 'pluginApi', 'backend', 'frontend', 'mcp', 'conventions', 'roles', 'playbooks', 'claudePlugin', 'menuItems'];
 
 test('the manifest uses only keys cc accepts, and is a UI-only plugin (no MCP tools)', () => {
   for (const k of Object.keys(manifest)) assert.ok(TOP.includes(k), k);
@@ -22,6 +22,16 @@ test('the manifest uses only keys cc accepts, and is a UI-only plugin (no MCP to
   assert.equal(manifest.frontend.path, '/');
   assert.equal(manifest.backend.start, 'npm start');
   assert.equal(pkg.scripts.start, 'node server.js');
+});
+
+// cc's menuItems entry rules (cc docs/plugins.md → `menuItems`); App reads the keys cc adds on the frontend's root route.
+test('menuItems: one project and one worktree item, each {label, scope, path} opening the frontend root', () => {
+  assert.deepEqual(manifest.menuItems.map((i) => i.scope).sort(), ['project', 'worktree']);
+  for (const item of manifest.menuItems) {
+    assert.deepEqual(Object.keys(item).sort(), ['label', 'path', 'scope']);
+    assert.ok(item.label.trim() !== '' && item.label === item.label.trim(), item.label);
+    assert.equal(item.path, manifest.frontend.path);
+  }
 });
 
 test('manifest version equals the package version', () => {

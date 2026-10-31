@@ -24,6 +24,7 @@ A GitKraken-class git manager for the repositories of **code-conductor (cc) proj
 | Git-flow | Initialize (the `gitflow.*` settings), start and finish feature, release and hotfix branches from the toolbar's **Repository actions** menu, a flow branch's menu or the palette; finish merges `--no-ff`, tags a release or hotfix, deletes the branch, and changes nothing when a merge would conflict. Native: no git-flow extension needed. [docs/gitflow.md](docs/gitflow.md) |
 | LFS | The System's git-lfs: tracked patterns of the root `.gitattributes`, track and untrack, the LFS files (on request), pull, prune behind a confirmation. [docs/lfs.md](docs/lfs.md) |
 | code-review links | Inside cc: a link from code-review selects a commit in the graph or opens a file's history; a commit's menu offers **Review in code-review**, a selection that is a first-parent chain ending at HEAD **Review range in code-review**. [docs/protocol.md → Links to code-review](docs/protocol.md#links-to-code-review) |
+| cc row menus | Inside cc: **Open repository** / **Open worktree** in the sidebar's row ⋮ opens that checkout's tab. [docs/features.md → Open from code-conductor](docs/features.md#open-from-code-conductor) |
 | Command palette | Ctrl/⌘+P: every command by name, with a second step to pick a branch, a tab or a file; Ctrl/⌘+/ lists every shortcut |
 | Activity log | Every git command run: status, op, checkout, argv, duration, exit code, stderr (hook output included). Cancel on a running op that allows it. Hooks always run (only a commit can skip them); a failing one blocks with its output ([docs/features.md → Hooks](docs/features.md#hooks)) |
 
@@ -36,7 +37,7 @@ Details: [docs/features.md](docs/features.md).
 - Tests: `node --test` (backend, against a fake cc that runs real git) and Vitest + happy-dom (UI).
 
 ```
-conductor.plugin.json   manifest: backend (npm start, /health) + frontend (/, "Code Git")
+conductor.plugin.json   manifest: backend (npm start, /health) + frontend (/, "Code Git") + row ⋮ menuItems
 server.js               start(): loopback listener, clientError handler
 src/                    backend — app wiring, cc client, git runner/ops, activity log, routes
 frontend/               UI — shell, state, features, copied cc components
@@ -70,7 +71,7 @@ Internals: [docs/architecture.md](docs/architecture.md). API and wire contracts:
 | `npm test` | typecheck, then backend, then UI tests |
 | `npm run test:server` | `node --test "tests/*.test.js"` |
 | `npm run test:ui` | `vitest run --config frontend/vitest.config.ts` |
-| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `sidepane.mjs` / `stash.mjs` / `remotes.mjs` / `operations.mjs` / `merge.mjs` / `rebase.mjs` / `conflicts.mjs` / `submodules.mjs` / `history.mjs` / `palette.mjs` / `flow.mjs` / `lfs.mjs` / `links.mjs` | screenshots / golden path / the diff path / the staging path / the side-pane layout / the stash path / the remotes path / the merge-and-rebase in-progress path / the merge and rebase starts / the interactive editor / the merge tool / the submodule path / file history, blame and the reflog / the palette, the shortcut sheet and undo/redo / the git-flow path / the LFS path / the code-review links on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
+| `node harness/playwright/snap.mjs` / `golden.mjs` / `diff.mjs` / `staging.mjs` / `sidepane.mjs` / `stash.mjs` / `remotes.mjs` / `operations.mjs` / `merge.mjs` / `rebase.mjs` / `conflicts.mjs` / `submodules.mjs` / `history.mjs` / `palette.mjs` / `flow.mjs` / `lfs.mjs` / `links.mjs` / `menu.mjs` | screenshots / golden path / the diff path / the staging path / the side-pane layout / the stash path / the remotes path / the merge-and-rebase in-progress path / the merge and rebase starts / the interactive editor / the merge tool / the submodule path / file history, blame and the reflog / the palette, the shortcut sheet and undo/redo / the git-flow path / the LFS path / the code-review links / the cc row menus on a seeded world ([harness/playwright/README.md](harness/playwright/README.md)) |
 | `node "$CC_PROJECTS_ROOT/.plugins/code-mutant/mutate.mjs" baseline` | mutation trust gates ([harness/mutation/README.md](harness/mutation/README.md)) |
 
 ## Known limitations

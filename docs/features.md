@@ -43,7 +43,19 @@ A failed listing shows the error with **Retry**.
 - **Shortcuts:** Ctrl+1…Ctrl+8 (⌘ on macOS) activate tab 1…8; Ctrl/⌘+9 the last tab. Shift or Alt with them does nothing. Only while focus is inside the plugin frame.
 - **Tab menu** (⋮ button, or right-click the tab): **Close**, **Close others** (only with more than one tab), **Copy name** (`project/worktree` to the clipboard).
 - **Menu icons:** every item of a context menu or ⋮ menu built from the action registry shows an icon in a leading column. The toolbar's hand-built dropdowns (the Changes pane's ⋮, Pull, the diff's patch menu, the graph's column menu, the ref-label overflow) stay text-only.
-- Tabs persist in `localStorage` key `code-git:tabs`. The active tab is mirrored into the URL query (`?project=…&worktree=…`, plus `&sub=…` per submodule of a submodule tab); loading such a URL opens that checkout beside the persisted tabs, and Back/cc navigation (`popstate`) activates the tab the URL names.
+- Tabs persist in `localStorage` key `code-git:tabs`. The active tab is mirrored into the URL query (`?project=…&worktree=…`, plus `&sub=…` per submodule of a submodule tab); loading such a URL opens that checkout beside the persisted tabs, and Back/cc navigation (`popstate`) activates the tab the URL names. A cc row's `ccProject` / `ccWorktree`: [Open from code-conductor](#open-from-code-conductor).
+
+## Open from code-conductor
+
+- cc's sidebar adds **Open repository** to every project row's ⋮ and **Open worktree** to every worktree row's ⋮, grouped under "Code Git" (manifest `menuItems` in `conductor.plugin.json`).
+- It opens that checkout's tab (the main checkout for a project row), or activates it when already open — never a duplicate. From a submodule tab of the same checkout, the checkout's own tab opens (or activates) beside it; the submodule tab stays.
+- An already-open page retargets in place: no reload, no remount.
+- The names are checked against a fresh `api/repos` listing (and, for a worktree row, the project's worktree listing) before anything opens; that listing also refreshes the header's System badge and the picker.
+- A project on a remote System (Docker, SSH) opens like a local one.
+- **Refused** with one error toast, the names shown as text, and nothing else changed (open tabs, active tab, URL): an unknown project or worktree, no project named, a project the picker disables (System unreachable, unreadable record, git refusal, not a git repo; the toast gives the reason), a failed listing (`CONDUCTOR_UNAVAILABLE` standalone included).
+- Reload, Back and Forward never repeat it: the URL holds the active tab's route again before the check runs.
+- Only the latest click counts: an older click still checking opens nothing, and so does one overtaken by Back / Forward.
+- URL contract: [protocol → UI routes](protocol.md#ui-routes).
 
 ## Repo header
 
