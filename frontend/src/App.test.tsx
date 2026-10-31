@@ -149,7 +149,8 @@ const menuWorld = (over: Routes = {}) => stubFetch({
 });
 /**
  * An `api/repos` responder that answers `initial` at once until armed, then holds each request until its gate (in request
- * order) is called. The mount's own listings (App's and the picker's) are all requested during render: arm right after it.
+ * order) is called. The mount's own listings (App's and the picker's) are all requested during render: arm before the
+ * render to gate them too, or right after it to gate only later ones (a navigate's).
  */
 function gatedListings(initial: Repo[]) {
   const gates: Array<(repos: Repo[]) => void> = [];
