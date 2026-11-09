@@ -301,8 +301,9 @@ try {
       await backToGraph();
       await page.locator('[data-ref="refs/heads/side"] button[title="refs/heads/side"]').click({ button: 'right' });
       await page.getByRole('menuitem', { name: 'Compare with HEAD from merge base', exact: true }).click();
-      await diff.getByLabel('Diff source').filter({ hasText: 'HEAD...refs/heads/side' }).waitFor();
-      check((await diff.getByLabel('Diff source').textContent()).includes('merge base'), `${scheme}: the source label names the merge base`);
+      // The merge base joins the label once the list has loaded: wait for both.
+      await diff.getByLabel('Diff source').filter({ hasText: 'HEAD...refs/heads/side' }).filter({ hasText: 'merge base' }).waitFor();
+      check(true, `${scheme}: the source label reads HEAD...refs/heads/side and names the merge base`);
       await option(/side\.txt/).waitFor();
       check(await option(/side2\.txt/).count() === 1 && await option(/tail\.txt/).count() === 0, `${scheme}: HEAD...side lists side.txt and side2.txt, not main's tail.txt`);
       await shot('compare');
