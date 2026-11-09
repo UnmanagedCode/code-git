@@ -153,7 +153,8 @@ for (const scheme of ['light', 'dark']) {
       check(/cherry-pick is in progress/.test(await undoButton.getAttribute('title')), `Undo is disabled with the reason (${await undoButton.getAttribute('title')})`);
       await shot('undo-disabled-desktop');
       await page.setViewportSize(VIEWPORTS.phone);
-      await away();
+      // Not away(): at phone width its fixed point is a graph row, and a click there opens a dialog that takes the focus.
+      await page.evaluate(() => document.activeElement?.blur());
       await page.keyboard.press('ControlOrMeta+p');
       await palette.waitFor();
       await shot('palette-phone');
