@@ -10,11 +10,24 @@ import { diffStore } from '@/state/diff';
 import { openRefDialog } from '@/state/refDialog';
 import { tabKey, type Tab } from '@/state/tabs';
 import type { ReflogItem } from './api';
-import { openBlame, openFileHistory, openReflog } from './open';
-import { CopyIcon, FileDiffIcon, FileUserIcon, GitBranchPlusIcon, HistoryIcon, LogsIcon, RotateCcwIcon } from 'lucide-react';
+import { requestJump } from '@/features/graph/jump';
+import type { BlameCommit, BlameLine } from './api';
+import { closeHistoryPanel, drillBlame, openBlame, openFileHistory, openReflog, showFileView } from './open';
+import { pickCommit } from './state';
+import { CopyIcon, CrosshairIcon, FileDiffIcon, FileUserIcon, GitBranchPlusIcon, HistoryIcon, LogsIcon, RotateCcwIcon } from 'lucide-react';
 
 // The history feature's menu items (order 800: view): File history and Blame on a commit's file, a diff's file and a
 // tracked Changes row; Show reflog on a local branch; and the reflog row's own menu.
+
+export const BLAME_RUN_CONTEXT = 'blame-run';
+/** A blame run: its line, its commit, and the file's name in the frame shown. */
+export interface BlameRunCtx { tab: Tab; line: BlameLine; commit: BlameCommit | undefined; path: string }
+
+/** A blamed commit as the viewer opens it: the file's name there, and its old name when the commit renamed it. */
+export function pickedOf(oid: string, c: BlameCommit | undefined, fallback: string) {
+  const path = c?.filename || fallback;
+  return { oid, path, oldPath: c?.previousPath && c.previousPath !== path ? c.previousPath : null };
+}
 
 export const REFLOG_CONTEXT = 'reflog-entry';
 export interface ReflogEntryCtx { tab: Tab; entry: ReflogItem }
@@ -55,6 +68,19 @@ export const HISTORY_ACTIONS: MenuAction<never>[] = [
     id: 'branch.reflog', icon: LogsIcon, context: CONTEXT.branch, label: 'Show reflog', group: 'view', order: 810,
     when: (c: RefCtx) => c.ref.kind === 'local', run: (c: RefCtx) => openReflog(c.tab, c.ref.name),
   },
+  {
+    id: 'blame.drill', icon: FileUserIcon, context: BLAME_RUN_CONTEXT, label: 'Blame previous revision', order: 100,
+    when: (c: BlameRunCtx) => !!c.commit?.previous, run: (c: BlameRunCtx) => drillBlame(c.tab, c.line),
+  },
+  {
+    id: 'blame.history', icon: HistoryIcon, context: BLAME_RUN_CONTEXT, label: 'Show in History', order: 200,
+    run: (c: BlameRunCtx) => { pickCommit(c.tab, pickedOf(c.line.oid, c.commit, c.path)); showFileView(c.tab, 'history'); },
+  },
+  {
+    id: 'blame.graph', icon: CrosshairIcon, context: BLAME_RUN_CONTEXT, label: 'Show in graph', order: 300,
+    run: (c: BlameRunCtx) => { closeHistoryPanel(c.tab); requestJump(c.tab, c.line.oid); },
+  },
+  { id: 'blame.copy', icon: CopyIcon, context: BLAME_RUN_CONTEXT, label: 'Copy SHA', order: 900, group: 'copy', run: (c: BlameRunCtx) => navigator.clipboard?.writeText(c.line.oid) },
   { id: 'reflog.diff', icon: FileDiffIcon, context: REFLOG_CONTEXT, label: 'View changes', order: 100, run: (c: ReflogEntryCtx) => openDiff(c.tab, { kind: 'commit', rev: c.entry.oid }) },
   { id: 'reflog.branch', icon: GitBranchPlusIcon, context: REFLOG_CONTEXT, label: 'Create branch here…', order: 200, run: (c: ReflogEntryCtx) => openRefDialog({ kind: 'createBranch', tab: c.tab, from: pointOf(c) }) },
   {

@@ -23,7 +23,8 @@ A file's commits across renames, who last changed each line, and where HEAD and 
 | Surface | What |
 |---|---|
 | **File history** panel (`HISTORY_PANEL`, center, on demand) | The file's path and the commit it starts from; **History** / **Blame** toggle; **Show in graph** (closes the panel and jumps to the picked commit). History: a list (short SHA, subject, author, date, "renamed from ‹old›") paged with **Load more**; the picked commit's change to the file in the viewer beside it, through the diff's own views with the shared **Diff / File**, **Hunk / Full**, **Inline / Split** and **Ignore whitespace** toggles |
-| Blame (same panel) | Every line with its line number; at each run's first line the commit's short SHA, author and date, with the author's colour (the graph's lane palette, by first appearance); clicking it picks that commit in History (with its old name when it renamed the file, so the viewer shows the rename's own change). Pages of `BLAME_PAGE` lines load as the list scrolls near its end (or **Load more lines**) |
+| Blame (same panel) | Every line with its line number; at each run's first line the commit's short SHA, author and date, with the author's colour (the graph's lane palette, by first appearance); clicking it **drills**: the file is blamed again at that run's `previous` commit under its `previousPath` (renames followed), so each line shows who wrote it before. A run whose commit added the file (no `previous`) is `aria-disabled`, marked **added**, and does nothing. Each drill is a frame of the stack `blameStack` (`state.ts`); the header's breadcrumb (`nav` "Blame revisions", one crumb per frame, the path shown where it changes) and **Back** return to a frame without a request and scroll to the line clicked there. A ⋮ on each run's header, or a right-click on its lines, opens the run menu (below). Lines are syntax-highlighted with the diff's tokenizer and the shared **Syntax** preference. Pages of `BLAME_PAGE` lines load as the list scrolls near its end (or **Load more lines**) |
+| Blame run menu (⋮ or right-click on a run; context `'blame-run'`, ctx `{tab, line, commit, path}`) | **Blame previous revision** (only with a `previous`), **Show in History** (picks the commit, with its old name when it renamed the file, so the viewer shows the rename's own change), **Show in graph** (closes the panel and jumps to the commit), **Copy SHA** |
 | **Reflog** panel (`REFLOG_PANEL`, center, on demand) | **Reflog of** HEAD or a local branch; each entry's selector, action, short SHA, subject and time; **Load more**; **Reload reflog**. Row menu (⋮ or right-click; context `'reflog-entry'`, ctx `{tab, entry}`): **View changes**, **Create branch here…**, **Reset HEAD to here** › Soft / Mixed / Hard (hard through its confirmation dialog), **Copy SHA** |
 
 | Opened from | Item |
@@ -36,11 +37,16 @@ A file's commits across renames, who last changed each line, and where HEAD and 
 
 - Each panel's **×** (**Close file history**, **Close reflog**) gives the slot back to the graph.
 - Entry points: `openFileHistory(tab, {path, rev})`, `openBlame(tab, {path, rev})`, `openReflog(tab, ref?)` (`open.ts`); state per `tabKey` in `state.ts`.
+- Blame highlighting (`blameHighlight.ts`, `blameSegments`): the tokenizer gets the file's own text, line 1 through the last loaded line, as one string (as the diff tokenizes a side) and runs again when a page arrives, so a page or author-run boundary never splits a comment or string. Each drill frame uses its own path's language. A file whose `total` is over `HIGHLIGHT_MAX_LINES` is plain from its first page.
 - Everything from git (subjects, blame lines, reflog messages, ref and author names) is rendered as React text; no `href` or `style` is built from it.
 
 ## Known limitations
 
 - **History is at most `HISTORY_LIMITS.followMaxCommits` commits deep** (`truncated: true` past it), and each page re-walks from the start.
 - **`--follow` is git's**: one file, renames detected per commit; on merge-heavy history git itself can lose or pick the wrong rename.
+- **The last loaded lines of a highlighted blame can be provisional**: a construct still open at the end of the loaded text (a template string needing its closing backtick) is coloured by what is loaded; the next page corrects it, and the near-end loader usually fetches it first.
+- **A later page can turn the whole blame plain**: a line over `HIGHLIGHT_MAX_LINE_CHARS`, or the loaded text passing `HIGHLIGHT_MAX_SIDE_CHARS`, switches highlighting off for the frame (the diff's per-side rule). A file over `HIGHLIGHT_MAX_LINES` is plain from the start.
+- **A drill lands near the clicked line, not on it**: the line did not exist in the earlier version, so the view scrolls to the clicked line's number in the clicked commit (`origLine`), loading pages serially up to it first.
+- **`previous` is absent** for the commit that added the file, a root commit and a shallow clone's boundary commit: those runs cannot drill.
 - **Blame is of a commit only**, never of the working tree's uncommitted lines.
 - **The reflog is a snapshot until Refresh.**

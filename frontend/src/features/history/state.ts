@@ -16,12 +16,26 @@ export interface FileHistoryState {
   history: Paged<HistoryItem> & { truncated: boolean };
   /** The commit whose change the viewer shows. */
   picked: Picked | null;
+  /** The blame drill: `[0]` is the opened (rev, path); the last frame is the one shown. */
+  blameStack: BlameFrame[];
+}
+export interface BlameFrame {
+  id: number;
+  rev: string;
+  path: string;
   blame: BlameState;
+  /** A line to bring into view once loaded (cleared after scrolling). */
+  focus: number | null;
+  /** The line clicked to drill from this frame (where Back returns to). */
+  anchor: number | null;
 }
 export interface ReflogState { ref: string; page: Paged<ReflogItem> }
 
 const pagedEmpty = <T>(): Paged<T> => ({ items: [], next: 0, loading: false, error: null });
 const blameEmpty = (): BlameState => ({ total: null, lines: [], commits: {}, loading: false, error: null, code: null });
+let frameSeq = 0;
+const newFrame = (rev: string, path: string, focus: number | null = null): BlameFrame => ({ id: ++frameSeq, rev, path, blame: blameEmpty(), focus, anchor: null });
+export const topFrame = (s: FileHistoryState): BlameFrame => s.blameStack[s.blameStack.length - 1];
 
 export const fileHistoryStore = createStore<ReadonlyMap<string, FileHistoryState>>(new Map());
 export const reflogStore = createStore<ReadonlyMap<string, ReflogState>>(new Map());
@@ -55,7 +69,7 @@ const putReflog = (tab: Tab, f: (s: ReflogState) => ReflogState): void => reflog
 /** A fresh history of `path` from `rev`. */
 export function startFileHistory(tab: Tab, path: string, rev: string, view: FileHistoryState['view']): void {
   fileHistoryStore.set((m) => new Map(m).set(tabKey(tab), {
-    path, rev, view, history: { ...pagedEmpty<HistoryItem>(), truncated: false }, picked: null, blame: blameEmpty(),
+    path, rev, view, history: { ...pagedEmpty<HistoryItem>(), truncated: false }, picked: null, blameStack: [newFrame(rev, path)],
   }));
 }
 
@@ -81,23 +95,71 @@ export async function loadMoreHistory(tab: Tab): Promise<void> {
   }
 }
 
-/** Loads the next blame page of the file at `rev` (lines `lines.length + 1…`). */
+const putTop = (tab: Tab, f: (b: BlameFrame) => BlameFrame): void => putFile(tab, (x) => ({ ...x, blameStack: [...x.blameStack.slice(0, -1), f(topFrame(x))] }));
+
+/** Loads the next blame page of the shown frame (lines `lines.length + 1…`); a page lands only in the frame that asked, if it is still in the stack. */
 export async function loadMoreBlame(tab: Tab): Promise<void> {
   const s = fileHistoryOf(tab);
-  if (!s || s.blame.loading || (s.blame.total !== null && s.blame.lines.length >= s.blame.total) || s.blame.error) return;
+  if (!s) return;
+  const top = topFrame(s);
+  const b = top.blame;
+  if (b.loading || (b.total !== null && b.lines.length >= b.total) || b.error) return;
   const at = epoch;
-  const { path, rev } = s;
-  putFile(tab, (x) => ({ ...x, blame: { ...x.blame, loading: true } }));
-  const still = (x: FileHistoryState) => at === epoch && x.path === path && x.rev === rev;
+  const { rev, path, id } = top;
+  putTop(tab, (f) => ({ ...f, blame: { ...f.blame, loading: true } }));
+  // By frame id: a frame a drill buried still gets its page; one a Back removed does not.
+  const put = (f: (b: BlameFrame) => BlameFrame) => putFile(tab, (x) => (at === epoch && x.blameStack.some((b) => b.id === id) ? { ...x, blameStack: x.blameStack.map((b) => (b.id === id ? f(b) : b)) } : x));
   try {
-    const page = await loadBlame(tab, { rev, path, start: s.blame.lines.length + 1 });
-    putFile(tab, (x) => (still(x) ? {
-      ...x, blame: { total: page.total, lines: [...x.blame.lines, ...page.lines], commits: { ...x.blame.commits, ...page.commits }, loading: false, error: null, code: null },
-    } : x));
+    const page = await loadBlame(tab, { rev, path, start: b.lines.length + 1 });
+    put((f) => ({
+      ...f, blame: { total: page.total, lines: [...f.blame.lines, ...page.lines], commits: { ...f.blame.commits, ...page.commits }, loading: false, error: null, code: null },
+    }));
   } catch (e) {
-    putFile(tab, (x) => (still(x) ? { ...x, blame: { ...x.blame, loading: false, error: message(e), code: codeOf(e) } } : x));
+    put((f) => ({ ...f, blame: { ...f.blame, loading: false, error: message(e), code: codeOf(e) } }));
   }
 }
+
+/** Loads pages serially (contiguous from line 1, as highlighting needs) until line `n` is loaded, the file ends, an error, or the frame changes. */
+async function loadBlameThrough(tab: Tab, n: number): Promise<void> {
+  const id = fileHistoryOf(tab) && topFrame(fileHistoryOf(tab)!).id;
+  for (;;) {
+    const s = fileHistoryOf(tab);
+    if (!s || topFrame(s).id !== id) return;
+    const b = topFrame(s).blame;
+    if (b.error || (b.total !== null && b.lines.length >= Math.min(n, b.total))) return;
+    const had = b.lines.length;
+    await loadMoreBlame(tab);
+    const after = fileHistoryOf(tab);
+    if (!after || topFrame(after).id !== id || topFrame(after).blame.lines.length === had) return;
+  }
+}
+
+/** Blames the file as it was before `line`'s commit (under its name there), keeping the shown frame to come back to. */
+export function drillBlame(tab: Tab, line: BlameLine): void {
+  const s = fileHistoryOf(tab);
+  if (!s) return;
+  const top = topFrame(s);
+  const c = top.blame.commits[line.oid];
+  if (!c?.previous) return;
+  const next = newFrame(c.previous, c.previousPath ?? c.filename, line.origLine);
+  putFile(tab, (x) => ({ ...x, blameStack: [...x.blameStack.slice(0, -1), { ...top, anchor: line.n }, next] }));
+  void loadBlameThrough(tab, line.origLine);
+}
+
+/** Back to frame `index`, scrolled to the line that was clicked there. */
+export function blameBack(tab: Tab, index: number): void {
+  putFile(tab, (x) => {
+    if (index < 0 || index >= x.blameStack.length - 1) return x;
+    const stack = x.blameStack.slice(0, index + 1);
+    const top = stack[index];
+    stack[index] = { ...top, focus: top.anchor };
+    return { ...x, blameStack: stack };
+  });
+}
+
+export const clearBlameFocus = (tab: Tab, frameId: number): void => putFile(tab, (x) => ({
+  ...x, blameStack: x.blameStack.map((f) => (f.id === frameId && f.focus !== null ? { ...f, focus: null } : f)),
+}));
 
 export const setFileView = (tab: Tab, view: FileHistoryState['view']): void => putFile(tab, (x) => ({ ...x, view }));
 export const pickCommit = (tab: Tab, picked: Picked): void => putFile(tab, (x) => ({ ...x, picked }));

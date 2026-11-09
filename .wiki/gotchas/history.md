@@ -9,4 +9,7 @@ The read ops in `src/git/ops/history.js` (reference: `docs/history.md`). Each is
 - **blame runs textconv by default** (`diff.<driver>.textconv` from `.gitattributes`): `--no-textconv` always. `diff --numstat` does not run textconv, but takes the flag anyway.
 - **`%gd` is the entry's time under `--date=unix`** (`HEAD@{1700000000}`), its index otherwise: the selector `HEAD@{n}` is computed from `skip + i`.
 - **`log -g` of a ref that does not exist exits 128** ("bad revision"); a branch with no reflog file exits 0 with nothing: both are an empty list.
+- **`previous` is absent** for the commit that added the file, a root commit, or a shallow clone's boundary: those blame runs cannot drill. `-M` / `-C` stay off: they can name another file as `previous`, breaking the one-file-one-step-back drill.
+- **`origLine` is the commit's own numbering**, not the parent's: a drill's focus line (`origLine` of the clicked line) is approximate.
+- **Blame highlighting tokenizes the joined loaded text** (line 1 through the last loaded line), never per run or page: splitting would lose a comment or string that spans a boundary (`blameSegments`).
 - **Blame porcelain C-quotes paths even with `core.quotePath=false`**: a name holding `"`, `\` or a control character comes as `"q\"uote.txt"` in `filename` and in `previous <oid> <path>` (no `-z` exists for blame). `parseBlame` unquotes them (`unquoteC`: the single-letter escapes and octal bytes, decoded as UTF-8); the other history parsers read `-z` output, which is never quoted.

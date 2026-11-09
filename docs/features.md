@@ -84,7 +84,7 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 ## File history, blame and the reflog
 
 - **File history** (a file's menu in the commit details, a diff's file list, a tracked Changes row, or the palette's **File history…**): the commits that changed the file, newest first, following renames ("renamed from ‹old›"). Click one to see its change to the file beside the list (Diff or File view; the toolbar shows the change's `+added −deleted`, or **binary**). **Show in graph** jumps to it.
-- **Blame** (the same menus, the palette's **Blame…**, or the panel's **Blame** toggle): each line with the commit that last changed it; each run of lines starts with the commit's short SHA, author and date in the author's colour. Click it to see that commit in History. Lines load as you scroll. Binary files have no blame.
+- **Blame** (the same menus, the palette's **Blame…**, or the panel's **Blame** toggle): each line with the commit that last changed it; each run of lines starts with the commit's short SHA, author and date in the author's colour. Click it to blame the file as it was before that commit (renames followed); a breadcrumb and **Back** return, and a run from the commit that added the file has no earlier version. A ⋮ or right-click menu on each run offers **Show in History**, **Show in graph** and **Copy SHA**. Lines are syntax-highlighted (the Syntax setting) and load as you scroll. Binary files have no blame.
 - **Reflog** (a local branch's **Show reflog**, the palette's **Reflog**): where HEAD or a branch has been — selector, action, commit, subject, time — with View changes, Create branch here…, Reset HEAD to here (Soft / Mixed / Hard) and Copy SHA on each entry.
 - Reference: [history](history.md).
 

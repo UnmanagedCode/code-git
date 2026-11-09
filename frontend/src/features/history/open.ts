@@ -28,6 +28,9 @@ export function showFileView(tab: Tab, view: 'history' | 'blame'): void {
   if (view === 'blame') void loadMoreBlame(tab);
 }
 
+/** Blame the file as it was before a run's commit (a drill); Back to an earlier frame of the drill. */
+export { blameBack, drillBlame } from './state';
+
 /** Opens the reflog of `ref` (HEAD, or a local branch's full name). */
 export function openReflog(tab: Tab, ref = 'HEAD'): void {
   startReflog(tab, ref);

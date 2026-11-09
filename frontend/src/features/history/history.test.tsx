@@ -152,9 +152,9 @@ const blame: BlamePage = {
   },
 };
 
-// Invariant: blame marks a run's first line (oid, author) only; author classes are by first appearance; a gutter click
-// picks that commit in File history.
-test('blame: runs, deterministic author colours, gutter → history', async () => {
+// Invariant: blame marks a run's first line (oid, author) only; author classes are by first appearance. A run's header
+// is the drill button, and one that is the file's adding commit says it has no earlier version.
+test('blame: runs and deterministic author colours', async () => {
   open();
   stubFetch({
     'POST api/ops/history.blame': { ok: true, result: blame },
@@ -166,15 +166,17 @@ test('blame: runs, deterministic author colours, gutter → history', async () =
   const table = await screen.findByRole('table', { name: 'Blame' });
   await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(4));
   const runs = within(table).getAllByRole('button').map((b) => b.getAttribute('aria-label'));
-  expect(runs).toEqual([`${oid(1).slice(0, 7)} Ann: show in history`, `${oid(2).slice(0, 7)} Bob: show in history`, `${oid(1).slice(0, 7)} Ann: show in history`]);
+  const runButtons = within(table).getAllByRole('button').filter((b) => !b.getAttribute('aria-label')?.startsWith('Actions for'));
+  expect(runButtons.map((b) => b.getAttribute('aria-label'))).toEqual([
+    `${oid(1).slice(0, 7)} Ann: no earlier version (this commit added the file)`, `${oid(2).slice(0, 7)} Bob: blame previous revision`, `${oid(1).slice(0, 7)} Ann: no earlier version (this commit added the file)`,
+  ]);
+  expect(runs).toHaveLength(6);
   const cls = (n: number) => table.querySelector(`[data-blame-line="${n}"] [role="cell"]`)!.className;
   expect(cls(1)).toContain('lane-0');
   expect(cls(3)).toContain('lane-1');
   expect(cls(4)).toContain('lane-0');
   expect(screen.getByText('4 lines')).toBeTruthy();
   expect([...authorClasses(['Bob', 'Ann', 'Bob', 'Cy'])]).toEqual([['Bob', 'lane-0'], ['Ann', 'lane-1'], ['Cy', 'lane-2']]);
-  await userEvent.click(within(table).getAllByRole('button')[1]);
-  expect(fileHistoryOf(TAB)).toMatchObject({ view: 'history', picked: { oid: oid(2), path: 'f.txt' } });
 });
 
 // Invariant: blame of a binary file says so (BINARY_FILE) instead of lines.
@@ -268,24 +270,4 @@ test('palette: File history… picks a HEAD path or a typed one', async () => {
   expect(await cmd.pick!.items(TAB)).toEqual([]);
   act(() => { void cmd.pick!.run(TAB, { id: 'src/b.ts', label: 'src/b.ts' }); });
   expect(fileHistoryOf(TAB)).toMatchObject({ path: 'src/b.ts', rev: REV, view: 'history' });
-});
-
-// Invariant: the blame gutter of a commit that renamed the file picks it with its old path, so the viewer diffs the
-// rename against the old name (not the whole file as added).
-test('blame gutter of a rename-with-edit commit picks it with its oldPath', async () => {
-  open();
-  const f = stubFetch({
-    'POST api/ops/history.blame': { ok: true, result: {
-      total: 1, lines: [{ n: 1, oid: oid(2), origLine: 1, text: 'x' }],
-      commits: { [oid(2)]: { author: 'Bob', mail: 'b@x', time: 2, summary: 'rename and edit', filename: 'new.txt', previous: oid(1), previousPath: 'old.txt' } },
-    } },
-    'POST api/ops/history.file': { ok: true, result: { items: [], nextCursor: null, truncated: false } },
-    'POST api/ops/diff.file': { ok: true, result: fileDiff },
-  });
-  render(<HistoryPanel tab={TAB} />);
-  act(() => openBlame(TAB, { path: 'new.txt', rev: REV }));
-  const table = await screen.findByRole('table', { name: 'Blame' });
-  await userEvent.click(await within(table).findByRole('button'));
-  expect(fileHistoryOf(TAB)?.picked).toEqual({ oid: oid(2), path: 'new.txt', oldPath: 'old.txt' });
-  await waitFor(() => expect(params(f, 'diff.file').at(-1)).toMatchObject({ source: { kind: 'commit', rev: oid(2) }, path: 'new.txt', oldPath: 'old.txt' }));
 });
