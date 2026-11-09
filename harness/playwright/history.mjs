@@ -1,13 +1,14 @@
 // The history card's golden path on the `hist` world (historySeed.mjs), in light then dark, each on a fresh seed: the
 // palette's File history… → the rename rows → the viewer (Diff with its line counts, then File; Hunk+Split; Ignore whitespace) → Blame (author colours) → a 1500-line blame
-// paging as it scrolls → Show in graph → the Reflog and its row menu → a branch's Show reflog. Screenshots at desktop
+// paging as it scrolls → a run's click drilling to the revision before it across a rename, Back, and the run menu → a comment
+// crossing a blame page and a run boundary highlighted as one comment → Show in graph → the Reflog and its row menu → a branch's Show reflog. Screenshots at desktop
 // and phone width into out/history/. Fails on a console error or a ≥400 response other than the two host URLs.
 // Run: node harness/playwright/history.mjs   (needs `npm run prepare` first, for frontend/dist)
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BROWSER } from './resolve.mjs';
-import { BIG_LINES, seedHistory, XSS_SUBJECT } from './historySeed.mjs';
+import { BIG_LINES, seedHistory, SPAN, XSS_SUBJECT } from './historySeed.mjs';
 
 const { withPage } = await import(BROWSER);
 const outDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out', 'history');
@@ -102,10 +103,43 @@ for (const scheme of ['light', 'dark']) {
       const lanes = await blame.locator('[data-blame-line] > [role="cell"]:first-child').evaluateAll((cs) => [...new Set(cs.map((c) => [...c.classList].find((k) => k.startsWith('lane-'))))]);
       check(lanes.length >= 2, `authors get distinct colours (${lanes.join(', ')})`);
       await shot('blame-desktop');
-      // A gutter click picks that commit in History
-      await blame.getByRole('button').first().click();
+      // Drill: a run's click blames the revision before it, under its name there (the rename is followed)
+      const crumbs = page.getByRole('navigation', { name: 'Blame revisions', exact: true });
+      const sha = (oid) => oid.slice(0, 7);
+      const drill = (n, oid, who) => blame.locator(`[data-blame-line="${n}"]`).getByRole('button', { name: `${sha(oid)} ${who}: blame previous revision`, exact: true }).click();
+      const noEarlier = (oid) => blame.getByRole('button', { name: `${sha(oid)} Ann Author: no earlier version (this commit added the file)`, exact: true });
+      check(await crumbs.getByRole('button').count() === 0, 'a fresh blame has one crumb, the opened revision');
+      await drill(1, o.edit2, 'Ann Author');
+      await blame.locator('[data-blame-line="3"]').waitFor();
+      check(await crumbs.locator('.font-mono').count() === 2 && (await crumbs.textContent()).includes('docs/guide.md'), `one drill: two crumbs, the file as docs/guide.md (${await crumbs.textContent()})`);
+      await drill(3, o.edit1, 'Bob Builder');
+      await noEarlier(o.intro).first().waitFor();
+      check(await crumbs.locator('.font-mono').count() === 3 && (await crumbs.textContent()).includes('docs/intro.md'), `a second drill: three crumbs, the file as docs/intro.md (${await crumbs.textContent()})`);
+      const added = noEarlier(o.intro).first();
+      check(await added.getAttribute('aria-disabled') === 'true' && await blame.locator('[aria-label$=": blame previous revision"]').count() === 0, 'the adding commit\'s runs are disabled: no earlier version');
+      await shot('blame-drill-desktop');
+      // Back returns to the clicked line, in view
+      await page.getByRole('button', { name: `Back to ${sha(o.rename1)}`, exact: true }).click();
+      check(await crumbs.locator('.font-mono').count() === 2, 'Back leaves two crumbs');
+      await blame.locator('[data-blame-line="3"]').waitFor();
+      const inView = async (n) => {
+        const [r, b] = await Promise.all([blame.locator(`[data-blame-line="${n}"]`).boundingBox(), blame.boundingBox()]);
+        return !!r && !!b && r.y >= b.y && r.y + r.height <= b.y + b.height;
+      };
+      check(await inView(3), 'Back scrolls to the line that was clicked');
+      await crumbs.getByRole('button').first().click();
+      check(await crumbs.getByRole('button').count() === 0 && await crumbs.locator('.font-mono').count() === 1, 'the first crumb returns to the opened frame');
+      // The run menu: Show in History (right-click), Show in graph (⋮)
+      await blame.locator('[data-blame-line="1"]').click({ button: 'right' });
+      await page.getByRole('menu').getByRole('menuitem', { name: 'Show in History', exact: true }).click();
       await list.waitFor();
-      check(await list.locator('[aria-selected="true"]').count() === 1, 'the blame gutter picks a commit in History');
+      check(await list.locator('[aria-selected="true"]').count() === 1, 'Show in History picks the run\'s commit in History');
+      await page.getByRole('group', { name: 'History or blame', exact: true }).getByRole('button', { name: 'Blame', exact: true }).click();
+      await blame.locator('[data-blame-line="1"]').getByRole('button', { name: `Actions for ${sha(o.edit2)}`, exact: true }).click();
+      await page.getByRole('menu').getByRole('menuitem', { name: 'Show in graph', exact: true }).click();
+      await page.getByRole('region', { name: 'Commit graph', exact: true }).waitFor();
+      await page.locator(`[data-row-id="${o.edit2}"][aria-selected="true"]`).waitFor();
+      check(true, 'the ⋮ menu\'s Show in graph selects the run\'s commit in the graph');
 
       // 4. A 1500-line blame pages as it scrolls
       await run('Blame', 'big.txt');
@@ -117,6 +151,21 @@ for (const scheme of ['light', 'dark']) {
       const bigLanes = await blame.locator('[data-blame-line="1"] > [role="cell"]:first-child, [data-blame-line="1500"] > [role="cell"]:first-child')
         .evaluateAll((cs) => cs.map((c) => [...c.classList].find((k) => k.startsWith('lane-'))));
       check(bigLanes[0] !== bigLanes[1], `Ann's and Cy's halves differ in colour (${bigLanes.join(' vs ')})`);
+
+      // A block comment over lines 995–1006 crosses the first page's end and two runs: one comment colour throughout
+      await run('Blame', 'span.js');
+      await blame.locator(`[data-blame-line="${SPAN.commentFrom}"] [data-token]`).waitFor();
+      await blame.evaluate((el) => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll')); });
+      await blame.locator(`[data-blame-line="${SPAN.lines}"]`).waitFor();
+      const classes = async (n) => blame.locator(`[data-blame-line="${n}"] [role="cell"]:last-child > span`).evaluateAll((ss) => ss.map((s) => [s.hasAttribute('data-token'), s.getAttribute('class')]));
+      const comment = (await classes(SPAN.commentFrom))[0][1];
+      check(!!comment, `the comment's first line has a token class (${comment})`);
+      const bad = [];
+      for (let n = SPAN.commentFrom; n <= SPAN.commentTo; n++) for (const [token, cls] of await classes(n)) if (!token || cls !== comment) bad.push(n);
+      check(bad.length === 0, `lines ${SPAN.commentFrom}–${SPAN.commentTo} are all one comment span class (off: ${bad.join(',')})`);
+      check((await classes(SPAN.after)).some(([token, cls]) => token && cls !== comment), `line ${SPAN.after} after the comment is coloured differently`);
+      await blame.locator('[data-blame-line="1003"]').scrollIntoViewIfNeeded();
+      await shot('blame-highlight-desktop');
 
       // 5. Show in graph: the graph comes back on the picked commit
       await page.getByRole('group', { name: 'History or blame', exact: true }).getByRole('button', { name: 'History', exact: true }).click();

@@ -18,6 +18,22 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export const XSS_SUBJECT = 'tweak <img src=x onerror=alert(1)>';
 export const AUTHORS = { ann: ['Ann Author', 'ann@example.com'], bob: ['Bob Builder', 'bob@example.com'], cy: ['Cy Coder', 'cy@example.com'] };
 export const BIG_LINES = 1500;
+/** span.js: the block comment's first and last line, the line after it, and the template literal's two lines. */
+export const SPAN = { lines: 1100, commentFrom: 995, commentTo: 1006, after: 1007 };
+
+/** span.js's text; `cy` is Cy's version (lines inside the comment and the template literal differ). */
+function spanText(cy) {
+  const out = [];
+  for (let n = 1; n <= SPAN.lines; n++) {
+    if (n === SPAN.commentFrom) out.push('/* block comment begins');
+    else if (n === SPAN.commentTo) out.push('   ends */');
+    else if (n > SPAN.commentFrom && n < SPAN.commentTo) out.push(`   comment body ${n}${cy && n >= 998 && n <= 1000 ? ' edited' : ''}`);
+    else if (n === 1010) out.push('const t = `first');
+    else if (n === 1011) out.push(cy ? 'second edited`;' : 'second`;');
+    else out.push(`const v${n} = ${n};`);
+  }
+  return `${out.join('\n')}\n`;
+}
 
 /** `plugins`: the rows the fake cc's `GET /api/plugins` answers (absent: a 404, as an older cc). */
 export async function seedHistory({ plugins } = {}) {
@@ -36,12 +52,12 @@ export async function seedHistory({ plugins } = {}) {
     };
     const big = (from, to, who) => Array.from({ length: to - from + 1 }, (_, i) => `line ${from + i} by ${who}`).join('\n');
     const o = {};
-    o.intro = as('ann', { 'docs/intro.md': 'Intro\n\nFirst words.\n', 'conflict.txt': 'base\n', 'big.txt': `${big(1, BIG_LINES, 'ann')}\n` }, 'add the intro');
+    o.intro = as('ann', { 'docs/intro.md': 'Intro\n\nFirst words.\n', 'conflict.txt': 'base\n', 'big.txt': `${big(1, BIG_LINES, 'ann')}\n`, 'span.js': spanText(false) }, 'add the intro');
     o.edit1 = as('bob', { 'docs/intro.md': 'Intro\n\nFirst words, edited by Bob.\n' }, 'edit the intro');
     repo.git('mv', 'docs/intro.md', 'docs/guide.md');
     o.rename1 = as('cy', {}, 'rename intro to guide');
     o.edit2 = as('ann', { 'docs/guide.md': 'Guide\n\nFirst words, edited by Bob.\nMore from Ann.\n' }, XSS_SUBJECT);
-    o.bigCy = as('cy', { 'big.txt': `${big(1, 750, 'ann')}\n${big(751, BIG_LINES, 'cy')}\n` }, 'the second half of big.txt');
+    o.bigCy = as('cy', { 'big.txt': `${big(1, 750, 'ann')}\n${big(751, BIG_LINES, 'cy')}\n`, 'span.js': spanText(true) }, 'the second half of big.txt');
     repo.git('mv', 'docs/guide.md', 'guide.md');
     o.rename2 = as('bob', {}, 'move the guide to the root');
     bareRemote(repo);

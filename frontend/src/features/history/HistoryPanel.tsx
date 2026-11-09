@@ -1,28 +1,19 @@
-import { useMemo, type UIEvent } from 'react';
-import { CrosshairIcon, XIcon } from 'lucide-react';
+import { ArrowLeftIcon, CrosshairIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Chunked } from '@/features/diff/CodeLine';
 import { requestJump } from '@/features/graph/jump';
 import { formatTime } from '@/features/graph/time';
 import '@/features/graph/graph.css';
 import { cn } from '@/lib/utils';
 import type { Tab } from '@/state/tabs';
-import type { BlameCommit } from './api';
-import { authorClasses } from './authorColors';
+import { BlameView } from './BlameView';
 import { CommitFileView } from './CommitFileView';
-import { closeHistoryPanel, showFileView } from './open';
-import { loadMoreBlame, loadMoreHistory, pickCommit, useFileHistory, type FileHistoryState } from './state';
+import { blameBack, closeHistoryPanel, showFileView } from './open';
+import { loadMoreHistory, pickCommit, useFileHistory, type FileHistoryState } from './state';
 
 // A file's history (its commits across renames, each opening its change in the viewer) and its blame (who last
 // changed each line, the author's colour at each run's first line). Every value is rendered as text.
 
 const abbrev = (oid: string) => oid.slice(0, 7);
-
-/** A blamed commit as the viewer opens it: the file's name there, and its old name when the commit renamed it. */
-function pickedOf(oid: string, c: BlameCommit | undefined, fallback: string) {
-  const path = c?.filename || fallback;
-  return { oid, path, oldPath: c?.previousPath && c.previousPath !== path ? c.previousPath : null };
-}
 
 function HistoryList({ tab, s }: { tab: Tab; s: FileHistoryState }) {
   const h = s.history;
@@ -61,47 +52,29 @@ function HistoryList({ tab, s }: { tab: Tab; s: FileHistoryState }) {
   );
 }
 
-function BlameView({ tab, s }: { tab: Tab; s: FileHistoryState }) {
-  const b = s.blame;
-  const colours = useMemo(() => authorClasses(b.lines.map((l) => b.commits[l.oid]?.author ?? '')), [b.lines, b.commits]);
-  const rows = useMemo(() => b.lines.map((l, i) => ({ id: String(l.n), line: l, first: i === 0 || b.lines[i - 1].oid !== l.oid })), [b.lines]);
-  const more = b.total === null || b.lines.length < b.total;
-  const onScroll = (e: UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    if (more && el.scrollTop + el.clientHeight >= el.scrollHeight - 400) void loadMoreBlame(tab);
-  };
-  if (b.error) return <p role="alert" className="p-3 text-sm text-destructive">{b.code === 'BINARY_FILE' ? 'A binary file has no blame.' : b.error}</p>;
+/** The drill's path of revisions: one crumb per frame (the file's name only where it changes), and Back to the one before. */
+function BlameCrumbs({ tab, s }: { tab: Tab; s: FileHistoryState }) {
+  const stack = s.blameStack;
   return (
-    <div className="min-h-0 flex-1 overflow-auto font-mono text-xs leading-5" onScroll={onScroll} role="table" aria-label="Blame">
-      <Chunked
-        rows={rows}
-        render={({ id, line, first }) => {
-          const c = b.commits[line.oid];
-          const author = c?.author ?? '';
+    <>
+      {stack.length > 1 && (
+        <Button variant="ghost" size="icon-sm" aria-label={`Back to ${abbrev(stack[stack.length - 2].rev)}`} onClick={() => blameBack(tab, stack.length - 2)}><ArrowLeftIcon /></Button>
+      )}
+      <nav aria-label="Blame revisions" className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+        {stack.map((f, i) => {
+          const label = `${abbrev(f.rev)}${i === 0 || f.path !== stack[i - 1].path ? ` ${f.path}` : ''}`;
+          const last = i === stack.length - 1;
           return (
-            <div key={id} role="row" className={cn('flex', first && 'border-t')} data-blame-line={line.n}>
-              <span role="cell" className={cn('flex w-80 shrink-0 items-center gap-1.5 overflow-hidden px-2', colours.get(author))}>
-                <span aria-hidden className="h-4 w-1 shrink-0 rounded-sm bg-(--lane)" />
-                {first && (
-                  <button type="button" className="flex min-w-0 gap-1.5 truncate text-left hover:underline" title={c?.summary}
-                    aria-label={`${abbrev(line.oid)} ${author}: show in history`}
-                    onClick={() => { pickCommit(tab, pickedOf(line.oid, c, s.path)); showFileView(tab, 'history'); }}>
-                    <span className="text-muted-foreground">{abbrev(line.oid)}</span>
-                    <span className="truncate font-sans">{author}</span>
-                    <span className="shrink-0 font-sans text-muted-foreground">{c ? formatTime(c.time) : ''}</span>
-                  </button>
-                )}
-              </span>
-              <span role="cell" className="w-10 shrink-0 pr-2 text-right text-muted-foreground select-none">{line.n}</span>
-              <span role="cell" className="whitespace-pre pr-4">{line.text}</span>
-            </div>
+            <span key={f.id} className="flex items-center gap-1">
+              {i > 0 && <span aria-hidden>←</span>}
+              {last
+                ? <span aria-current="page" className="font-mono text-foreground">{label}</span>
+                : <button type="button" className="font-mono hover:underline" onClick={() => blameBack(tab, i)}>{label}</button>}
+            </span>
           );
-        }}
-      />
-      <div className="px-2 py-1 font-sans text-muted-foreground">
-        {b.loading ? 'Loading…' : more ? <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => void loadMoreBlame(tab)}>Load more lines</Button> : `${b.total ?? 0} lines`}
-      </div>
-    </div>
+        })}
+      </nav>
+    </>
   );
 }
 
@@ -117,7 +90,7 @@ function HistoryPanelFor({ tab }: { tab: Tab }) {
     <section aria-label="File history panel" className="flex h-full min-h-0 flex-col">
       <header className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5">
         <h2 className="min-w-0 truncate font-mono text-sm font-semibold" title={s.path}>{s.path}</h2>
-        <span className="text-xs text-muted-foreground">at {abbrev(s.rev)}</span>
+        {s.view === 'blame' ? <BlameCrumbs tab={tab} s={s} /> : <span className="text-xs text-muted-foreground">at {abbrev(s.rev)}</span>}
         <div className="flex rounded-md border p-0.5" role="group" aria-label="History or blame">
           {(['history', 'blame'] as const).map((v) => (
             <Button key={v} variant={s.view === v ? 'secondary' : 'ghost'} size="sm" className="h-6 px-2 text-xs" aria-pressed={s.view === v} onClick={() => showFileView(tab, v)}>

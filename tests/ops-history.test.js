@@ -187,6 +187,48 @@ test('history.blame: previous and previousPath name the commit before and the fi
   assert.deepEqual([b.commits[c1].filename, b.commits[c1].previous, b.commits[c1].previousPath], ['old name.txt', null, null]);
 });
 
+// Invariant: a drill never dead-ends on a refusal, and "no earlier version" means the file's adding commit: following the
+// newest line's (previous, previousPath) through an edit, a rename and edit, an edit and a rename and edit, every step
+// blames (no PATH_NOT_IN_COMMIT) under the file's name at that commit, and the chain ends at the commit that added it.
+test('history.blame: every previous/previousPath a blame names is itself blameable, down to the commit that added the file', async (t) => {
+  const w = await opWorld(t);
+  const body = (first) => `${first}\n${Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\n')}\n`;
+  const c1 = w.repo.commit({ 'a.txt': body('v1') }, 'add');
+  const c2 = w.repo.commit({ 'a.txt': body('v2') }, 'edit');
+  w.repo.git('mv', 'a.txt', 'b.txt');
+  const c3 = w.repo.commit({ 'b.txt': body('v3') }, 'rename and edit');
+  const c4 = w.repo.commit({ 'b.txt': body('v4') }, 'edit b');
+  w.repo.git('mv', 'b.txt', 'c.txt');
+  const c5 = w.repo.commit({ 'c.txt': body('v5') }, 'rename and edit again');
+  const names = { [c1]: 'a.txt', [c2]: 'a.txt', [c3]: 'b.txt', [c4]: 'b.txt', [c5]: 'c.txt' };
+  const seen = [];
+  let step = { rev: c5, path: 'c.txt' };
+  for (let guard = 0; guard < 10; guard++) {
+    const b = await w.op('history.blame', { rev: step.rev, path: step.path, start: 1, count: 1 });
+    const oid = b.lines[0].oid;
+    seen.push(oid);
+    assert.equal(b.commits[oid].filename, names[oid], 'the file\'s name at that commit');
+    if (!b.commits[oid].previous) break;
+    step = { rev: b.commits[oid].previous, path: b.commits[oid].previousPath };
+  }
+  assert.deepEqual(seen, [c5, c4, c3, c2, c1]);
+});
+
+// Invariant: the highlighter's input is the file's own text, byte for byte: the lines' text joined by \n, across pages,
+// is the file's exact content (a leading tab, \r\n endings, empty lines, a lone quote, no trailing newline).
+test('history.blame: the lines\' text joined by \\n is the file\'s exact content', async (t) => {
+  const w = await opWorld(t);
+  const content = '\tindented\r\n\r\n"\nplain\n\n\t\tdeep\r\nlast, no newline';
+  const c = w.repo.commit({ 'f.txt': content }, 'add');
+  const texts = [];
+  for (let start = 1; ; start += 3) {
+    const page = await w.op('history.blame', { rev: c, path: 'f.txt', start, count: 3 });
+    if (!page.lines.length) break;
+    texts.push(...page.lines.map((l) => l.text));
+  }
+  assert.equal(texts.join('\n'), content.replace(/\n$/, ''));
+});
+
 // Invariant: blame's file names are git's C-quoted porcelain values unquoted: a name holding `"` or a tab comes back as
 // the path itself (filename and previousPath), plain or across a rename, and opens in diff.file with the change found.
 test('history.blame: a quoted path (", tab) comes back unquoted, plain and renamed', async (t) => {
