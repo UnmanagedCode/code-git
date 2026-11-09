@@ -37,12 +37,12 @@ const line = (n: number, o: string, text: string, origLine = n): BlameLine => ({
 interface Frame { lines: BlameLine[]; commits: Record<string, BlameCommit>; total?: number }
 
 /** history.blame answered from `frames` (keyed "rev path") in pages of PAGE lines from the request's `start`. */
-function world(frames: Record<string, Frame>, hold?: (key: string) => Promise<void> | undefined) {
+function world(frames: Record<string, Frame>, hold?: (key: string, start: number) => Promise<void> | undefined) {
   return stubFetch({
     'POST api/ops/history.blame': async (_u: URL, init?: RequestInit) => {
       const { params: p } = JSON.parse(String(init!.body)) as { params: { rev: string; path: string; start: number } };
       const key = `${p.rev} ${p.path}`;
-      await hold?.(key);
+      await hold?.(key, p.start);
       const f = frames[key];
       if (!f) throw new Error(`no blame stubbed for ${key}`);
       return { ok: true, result: { total: f.total ?? f.lines.length, lines: f.lines.slice(p.start - 1, p.start - 1 + PAGE), commits: f.commits } };
@@ -186,6 +186,28 @@ test('a late page goes nowhere', async () => {
   expect(after).toHaveLength(1);
   expect(after[0].blame.lines).toHaveLength(before[0].blame.lines.length);
   expect(after[0].blame.loading).toBe(false);
+});
+
+// Invariant: a page requested by frame A that arrives after A was buried by a drill lands in A: Back to A shows those
+// lines, A is no longer loading, and no new history.blame request is made.
+test('a page that arrives after its frame was buried lands in that frame', async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const f = world({ [`${REV} f.js`]: TWO_RUNS, [`${O1} f.js`]: BEFORE }, (key, start) => (key === `${REV} f.js` && start > 1 ? gate : undefined));
+  const table = await showBlame();
+  await userEvent.click(await screen.findByRole('button', { name: 'Load more lines' }));
+  await waitFor(() => expect(fileHistoryOf(TAB)?.blameStack[0].blame.loading).toBe(true));
+  await userEvent.click(await within(table).findByRole('button', { name: `${O2.slice(0, 7)} Bob: blame previous revision` }));
+  await waitFor(() => expect(fileHistoryOf(TAB)?.blameStack).toHaveLength(2));
+  await waitFor(() => expect(fileHistoryOf(TAB)?.blameStack[1].blame.lines.length).toBeGreaterThan(0));
+  await act(async () => { release(); await gate; });
+  await waitFor(() => expect(fileHistoryOf(TAB)?.blameStack[0].blame.lines).toHaveLength(6));
+  const requests = blameParams(f).length;
+  await userEvent.click(screen.getByRole('button', { name: `Back to ${REV.slice(0, 7)}` }));
+  const back = await screen.findByRole('table', { name: 'Blame' });
+  expect(back.querySelectorAll('[data-blame-line]')).toHaveLength(6);
+  expect(fileHistoryOf(TAB)?.blameStack[0].blame.loading).toBe(false);
+  expect(blameParams(f)).toHaveLength(requests);
 });
 
 // Invariant: a run with no earlier version (the commit that added the file) cannot drill and says so: aria-disabled with
