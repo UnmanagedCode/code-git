@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { ArrowDownIcon, ArrowUpIcon, GitCompareIcon, ListTreeIcon, RefreshCwIcon, SearchIcon, Settings2Icon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, ListTreeIcon, RefreshCwIcon, SearchIcon, Settings2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { ComparePanel } from '@/features/diff/ComparePanel';
 import { setCssPx } from '@/lib/cssVars';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
@@ -262,7 +261,6 @@ function GraphView({ tab }: { tab: Tab }) {
 
   // ---- narrow: refs and details in dialogs ----
   const [refsOpen, setRefsOpen] = useState(false);
-  const [compareOpen, setCompareOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const details = useStore(detailsRequestStore);
   const lastDetails = useRef(details?.seq ?? 0);
@@ -391,15 +389,12 @@ function GraphView({ tab }: { tab: Tab }) {
         )}
         {search.searching && <span className="text-xs text-muted-foreground">Searching…</span>}
         {search.error && <span className="text-xs text-destructive" role="alert">{search.error}</span>}
-        {/* Wraps within itself: below `lg` it holds Refs, Compare, Changes, Columns, Fetch, Pull, Push, Branch and Refresh, wider than a phone. */}
+        {/* Wraps within itself: below `lg` it holds Refs, Changes, Columns, Fetch, Pull, Push, Branch and Refresh, wider than a phone. */}
         <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
           {!wide && (
             <>
               <Button variant="outline" size="sm" className="h-7 gap-1 px-2" onClick={() => setRefsOpen(true)}>
                 <ListTreeIcon /> Refs
-              </Button>
-              <Button variant="outline" size="sm" className="h-7 gap-1 px-2" onClick={() => setCompareOpen(true)}>
-                <GitCompareIcon /> Compare
               </Button>
               <ChangesButton tab={tab} />
               <SubmodulesButton key={tabKey(tab)} tab={tab} />
@@ -519,13 +514,6 @@ function GraphView({ tab }: { tab: Tab }) {
               <DialogTitle className="px-4 pt-4">Refs</DialogTitle>
               <DialogDescription className="sr-only">Branches, remotes, tags, stashes and worktrees</DialogDescription>
               <div className="max-h-[70dvh] overflow-y-auto"><RefsPanel tab={tab} inDialog /></div>
-            </DialogContent>
-          </Dialog>
-          <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
-            <DialogContent className="max-h-[85dvh] p-0">
-              <DialogTitle className="px-4 pt-4">Compare</DialogTitle>
-              <DialogDescription className="sr-only">Pick what to diff</DialogDescription>
-              <div className="max-h-[70dvh] overflow-y-auto"><ComparePanel tab={tab} /></div>
             </DialogContent>
           </Dialog>
           <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>

@@ -1,3 +1,4 @@
+import { headOf } from '@/features/branches/refInfo';
 import { runOp } from '@/lib/endpoints';
 import type { MenuAction } from '@/shell/menus';
 import { getPrefs, toggled, updatePrefs, type GraphPrefs } from '@/state/graphPrefs';
@@ -39,6 +40,12 @@ const refActions = (context: 'branch' | 'tag'): RefAction[] => [
     id: `graph.${context}.jump`, context, icon: CrosshairIcon, label: 'Jump to commit', group: 'view', order: 800, when: (c) => !!c.ref.oid, run: (c) => requestJump(c.tab, c.ref.oid!),
     // A tag's double-click jumps (a branch's checks out: features/branches/actions.ts).
     primary: context === 'tag',
+  },
+  {
+    id: `graph.${context}.compareHead`, context, icon: GitCompareIcon, label: 'Compare with HEAD from merge base', group: 'view', order: 801,
+    // The full refname keeps a branch and a tag of one name apart.
+    when: (c) => !c.ref.isHead && !!c.ref.oid && headOf(c.tab).oid !== null,
+    run: (c) => openIn(c.tab, c.tab, { kind: 'compare', from: 'HEAD', to: c.ref.name, mode: '...' }),
   },
   { id: `graph.${context}.copyName`, context, icon: CopyIcon, label: 'Copy name', group: 'copy', order: 900, run: (c) => copy(c.ref.short) },
   {

@@ -7,9 +7,9 @@
 - Full-width page: the tab bar, the active checkout's header, the panel slots (`left`, `center`, `right`, `bottom`), and the repo picker dialog. It caps no content width, so it does not read `--cc-session-width`.
 - Follows cc's light/dark theme live when embedded; standalone, follows the OS (`frontend/public/theme-init.js`). No theme toggle of its own.
 - With no tab open the center shows "No repository open." and an **Open a repository** button.
-- The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel, the Compare panel and the Submodules panel, the right slot the Changes panel, the commit details or the diff's **Changed files** panel (with no diff open: Changes while nothing or a single WIP row is selected in the graph, the details for a commit, a stash or several rows; with a diff open, the list that drives it: [Diff → File lists](#file-lists)), the bottom slot the activity panel.
+- The center slot holds the commit graph, or — while one is open for the active tab — the diff (an **on-demand** panel replaces its slot's other panels until it closes). The left slot holds the refs panel and the Submodules panel, the right slot the Changes panel, the commit details or the diff's **Changed files** panel (with no diff open: Changes while nothing or a single WIP row is selected in the graph, the details for a commit, a stash or several rows; with a diff open, the list that drives it: [Diff → File lists](#file-lists)), the bottom slot the activity panel.
 - **The side slots resize from a handle on their inner edge** (drag, ←/→, Home/End on the focused handle; bounds are `PANE` in `state/paneWidths.ts`). One width pair for every tab, persisted as `code-git:shell:paneWidths`. A window too narrow for the chosen widths renders them narrower (the left pane first, the centre keeping its minimum) and keeps the choice, so it returns when the window grows. The handles hide with the slots below `lg`.
-- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel and the Compare picker as dialogs (**Refs**, **Compare**), the commit details open as a dialog when a commit is clicked, and **Changes (n)** beside **Refs** and **Compare** (or a WIP row click, or Ctrl/⌘+Shift+M) opens the Changes panel as a dialog; **Submodules** opens the Submodules panel as a dialog; an open diff's file list opens from the diff header's **Files (n)**.
+- **Below the `lg` breakpoint the left and right slots are hidden**; the graph's toolbar opens the refs panel as a dialog (**Refs**), the commit details open as a dialog when a commit is clicked, and **Changes (n)** beside **Refs** (or a WIP row click, or Ctrl/⌘+Shift+M) opens the Changes panel as a dialog; **Submodules** opens the Submodules panel as a dialog; an open diff's file list opens from the diff header's **Files (n)**.
 
 ## Repo picker
 
@@ -90,7 +90,7 @@ The active checkout's `repo.summary`, loaded when the tab is first shown.
 
 ## Command palette and shortcuts
 
-- **Command palette**: Ctrl/⌘+P, or the header's **Commands** button. Type to filter (the letters in order, case-insensitive), ↑/↓ to move, Enter or a click to run, Esc to close. A command that picks (**Checkout branch…**, **Go to tab…**) opens a second list: type to filter it, Enter runs it with the highlighted item, Esc goes back to the commands. Each row shows its group and, when it has one, its shortcut.
+- **Command palette**: Ctrl/⌘+P, or the header's **Commands** button. Type to filter (the letters in order, case-insensitive), ↑/↓ to move, Enter or a click to run, Esc to close. A command that picks (**Checkout branch…**, **Go to tab…**) opens a second list: type to filter it, Enter runs it with the highlighted item, Esc goes back to the commands. **Show commit…** takes a typed revision (a sha, a ref, `HEAD~3`) and opens that commit's diff; a revision git refuses is an error toast and no diff opens. Each row shows its group and, when it has one, its shortcut.
 - Commands are offered only where they apply (no tab open: only **Show keyboard shortcuts**). They run what the rest of the UI runs, with the same confirmations and toasts: **Undo …** / **Redo …** (named after the entry), **File history…**, **Blame…** (a file of HEAD, or a typed path), **Reflog**, **Show changes**, **Stage all**, **Unstage all**, **Stash changes…**, **Create branch…**, **Checkout branch…** (local branches but HEAD's, then remote branches), **Fetch all remotes**, **Pull** (the project's default mode) and one per pull mode, **Push**, **Go to tab…** (more than one tab), **Close tab**, **Refresh** (the header summary and the graph), **Show keyboard shortcuts**.
 - **Keyboard shortcuts sheet**: Ctrl/⌘+/ (or the palette) lists every shortcut by where it acts, generated from the one catalog the key handlers use, so it is always complete.
 - Ctrl/⌘+P, Ctrl/⌘+/ and the undo keys do nothing while focus is in a text field or a dialog is open. Ctrl/⌘+P never opens the browser's print dialog from the app.
@@ -212,23 +212,11 @@ Bottom slot, **collapsed on load**: the **Activity** toggle expands and collapse
 
 Updates arrive over server-sent events; each event triggers a refetch of the log. The log lives in the backend's memory, so it survives a page reload but not a backend restart.
 
-## Compare panel
-
-Left slot, below the refs panel. Picks what to diff beside the graph's own entry points ([graph → Diffs](graph.md#diffs)). Below `lg` it opens as a dialog from the graph toolbar's **Compare** button.
-
-| Section | Controls | Opens |
-|---|---|---|
-| Working directory | **Unstaged changes (n)** — n = unstaged + untracked from the repo summary; **Staged changes (n)** | the unstaged / staged diff |
-| Commit | "Commit (sha or ref)" text box; **Show commit**; **Compare with working directory** | the commit vs its parent; the commit vs the working directory |
-| Two refs | "From" and "To" text boxes; a `..` / `...` toggle (`..` default); **Compare** | `from..to`, or from their merge base with `...` |
-
-Typed refs are trimmed; a button stays disabled while its box is empty. The diff's file list is fetched first: a refusal (`BAD_REF`, `REV_UNKNOWN`, `NO_MERGE_BASE`, …) is shown under that section as an alert, and no diff opens.
-
 ## Diff
 
 Center slot, per tab: each tab keeps its own diff; switching tabs shows that tab's diff, or its graph when none is open; closing a tab drops its diff. **Close diff** (×) or Esc closes it. Diff sources and their rules: [protocol](protocol.md#diff-sources).
 
-**Header:** the source (`Commit <oid7>`, `Unstaged changes`, `main...side (merge base <oid7>)`, `3 commits <oldest7>…<newest7>`, …); a **vs parent N** select on a merge commit, or on a stash the **All changes / Staged / Untracked** switch ([Stash](#stash)); **Refresh** (refetches the list — how work in progress is updated); **Create patch** ▾; **Close diff**.
+**Header:** the source (`Commit <oid7>`, `Unstaged changes`, `HEAD...refs/heads/side (merge base <oid7>)`, `3 commits <oldest7>…<newest7>`, …); a **vs parent N** select on a merge commit, or on a stash the **All changes / Staged / Untracked** switch ([Stash](#stash)); **Refresh** (refetches the list — how work in progress is updated); **Create patch** ▾; **Close diff**.
 
 **Files (n)** (header, below `lg` only): the diff's file list as a dialog ("Changed files", with the Path / Tree toggle). A plain click or Enter views the file and closes the dialog; Ctrl/⌘- and Shift-click and ↑/↓ keep it open. **Previous file** / **Next file** (viewer toolbar) follow the list's displayed order: path order, or the tree's order in Tree.
 
@@ -240,7 +228,7 @@ The diff has no file list of its own: the list beside it in the right slot drive
 |---|---|
 | The commit or stash selected in the graph (a stash's All changes / Staged / Untracked view included; a merge vs any parent); the two commits selected in the graph | The commit details' files, bound to the diff (they list the diff's files: a stash's Staged view lists the index commit's) |
 | Unstaged / staged changes | The Changes panel's Unstaged / Staged section (shown even with a commit selected) |
-| Anything else: Compare panel commit, commit vs working directory, two refs; a combined diff of any other selection; a reflog entry's or another commit's diff not selected in the graph | **Changed files** panel in the right slot: "N files", the Path / Tree toggle, the list |
+| Anything else: a palette **Show commit…**, commit vs working directory, a ref vs HEAD from merge base; a combined diff of any other selection; a reflog entry's or another commit's diff not selected in the graph | **Changed files** panel in the right slot: "N files", the Path / Tree toggle, the list |
 | Any, below `lg` | **Files (n)** in the diff header (above) |
 
 | Part | Behaviour |
@@ -297,7 +285,7 @@ The diff has no file list of its own: the list beside it in the right slot drive
 - Discarding asks first and previews the removed/added lines. A refusal shows in the header: the file changed since it was shown (reload it), or a selection that leaves out the end-of-file newline change.
 - After each action the selection clears and the diff, the Changes lists and the header reload.
 
-**Restore file to this version…** (the bound file list's menu, one file, when the diff's new side is a commit — a commit, a range or two refs; not for a deleted file or a submodule): after a confirmation, puts that commit's version of the file in the index and the working tree, overwriting uncommitted changes to it.
+**Restore file to this version…** (the bound file list's menu, one file, when the diff's new side is a commit — a commit, a range or a ref vs HEAD; not for a deleted file or a submodule): after a confirmation, puts that commit's version of the file in the index and the working tree, overwriting uncommitted changes to it.
 
 **Create patch** ▾: **Download .patch**, **Copy patch**; with more than one file selected also the same two for the selected files only (a renamed file brings its old path, so the rename stays a rename). A selection needing more than `PATCH_MAX_PATHS` paths (`features/diff/patch.ts`, equal to `DIFF_LIMITS.maxPaths`) is refused in the header before any request: use the whole-diff patch. A commit, or a run of commits without merges, gives a mailbox patch (`git am`); anything else a plain diff (`git apply`), binary changes included, untracked files not. The file name comes from the backend. A failed request is shown as an alert in the header.
 

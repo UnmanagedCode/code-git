@@ -2,12 +2,15 @@ import { expect, test, vi } from 'vitest';
 import { labelOf, resolveActions, type MenuAction } from '@/shell/menus';
 import { getPrefs, updatePrefs } from '@/state/graphPrefs';
 import { diffStore } from '@/state/diff';
-import { tabsStore } from '@/state/tabs';
-import { commit, oid, ref, stash, worktree } from '@/test/graphData';
+import { EMPTY_GRAPH, graphStore } from '@/state/graph';
+import { tabKey, tabsStore } from '@/state/tabs';
+import { commit, oid, ref, refsResult, stash, worktree } from '@/test/graphData';
 import { GRAPH_ACTIONS } from './actions';
 import { jumpStore } from './jump';
 
 const TAB = { project: 'app', worktree: null };
+/** The checkout's graph with HEAD on `head` (null: an unborn HEAD). */
+const headAt = (head: string | null) => graphStore.set(new Map([[tabKey(TAB), { ...EMPTY_GRAPH, status: 'ready', refs: refsResult({ head: { oid: head, branch: 'refs/heads/main', detached: false, unborn: head === null } }) }]]));
 const all = GRAPH_ACTIONS as MenuAction<unknown>[];
 const menu = (context: string, ctx: unknown) => resolveActions(all, context, ctx).map((a) => labelOf(a, ctx));
 const run = async (context: string, ctx: unknown, label: string) => {
@@ -24,13 +27,14 @@ test('commit, commits and stash menus: view, copy, visibility in that order', ()
 });
 
 test('branch menu: jump, copy, hide/solo/pin toggles that update prefs; no Hide on the checked-out branch', async () => {
+  headAt(oid(9));
   const feat = { tab: TAB, ref: ref('refs/heads/feat', oid(3)) };
-  expect(menu('branch', feat)).toEqual(['Jump to commit', 'Copy name', 'Hide', 'Solo', 'Pin to left']);
+  expect(menu('branch', feat)).toEqual(['Jump to commit', 'Compare with HEAD from merge base', 'Copy name', 'Hide', 'Solo', 'Pin to left']);
   await run('branch', feat, 'Hide');
   await run('branch', feat, 'Solo');
   await run('branch', feat, 'Pin to left');
   expect(getPrefs('app')).toMatchObject({ hidden: ['refs/heads/feat'], soloed: ['refs/heads/feat'], pinned: ['refs/heads/feat'] });
-  expect(menu('branch', feat)).toEqual(['Jump to commit', 'Copy name', 'Show', 'Unsolo', 'Unpin']);
+  expect(menu('branch', feat)).toEqual(['Jump to commit', 'Compare with HEAD from merge base', 'Copy name', 'Show', 'Unsolo', 'Unpin']);
   expect(menu('branch', { tab: TAB, ref: ref('refs/heads/main', oid(4), { isHead: true }) })).not.toContain('Hide');
   await run('branch', feat, 'Jump to commit');
   expect(jumpStore.get()).toMatchObject({ oid: oid(3) });
@@ -108,4 +112,20 @@ test('stash Show details is offered only while the Stashes section is shown', ()
   updatePrefs('app', (p) => ({ ...p, hiddenSections: ['stashes'] }));
   expect(menu('stash', c)).not.toContain('Show details');
   expect(menu('stash', c)).toContain('View changes');
+});
+
+// Invariant: a branch or tag compares against HEAD from their merge base (`...`, by full refname), and the item is
+// offered only where it can mean something: not on HEAD's own branch, not for an unborn HEAD.
+test('Compare with HEAD from merge base opens the three-dot compare of the ref; hidden on HEAD\'s branch and an unborn HEAD', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true, result: { files: [], pair: null, commit: null, mergeBase: null, series: null } }), { status: 200 })));
+  const label = 'Compare with HEAD from merge base';
+  headAt(oid(9));
+  const feat = { tab: TAB, ref: ref('refs/heads/feat', oid(3)) };
+  await run('branch', feat, label);
+  expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'compare', from: 'HEAD', to: 'refs/heads/feat', mode: '...' });
+  await run('tag', { tab: TAB, ref: ref('refs/tags/v1', oid(2)) }, label);
+  expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'compare', from: 'HEAD', to: 'refs/tags/v1', mode: '...' });
+  expect(menu('branch', { tab: TAB, ref: ref('refs/heads/main', oid(9), { isHead: true }) })).not.toContain(label);
+  headAt(null);
+  expect(menu('branch', feat)).not.toContain(label);
 });

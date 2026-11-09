@@ -8,7 +8,7 @@ import { setDialogOpen, workdirOf, workdirStore } from '@/state/workdir';
 import { WorkdirContent } from './WorkdirContent';
 
 /**
- * Below `lg` the right slot is hidden: this button, beside the graph toolbar's Refs and Compare, opens the Changes
+ * Below `lg` the right slot is hidden: this button, beside the graph toolbar's Refs button, opens the Changes
  * dialog. n = staged + unstaged + untracked.
  */
 export function ChangesButton({ tab }: { tab: Tab }) {

@@ -50,6 +50,7 @@ test('filterCommands: global commands without a tab, when() per tab', () => {
   act(() => dispatchTabs({ type: 'open', tab: TAB }));
   const ids = filterCommands(COMMANDS, TAB, '').map((c) => c.id);
   expect(ids).toContain('workdir.stageAll');
+  expect(ids).toContain('diff.showCommit');
   expect(ids).not.toContain('branches.create'); // no graph refs: HEAD is not known to be born
   expect(ids).not.toContain('tabs.goto'); // one tab
 });

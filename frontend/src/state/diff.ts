@@ -101,7 +101,7 @@ export const contextFor = (p: DiffPrefs): number | 'full' => (p.view === 'diff' 
 export const whitespaceFor = (p: DiffPrefs): Whitespace => (p.ignoreWhitespace ? 'all' : 'none');
 export const fileKey = (path: string, context: number | 'full', ws: Whitespace): string => `${path}\0${context}\0${ws}`;
 
-/** A fresh diff for `tab`: `preloaded` is a list already fetched for `source` (the Compare panel validates first). */
+/** A fresh diff for `tab`: `preloaded` is a list already fetched for `source` (the palette's Show commit… validates first). */
 export function startDiff(tab: Tab, source: DiffSource, opts: { path?: string; preloaded?: DiffFilesResult } = {}): void {
   const prev = diffStore.get().get(tabKey(tab));
   const ws = whitespaceFor(prefsStore.get());

@@ -91,11 +91,11 @@ test('narrow: a WIP row click opens the Changes dialog', async () => {
   expect(within(d).getByRole('region', { name: 'Unstaged Files' })).toBeTruthy();
 });
 
-test('narrow: the graph toolbar has Refs, Compare and Changes (n) side by side; Changes (n) opens the dialog', async () => {
+test('narrow: the graph toolbar has Refs and Changes (n) side by side; Changes (n) opens the dialog', async () => {
   await show(false);
   const refsBtn = screen.getByRole('button', { name: 'Refs' });
   const bar = refsBtn.parentElement!;
-  expect(within(bar).getAllByRole('button').slice(0, 3).map((b) => b.textContent?.trim())).toEqual(['Refs', 'Compare', 'Changes (1)']);
+  expect(within(bar).getAllByRole('button').slice(0, 2).map((b) => b.textContent?.trim())).toEqual(['Refs', 'Changes (1)']);
   await userEvent.click(within(bar).getByRole('button', { name: 'Changes (1)' }));
   expect(await screen.findByRole('dialog', { name: 'Changes' })).toBeTruthy();
 });

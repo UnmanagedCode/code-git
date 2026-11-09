@@ -257,7 +257,7 @@ function RefsView({ tab, inDialog }: { tab: Tab; inDialog: boolean }) {
   };
 
   return (
-    // In the left slot the refs scroll on their own, so the Compare panel below them stays in reach.
+    // In the left slot the refs scroll on their own, so the Submodules panel below them stays in reach.
     <nav className={cn('flex flex-col pb-3 text-sm', !inDialog && 'max-h-[60dvh] overflow-y-auto border-b')} aria-label="Refs">
       <div className="p-2">
         <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter refs" aria-label="Filter refs" className="h-8" />

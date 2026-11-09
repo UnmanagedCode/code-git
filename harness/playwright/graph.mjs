@@ -367,12 +367,11 @@ try {
     check(near(await headerHeight(), shortHeight), 'back to the default height');
     await row(o.C).click();
     await details.getByText('Write the guide').waitFor();
-    // The left slot: the refs panel first, the diff's Compare panel below it, both reachable.
+    // The left slot holds the refs panel and no Compare panel.
     const left = page.locator('[data-slot-name=left]');
     const refsBox = await left.getByRole('navigation', { name: 'Refs' }).boundingBox();
-    const compareBox = await left.getByRole('region', { name: 'Commit' }).boundingBox();
-    check(refsBox && compareBox && compareBox.y > refsBox.y, 'the left slot stacks the refs panel above the Compare panel');
-    await left.getByRole('textbox', { name: 'Commit (sha or ref)' }).scrollIntoViewIfNeeded();
+    check(refsBox !== null, 'the left slot holds the refs panel');
+    check(await left.getByRole('region', { name: 'Commit', exact: true }).count() === 0 && await page.getByRole('textbox', { name: 'Commit (sha or ref)', exact: true }).count() === 0, 'no Compare panel in the left slot');
     await shot('left-slot-light-desktop');
     // A file in the details opens that commit's diff at the file; Esc brings the graph back.
     await details.getByRole('option', { name: /guide\.md/ }).click();
@@ -514,10 +513,7 @@ try {
           await page.getByRole('dialog', { name: 'Refs' }).getByRole('navigation', { name: 'Refs' }).waitFor();
           await shot(`refs-dialog-${scheme}-phone`);
           await page.keyboard.press('Escape');
-          await page.getByRole('button', { name: 'Compare', exact: true }).click();
-          await page.getByRole('dialog', { name: 'Compare' }).getByRole('textbox', { name: 'Commit (sha or ref)' }).waitFor();
-          await shot(`compare-dialog-${scheme}-phone`);
-          await page.keyboard.press('Escape');
+          check(await page.getByRole('button', { name: 'Compare', exact: true }).count() === 0, `${scheme} phone: the toolbar has no Compare button`);
           await row(o.C).click();
           await page.getByRole('dialog', { name: 'Details', exact: true }).getByText('Write the guide').waitFor();
           await shot(`details-dialog-${scheme}-phone`);
