@@ -6,8 +6,8 @@ import { DiffFileList } from './DiffFileList';
 import { FileViewToggle } from './FileList';
 
 /**
- * The right slot's "Changed files": the open diff's file list, while no commit-view list sits beside it (a Compare
- * panel diff, a combined diff, a commit that is not the graph's selection: features/workdir/rightSlot.ts).
+ * The right slot's "Changed files": the open diff's file list, while no commit-view list sits beside it (a palette Show commit…
+ * or branch-vs-HEAD diff, a combined diff, a commit that is not the graph's selection: features/workdir/rightSlot.ts).
  */
 export function DiffFilesPanel({ tab }: { tab: Tab | null }) {
   const wide = useMediaQuery(LG_QUERY);

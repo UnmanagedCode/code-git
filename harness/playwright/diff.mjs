@@ -42,14 +42,13 @@ try {
     const files = filesPanel.getByRole('listbox', { name: 'Changed files', exact: true });
     const option = (name) => files.getByRole('option', { name });
     const body = diff.locator('[data-diff-body]');
-    const toast = (text) => page.locator('[data-sonner-toast]').filter({ hasText: text });
     /** The palette's Show commit…: Ctrl/⌘+P, the command, then the typed revision. */
     const showCommit = async (rev) => {
       await page.locator('body').click({ position: { x: 5, y: 300 } });
       await page.keyboard.press('ControlOrMeta+p');
       await page.getByRole('combobox', { name: 'Command', exact: true }).fill('show commit');
       await page.keyboard.press('Enter');
-      await page.getByRole('combobox', { name: 'Commit (sha or ref)', exact: true }).fill(rev);
+      await page.getByRole('combobox', { name: 'Show commit…', exact: true }).fill(rev);
       await page.keyboard.press('Enter');
     };
     const scope = (name) => diff.getByRole('group', { name: 'Diff scope', exact: true }).getByRole('button', { name, exact: true });
@@ -78,8 +77,10 @@ try {
       // 12 (part): a bad ref is refused with an error toast, and no diff opens.
       expectedRefusals = 1;
       await showCommit('no-such-ref');
-      await toast('no-such-ref').first().waitFor();
-      check(await toast('no-such-ref').count() >= 1, `${scheme}: a bad ref is refused with a toast naming it`);
+      // The running toast ("Loading …") also names the rev: only the error-state toast proves the refusal.
+      const refused = page.locator('[data-sonner-toast][data-type=error]').filter({ hasText: 'no-such-ref' });
+      await refused.first().waitFor();
+      check(await refused.count() >= 1, `${scheme}: a bad ref is refused with an error toast naming it`);
       check(!(await diff.isVisible()), `${scheme}: no diff opens for a bad ref`);
 
       // 1. A commit from the palette's Show commit….
