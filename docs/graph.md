@@ -54,7 +54,7 @@ The active checkout's history as a lane graph (center slot), its refs (left slot
 | Commit | Show details, View changes, Compare with working directory, Copy SHA, Copy message (the full message; the subject when it cannot be read); on the HEAD commit also C4's **Edit HEAD message…** (order 300: the Changes panel with Amend ticked and HEAD's message loaded) |
 | Multi-selection | View combined diff (when the selection has one), Copy N SHAs (newline-separated) |
 | Commit / multi-selection, inside cc with code-review enabled | **Review in code-review** (a commit), **Review range in code-review** (a first-parent chain ending at HEAD); hidden on a submodule tab and standalone ([protocol → Links to code-review](protocol.md#links-to-code-review)) |
-| Branch / tag | Jump to commit, Copy name, Hide / Show (not offered for the checked-out branch), Solo / Unsolo; branches also Pin to left / Unpin |
+| Branch / tag | Jump to commit, **Compare with HEAD from merge base** (not on HEAD's branch, nor while HEAD is unborn), Copy name, Hide / Show (not offered for the checked-out branch), Solo / Unsolo; branches also Pin to left / Unpin |
 | Remote | Hide remote / Show remote, Solo remote / Unsolo remote, Show all (while something on that remote is hidden) |
 | Stash | C8's **Apply**, **Apply with staged changes**, **Pop**, **Create branch…**, **Rename…**, **Drop…** (order 400–405: [stash](stash.md)); Show details (not while the Stashes section is hidden: there is no stash row to select), View changes, Copy message, Hide stashes |
 | WIP | C8's **Stash changes…** (the own checkout only); C4's **Show changes** (its Changes panel), View unstaged changes, View staged changes; another checkout's also Open X in a tab |
@@ -71,6 +71,7 @@ The graph opens diffs through the diff viewer's `openDiff` (`features/graph/diff
 | A file in the details panel, two commits selected | `{kind: 'commits', oids}` at that file (the list the details already fetched, reused while Ignore whitespace is off) |
 | **Enter** on the list, or **View combined diff** in the details panel (three or more commits, or commits with the own WIP row) | the selection: one commit or stash → that commit; one WIP row → its checkout's Changes panel, not a diff (its rows open the per-file unstaged / staged diffs); two or more commits → `{kind: 'commits', oids, wip}` (`wip` when the own checkout's WIP row is selected too). A selection with a stash or another checkout's WIP row among several rows opens nothing |
 | Commit menu | **View changes** (`commit`), **Compare with working directory** (`worktree`) |
+| Branch / tag menu | **Compare with HEAD from merge base** (`compare`: `from: 'HEAD'`, `to: <full refname>`, `mode: '...'`) |
 | Multi-selection menu | **View combined diff** (as Enter) |
 | WIP menu | **View unstaged changes**, **View staged changes** |
 | Stash menu | **View changes** |
@@ -118,7 +119,7 @@ In the right slot the details show while `rightSlotFor` (`features/workdir/right
 
 ### Narrow screens
 
-Below Tailwind's `lg` (`WIDE_GRAPH_QUERY`, 64rem) the side slots are hidden: the graph toolbar's **Refs** and **Compare** buttons open the refs panel and the diff's Compare picker in dialogs, and clicking a commit (or **Show details**) opens the details in a dialog.
+Below Tailwind's `lg` (`WIDE_GRAPH_QUERY`, 64rem) the side slots are hidden: the graph toolbar's **Refs** button opens the refs panel in a dialog, and clicking a commit (or **Show details**) opens the details in a dialog.
 
 ## Snapshot and refresh
 

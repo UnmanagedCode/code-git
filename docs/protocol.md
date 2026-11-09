@@ -175,7 +175,7 @@ LfsPointer { oid /* sha256 hex */, size }
 | Source | `filename` |
 |---|---|
 | a commit | `<oid7>.patch` |
-| tree → tree (a run, a direct compare, two refs) | `<old7>..<new7>.patch` |
+| tree → tree (a run, a direct compare, a merge-base compare) | `<old7>..<new7>.patch` |
 | index → worktree / tree → index / tree → worktree | `<project>-unstaged.patch` / `-staged` / `-worktree`; the project name reduced to `[A-Za-z0-9._-]` (others → `_`), at most 80 characters |
 
 ### Graph ops (`src/git/ops/graph.js`; all reads, cancellable)

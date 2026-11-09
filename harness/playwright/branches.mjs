@@ -239,7 +239,7 @@ try {
         await open();
         // The graph toolbar holds C4's Changes button and this card's Branch button: it wraps, never overflows.
         const toolbar = page.getByRole('region', { name: 'Commit graph', exact: true }).locator(':scope > div').first();
-        const controls = ['Branch', 'Columns', 'Refresh graph', ...(vp === 'phone' ? ['Refs', 'Compare'] : [])];
+        const controls = ['Branch', 'Columns', 'Refresh graph', ...(vp === 'phone' ? ['Refs'] : [])];
         for (const name of controls) await toolbar.getByRole('button', { name, exact: true }).waitFor();
         if (vp === 'phone') await toolbar.getByRole('button', { name: /^Changes( \(\d+\))?$/ }).waitFor();
         const fits = await toolbar.evaluate((el) => {

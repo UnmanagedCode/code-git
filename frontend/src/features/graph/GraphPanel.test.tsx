@@ -217,7 +217,7 @@ test('right-click: a commit row offers the commit menu, a branch chip the branch
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   fireEvent.contextMenu(screen.getByText('feat'));
   menu = await screen.findByRole('menu');
-  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent).slice(-6)).toEqual(['Jump to commit', 'Show reflog', 'Copy name', 'Hide', 'Solo', 'Pin to left']);
+  expect(within(menu).getAllByRole('menuitem').map((m) => m.textContent).slice(-7)).toEqual(['Jump to commit', 'Compare with HEAD from merge base', 'Show reflog', 'Copy name', 'Hide', 'Solo', 'Pin to left']);
   fireEvent.keyDown(menu, { key: 'Escape' });
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
   fireEvent.click(rowEl(oid(5))!);
@@ -264,16 +264,14 @@ test('Enter opens the selection diff: a commit, a multi-selection as the commits
   expect(workdirOf(TAB).focus).toBe('slot');
 });
 
-test('below lg the toolbar opens Refs and Compare as dialogs', async () => {
+test('below lg the toolbar opens Refs as a dialog and has no Compare button', async () => {
   const happy = (window as unknown as { happyDOM: { setViewport(v: { width: number; height: number }): void } }).happyDOM;
   happy.setViewport({ width: 390, height: 844 });
   try {
     await show(linearWorld(3));
-    fireEvent.click(screen.getByRole('button', { name: 'Compare' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Compare' });
-    expect(within(dialog).getByRole('textbox', { name: 'Commit (sha or ref)' })).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole('button', { name: /^Unstaged changes/ }));
-    expect(diffStore.get().get('app\0')?.source).toEqual({ kind: 'unstaged' });
+    expect(screen.queryByRole('button', { name: 'Compare' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Refs' }));
+    expect(await screen.findByRole('dialog', { name: 'Refs' })).toBeTruthy();
   } finally {
     happy.setViewport({ width: 1024, height: 768 });
   }

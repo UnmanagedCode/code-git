@@ -1,4 +1,4 @@
-// The diff viewer, asserted on the seeded `diffs` project (tests/_diffRepo.js): sources from the Compare panel, the
+// The diff viewer, asserted on the seeded `diffs` project (tests/_diffRepo.js): sources from the palette's Show commit…, the WIP row's menu and a branch's menu, the
 // file list that drives it from the right slot (counts, Tree, the phone's Files (n) dialog), every Diff scope × Diff
 // layout combination, Ignore whitespace, the prefs persisted and a legacy stored value cleaned, File view, search and
 // change navigation, every file-state placeholder, a patch download, untrusted text, and Esc. Runs in light then dark;
@@ -37,11 +37,21 @@ try {
 
     const diff = page.getByRole('region', { name: 'Diff' });
     const right = page.locator('[data-slot-name=right]');
-    // A Compare-panel diff's list: the right slot's Changed files panel.
+    // A palette-opened diff's list: the right slot's Changed files panel.
     const filesPanel = right.getByRole('complementary', { name: 'Changed files panel', exact: true });
     const files = filesPanel.getByRole('listbox', { name: 'Changed files', exact: true });
     const option = (name) => files.getByRole('option', { name });
     const body = diff.locator('[data-diff-body]');
+    const toast = (text) => page.locator('[data-sonner-toast]').filter({ hasText: text });
+    /** The palette's Show commit…: Ctrl/⌘+P, the command, then the typed revision. */
+    const showCommit = async (rev) => {
+      await page.locator('body').click({ position: { x: 5, y: 300 } });
+      await page.keyboard.press('ControlOrMeta+p');
+      await page.getByRole('combobox', { name: 'Command', exact: true }).fill('show commit');
+      await page.keyboard.press('Enter');
+      await page.getByRole('combobox', { name: 'Commit (sha or ref)', exact: true }).fill(rev);
+      await page.keyboard.press('Enter');
+    };
     const scope = (name) => diff.getByRole('group', { name: 'Diff scope', exact: true }).getByRole('button', { name, exact: true });
     const layout = (name) => diff.getByRole('group', { name: 'Diff layout', exact: true }).getByRole('button', { name, exact: true });
 
@@ -65,18 +75,15 @@ try {
       await page.goto(`${world.url}/?project=diffs`);
       await page.getByRole('region', { name: 'Commit graph' }).waitFor();
 
-      // 12 (part): a bad ref is refused inline, and no diff opens.
+      // 12 (part): a bad ref is refused with an error toast, and no diff opens.
       expectedRefusals = 1;
-      await page.getByRole('textbox', { name: 'Commit (sha or ref)' }).fill('no-such-ref');
-      await page.getByRole('button', { name: 'Show commit' }).click();
-      const alert = page.getByRole('region', { name: 'Commit' }).getByRole('alert');
-      await alert.waitFor();
-      check((await alert.textContent()).includes('no-such-ref'), `${scheme}: a bad ref is refused inline`);
+      await showCommit('no-such-ref');
+      await toast('no-such-ref').first().waitFor();
+      check(await toast('no-such-ref').count() >= 1, `${scheme}: a bad ref is refused with a toast naming it`);
       check(!(await diff.isVisible()), `${scheme}: no diff opens for a bad ref`);
 
-      // 1. A commit from the Compare panel.
-      await page.getByRole('textbox', { name: 'Commit (sha or ref)' }).fill('HEAD~1');
-      await page.getByRole('button', { name: 'Show commit' }).click();
+      // 1. A commit from the palette's Show commit….
+      await showCommit('HEAD~1');
       await files.waitFor();
       for (const p of [/src\/app\.ts/, /bin\.dat/, /old\/name\.js → new\/name\.js/, /big\.bin/, /huge\.txt/]) {
         check(await option(p).count() === 1, `${scheme}: the file list shows ${p.source}`);
@@ -168,8 +175,8 @@ try {
       // defaults and is rewritten without its legacy keys.
       const reopen = async () => {
         await page.reload();
-        await page.getByRole('textbox', { name: 'Commit (sha or ref)' }).fill('HEAD~1');
-        await page.getByRole('button', { name: 'Show commit' }).click();
+        await page.getByRole('region', { name: 'Commit graph' }).waitFor();
+        await showCommit('HEAD~1');
         await files.waitFor();
         await scope('Hunk').waitFor();
       };
@@ -268,31 +275,35 @@ try {
       check(download.suggestedFilename() === `${oids.change.slice(0, 7)}.patch`, `${scheme}: the download is named ${download.suggestedFilename()}`);
       check(readFileSync(saved, 'utf8').startsWith(`From ${oids.change} `), `${scheme}: the downloaded patch is a mailbox patch of the commit`);
 
-      // 8. Work in progress and two refs.
+      // 8. Work in progress (the WIP row's menu) and a branch vs HEAD from its merge base (the branch's menu).
       // Their lists are the Changes panel's sections.
       const unstaged = right.getByRole('region', { name: 'Unstaged Files', exact: true });
       const staged = right.getByRole('region', { name: 'Staged Files', exact: true });
-      await page.getByRole('button', { name: /^Unstaged changes/ }).click();
+      const backToGraph = async () => {
+        await body.click();
+        await page.keyboard.press('Escape');
+        await page.getByRole('region', { name: 'Commit graph' }).waitFor();
+      };
+      await backToGraph();
+      await page.locator('[data-row-id="wip:"]').click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'View unstaged changes', exact: true }).click();
       await unstaged.getByRole('option', { name: /notes\.txt/ }).waitFor();
       check(await unstaged.getByRole('option', { name: /notes\.txt/ }).count() === 1, `${scheme}: unstaged lists the untracked file`);
       await unstaged.getByRole('option', { name: /notes\.txt/ }).click();
       await body.locator('[data-row=add]').first().waitFor();
       check(await unstaged.locator('[data-path="notes.txt"][aria-current="true"]').count() === 1, `${scheme}: the unstaged section marks the viewed file`);
-      await page.getByRole('button', { name: /^Staged changes/ }).click();
+      await backToGraph();
+      await page.locator('[data-row-id="wip:"]').click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'View staged changes', exact: true }).click();
       await staged.getByRole('option', { name: /tail\.txt/ }).waitFor();
       check(await staged.getByRole('option').count() === 1, `${scheme}: staged lists the staged file`);
-      const compare = async (range) => {
-        await page.getByRole('textbox', { name: 'From' }).fill('main');
-        await page.getByRole('textbox', { name: 'To' }).fill('side');
-        await page.getByRole('group', { name: 'Range' }).getByRole('button', { name: range, exact: true }).click();
-        await page.getByRole('button', { name: 'Compare', exact: true }).click();
-        await diff.getByLabel('Diff source').filter({ hasText: `main${range}side` }).waitFor();
-        await option(/side\.txt/).waitFor();
-        return files.getByRole('option').count();
-      };
-      const two = await compare('..');
-      const three = await compare('...');
-      check(two !== three, `${scheme}: main..side (${two} files) and main...side (${three} files) differ`);
+      await backToGraph();
+      await page.locator('[data-ref="refs/heads/side"] button[title="refs/heads/side"]').click({ button: 'right' });
+      await page.getByRole('menuitem', { name: 'Compare with HEAD from merge base', exact: true }).click();
+      await diff.getByLabel('Diff source').filter({ hasText: 'HEAD...refs/heads/side' }).waitFor();
+      check((await diff.getByLabel('Diff source').textContent()).includes('merge base'), `${scheme}: the source label names the merge base`);
+      await option(/side\.txt/).waitFor();
+      check(await option(/side2\.txt/).count() === 1 && await option(/tail\.txt/).count() === 0, `${scheme}: HEAD...side lists side.txt and side2.txt, not main's tail.txt`);
       await shot('compare');
 
       // 11. Esc closes the diff.
