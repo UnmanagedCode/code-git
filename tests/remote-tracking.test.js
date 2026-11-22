@@ -257,6 +257,7 @@ test('assertNoTrackingSymrefs refuses the first symbolic ref with its ref and ta
 test('trackedSnapshot: every destination ref and every tag, with symrefs; nothing outside the destinations, nothing dangling', async (t) => {
   const w = await refsWorld(t);
   w.repo.git('fetch', '-q', 'origin');
+  w.repo.git('remote', 'set-head', 'origin', 'main');
   w.repo.git('tag', 'v1');
   w.repo.git('update-ref', 'refs/remotes/originx/a', w.base);
   w.repo.git('update-ref', 'refs/remotes/other/a', w.base);
@@ -265,7 +266,7 @@ test('trackedSnapshot: every destination ref and every tag, with symrefs; nothin
   const git = gitFor(ctxFor({ project: 'repo' }, 'write', { op: 'test.snapshot' }));
   const snap = await trackedSnapshot(git, await fetchSpecs(git, 'origin'));
   assert.deepEqual(Object.fromEntries(snap), {
-    // git's own fetch created the HEAD alias (followRemoteHEAD).
+    // The remote's HEAD alias, set explicitly: only git ≥ 2.48's fetch creates it (followRemoteHEAD).
     'refs/remotes/origin/HEAD': { oid: w.base, symref: 'refs/remotes/origin/main' },
     'refs/remotes/origin/alias': { oid: w.base, symref: 'refs/heads/main' },
     'refs/remotes/origin/main': { oid: w.base, symref: null },
