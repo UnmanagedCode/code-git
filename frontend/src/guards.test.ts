@@ -93,8 +93,8 @@ test('index.html loads the bridge first and blocking, then the host theme and th
   const html = readFileSync(path.join(frontend, 'index.html'), 'utf8');
   const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'));
   const tags = [...head.matchAll(/<(script|link)\b[^>]*>/g)].map((m) => m[0]);
-  expect(tags[0]).toBe('<script src="/pluginBridge.js" vite-ignore>');
-  expect(tags[1]).toBe('<link rel="stylesheet" href="/pluginTheme.css" vite-ignore />');
+  expect(tags[0]).toBe('<script src="../../pluginBridge.js" vite-ignore>');
+  expect(tags[1]).toBe('<link rel="stylesheet" href="../../pluginTheme.css" vite-ignore />');
   expect(tags[2]).toBe('<script src="theme-init.js" vite-ignore>');
   expect(head).not.toMatch(/pluginBridge\.js"[^>]*(defer|async)/);
 });
