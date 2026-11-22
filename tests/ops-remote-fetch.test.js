@@ -122,11 +122,16 @@ test('a live symbolic tracking ref → SYMBOLIC_REF (ref, target) before any fet
   await assert.rejects(w.op('remote.fetch', { remote: 'origin' }), refused('SYMBOLIC_REF', { ref: 'refs/tags/t' }), 'a symbolic tag is refused too');
 });
 
-test('the remote\'s HEAD alias is not refused, and a fetch creating it is not reported', async (t) => {
+test('the remote\'s HEAD alias is not refused, and a fetch bringing it to life is not reported', async (t) => {
   const w = await refsWorld(t);
+  // A dangling alias the fetch brings to life by recreating its target, on any git (only git ≥ 2.48's fetch creates the alias itself).
+  w.repo.git('update-ref', '-d', 'refs/remotes/origin/main');
+  w.repo.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
   const first = await w.op('remote.fetch', { remote: 'origin' });
-  assert.equal(w.repo.git('symbolic-ref', 'refs/remotes/origin/HEAD'), 'refs/remotes/origin/main', 'git created the alias');
+  assert.equal(w.repo.git('symbolic-ref', 'refs/remotes/origin/HEAD'), 'refs/remotes/origin/main');
+  assert.equal(w.oid('refs/remotes/origin/HEAD'), w.base, 'the fetch brought the alias to life');
   assert.deepEqual(first.remotes[0].symrefsResolved, []);
+  assert.deepEqual(first.remotes[0].changes, [{ ref: 'refs/remotes/origin/main', old: null, new: w.base }], 'the alias is not a change');
   pushFromElsewhere(w, 'main', { 'm.txt': 'm\n' });
   const second = await w.op('remote.fetch', { remote: 'origin' });
   assert.equal(second.remotes[0].changes.length, 1);
