@@ -95,6 +95,7 @@ export function FileSection({ tab, section, files, busy }: { tab: Tab; section: 
       <div data-section-list="" className="min-h-0 flex-1 overflow-y-auto">
         {files.length ? (
           <FileList
+            tab={tab}
             label={label}
             files={files}
             viewed={bound?.viewed ?? null}

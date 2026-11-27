@@ -13,4 +13,5 @@ export const DIFF_KEYS: Shortcut[] = [DIFF_FIND_KEY, DIFF_CHANGE_KEY, DIFF_ESCAP
 // Every file list's keys (features/diff/FileList.tsx), while focus is on one of its rows.
 export const FILE_MOVE_KEY: Shortcut = { id: 'files.move', label: 'Previous / next file (beside an open diff, shows it)', scope: 'File lists', combos: [{ key: 'ArrowUp', mod: ANY, shift: ANY }, { key: 'ArrowDown', mod: ANY, shift: ANY }] };
 export const FILE_OPEN_KEY: Shortcut = { id: 'files.open', label: "Open the file's diff", scope: 'File lists', combos: [{ key: 'Enter', mod: ANY, shift: ANY, alt: ANY }] };
-export const FILE_LIST_KEYS: Shortcut[] = [FILE_MOVE_KEY, FILE_OPEN_KEY];
+export const FILE_FOLDER_KEY: Shortcut = { id: 'files.folder', label: 'Collapse / expand the focused folder (Tree)', scope: 'File lists', combos: [{ key: 'ArrowLeft' }, { key: 'ArrowRight' }] };
+export const FILE_LIST_KEYS: Shortcut[] = [FILE_MOVE_KEY, FILE_OPEN_KEY, FILE_FOLDER_KEY];

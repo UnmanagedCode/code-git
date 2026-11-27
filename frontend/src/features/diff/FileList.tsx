@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
-import { EllipsisVerticalIcon, FolderIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderOpenIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { clip, FILE_RENDER_CAP } from '@/lib/clip';
@@ -7,9 +7,11 @@ import { isTextEntry } from '@/lib/textEntry';
 import { cn } from '@/lib/utils';
 import { ActionMenuItems } from '@/shell/ActionMenu';
 import { matchCombo, matches, pointerMods } from '@/shell/shortcuts';
+import { revealPath, setDirCollapsed, useCollapsedDirs } from '@/state/collapsedDirs';
 import { setFileView, useFileView } from '@/state/fileView';
-import { buildFileTree, orderedFiles, statusClass, type TreeNode } from './fileTree';
-import { FILE_MOVE_KEY, FILE_OPEN_KEY } from './keys';
+import type { Tab } from '@/state/tabs';
+import { buildFileTree, orderedFiles, statusClass, type TreeDir, type TreeNode } from './fileTree';
+import { FILE_FOLDER_KEY, FILE_MOVE_KEY, FILE_OPEN_KEY } from './keys';
 
 // The one file list: a commit's details, the Changes panel's sections and every open diff's files render it.
 
@@ -63,6 +65,8 @@ export function FileViewToggle() {
 }
 
 interface Props<F extends ListFile> {
+  /** Whose collapsed Tree folders the list shows (one set per tab, shared by its lists). */
+  tab: Tab;
   /** The listbox's accessible name. */
   label: string;
   files: readonly F[];
@@ -138,20 +142,24 @@ function Row<F extends ListFile>({ file, name, depth, viewed, selected, actions,
 
 /**
  * Files as full paths or a directory tree (the shared File view choice), each with its status, line counts, row buttons
- * and menu. ↑/↓ move the focus from file row to file row in the displayed order (directory rows are skipped), Enter
- * selects the focused row. The first FILE_RENDER_CAP files render until "Show all N".
+ * and menu. ↑/↓ move the focus from file row to file row in the displayed order (directory rows and collapsed folders'
+ * files are skipped), Enter selects the focused row; a Tree folder collapses and expands by click, Enter / Space or ←/→.
+ * The first FILE_RENDER_CAP files render until "Show all N".
  */
 export function FileList<F extends ListFile>({
-  label, files, viewed = null, selected, multi = false, followFocus = false, onSelect, actions, dirActions, menu, onRowKeyDown,
+  tab, label, files, viewed = null, selected, multi = false, followFocus = false, onSelect, actions, dirActions, menu, onRowKeyDown,
 }: Props<F>) {
   const view = useFileView();
+  const collapsed = useCollapsedDirs(tab);
   const [all, setAll] = useState(false);
   const [anchor, setAnchor] = useState<string | null>(null);
   const viewedIndex = viewed === null ? -1 : files.findIndex((f) => f.path === viewed);
   useEffect(() => { if (viewedIndex >= FILE_RENDER_CAP) setAll(true); }, [viewedIndex]);
+  // The viewed file's folders open when it (or the view) changes, never when the user collapses one.
+  useEffect(() => { if (view === 'tree' && viewed) revealPath(tab, viewed); }, [viewed, view]);
   const shown = useMemo(() => (all ? files : files.slice(0, FILE_RENDER_CAP)), [files, all]);
   const tree = useMemo(() => (view === 'tree' ? buildFileTree(shown) : null), [shown, view]);
-  const ordered = useMemo(() => orderedFiles(shown, view), [shown, view]);
+  const ordered = useMemo(() => orderedFiles(shown, view, collapsed), [shown, view, collapsed]);
   const byPath = useMemo(() => new Map(shown.map((f) => [f.path, f])), [shown]);
   // A directory's actions act on every file beneath it, rendered under the cap or not.
   const underDir = useMemo(() => {
@@ -195,11 +203,23 @@ export function FileList<F extends ListFile>({
     const move = matchCombo(e, FILE_MOVE_KEY);
     if (move) {
       e.preventDefault();
-      const i = row ? rows.indexOf(row) : -1;
-      const next = rows[Math.max(0, Math.min(rows.length - 1, i + (move.key === 'ArrowDown' ? 1 : -1)))];
+      const down = move.key === 'ArrowDown';
+      // From a row (or a button in it): the row beside it. From a folder's toggle or buttons: the nearest row that way.
+      const next = row
+        ? rows[Math.max(0, Math.min(rows.length - 1, rows.indexOf(row) + (down ? 1 : -1)))]
+        : down
+          ? rows.find((r) => target.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING)
+          : rows.findLast((r) => target.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_PRECEDING);
       next?.focus();
       const f = next && byPath.get(next.dataset.path ?? '');
       if (followFocus && f && next !== row) onSelect([f.path], f, false);
+      return;
+    }
+    const fold = matchCombo(e, FILE_FOLDER_KEY);
+    const dir = target instanceof HTMLElement && target.matches('button[data-dir]') ? target.dataset.dir : undefined;
+    if (fold && dir !== undefined) {
+      e.preventDefault();
+      setDirCollapsed(tab, dir, fold.key === 'ArrowLeft');
       return;
     }
     // The rest act on the row itself, not on a button inside it.
@@ -225,22 +245,39 @@ export function FileList<F extends ListFile>({
       />
     );
   };
-  const renderTree = (nodes: TreeNode<F>[], depth: number): ReactNode => nodes.map((n) => (n.kind === 'file'
-    ? row(n.file, n.file.oldPath ? `${n.file.oldPath} → ${n.name}` : n.name, depth)
-    : (
+  const dirRow = (n: TreeDir<F>, depth: number) => {
+    const open = !collapsed.has(n.path);
+    // Like a collapsed refs folder holding HEAD: a collapsed folder holding the viewed file stands out.
+    const holdsViewed = !open && viewed !== null && viewed.startsWith(`${n.path}/`);
+    return (
       <li key={`d:${n.path}`} role="presentation">
         <div className="group flex items-center gap-1 px-2 py-0.5 text-xs text-muted-foreground">
-          <FolderIcon className={cn('size-3.5 shrink-0', indent(depth))} />
-          <span className="min-w-0 flex-1 truncate">{clip(n.name)}</span>
+          <button
+            type="button"
+            data-dir={n.path}
+            aria-label={clip(n.path)}
+            aria-expanded={open}
+            title={clip(n.path)}
+            className={cn('flex min-w-0 flex-1 items-center gap-1 rounded-sm text-left outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring', holdsViewed && 'font-medium text-foreground')}
+            onClick={() => setDirCollapsed(tab, n.path, open)}
+          >
+            {open ? <ChevronDownIcon className={cn('size-3.5 shrink-0', indent(depth))} /> : <ChevronRightIcon className={cn('size-3.5 shrink-0', indent(depth))} />}
+            {open ? <FolderOpenIcon className="size-3.5 shrink-0" /> : <FolderIcon className="size-3.5 shrink-0" />}
+            <span className="min-w-0 flex-1 truncate">{clip(n.name)}</span>
+          </button>
           {dirActions && (
             <span className="flex shrink-0 items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
               {dirActions(underDir.get(n.path) ?? [], n.path)}
             </span>
           )}
         </div>
-        <ul role="group" aria-label={clip(n.path)}>{renderTree(n.children, depth + 1)}</ul>
+        {open && <ul role="group" aria-label={clip(n.path)}>{renderTree(n.children, depth + 1)}</ul>}
       </li>
-    )));
+    );
+  };
+  const renderTree = (nodes: TreeNode<F>[], depth: number): ReactNode => nodes.map((n) => (n.kind === 'file'
+    ? row(n.file, n.file.oldPath ? `${n.file.oldPath} → ${n.name}` : n.name, depth)
+    : dirRow(n, depth)));
 
   return (
     <>

@@ -26,6 +26,14 @@ test('orderedFiles: Path keeps the input order; Tree is the tree\'s depth-first 
   expect(orderedFiles([], 'tree')).toEqual([]);
 });
 
+test('orderedFiles: Tree skips the files beneath a collapsed directory, nested ones included; Path ignores collapse', () => {
+  const files = [f('src/b.ts'), f('README.md'), f('src/a/x.ts'), f('src/a.ts'), f('docs/z.md'), f('srcx/y.ts')];
+  expect(orderedFiles(files, 'tree', new Set(['src'])).map((x) => x.path)).toEqual(['docs/z.md', 'srcx/y.ts', 'README.md']);
+  expect(orderedFiles(files, 'tree', new Set(['src/a'])).map((x) => x.path)).toEqual(['docs/z.md', 'src/a.ts', 'src/b.ts', 'srcx/y.ts', 'README.md']);
+  expect(orderedFiles(files, 'tree', new Set())).toEqual(orderedFiles(files, 'tree'));
+  expect(orderedFiles(files, 'path', new Set(['src']))).toEqual(files);
+});
+
 test('a path of 20,000 components nests MAX_TREE_DEPTH directories and keeps the rest in the file name', () => {
   const parts = Array.from({ length: 20_000 }, (_, i) => `d${i}`);
   const tree = buildFileTree([f(parts.join('/'))]);
