@@ -65,6 +65,7 @@ export function PairDetails({ tab, oids, inDialog, available }: { tab: Tab; oids
         : error ? <FilesError code={error.code} message={error.message} />
         : !result ? <p className="px-3 py-2 text-sm text-muted-foreground">Loading…</p> : (
           <FileList
+            tab={tab}
             label="Changed files"
             files={result.files}
             // The pane's answer is the diff's list unless Ignore whitespace asks the diff for another.

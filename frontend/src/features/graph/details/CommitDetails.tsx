@@ -189,6 +189,7 @@ function Commit({ tab, oid, inDialog, available }: { tab: Tab; oid: string; inDi
       {listFailed ? <p className="px-3 py-2 text-xs text-muted-foreground">{LIST_FAILED}</p>
         : bound ? <DiffFileList tab={tab} fallback={sameFiles ? d.files ?? undefined : undefined} /> : d.files ? (
         <FileList
+          tab={tab}
           label="Changed files"
           files={d.files}
           onSelect={(_sel, f) => requestFileOpen({ tab, commit: d.oid, parent, path: f.path, oldPath: f.oldPath })}

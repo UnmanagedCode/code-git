@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { FILE_RENDER_CAP } from '@/lib/clip';
 import { fileViewStore, setFileView } from '@/state/fileView';
 import { FileList, FileViewToggle, type ListFile } from './FileList';
@@ -14,7 +14,7 @@ const option = (path: string) => document.querySelector<HTMLElement>(`li[role="o
 const paths = () => [...document.querySelectorAll('li[role="option"]')].map((li) => li.getAttribute('data-path'));
 
 test('Path lists every file label in input order; a rename reads old → new', () => {
-  render(<FileList label="Changed files" files={[...FILES, lf('new.ts', { status: 'R', oldPath: 'old.ts' })]} onSelect={() => {}} />);
+  render(<FileList tab={TAB} label="Changed files" files={[...FILES, lf('new.ts', { status: 'R', oldPath: 'old.ts' })]} onSelect={() => {}} />);
   const list = screen.getByRole('listbox', { name: 'Changed files' });
   expect(within(list).getAllByRole('option')).toHaveLength(5);
   expect(paths()).toEqual(['src/b.ts', 'README.md', 'src/a/x.ts', 'docs/z.md', 'new.ts']);
@@ -27,7 +27,7 @@ test('a row\'s title is its full path in Path and Tree, and old → new for a re
   render(
     <>
       <FileViewToggle />
-      <FileList label="Changed files" files={[lf(long), lf('new.ts', { status: 'R', oldPath: 'old.ts' })]} onSelect={() => {}} />
+      <FileList tab={TAB} label="Changed files" files={[lf(long), lf('new.ts', { status: 'R', oldPath: 'old.ts' })]} onSelect={() => {}} />
     </>,
   );
   expect(option(long).getAttribute('title')).toBe(long);
@@ -42,8 +42,8 @@ test('Tree nests files under directory groups; the toggle switches every mounted
   render(
     <>
       <FileViewToggle />
-      <FileList label="One" files={FILES} onSelect={() => {}} />
-      <FileList label="Two" files={FILES} onSelect={() => {}} />
+      <FileList tab={TAB} label="One" files={FILES} onSelect={() => {}} />
+      <FileList tab={TAB} label="Two" files={FILES} onSelect={() => {}} />
     </>,
   );
   fireEvent.click(screen.getByRole('button', { name: 'Tree' }));
@@ -66,6 +66,7 @@ test('Tree nests files under directory groups; the toggle switches every mounted
 test('counts: +added −deleted for text; "binary" and "submodule" instead of numbers; none for untracked and conflicted', () => {
   render(
     <FileList
+      tab={TAB}
       label="Changed files"
       files={[
         lf('t.txt', { added: 12, deleted: 3 }),
@@ -96,14 +97,14 @@ test('counts: +added −deleted for text; "binary" and "submodule" instead of nu
 test('multi: a click selects one (plain), Ctrl/⌘-click toggles, Shift-click extends over the displayed (Tree) order (not plain)', () => {
   setFileView('tree');
   const onSelect = vi.fn();
-  const { rerender } = render(<FileList label="L" files={FILES} multi selected={[]} onSelect={onSelect} />);
+  const { rerender } = render(<FileList tab={TAB} label="L" files={FILES} multi selected={[]} onSelect={onSelect} />);
   // Tree order: docs/z.md, src/a/x.ts, src/b.ts, README.md.
   fireEvent.click(option('docs/z.md'));
   expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md'], FILES[3], true);
-  rerender(<FileList label="L" files={FILES} multi selected={['docs/z.md']} viewed="docs/z.md" onSelect={onSelect} />);
+  rerender(<FileList tab={TAB} label="L" files={FILES} multi selected={['docs/z.md']} viewed="docs/z.md" onSelect={onSelect} />);
   fireEvent.click(option('src/b.ts'), { ctrlKey: true });
   expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md', 'src/b.ts'], FILES[0], false);
-  rerender(<FileList label="L" files={FILES} multi selected={['docs/z.md', 'src/b.ts']} viewed="src/b.ts" onSelect={onSelect} />);
+  rerender(<FileList tab={TAB} label="L" files={FILES} multi selected={['docs/z.md', 'src/b.ts']} viewed="src/b.ts" onSelect={onSelect} />);
   fireEvent.click(option('docs/z.md'), { metaKey: true });
   expect(onSelect).toHaveBeenLastCalledWith(['src/b.ts'], FILES[3], false);
   // The anchor is the last plain or toggled row (docs/z.md); Shift extends to README.md over the tree order.
@@ -113,7 +114,7 @@ test('multi: a click selects one (plain), Ctrl/⌘-click toggles, Shift-click ex
 
 test('without multi, modified clicks are plain clicks', () => {
   const onSelect = vi.fn();
-  render(<FileList label="L" files={FILES} selected={['src/b.ts']} viewed="src/b.ts" onSelect={onSelect} />);
+  render(<FileList tab={TAB} label="L" files={FILES} selected={['src/b.ts']} viewed="src/b.ts" onSelect={onSelect} />);
   fireEvent.click(option('README.md'), { ctrlKey: true });
   expect(onSelect).toHaveBeenLastCalledWith(['README.md'], FILES[1], true);
   fireEvent.click(option('docs/z.md'), { shiftKey: true });
@@ -124,7 +125,7 @@ test('without multi, modified clicks are plain clicks', () => {
 test('↑/↓ move the focus over file rows in displayed order, skipping directories; followFocus also selects (not plain); Enter selects the focused row (plain)', () => {
   setFileView('tree');
   const onSelect = vi.fn();
-  const { rerender } = render(<FileList label="L" files={FILES} onSelect={onSelect} />);
+  const { rerender } = render(<FileList tab={TAB} label="L" files={FILES} onSelect={onSelect} />);
   option('docs/z.md').focus();
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
   expect(document.activeElement).toBe(option('src/a/x.ts'));
@@ -135,7 +136,7 @@ test('↑/↓ move the focus over file rows in displayed order, skipping directo
   expect(onSelect).not.toHaveBeenCalled();
   fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
   expect(onSelect).toHaveBeenLastCalledWith(['src/a/x.ts'], FILES[2], true);
-  rerender(<FileList label="L" files={FILES} followFocus onSelect={onSelect} />);
+  rerender(<FileList tab={TAB} label="L" files={FILES} followFocus onSelect={onSelect} />);
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
   expect(document.activeElement).toBe(option('src/b.ts'));
   expect(onSelect).toHaveBeenLastCalledWith(['src/b.ts'], FILES[0], false);
@@ -147,7 +148,7 @@ test('↑/↓ move the focus over file rows in displayed order, skipping directo
 
 test('extra row keys reach onRowKeyDown with the focused file; the viewed row is aria-current and the selection aria-selected', () => {
   const onRowKeyDown = vi.fn();
-  render(<FileList label="L" files={FILES} viewed="README.md" selected={['README.md', 'docs/z.md']} onSelect={() => {}} onRowKeyDown={onRowKeyDown} />);
+  render(<FileList tab={TAB} label="L" files={FILES} viewed="README.md" selected={['README.md', 'docs/z.md']} onSelect={() => {}} onRowKeyDown={onRowKeyDown} />);
   option('src/b.ts').focus();
   fireEvent.keyDown(option('src/b.ts'), { key: 's' });
   expect(onRowKeyDown).toHaveBeenCalledTimes(1);
@@ -163,6 +164,7 @@ test('only the row itself takes Enter and host keys; a field in a row types; key
   const menu = (_f: ListFile, targets: ListFile[]) => ({ context: 'diff-file', ctx: { tab: TAB, files: targets, source: { kind: 'unstaged' } } });
   render(
     <FileList
+      tab={TAB}
       label="L" files={FILES} followFocus onSelect={onSelect} onRowKeyDown={onRowKeyDown} menu={menu}
       actions={(f) => (f.path === 'README.md' ? <><button type="button">Act</button><input aria-label="Note" /></> : null)}
     />,
@@ -193,7 +195,7 @@ test('only the row itself takes Enter and host keys; a field in a row types; key
 test('row actions render per file, directory actions per directory with the files beneath it', () => {
   setFileView('tree');
   const dirActions = vi.fn((files: ListFile[], dir: string) => <button type="button">Dir {dir} ({files.length})</button>);
-  render(<FileList label="L" files={FILES} onSelect={() => {}} actions={(f) => <button type="button">Do {f.path}</button>} dirActions={dirActions} />);
+  render(<FileList tab={TAB} label="L" files={FILES} onSelect={() => {}} actions={(f) => <button type="button">Do {f.path}</button>} dirActions={dirActions} />);
   expect(within(option('src/b.ts')).getByRole('button', { name: 'Do src/b.ts' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Dir src (2)' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Dir src/a (1)' })).toBeTruthy();
@@ -202,11 +204,11 @@ test('row actions render per file, directory actions per directory with the file
 
 test('over FILE_RENDER_CAP: the first rows and "Show all N"; a viewed file past the cap expands the list', () => {
   const many = Array.from({ length: FILE_RENDER_CAP + 3 }, (_, i) => lf(`f${i}.txt`));
-  const { rerender } = render(<FileList label="L" files={many} onSelect={() => {}} />);
+  const { rerender } = render(<FileList tab={TAB} label="L" files={many} onSelect={() => {}} />);
   expect(document.querySelectorAll('li[role="option"]')).toHaveLength(FILE_RENDER_CAP);
   fireEvent.click(screen.getByRole('button', { name: `Show all ${many.length}` }));
   expect(document.querySelectorAll('li[role="option"]')).toHaveLength(many.length);
-  rerender(<FileList key="fresh" label="L" files={many} viewed={`f${FILE_RENDER_CAP + 1}.txt`} onSelect={() => {}} />);
+  rerender(<FileList key="fresh" tab={TAB} label="L" files={many} viewed={`f${FILE_RENDER_CAP + 1}.txt`} onSelect={() => {}} />);
   expect(document.querySelectorAll('li[role="option"]')).toHaveLength(many.length);
   expect(screen.queryByRole('button', { name: /^Show all/ })).toBeNull();
 });
@@ -217,7 +219,7 @@ test('⋮ and right-click open the row menu: it acts on the selection when the r
   const source = { kind: 'unstaged' } as const;
   const menu = (_f: ListFile, targets: ListFile[]) => ({ context: 'diff-file', ctx: { tab: TAB, files: targets, source } });
   const onSelect = vi.fn();
-  render(<FileList label="L" files={FILES} multi selected={['src/b.ts', 'docs/z.md']} onSelect={onSelect} menu={menu} />);
+  render(<FileList tab={TAB} label="L" files={FILES} multi selected={['src/b.ts', 'docs/z.md']} onSelect={onSelect} menu={menu} />);
   await userEvent.click(screen.getByRole('button', { name: 'Actions for docs/z.md' }));
   expect(await screen.findByRole('menuitem', { name: 'Copy patch of selection' })).toBeTruthy();
   await userEvent.click(screen.getByRole('menuitem', { name: 'Copy path' }));
@@ -230,8 +232,136 @@ test('⋮ and right-click open the row menu: it acts on the selection when the r
 });
 
 test('a hostile path renders as text', () => {
-  render(<FileList label="L" files={[lf('<img src=x onerror=alert(1)>')]} onSelect={() => {}} />);
+  render(<FileList tab={TAB} label="L" files={[lf('<img src=x onerror=alert(1)>')]} onSelect={() => {}} />);
   act(() => setFileView('tree'));
   expect(document.querySelector('img')).toBeNull();
   expect(screen.getByRole('option').textContent).toContain('<img src=x onerror=alert(1)>');
+});
+
+describe('Tree folders collapse', () => {
+  const folder = (path: string) => screen.getByRole('button', { name: path });
+  const OTHER = { project: 'other', worktree: null };
+
+  test('a click collapses a folder (its files leave the list) and expands it again', () => {
+    setFileView('tree');
+    render(<FileList tab={TAB} label="L" files={FILES} onSelect={() => {}} />);
+    expect(folder('src').getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(folder('src'));
+    expect(folder('src').getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('group', { name: 'src' })).toBeNull();
+    expect(paths()).toEqual(['docs/z.md', 'README.md']);
+    fireEvent.click(folder('src'));
+    expect(folder('src').getAttribute('aria-expanded')).toBe('true');
+    expect(paths()).toEqual(['docs/z.md', 'src/a/x.ts', 'src/b.ts', 'README.md']);
+  });
+
+  test('Enter and Space toggle the focused folder; ← collapses it and → expands it', async () => {
+    setFileView('tree');
+    render(<FileList tab={TAB} label="L" files={FILES} onSelect={() => {}} />);
+    folder('src').focus();
+    await userEvent.keyboard('{Enter}');
+    expect(folder('src').getAttribute('aria-expanded')).toBe('false');
+    await userEvent.keyboard(' ');
+    expect(folder('src').getAttribute('aria-expanded')).toBe('true');
+    fireEvent.keyDown(folder('src'), { key: 'ArrowLeft' });
+    expect(folder('src').getAttribute('aria-expanded')).toBe('false');
+    fireEvent.keyDown(folder('src'), { key: 'ArrowLeft' });
+    expect(folder('src').getAttribute('aria-expanded')).toBe('false');
+    fireEvent.keyDown(folder('src'), { key: 'ArrowRight' });
+    expect(folder('src').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  test('a refreshed list keeps the folder collapsed: files it gains stay hidden; emptied and refilled, it comes back collapsed', () => {
+    setFileView('tree');
+    const { rerender } = render(<FileList tab={TAB} label="L" files={FILES} onSelect={() => {}} />);
+    fireEvent.click(folder('src'));
+    rerender(<FileList tab={TAB} label="L" files={[lf('src/new.ts'), lf('src/a/x.ts'), lf('README.md')]} onSelect={() => {}} />);
+    expect(folder('src').getAttribute('aria-expanded')).toBe('false');
+    expect(paths()).toEqual(['README.md']);
+    rerender(<FileList tab={TAB} label="L" files={[lf('README.md')]} onSelect={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'src' })).toBeNull();
+    rerender(<FileList tab={TAB} label="L" files={FILES} onSelect={() => {}} />);
+    expect(folder('src').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('the collapsed set is the tab\'s: kept across a remount, shared by its lists, not by another tab\'s', () => {
+    setFileView('tree');
+    const { unmount } = render(<FileList tab={TAB} label="L" files={FILES} onSelect={() => {}} />);
+    fireEvent.click(folder('src'));
+    unmount();
+    render(
+      <>
+        <FileList tab={TAB} label="One" files={FILES} onSelect={() => {}} />
+        <FileList tab={TAB} label="Two" files={FILES} onSelect={() => {}} />
+        <FileList tab={OTHER} label="Other" files={FILES} onSelect={() => {}} />
+      </>,
+    );
+    const expanded = (list: string) => within(screen.getByRole('listbox', { name: list })).getByRole('button', { name: 'src' }).getAttribute('aria-expanded');
+    expect([expanded('One'), expanded('Two'), expanded('Other')]).toEqual(['false', 'false', 'true']);
+    fireEvent.click(within(screen.getByRole('listbox', { name: 'Two' })).getByRole('button', { name: 'src' }));
+    expect([expanded('One'), expanded('Two'), expanded('Other')]).toEqual(['true', 'true', 'true']);
+  });
+
+  test('Shift-click extends over the visible files only; collapsing changes no selection', () => {
+    setFileView('tree');
+    const onSelect = vi.fn();
+    render(<FileList tab={TAB} label="L" files={FILES} multi selected={['src/b.ts']} onSelect={onSelect} />);
+    fireEvent.click(option('docs/z.md'));
+    onSelect.mockClear();
+    fireEvent.click(folder('src'));
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(option('README.md'), { shiftKey: true });
+    expect(onSelect).toHaveBeenLastCalledWith(['docs/z.md', 'README.md'], FILES[1], false);
+  });
+
+  test('a newly viewed file opens its collapsed folders; collapsing the viewed file\'s own folder keeps it collapsed', () => {
+    setFileView('tree');
+    const { rerender } = render(<FileList tab={TAB} label="L" files={FILES} viewed="README.md" onSelect={() => {}} />);
+    fireEvent.click(folder('src/a'));
+    fireEvent.click(folder('src'));
+    rerender(<FileList tab={TAB} label="L" files={FILES} viewed="src/a/x.ts" onSelect={() => {}} />);
+    expect(folder('src').getAttribute('aria-expanded')).toBe('true');
+    expect(folder('src/a').getAttribute('aria-expanded')).toBe('true');
+    expect(option('src/a/x.ts').getAttribute('aria-current')).toBe('true');
+    fireEvent.click(folder('src/a'));
+    expect(folder('src/a').getAttribute('aria-expanded')).toBe('false');
+    rerender(<FileList tab={TAB} label="L" files={[...FILES]} viewed="src/a/x.ts" onSelect={() => {}} />);
+    expect(folder('src/a').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('↓ / ↑ from a folder toggle focus the nearest file row that way, skipping collapsed folders\' files', () => {
+    setFileView('tree');
+    render(<FileList tab={TAB} label="L" files={FILES} onSelect={() => {}} />);
+    folder('src').focus();
+    fireEvent.keyDown(folder('src'), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(option('src/a/x.ts'));
+    folder('src').focus();
+    fireEvent.keyDown(folder('src'), { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(option('docs/z.md'));
+    fireEvent.click(folder('src'));
+    folder('src').focus();
+    fireEvent.keyDown(folder('src'), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(option('README.md'));
+    fireEvent.keyDown(option('README.md'), { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(option('docs/z.md'));
+  });
+
+  test('a collapsed folder\'s actions still get every file beneath it', () => {
+    setFileView('tree');
+    const dirActions = vi.fn((files: ListFile[], dir: string) => <button type="button">Dir {dir} ({files.length})</button>);
+    render(<FileList tab={TAB} label="L" files={FILES} onSelect={() => {}} dirActions={dirActions} />);
+    fireEvent.click(folder('src'));
+    expect(screen.getByRole('button', { name: 'Dir src (2)' })).toBeTruthy();
+    expect(dirActions.mock.calls.findLast(([, d]) => d === 'src')![0].map((f) => f.path).sort()).toEqual(['src/a/x.ts', 'src/b.ts']);
+  });
+
+  test('Path shows every file whatever is collapsed', () => {
+    setFileView('tree');
+    render(<FileList tab={TAB} label="L" files={FILES} onSelect={() => {}} />);
+    fireEvent.click(folder('src'));
+    act(() => setFileView('path'));
+    expect(paths()).toEqual(['src/b.ts', 'README.md', 'src/a/x.ts', 'docs/z.md']);
+    act(() => setFileView('tree'));
+    expect(folder('src').getAttribute('aria-expanded')).toBe('false');
+  });
 });

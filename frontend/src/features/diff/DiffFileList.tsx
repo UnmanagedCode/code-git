@@ -23,12 +23,13 @@ export function DiffFileList({ tab, fallback, onPicked }: { tab: Tab; fallback?:
     if (error) return null;
     // The stand-in picks and selects as the loaded list will (loadList keeps a listed pick); its menu waits for the list.
     return fallback ? (
-      <FileList label="Changed files" files={fallback} viewed={state.viewed} selected={state.selected} multi followFocus onSelect={(sel, f, plain) => pick(sel, f.path, plain)} />
+      <FileList tab={tab} label="Changed files" files={fallback} viewed={state.viewed} selected={state.selected} multi followFocus onSelect={(sel, f, plain) => pick(sel, f.path, plain)} />
     ) : <p className="px-3 py-2 text-xs text-muted-foreground">Loading files…</p>;
   }
   const source = patchSource(state.source, result);
   return (
     <FileList
+      tab={tab}
       label="Changed files"
       files={result.files}
       viewed={state.viewed}

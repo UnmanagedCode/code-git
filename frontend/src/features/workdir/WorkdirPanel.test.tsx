@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { Shell } from '@/shell/Shell';
+import { collapsedDirsStore } from '@/state/collapsedDirs';
 import { diffStore } from '@/state/diff';
 import { shownPanelStore } from '@/state/shownPanel';
 import { dispatchTabs, tabKey } from '@/state/tabs';
@@ -68,6 +69,18 @@ test('Tree: one toggle for both sections; rows nest and keep Stage / Unstage / D
   await waitFor(() => expect(w.posts('stage.files').at(-1)).toEqual({ paths: ['src/a.ts'] }));
   fireEvent.keyDown(row('Staged Files', 'lib/t.ts'), { key: 'u' });
   await waitFor(() => expect(w.posts('stage.unstageFiles')).toEqual([{ paths: ['lib/t.ts'] }]));
+});
+
+test('Tree: collapsing a folder in Unstaged collapses it in Staged too, both lists holding it in the tab\'s collapsed set', async () => {
+  await show({ unstaged: TREE_UNSTAGED, staged: TREE_STAGED });
+  await userEvent.click(within(screen.getByRole('group', { name: 'File view' })).getByRole('button', { name: 'Tree' }));
+  const toggle = (name: 'Unstaged Files' | 'Staged Files') => within(section(name)).getByRole('button', { name: 'src' });
+  await userEvent.click(toggle('Unstaged Files'));
+  expect([toggle('Unstaged Files').getAttribute('aria-expanded'), toggle('Staged Files').getAttribute('aria-expanded')]).toEqual(['false', 'false']);
+  expect(within(section('Staged Files')).queryByRole('group', { name: 'src' })).toBeNull();
+  expect([...collapsedDirsStore.get()]).toEqual([[tabKey(APP), ['src']]]);
+  await userEvent.click(toggle('Staged Files'));
+  expect([toggle('Unstaged Files').getAttribute('aria-expanded'), toggle('Staged Files').getAttribute('aria-expanded')]).toEqual(['true', 'true']);
 });
 
 test('Tree: Stage folder sends one stage.files with the section\'s files beneath it, conflicted ones left out; Unstage folder likewise; no folder Discard', async () => {

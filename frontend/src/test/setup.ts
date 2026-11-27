@@ -22,6 +22,7 @@ import { resetRepos } from '@/state/useRepos';
 import { resetWorkdir } from '@/state/workdir';
 import { resetConfirm } from '@/lib/confirm';
 import { resetLineSelection } from '@/state/lineSelection';
+import { resetCollapsedDirs } from '@/state/collapsedDirs';
 import { resetRefDialog } from '@/state/refDialog';
 import { resetRefSelection } from '@/state/refSelection';
 import { resetTracking } from '@/state/branchTracking';
@@ -58,6 +59,7 @@ afterEach(() => {
   resetSummaries();
   resetDiff();
   resetFileView();
+  resetCollapsedDirs();
   resetDetailsHeader();
   resetPaneWidths();
   resetShownPanels();

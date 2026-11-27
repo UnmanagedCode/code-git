@@ -35,11 +35,19 @@ export function buildFileTree<F extends { path: string }>(files: readonly F[]): 
   return sort(root.children);
 }
 
-/** The files in the order a list shows them: as given in Path, the tree's depth-first file order in Tree. */
-export function orderedFiles<F extends { path: string }>(files: readonly F[], view: 'path' | 'tree'): F[] {
+/**
+ * The files in the order a list shows them: as given in Path, the tree's depth-first file order in Tree, without the
+ * files beneath a `collapsed` directory (tree paths).
+ */
+export function orderedFiles<F extends { path: string }>(files: readonly F[], view: 'path' | 'tree', collapsed?: ReadonlySet<string>): F[] {
   if (view === 'path') return [...files];
   const out: F[] = [];
-  const walk = (nodes: TreeNode<F>[]) => { for (const n of nodes) { if (n.kind === 'file') out.push(n.file); else walk(n.children); } };
+  const walk = (nodes: TreeNode<F>[]) => {
+    for (const n of nodes) {
+      if (n.kind === 'file') out.push(n.file);
+      else if (!collapsed?.has(n.path)) walk(n.children);
+    }
+  };
   walk(buildFileTree(files));
   return out;
 }

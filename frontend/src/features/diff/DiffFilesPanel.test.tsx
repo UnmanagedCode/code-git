@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { expect, test } from 'vitest';
 import { Shell } from '@/shell/Shell';
 import { diffStore } from '@/state/diff';
-import { dispatchTabs } from '@/state/tabs';
+import { collapsedDirsStore } from '@/state/collapsedDirs';
+import { setFileView } from '@/state/fileView';
+import { dispatchTabs, tabKey } from '@/state/tabs';
 import { dfile, fdiff, filesResult, hunk, OID } from '@/test/diffFixtures';
 import { workdirWorld } from '@/test/workdirWorld';
 import type { DiffSource } from './api';
@@ -68,4 +70,15 @@ test('the panel has the File view toggle; Tree nests the files', async () => {
   await userEvent.click(within(panel).getByRole('button', { name: 'Tree' }));
   expect(within(panel).getByRole('button', { name: 'Tree' }).getAttribute('aria-pressed')).toBe('true');
   expect(within(within(panel).getByRole('group', { name: 'src' })).getByRole('option', { name: /x\.ts/ })).toBeTruthy();
+});
+
+test("the Changed files panel's list keeps its Tree folders in the open tab's collapsed set", async () => {
+  await show();
+  setFileView('tree');
+  act(() => openDiff(APP, { kind: 'worktree', rev: 'main' }));
+  const list = await within(slot()).findByRole('listbox', { name: 'Changed files' });
+  const src = await within(list).findByRole('button', { name: 'src' });
+  fireEvent.click(src);
+  expect(src.getAttribute('aria-expanded')).toBe('false');
+  expect([...collapsedDirsStore.get()]).toEqual([[tabKey(APP), ['src']]]);
 });
