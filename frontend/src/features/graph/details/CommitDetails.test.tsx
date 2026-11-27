@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { json, summary } from '@/test/fixtures';
 import { checkout, commit, oid, stash } from '@/test/graphData';
 import { detailOf, linearWorld, paramsOf, stubGraph } from '@/test/graphBackend';
@@ -11,6 +11,9 @@ import { loadSummary } from '@/state/useRepoSummary';
 import { diffStore, setPrefs } from '@/state/diff';
 import { openDiff } from '@/features/diff/openDiff';
 import { shownPanelStore } from '@/state/shownPanel';
+import { collapsedDirsStore, setDirCollapsed } from '@/state/collapsedDirs';
+import { setFileView } from '@/state/fileView';
+import { tabKey } from '@/state/tabs';
 import { jumpStore } from '../jump';
 import type { GraphRow } from '../types';
 import { DISPLAY_MAX, FILE_RENDER_CAP } from '@/lib/clip';
@@ -692,4 +695,52 @@ test('changing the pair aborts the old list request and lists the new pair', asy
     { source: { kind: 'commits', oids: [X, Y] }, whitespace: 'none' },
     { source: { kind: 'commits', oids: [Y, Z] }, whitespace: 'none' },
   ]);
+});
+
+describe("each details list keeps its Tree folders in the details tab's collapsed set", () => {
+  const srcToggle = () => within(screen.getByRole('listbox', { name: 'Changed files' })).getByRole('button', { name: 'src' });
+  /** A click on the list's `src` toggle lands in TAB's set alone, and the list follows TAB's set. */
+  const collapsesUnderTab = () => {
+    expect(srcToggle().getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(srcToggle());
+    expect(srcToggle().getAttribute('aria-expanded')).toBe('false');
+    expect([...collapsedDirsStore.get()]).toEqual([[tabKey(TAB), ['src']]]);
+    act(() => setDirCollapsed(TAB, 'src', false));
+    expect(srcToggle().getAttribute('aria-expanded')).toBe('true');
+  };
+
+  test('a commit\'s unbound list', async () => {
+    setFileView('tree');
+    await show({ files });
+    await screen.findByText('4 files');
+    collapsesUnderTab();
+  });
+
+  test('a commit\'s list bound to its loaded diff (DiffFileList)', async () => {
+    setFileView('tree');
+    await show({ files }, [A], diffFiles);
+    await screen.findByText('4 files');
+    fireEvent.click(fileRow('gone.txt'));
+    await waitFor(() => expect(diffStore.get().get('app\0')?.list.result).not.toBeNull());
+    collapsesUnderTab();
+  });
+
+  test('a commit\'s stand-in while the bound diff list loads (DiffFileList fallback)', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => { release = r; });
+    setFileView('tree');
+    await show({ files }, [A], { 'POST api/ops/diff.files': async () => { await held; return diffFiles['POST api/ops/diff.files']; } });
+    await screen.findByText('4 files');
+    fireEvent.click(fileRow('gone.txt'));
+    expect(diffStore.get().get('app\0')?.list.loading).toBe(true);
+    collapsesUnderTab();
+    await act(async () => { release(); await held; });
+  });
+
+  test('two commits\' unbound list (PairDetails)', async () => {
+    setFileView('tree');
+    await showPair();
+    await screen.findByText('3 files');
+    collapsesUnderTab();
+  });
 });

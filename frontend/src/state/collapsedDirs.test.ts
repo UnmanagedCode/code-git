@@ -40,6 +40,12 @@ test('revealPath expands only the file\'s ancestors, and changes nothing (no not
   expect(listener).not.toHaveBeenCalled();
 });
 
+test('revealPath leaves a collapsed folder whose name prefixes the file\'s folder (src/a for src/ab/x.ts)', () => {
+  setDirCollapsed(A, 'src/a', true);
+  revealPath(A, 'src/ab/x.ts');
+  expect(dirs(A)).toEqual(['src/a']);
+});
+
 test('closing a tab drops its set', () => {
   dispatchTabs({ type: 'open', tab: A });
   dispatchTabs({ type: 'open', tab: B });
