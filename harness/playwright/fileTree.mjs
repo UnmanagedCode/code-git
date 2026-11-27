@@ -1,7 +1,7 @@
 // Collapsible Tree folders, asserted on the seeded `stage` project (seed.mjs: unstaged src/app.js, old.txt deleted,
 // notes.md untracked; one commit touching src/app.js and old.txt): in the Changes panel's Unstaged list a folder
 // collapses (its row leaves the list), stays collapsed across Reload changes, opens again when the viewer's Previous
-// file lands on a file inside it; in a commit's details the same toggle collapses by click and expands by Space and →.
+// file lands on a file inside it (then Close diff); in a commit's details the same toggle collapses by click and expands by Space and →.
 // Runs in light then dark, each on a fresh seed; screenshots go to out/fileTree/*-{light,dark}.png.
 // Run: node harness/playwright/fileTree.mjs   (needs `npm run prepare` first, for frontend/dist)
 import { execFileSync } from 'node:child_process';
@@ -84,7 +84,7 @@ for (const scheme of ['light', 'dark']) {
       await shot('changes-revealed');
 
       // 4. A commit's details: the same toggle collapses by click, expands by Space, collapses and expands by ← / →.
-      await page.keyboard.press('Escape');
+      await diff.getByRole('button', { name: 'Close diff', exact: true }).click();
       await diff.waitFor({ state: 'detached' });
       const oid = git('rev-parse', 'HEAD').trim();
       await page.locator(`[data-row-id="${oid}"]`).click();
